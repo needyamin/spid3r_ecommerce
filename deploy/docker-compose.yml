@@ -33,7 +33,7 @@ services:
     restart: unless-stopped
 
   phpmyadmin:
-    image: phpmyadmin:latest
+    image: phpmyadmin:5.2
     container_name: spid3rweb-phpmyadmin
     environment:
       # Connects to the MySQL service on the compose network; you log in
@@ -42,7 +42,7 @@ services:
       PMA_PORT: "3306"
       UPLOAD_LIMIT: 100M
     ports:
-      - "8091:8080"
+      - "8091:80"
     depends_on:
       mysql:
         condition: service_healthy
