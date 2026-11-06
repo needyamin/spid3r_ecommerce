@@ -1,0 +1,109 @@
+// framework/Mail/Mail.matrix
+// Spid3rWeb Mail Subsystem & Facade
+//
+//   import "framework/Mail/Mail";
+//   Mail.to("ada@example.com", "Welcome!", "Thanks for signing up.");
+//   Mail.send(map("to","ada@example.com","subject","Hi","body","..."));
+//
+// Drivers (config/mail.matrix):
+//   log  — renders the full message into the "mail" log channel
+//          (storage/logs/mail.log-YYYY-MM-DD.log). Always available and
+//          the default: perfect for development and staging.
+//   smtp — intentionally fails fast at send time: the Spid3r runtime has
+//          no outbound TCP API yet, so attempting SMTP would either hang
+//          or lie. The error explains how to stay on the log driver.
+//
+// Security: the body is written verbatim; the envelope values (to/from)
+// are logged as data, never concatenated into an SMTP session, so header
+// injection via "\r\n" in addresses is inert with the log driver.
+
+import "framework/Config/Config";
+import "framework/Log/Log";
+
+public class Mailer {
+    // Shorthand: Mail.to(to, subject, body)
+    public fn to(self, address: string, subject: string, body: string) -> bool {
+        return self.send(map(
+            "to", address,
+            "subject", subject,
+            "body", body
+        ));
+    }
+
+    // Full send: map("to", ..., "subject", ..., "body", ...)
+    // Optional keys: "from_address", "from_name" override config defaults.
+    public fn send(self, message) -> bool {
+        if message == null or type_of(message) != "map" or not message.has("to") {
+            throw "mail: message requires a 'to' address";
+        }
+        let subject = "";
+        if message.has("subject") {
+            subject = string(message["subject"]);
+        }
+        let body = "";
+        if message.has("body") {
+            body = string(message["body"]);
+        }
+
+        // From: config default, overridable per message
+        let from_address = "hello@spid3r.test";
+        let from_name = "Spid3r";
+        let from_cfg = Config.get("mail.from", null);
+        if from_cfg != null and type_of(from_cfg) == "map" {
+            if from_cfg.has("address") {
+                from_address = string(from_cfg["address"]);
+            }
+            if from_cfg.has("name") {
+                from_name = string(from_cfg["name"]);
+            }
+        }
+        if message.has("from_address") {
+            from_address = string(message["from_address"]);
+        }
+        if message.has("from_name") {
+            from_name = string(message["from_name"]);
+        }
+
+        // Active mailer: env override -> config default
+        let mailer_env = Config.get("mail.mailer_env", "SPID3R_MAIL_MAILER");
+        let mailer = string(Config.get("mail.default", "log"));
+        if env(mailer_env).is_some() and string(env(mailer_env).unwrap()) != "" {
+            mailer = string(env(mailer_env).unwrap());
+        }
+
+        let cfg = Config.get("mail.mailers." + mailer, null);
+        if cfg == null or type_of(cfg) != "map" {
+            throw "mail: unknown mailer '" + mailer + "' (check config/mail.matrix)";
+        }
+
+        let driver = "log";
+        if cfg.has("driver") {
+            driver = string(cfg["driver"]);
+        }
+
+        if driver == "log" {
+            let channel = "mail";
+            if cfg.has("channel") {
+                channel = string(cfg["channel"]);
+            }
+            Log.write("info", "[mail] delivered message",
+                map(
+                    "mailer", "log",
+                    "from", from_address,
+                    "from_name", from_name,
+                    "to", string(message["to"]),
+                    "subject", subject,
+                    "body", body
+                ), channel);
+            return true;
+        }
+
+        if driver == "smtp" {
+            throw "mail: the smtp driver needs an outbound TCP API that the Spid3r runtime does not expose yet — set SPID3R_MAIL_MAILER=log (or remove the override) and read storage/logs/mail.log";
+        }
+
+        throw "mail: unsupported mail driver '" + driver + "'";
+    }
+}
+
+public let Mail = new Mailer();

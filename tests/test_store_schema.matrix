@@ -1,0 +1,250 @@
+// tests/test_store_schema.matrix
+// Phase 2 — database architecture integration tests.
+// Exercises the real Schema migrations, seeders, repositories,
+// transaction-safe inventory, idempotent payments and backup tooling.
+
+import "framework/Database/DB";
+import "framework/Database/Schema";
+import "database/seeders/DatabaseSeeder";
+import "app/Repositories/ProductRepository";
+import "app/Repositories/InventoryRepository";
+import "app/Repositories/CartRepository";
+import "app/Repositories/OrderRepository";
+import "app/Repositories/PaymentRepository";
+import "app/Repositories/UserRepository";
+import "tools/backup_store";
+import "app/Support/Money" as Money;
+
+let TABLES = [
+    "users", "roles", "permissions", "user_roles", "role_permissions",
+    "addresses", "categories", "brands", "products", "product_variants",
+    "product_images", "inventory", "stock_movements", "carts", "cart_items",
+    "wishlists", "orders", "order_items", "payments", "refunds", "shipments",
+    "coupons", "coupon_usages", "reviews", "audit_logs", "settings"
+];
+
+fn test_all_tables_exist() {
+    let i = 0;
+    while i < TABLES.len() {
+        let name = TABLES[i];
+        let ok = false;
+        try {
+            let _n = DB.table(name).count();
+            ok = true;
+        } catch (e) {
+            ok = false;
+        }
+        assert(ok, "table exists: " + name);
+        i += 1;
+    }
+    println("  [PASS] test_all_tables_exist");
+}
+
+fn test_seeders_idempotent() {
+    run_database_seeder();
+    run_database_seeder();
+    assert(DB.table("roles").count() >= 3, "three baseline roles seeded");
+    assert(DB.table("permissions").count() >= 5, "five baseline permissions seeded");
+    let admin = DB.table("roles").where("slug", "=", "admin").first();
+    assert(admin != null, "admin role exists");
+    let links = DB.table("role_permissions").where("role_id", "=", admin["id"]).count();
+    assert(links >= 5, "admin has all permissions");
+    assert(DB.table("settings").where("setting_key", "=", "store.currency").count() == 1, "currency setting once (idempotent)");
+    println("  [PASS] test_seeders_idempotent");
+}
+
+fn test_unique_constraints() {
+    let tag = string(unix_time());
+    let slug = "unique-probe-" + tag;
+    let cat = DB.table("categories").insert(map("name", "Probe", "slug", "cat-" + tag));
+    DB.table("products").insert(map(
+        "category_id", cat, "name", "Probe", "slug", slug,
+        "sku", "SKU-" + tag, "price_minor", 1000, "status", "published"
+    ));
+    let threw = false;
+    try {
+        DB.table("products").insert(map(
+            "category_id", cat, "name", "Duplicate", "slug", slug,
+            "sku", "SKU-DUP-" + tag, "price_minor", 1000, "status", "published"
+        ));
+    } catch (e) {
+        threw = true;
+    }
+    assert(threw, "duplicate product slug rejected by UNIQUE constraint");
+    // Cleanup
+    DB.table("products").where("slug", "=", slug).delete();
+    DB.table("categories").where("id", "=", cat).delete();
+    println("  [PASS] test_unique_constraints");
+}
+
+// Creates a small real catalog subset and returns ids for the other tests.
+fn seed_catalog(tag: string) {
+    let cat = DB.table("categories").insert(map("name", "Phase 2", "slug", "phase2-" + tag));
+    let brand = DB.table("brands").insert(map("name", "Probe Brand " + tag, "slug", "brand-" + tag));
+    let product = DB.table("products").insert(map(
+        "category_id", cat, "brand_id", brand,
+        "name", "Test Widget " + tag, "slug", "widget-" + tag,
+        "sku", "WID-" + tag, "price_minor", 25000,
+        "status", "published", "currency", "BDT"
+    ));
+    DB.table("inventory").insert(map(
+        "product_id", product, "variant_id", null,
+        "quantity", 10, "reserved", 0, "low_stock_threshold", 2
+    ));
+    return map("cat", cat, "brand", brand, "product", product);
+}
+
+fn cleanup_catalog(ids) {
+    DB.table("inventory").where("product_id", "=", ids["product"]).delete();
+    DB.table("stock_movements").where("product_id", "=", ids["product"]).delete();
+    DB.table("order_items").where("product_id", "=", ids["product"]).delete();
+    DB.table("cart_items").where("product_id", "=", ids["product"]).delete();
+    DB.table("products").where("id", "=", ids["product"]).delete();
+    DB.table("brands").where("id", "=", ids["brand"]).delete();
+    DB.table("categories").where("id", "=", ids["cat"]).delete();
+}
+
+fn test_product_repository(ids) {
+    let repo = new ProductRepository();
+    let page = repo.published(map("q", "Test Widget", "sort", "price_asc", "page", 1, "per_page", 10));
+    assert(page["total"] >= 1, "published() found the seeded product");
+    assert(repo.find_by_slug("widget-" + string(ids["tag"])) != null, "find_by_slug works");
+    let filtered = repo.published(map("min_price_minor", 30000));
+    // Scope the assertion to this suite's own product: other suites may
+    // legitimately leave published products in the catalogue.
+    let still_listed = false;
+    let i = 0;
+    while i < filtered["data"].len() {
+        if int(filtered["data"][i]["id"]) == int(ids["product"]) {
+            still_listed = true;
+        }
+        i += 1;
+    }
+    assert(not still_listed, "price filter excludes cheaper items");
+    println("  [PASS] test_product_repository");
+}
+
+fn test_inventory_atomic(ids) {
+    let repo = new InventoryRepository();
+    let pid = ids["product"];
+    assert(repo.available(pid, null, 10), "10 units available");
+    assert(repo.reserve(pid, null, 4, "sale", "test", "1"), "reserved 4 units");
+    assert(repo.available(pid, null, 6), "6 units left after reservation");
+    assert(not repo.available(pid, null, 7), "7 units not available");
+    assert(repo.reserve(pid, null, 7, "sale", "test", "2") == false, "oversell attempt refused atomically");
+    assert(repo.available(pid, null, 6), "oversell attempt changed nothing");
+    let moves = repo.movements_for(pid);
+    assert(moves.len() == 1, "only successful movement recorded");
+    assert(int(moves[0]["delta"]) == -4, "movement delta is -4");
+    assert(repo.release(pid, null, 4, "cancellation"), "release returns stock");
+    assert(repo.available(pid, null, 10), "back to 10 units");
+    println("  [PASS] test_inventory_atomic");
+}
+
+fn test_order_repository(ids) {
+    let repo = new OrderRepository();
+    let tag = ids["tag"];
+    let order = repo.create(map("user_id", null), [map(
+        "product_id", ids["product"], "variant_id", null,
+        "name_snapshot", "Test Widget " + tag, "sku_snapshot", "WID-" + tag,
+        "unit_price_minor", 25000, "quantity", 2,
+        "discount_minor", 1000, "tax_minor", 0, "line_total_minor", 49000
+    )]);
+    assert(order != null and order["status"] == "pending", "order created pending");
+    assert(int(order["subtotal_minor"]) == 50000, "subtotal computed server-side");
+    assert(int(order["total_minor"]) == 49000, "total = subtotal - discount + tax");
+    let items = repo.items_for(order["id"]);
+    assert(items.len() == 1 and int(items[0]["unit_price_minor"]) == 25000, "historical price snapshot persisted");
+    // Cleanup order row
+    DB.table("orders").where("id", "=", order["id"]).delete();
+    println("  [PASS] test_order_repository");
+}
+
+fn test_payment_repository(ids) {
+    // A temporary order is needed for the FK on postgres/mysql.
+    let orders = new OrderRepository();
+    let order = orders.create(map("user_id", null), []);
+    let repo = new PaymentRepository();
+    let key = "idem-" + ids["tag"];
+    let p1 = repo.initiate(order["id"], "cod", 25000, key);
+    let p2 = repo.initiate(order["id"], "cod", 25000, key);
+    assert(int(p1["id"]) == int(p2["id"]), "idempotency key returns the same payment");
+    assert(repo.mark_verified(p1["id"], "gw-123", "{}"), "verification transitions to paid");
+    assert(repo.mark_verified(p1["id"], "gw-123", "{}") == false, "duplicate callback is a no-op");
+    let paid = DB.table("payments").where("id", "=", p1["id"]).first();
+    assert(paid["status"] == "paid", "payment status paid once");
+    // Cleanup
+    DB.table("payments").where("id", "=", p1["id"]).delete();
+    DB.table("orders").where("id", "=", order["id"]).delete();
+    println("  [PASS] test_payment_repository");
+}
+
+fn test_cart_repository(ids) {
+    let repo = new CartRepository();
+    let tag = ids["tag"];
+    let guest = repo.cart_for(null, "guest-" + tag);
+    assert(guest != null, "guest cart created");
+    assert(repo.add_item(guest["id"], ids["product"], null, 2, 25000), "item added");
+    assert(repo.add_item(guest["id"], ids["product"], null, 3, 25000), "same item quantity increased");
+    let items = repo.items(guest["id"]);
+    assert(items.len() == 1 and int(items[0]["quantity"]) == 5, "quantity upserted to 5");
+    assert(repo.set_quantity(items[0]["id"], 1), "quantity updated");
+    assert(repo.remove_item(items[0]["id"]), "item removed");
+    assert(repo.items(guest["id"]).len() == 0, "cart empty");
+    DB.table("carts").where("id", "=", guest["id"]).delete();
+    println("  [PASS] test_cart_repository");
+}
+
+fn test_user_repository(ids) {
+    let repo = new UserRepository();
+    let email = "probe-" + ids["tag"] + "@example.test";
+    let user = repo.create_customer(email, "Probe", "s3cret-pass");
+    assert(user != null, "customer created");
+    assert(repo.has_role(user["id"], "customer"), "customer role attached");
+    assert(repo.has_permission(user["id"], "catalog.manage") == false, "customer has no admin permission");
+    assert(repo.create_customer(email, "Dup", "pw") == null, "duplicate email refused");
+    DB.table("user_roles").where("user_id", "=", user["id"]).delete();
+    DB.table("users").where("id", "=", user["id"]).delete();
+    println("  [PASS] test_user_repository");
+}
+
+fn test_backup_tool() {
+    let dump = dump_tables();
+    assert(dump["format"] == "spid3r-store-backup-v1", "dump header present");
+    let i = 0;
+    while i < TABLES.len() {
+        assert(dump["tables"].has(TABLES[i]), "dump contains " + TABLES[i]);
+        i += 1;
+    }
+    let path = backup();
+    assert(len(path) > 0, "backup file written and verified");
+    println("  [PASS] test_backup_tool");
+}
+
+fn test_money_minor_units() {
+    assert(Money.to_minor("250.00") == 25000, "money conversion matches price_minor convention");
+    assert(Money.to_major(49000) == "490.00", "order total renders exactly");
+    println("  [PASS] test_money_minor_units");
+}
+
+fn main() {
+    println("\n=== Running Store Schema Test Suite ===");
+    test_all_tables_exist();
+    test_seeders_idempotent();
+    test_unique_constraints();
+    let tag = string(unix_time());
+    let ids = seed_catalog(tag);
+    ids["tag"] = tag;
+    test_product_repository(ids);
+    test_inventory_atomic(ids);
+    test_order_repository(ids);
+    test_payment_repository(ids);
+    test_cart_repository(ids);
+    test_user_repository(ids);
+    cleanup_catalog(ids);
+    test_backup_tool();
+    test_money_minor_units();
+    DB.close();
+    println("=== All Store Schema Tests Passed! ===\n");
+    return 0;
+}

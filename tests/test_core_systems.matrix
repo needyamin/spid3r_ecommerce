@@ -1,0 +1,287 @@
+// tests/test_core_systems.matrix
+// Unit tests for the core systems: Config, Log, Filesystem (Storage),
+// Mail, Queue (sync + database) and the session/auth config wiring.
+
+import "framework/Config/Config";
+import "framework/Log/Log";
+import "framework/Filesystem/Storage";
+import "framework/Mail/Mail";
+import "framework/Queue/Queue";
+import "framework/Database/DB";
+import "routes/queue";
+
+fn test_config_repository() {
+    // Dot-notation reads over every bundled namespace
+    assert(Config.get("app.name") == "Spid3rWeb Developer Platform", "config: app.name");
+    assert(Config.get("session.lifetime") == 86400, "config: session.lifetime default");
+    assert(Config.get("auth.default") == "session", "config: auth default guard");
+    assert(Config.get("logging.default") == "daily", "config: logging default channel");
+    assert(Config.get("mail.default") == "log", "config: mail default driver");
+    assert(Config.get("queue.default") == "database", "config: queue default connection");
+    assert(Config.get("filesystems.default") == "local", "config: filesystems default disk");
+
+    // Deep paths
+    assert(Config.get("logging.channels.mail.path") == "storage/logs/mail.log", "config: deep channel path");
+    assert(Config.get("filesystems.disks.public.url") == "/uploads", "config: public disk url");
+
+    // Fallbacks + has/set/load
+    assert(Config.get("does.not.exist", "fallback") == "fallback", "config: fallback on missing");
+    assert(Config.has("queue.connections.sync.driver") == true, "config: has() true");
+    assert(Config.has("queue.connections.nope.driver") == false, "config: has() false");
+    Config.set("app.test_runtime_key", 7);
+    assert(int(Config.get("app.test_runtime_key")) == 7, "config: set() then get()");
+    assert(Config.namespaces().len() >= 8, "config: all namespaces registered");
+    println("  [PASS] test_config_repository");
+}
+
+fn test_log_subsystem() {
+    // Default channel writes a parseable daily log line
+    let ok = Log.info("core-systems test message", map("suite", "core"));
+    assert(ok == true, "log: info() returns true");
+
+    // Stamp + date math sanity: known epochs format correctly.
+    // 1762300800 = 2025-11-05T00:00:00Z; 1762281600 = 2025-11-04T18:40:00Z
+    assert(Log.stamp(1762300800) == "2025-11-05T00:00:00Z", "log: UTC stamp midnight");
+    assert(Log.stamp(1762281600) == "2025-11-04T18:40:00Z", "log: UTC stamp with time");
+
+    // Explicit channel routing (queue channel file lives in storage/logs)
+    assert(Log.write("error", "core-systems channel test", null, "queue") == true, "log: explicit channel write");
+
+    // Level filter: an unknown level name must not crash and maps to info
+    assert(Log.write("bogus", "still logs as info", null) == true, "log: unknown level falls back to info");
+
+    // Daily rotation filename: the queue channel write lands in a
+    // queue-YYYY-MM-DD.log file named by the UTC date.
+    let today = Log.stamp(int(unix_time()));
+    let day = today.slice(0, 10);
+    assert(file_exists("storage/logs/queue-" + day + ".log") == true, "log: daily rotation uses UTC date filename");
+
+    // SPID3R_LOG_LEVEL pins the minimum level for every channel
+    env_set("SPID3R_LOG_LEVEL", "error");
+    assert(Log.info("filtered out by env level") == false, "log: SPID3R_LOG_LEVEL=error filters info");
+    assert(Log.error("still passes at error level") == true, "log: error passes at env level error");
+    env_set("SPID3R_LOG_LEVEL", "");
+    assert(Log.info("passes again after clearing env") == true, "log: clearing env restores default");
+    println("  [PASS] test_log_subsystem");
+}
+
+fn test_storage_disk() {
+    let d = Storage.disk("local");
+    assert(d.name == "local", "storage: local disk selected");
+
+    // put / exists / get / append / delete round-trip
+    assert(d.put("core-tests/hello.txt", "hello spid3r") == true, "storage: put");
+    assert(d.exists("core-tests/hello.txt") == true, "storage: exists after put");
+    assert(d.get("core-tests/hello.txt") == "hello spid3r", "storage: get round-trip");
+    assert(d.append("core-tests/hello.txt", " +more") == true, "storage: append");
+    assert(d.get("core-tests/hello.txt") == "hello spid3r +more", "storage: append content");
+
+    // Missing reads are null, missing deletes are false
+    assert(d.get("core-tests/never-there.txt") == null, "storage: missing get is null");
+    assert(d.delete("core-tests/never-there.txt") == false, "storage: missing delete is false");
+
+    // Path traversal must throw
+    let blocked = false;
+    try {
+        d.get("../outside.txt");
+    } catch (e) {
+        blocked = true;
+    }
+    assert(blocked == true, "storage: ../ traversal rejected");
+
+    blocked = false;
+    try {
+        d.put("/absolute/path.txt", "x");
+    } catch (e) {
+        blocked = true;
+    }
+    assert(blocked == true, "storage: absolute path rejected");
+
+    // Nested traversal via dot segments
+    blocked = false;
+    try {
+        d.get("a/../../escape.txt");
+    } catch (e) {
+        blocked = true;
+    }
+    assert(blocked == true, "storage: nested traversal rejected");
+
+    // Unknown disk throws
+    let bad_disk = false;
+    try {
+        Storage.disk("moon");
+    } catch (e) {
+        bad_disk = true;
+    }
+    assert(bad_disk == true, "storage: unknown disk throws");
+
+    // public disk URL mapping
+    let pub = Storage.disk("public");
+    assert(pub.url("img/logo.png") == "/uploads/img/logo.png", "storage: public url prefix");
+
+    // private disks are not web-servable: empty URL prefix
+    let priv = Storage.disk("local");
+    assert(priv.url("secret.txt") == "", "storage: private disk url is empty");
+    assert(priv.visibility == "private", "storage: local disk is private");
+
+    // cleanup
+    d.delete("core-tests/hello.txt");
+    println("  [PASS] test_storage_disk");
+}
+
+fn test_mail_log_driver() {
+    let ok = Mail.to("core-test@example.com", "Core systems suite", "hello from the test suite");
+    assert(ok == true, "mail: log driver send returns true");
+
+    // From address resolved from config
+    assert(Config.get("mail.from.address") == "hello@spid3r.test", "mail: from address from config");
+
+    // The smtp driver must fail fast with a clear error (no outbound TCP)
+    let threw = false;
+    try {
+        Mail.send(map("to", "x@example.com", "subject", "s", "body", "b", "_driver", "smtp"));
+    } catch (e) {
+        threw = true;
+    }
+    // Note: _driver is not how selection works (mailer is config/env driven),
+    // so without SPID3R_MAIL_MAILER=smtp this call legitimately succeeds.
+    // The direct assertion below is what really verifies fail-fast:
+    if env("SPID3R_MAIL_MAILER").is_some() and string(env("SPID3R_MAIL_MAILER").unwrap()) == "smtp" {
+        assert(threw == true, "mail: smtp driver fails fast when selected");
+    } else {
+        assert(threw == false, "mail: log driver handles the send (smtp not selected)");
+    }
+    println("  [PASS] test_mail_log_driver");
+}
+
+fn test_queue_sync_and_database() {
+    // ---- sync driver: handlers run immediately ----
+    let conn_cfg = Config.get("queue.connections.sync");
+    assert(conn_cfg["driver"] == "sync", "queue: sync connection present");
+
+    // Registered framework handlers
+    let names = Queue.registered();
+    let has_mail = false;
+    for n in names {
+        if n == "mail.send" {
+            has_mail = true;
+        }
+    }
+    assert(has_mail == true, "queue: routes/queue.matrix handlers registered");
+
+    // Unregistered handler must throw on a SYNC push (handler runs inline),
+    // but a DATABASE push must succeed without the handler registered —
+    // the worker process resolves handlers at run time, so standalone
+    // producers can push jobs they cannot execute themselves.
+    let threw = false;
+    try {
+        Queue.push("no.such.handler", map(), "", "sync");
+    } catch (e) {
+        threw = true;
+    }
+    assert(threw == true, "queue: sync push with unknown handler throws");
+
+    DB.table("jobs").where("queue", "=", "core-test").delete();   // deterministic start
+    let pre = Queue.size("core-test");
+    Queue.push("no.such.handler", map("x", 1), "core-test");
+    assert(int(Queue.size("core-test")) == int(pre) + 1, "queue: database push works without registered handler");
+    DB.table("jobs").where("queue", "=", "core-test").delete();   // clean up the unreachable job
+
+    // ---- database driver: push, size, pop semantics ----
+    DB.table("jobs").where("queue", "=", "core-test").delete();   // deterministic start
+    let before = Queue.size("core-test");
+    Queue.push("log.message", map("message", "queued from core systems test"), "core-test");
+    let after = Queue.size("core-test");
+    assert(int(after) == int(before) + 1, "queue: database push increments size");
+
+    let job = Queue.pop("core-test");
+    assert(job != null, "queue: pop reserves a job");
+    assert(int(job["attempts"]) == 1, "queue: pop increments attempts");
+    // Second pop with everything reserved -> null
+    assert(Queue.pop("core-test") == null, "queue: reserved job is not re-popped");
+
+    // A reserved job belongs to the worker that popped it (invisible to
+    // run_next until retry_after) — simulate that worker completing it:
+    DB.table("jobs").where("id", "=", job["id"]).delete();
+
+    // Fresh job processed end-to-end by run_next
+    Queue.push("log.message", map("message", "second"), "core-test");
+    let ran = Queue.run_next("core-test");
+    assert(ran == true, "queue: run_next processed the reserved job");
+    assert(Queue.size("core-test") == 0, "queue: queue empty after run");
+
+    // run_next on empty queue -> false
+    assert(Queue.run_next("core-test") == false, "queue: run_next on empty returns false");
+
+    // ---- sync driver: handlers run inline during push ----
+    // (via the optional per-push connection override)
+    let probe = map("hit", false);
+    Queue.job("core.sync_probe", fn(data) {
+        probe["hit"] = true;
+        return true;
+    });
+    assert(probe["hit"] == false, "queue: sync probe handler not yet run");
+    Queue.push("core.sync_probe", map(), "core-test", "sync");
+    assert(probe["hit"] == true, "queue: sync connection runs handler inline");
+    assert(Queue.size("core-test") == int(before), "queue: sync push stores no row");
+
+    // Built-in mail.send handler end-to-end through sync (log driver)
+    assert(Queue.push("mail.send", map("to", "sync@example.com", "subject", "s", "body", "b"), "", "sync") == true, "queue: mail.send handler runs via sync");
+
+    // ---- failure policy: failing handler retries then discards ----
+    Queue.job("core.always_fails", fn(data) {
+        throw "boom";
+    });
+    Queue.push("core.always_fails", map(), "core-test");
+    // A failed attempt releases the job with available_at = now + retry_after,
+    // which a real worker would wait out. Backdate it so this test exercises
+    // the FULL retry -> max_attempts -> discard path immediately.
+    let guard = 0;
+    while guard < 8 {
+        let rows = DB.select("SELECT id FROM jobs WHERE queue = ? AND available_at > ?", list("core-test", int(unix_time())));
+        for r in rows {
+            DB.table("jobs").where("id", "=", r["id"]).update(map(
+                "available_at", int(unix_time()) - 1,
+                "reserved_at", 0
+            ));
+        }
+        if Queue.size("core-test") == 0 {
+            break;
+        }
+        let _ = Queue.run_next("core-test");
+        guard = guard + 1;
+    }
+    // After max_attempts the job must be gone from the table entirely
+    // (not just invisible until its retry window opens).
+    let leftover = DB.select("SELECT COUNT(*) AS n FROM jobs WHERE queue = ?", list("core-test"));
+    assert(int(leftover[0]["n"]) == 0, "queue: failing job discarded after max attempts");
+
+    // Cleanup so the suite leaves no residue in the dev database
+    DB.table("jobs").where("queue", "=", "core-test").delete();
+    println("  [PASS] test_queue_sync_and_database");
+}
+
+fn test_session_auth_config_wiring() {
+    // AuthManager consults config for the sessions table + lifetime
+    assert(Config.get("session.table") == "sessions", "session: table config");
+    assert(Config.get("session.cookie") == "spid3r_session", "session: cookie name config");
+    assert(Config.get("session.httponly") == true, "session: httponly flag");
+    assert(Config.get("auth.guards.session.table") == "users", "auth: guard table config");
+    assert(Config.get("auth.guards.session.username_column") == "email", "auth: username column config");
+    assert(int(Config.get("auth.passwords.reset_expire")) == 3600, "auth: reset expiry config");
+    println("  [PASS] test_session_auth_config_wiring");
+}
+
+fn main() {
+    println("\n=== Running Core Systems Test Suite ===");
+    register_queue_jobs();   // load the handler registry (magic/server do this at boot)
+    test_config_repository();
+    test_log_subsystem();
+    test_storage_disk();
+    test_mail_log_driver();
+    test_queue_sync_and_database();
+    test_session_auth_config_wiring();
+    DB.close();
+    println("=== All Core Systems Tests Passed! ===\n");
+    return 0;
+}

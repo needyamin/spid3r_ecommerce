@@ -1,0 +1,20 @@
+// routes/cart.matrix
+// Phase 6 — shopping cart routes.
+// JSON clients set format=json; browsers get a 303 back to /cart.
+// PUT/DELETE have POST equivalents so plain HTML forms work too.
+
+import "framework/Router";
+import "app/Controllers/CartController";
+
+public fn register_cart_routes() {
+    let ctl = new CartController();
+
+    Route.get("/cart", fn(req) { return ctl.show(req); }).name("cart");
+    Route.get("/cart/summary", fn(req) { return ctl.summary_json(req); }).name("cart.summary");
+    Route.post("/cart/items", fn(req) { return ctl.add(req); }).name("cart.add");
+
+    Route.put("/cart/items/:id", fn(req) { return ctl.update(req); });
+    Route.post("/cart/items/:id/quantity", fn(req) { return ctl.update(req); });
+    Route.delete("/cart/items/:id", fn(req) { return ctl.remove(req); });
+    Route.post("/cart/items/:id/remove", fn(req) { return ctl.remove(req); });
+}

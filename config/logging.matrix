@@ -1,0 +1,39 @@
+// config/logging.matrix
+// Spid3rWeb Logging Configuration
+//
+// Consumed by framework/Log/Log.matrix. Paths are relative to the project
+// root. The minimum level can be overridden globally with SPID3R_LOG_LEVEL
+// (debug | info | warn | error).
+
+public let config_logging = map(
+    "default", "daily",
+    "level_env", "SPID3R_LOG_LEVEL",
+    "level", "debug",
+    "channels", map(
+        "single", map(
+            "driver", "single",
+            "path", "storage/logs/app.log",
+            "level", "debug"
+        ),
+        "daily", map(
+            "driver", "daily",          // one file per UTC day: app-YYYY-MM-DD.log
+            "path", "storage/logs/app.log",
+            "days", 14,                 // retention hint (manual cleanup)
+            "level", "debug"
+        ),
+        // Dedicated channel used by framework/Mail (Mail log driver)
+        "mail", map(
+            "driver", "daily",
+            "path", "storage/logs/mail.log",
+            "days", 14,
+            "level", "debug"
+        ),
+        // Dedicated channel used by framework/Queue workers
+        "queue", map(
+            "driver", "daily",
+            "path", "storage/logs/queue.log",
+            "days", 14,
+            "level", "debug"
+        )
+    )
+);

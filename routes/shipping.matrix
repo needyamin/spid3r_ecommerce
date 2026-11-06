@@ -1,0 +1,41 @@
+// routes/shipping.matrix
+// Phase 11 — shipping zones/rates, fulfilment and returns.
+//
+// GET /admin/shipping is RE-REGISTERED here with the dedicated shipping
+// page (it was a settings table stub in Phase 9). Same-origin POSTs are
+// CSRF-protected for signed-in staff by the framework.
+
+import "framework/Router";
+import "app/Controllers/ShippingController";
+
+public fn register_shipping_routes() {
+    let ctl = new ShippingController();
+
+    // ---- administration: configuration ----
+    Route.get("/admin/shipping", fn(req) { return ctl.admin_page(req); }).name("admin.shipping").middleware("role:admin");
+    Route.get("/admin/api/shipping/zones", fn(req) { return ctl.api_zones(req); }).middleware("permission:settings.manage");
+    Route.post("/admin/api/shipping/zones", fn(req) { return ctl.api_zone_save(req); }).middleware("permission:settings.manage");
+    Route.post("/admin/api/shipping/zones/:id/deactivate", fn(req) { return ctl.api_zone_delete(req); }).middleware("permission:settings.manage");
+    Route.get("/admin/api/shipping/rates", fn(req) { return ctl.api_rates(req); }).middleware("permission:settings.manage");
+    Route.post("/admin/api/shipping/rates", fn(req) { return ctl.api_rate_save(req); }).middleware("permission:settings.manage");
+    Route.post("/admin/api/shipping/rates/:id/deactivate", fn(req) { return ctl.api_rate_delete(req); }).middleware("permission:settings.manage");
+
+    // ---- administration: fulfilment ----
+    Route.get("/admin/api/orders/:order_id/shipments", fn(req) { return ctl.api_shipments(req); }).middleware("permission:orders.manage");
+    Route.post("/admin/api/orders/:order_id/shipments", fn(req) { return ctl.api_shipment_create(req); }).middleware("permission:orders.manage");
+    Route.post("/admin/api/shipments/:id/status", fn(req) { return ctl.api_shipment_status(req); }).middleware("permission:orders.manage");
+    Route.post("/admin/api/shipments/:id/deliver", fn(req) { return ctl.api_shipment_deliver(req); }).middleware("permission:orders.manage");
+
+    // ---- administration: returns ----
+    Route.get("/admin/returns", fn(req) { return ctl.returns_page(req); }).name("admin.returns").middleware("role:admin");
+    Route.get("/admin/api/returns", fn(req) { return ctl.api_returns(req); }).middleware("permission:orders.manage");
+    Route.post("/admin/api/returns/:id", fn(req) { return ctl.api_return_resolve(req); }).middleware("permission:orders.manage");
+
+    // ---- customer ----
+    Route.get("/returns", fn(req) { return ctl.my_returns(req); }).name("returns").middleware("auth");
+    Route.get("/orders/:number/return", fn(req) { return ctl.return_page(req); }).name("order.return").middleware("auth");
+    Route.post("/orders/:number/return", fn(req) { return ctl.return_store(req); }).middleware("auth");
+
+    // ---- public (read-only) ----
+    Route.post("/shipping/estimate", fn(req) { return ctl.estimate(req); }).name("shipping.estimate").middleware("throttle:30,60");
+}

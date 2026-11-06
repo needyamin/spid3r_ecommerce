@@ -1,0 +1,227 @@
+// framework/Router.matrix
+// Spid3rWeb Expressive Pattern Router & Controller Dispatcher
+
+public class RouteEntry {
+    public let method;
+    public let path;
+    public let handler;
+    public let middleware_list;
+    public let route_name;
+
+    fn new(method: string, path: string, handler) {
+        self.method = string(method).upper();
+        self.path = path;
+        self.handler = handler;
+        self.middleware_list = list();
+        self.route_name = "";
+    }
+
+    public fn middleware(self, mw) {
+        if type_of(mw) == "list" {
+            for m in mw { self.middleware_list.push(m); }
+        } else {
+            self.middleware_list.push(mw);
+        }
+        return self;
+    }
+
+    public fn name(self, n: string) {
+        self.route_name = n;
+        return self;
+    }
+}
+
+public class Router {
+    public let routes_list;
+    public let group_prefix;
+    public let group_middleware;
+    // App-defined catch-all invoked when no route matches and no static
+    // asset exists. Receives the Request; must return a Response.
+    public let fallback_handler;
+
+    fn new() {
+        self.routes_list = list();
+        self.group_prefix = "";
+        self.group_middleware = list();
+        self.fallback_handler = null;
+    }
+
+    // Register a catch-all handler for unmatched requests.
+    public fn fallback(self, handler) {
+        self.fallback_handler = handler;
+        return self;
+    }
+
+    // Register the same handler under multiple verbs. NOTE: named
+    // match_any, not match — `match` is a reserved keyword in Spid3r and
+    // a method with that name is a parser error.
+    public fn match_any(self, methods, path: string, handler) {
+        let entry = null;
+        for m in methods {
+            entry = self.add(m, path, handler);
+        }
+        return entry;
+    }
+
+    public fn add(self, method: string, path: string, handler) {
+        let full_path = self.group_prefix + path;
+        if full_path.len() > 1 and full_path.ends_with("/") {
+            full_path = full_path.slice(0, full_path.len() - 1);
+        }
+        if not full_path.starts_with("/") {
+            full_path = "/" + full_path;
+        }
+
+        let entry = new RouteEntry(method, full_path, handler);
+        for m in self.group_middleware {
+            entry.middleware(m);
+        }
+        self.routes_list.push(entry);
+        return entry;
+    }
+
+    public fn get(self, path: string, handler) {
+        return self.add("GET", path, handler);
+    }
+
+    public fn post(self, path: string, handler) {
+        return self.add("POST", path, handler);
+    }
+
+    public fn put(self, path: string, handler) {
+        return self.add("PUT", path, handler);
+    }
+
+    public fn delete(self, path: string, handler) {
+        return self.add("DELETE", path, handler);
+    }
+
+    public fn patch(self, path: string, handler) {
+        return self.add("PATCH", path, handler);
+    }
+
+    public fn group(self, options, callback) {
+        let prev_prefix = self.group_prefix;
+        let prev_mw = list();
+        for m in self.group_middleware { prev_mw.push(m); }
+
+        if options.has("prefix") {
+            self.group_prefix = self.group_prefix + options["prefix"];
+        }
+        if options.has("middleware") {
+            let mw = options["middleware"];
+            if type_of(mw) == "list" {
+                for m in mw { self.group_middleware.push(m); }
+            } else {
+                self.group_middleware.push(mw);
+            }
+        }
+
+        callback();
+
+        self.group_prefix = prev_prefix;
+        self.group_middleware = prev_mw;
+    }
+
+    // ------------------------------------------------------------------------
+    // Route Matching & Parameter Extraction
+    // ------------------------------------------------------------------------
+
+    public fn match_route(self, method: string, request_path: string) {
+        let m = string(method).upper();
+        let target_path = request_path;
+        if target_path.len() > 1 and target_path.ends_with("/") {
+            target_path = target_path.slice(0, target_path.len() - 1);
+        }
+
+        let matched = self.match_route_exact(m, target_path);
+        // HEAD falls back to the GET handler (HTTP spec: HEAD = GET without
+        // a body); returning 405 for HEAD on a GET-only route breaks
+        // link checkers and health probes.
+        if matched == null and m == "HEAD" {
+            matched = self.match_route_exact("GET", target_path);
+        }
+        return matched;
+    }
+
+    fn match_route_exact(self, m: string, target_path: string) {
+        for route in self.routes_list {
+            if route.method == m {
+                let params = self.match_path(route.path, target_path);
+                if params != null {
+                    return map(
+                        "route", route,
+                        "params", params
+                    );
+                }
+            }
+        }
+        return null;
+    }
+
+    // Verbs registered for a path; drives 405 Method Not Allowed + Allow header.
+    public fn allowed_methods(self, request_path: string) {
+        let target_path = request_path;
+        if target_path.len() > 1 and target_path.ends_with("/") {
+            target_path = target_path.slice(0, target_path.len() - 1);
+        }
+        let found = list();
+        for route in self.routes_list {
+            if self.match_path(route.path, target_path) != null and not found.contains(route.method) {
+                found.push(route.method);
+            }
+        }
+        return found;
+    }
+
+    fn match_path(self, pattern: string, actual: string) {
+        if pattern == actual {
+            return map();
+        }
+
+        let p_parts = pattern.split("/");
+        let a_parts = actual.split("/");
+
+        if p_parts.len() != a_parts.len() {
+            return null;
+        }
+
+        let params = map();
+        let i = 0;
+        while i < p_parts.len() {
+            let p_seg = p_parts[i];
+            let a_seg = a_parts[i];
+
+            if p_seg.starts_with(":") {
+                let param_name = p_seg.slice(1, p_seg.len());
+                params[param_name] = a_seg;
+            } else if p_seg.starts_with("{") and p_seg.ends_with("}") {
+                let param_name = p_seg.slice(1, p_seg.len() - 1).trim();
+                params[param_name] = a_seg;
+            } else if p_seg != a_seg {
+                return null;
+            }
+            i = i + 1;
+        }
+
+        return params;
+    }
+
+    // ------------------------------------------------------------------------
+    // Dispatch Action
+    // ------------------------------------------------------------------------
+
+    // Dispatch a route handler. Handlers are closures — Spid3r has no
+    // runtime reflection, so controller methods cannot be referenced by
+    // name ("Controller@action" strings are not supported).
+    public fn dispatch(self, handler, req) {
+        return handler(req);
+    }
+
+    public fn routes(self) {
+        return self.routes_list;
+    }
+}
+
+public let Route = new Router();
+

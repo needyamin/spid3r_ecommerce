@@ -1,0 +1,214 @@
+// app/Controllers/AdminCatalogController.matrix
+// Phase 4 — HTTP layer for product management. Thin: validation here,
+// all business rules in services, all queries repositories.
+
+import "framework/Response";
+import "framework/Resource";
+import "framework/HttpException";
+import "app/Services/ProductService";
+import "app/Services/CategoryService";
+import "app/Services/BrandService";
+import "app/Services/InventoryService";
+import "app/Services/ImageService";
+import "app/Repositories/CatalogRepository";
+import "app/Repositories/ProductRepository";
+import "app/Validators/CatalogValidators" as CatalogValidators;
+
+let identity = fn(row) { return row; };
+
+public class AdminCatalogController {
+    public let products;
+    public let categories;
+    public let brands;
+    public let inventory;
+    public let images;
+    public let variants;
+    public let catalog;
+
+    fn new() {
+        self.products = new ProductService();
+        self.categories = new CategoryService();
+        self.brands = new BrandService();
+        self.inventory = new InventoryService();
+        self.images = new ImageService();
+        self.variants = new VariantRepository();
+        self.catalog = new ProductRepository();
+    }
+
+    fn validate(self, req, rules) {
+        let v = req.validate(rules);
+        if v.fails() {
+            throw validation_failed(v.error_messages());
+        }
+        return true;
+    }
+
+    fn id_of(self, req) {
+        return req.params["id"];
+    }
+
+    // ---------- products ----------
+    public fn products_index(self, req) {
+        let page = self.catalog.published(map(
+            "page", 1, "per_page", 50
+        ));
+        return json(resource_paginated(page, identity));
+    }
+
+    public fn product_show(self, req) {
+        let row = self.catalog.find(self.id_of(req));
+        if row == null {
+            throw not_found("Product not found.");
+        }
+        return json(resource_item(row, identity));
+    }
+
+    public fn product_store(self, req) {
+        self.validate(req, CatalogValidators.product_rules());
+        let data = map(
+            "name", req.input("name", ""),
+            "category_id", req.input("category_id", null),
+            "brand_id", req.input("brand_id", null),
+            "sku", req.input("sku", ""),
+            "price_minor", int(req.input("price_minor", 0)),
+            "compare_at_minor", req.input("compare_at_minor", null),
+            "short_description", req.input("short_description", ""),
+            "description", req.input("description", ""),
+            "tax_rate_bps", int(req.input("tax_rate_bps", 0)),
+            "weight_grams", int(req.input("weight_grams", 0)),
+            "meta_title", req.input("meta_title", ""),
+            "meta_description", req.input("meta_description", ""),
+            "status", req.input("status", "draft")
+        );
+        return json(resource_item(self.products.create(data), identity), 201);
+    }
+
+    public fn product_update(self, req) {
+        return json(resource_item(self.products.update(self.id_of(req), req.data), identity));
+    }
+
+    public fn product_delete(self, req) {
+        self.products.delete(self.id_of(req));
+        return json(map("data", map("deleted", true)));
+    }
+
+    public fn product_publish(self, req) {
+        return json(resource_item(self.products.publish(self.id_of(req), true), identity));
+    }
+
+    public fn product_unpublish(self, req) {
+        return json(resource_item(self.products.publish(self.id_of(req), false), identity));
+    }
+
+    public fn product_availability(self, req) {
+        return json(resource_item(self.products.availability(self.id_of(req)), identity));
+    }
+
+    // ---------- inventory ----------
+    public fn inventory_show(self, req) {
+        return json(resource_item(self.inventory.status(self.id_of(req)), identity));
+    }
+
+    public fn inventory_restock(self, req) {
+        self.validate(req, CatalogValidators.restock_rules());
+        return json(resource_item(
+            self.inventory.restock(self.id_of(req), int(req.input("quantity", 0))),
+            identity
+        ));
+    }
+
+    public fn inventory_history(self, req) {
+        return json(resource_collection(self.inventory.history(self.id_of(req)), identity));
+    }
+
+    // ---------- categories / brands ----------
+    public fn categories_index(self, req) {
+        return json(resource_collection(self.categories.tree(), identity));
+    }
+
+    public fn category_store(self, req) {
+        self.validate(req, CatalogValidators.category_rules());
+        let data = map(
+            "name", req.input("name", ""),
+            "parent_id", req.input("parent_id", null),
+            "description", req.input("description", ""),
+            "sort_order", int(req.input("sort_order", 0)),
+            "meta_title", req.input("meta_title", ""),
+            "meta_description", req.input("meta_description", "")
+        );
+        return json(resource_item(self.categories.create(data), identity), 201);
+    }
+
+    public fn category_update(self, req) {
+        return json(resource_item(self.categories.update(self.id_of(req), req.data), identity));
+    }
+
+    public fn category_delete(self, req) {
+        self.categories.delete(self.id_of(req));
+        return json(map("data", map("deleted", true)));
+    }
+
+    public fn brands_index(self, req) {
+        return json(resource_collection(self.brands.brands.all(), identity));
+    }
+
+    public fn brand_store(self, req) {
+        self.validate(req, CatalogValidators.brand_rules());
+        let data = map("name", req.input("name", ""), "description", req.input("description", ""));
+        return json(resource_item(self.brands.create(data), identity), 201);
+    }
+
+    public fn brand_update(self, req) {
+        return json(resource_item(self.brands.update(self.id_of(req), req.data), identity));
+    }
+
+    public fn brand_delete(self, req) {
+        self.brands.delete(self.id_of(req));
+        return json(map("data", map("deleted", true)));
+    }
+
+    // ---------- variants ----------
+    public fn variants_index(self, req) {
+        return json(resource_collection(self.variants.for_product(self.id_of(req)), identity));
+    }
+
+    public fn variant_store(self, req) {
+        self.validate(req, CatalogValidators.variant_rules());
+        let sku = string(req.input("sku", "")).trim().upper();
+        if self.variants.sku_exists(sku, null) {
+            throw validation_failed(map("sku", "That SKU is already in use."));
+        }
+        let pid = self.id_of(req);
+        let id = self.variants.create(map(
+            "product_id", pid,
+            "sku", sku,
+            "name", req.input("name", ""),
+            "attributes_json", req.input("attributes_json", "{}"),
+            "price_minor", int(req.input("price_minor", 0)),
+            "is_active", 1
+        ));
+        return json(resource_item(self.variants.find(id), identity), 201);
+    }
+
+    // ---------- images / gallery ----------
+    public fn images_index(self, req) {
+        return json(resource_collection(self.images.gallery(self.id_of(req)), identity));
+    }
+
+    public fn image_store(self, req) {
+        self.validate(req, CatalogValidators.image_rules());
+        let row = self.images.upload(
+            self.id_of(req),
+            req.input("image", ""),
+            req.input("alt_text", ""),
+            (req.input("is_primary", 0) == 1 or req.input("is_primary", 0) == true)
+        );
+        let disk_ok = map("id", row["id"], "url", "/uploads/" + row["path"], "is_primary", row["is_primary"] == 1 or row["is_primary"] == true);
+        return json(resource_item(disk_ok, identity), 201);
+    }
+
+    public fn image_delete(self, req) {
+        self.images.delete(req.params["id"]);
+        return json(map("data", map("deleted", true)));
+    }
+}

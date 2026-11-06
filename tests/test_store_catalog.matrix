@@ -1,0 +1,285 @@
+// tests/test_store_catalog.matrix
+// Phase 4 — product management integration tests (HTTP level).
+
+import "framework/Application";
+import "framework/Router";
+import "framework/Database/DB";
+import "framework/Filesystem/Storage";
+import "routes/web";
+import "routes/queue";
+import "app/Middleware/StoreMiddleware";
+import "app/Services/AuthService";
+import "database/seeders/DatabaseSeeder";
+
+let PNG_1PX = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/l5cAAAAASUVORK5CYII=";
+
+fn api(app, method: string, path: string, data, cookie: string, csrf: string) {
+    let headers = map("cookie", cookie);
+    let payload = map();
+    if data != null {
+        for k in data.keys() {
+            payload[k] = data[k];
+        }
+    }
+    if method != "GET" {
+        payload["_csrf"] = csrf;
+    }
+    return app.handle_request(map(
+        "method", method, "path", path,
+        "headers", headers, "data", payload
+    ));
+}
+
+fn body(res) {
+    return json_parse(string(res["body"]));
+}
+
+fn make_admin(tag: string) {
+    let svc = new AuthService();
+    let email = "admin-" + tag + "@example.test";
+    let user = svc.register("Catalog Admin", email, "admin-pass");
+    let role = DB.table("roles").where("slug", "=", "admin").first();
+    DB.table("user_roles").insert(map("user_id", user["id"], "role_id", role["id"]));
+    let token = svc.login(email, "admin-pass");
+    let rows = DB.select("SELECT payload FROM sessions WHERE token = ?", [token]);
+    return map(
+        "cookie", "spid3r_session=" + token,
+        "csrf", string(rows[0]["payload"]),
+        "email", email
+    );
+}
+
+fn test_product_crud(app, admin, tag: string) {
+    // Category + brand first (FKs).
+    let cat = body(api(app, "POST", "/admin/api/categories", map(
+        "name", "Phase Four " + tag,
+        "description", "Test category",
+        "meta_title", "Phase Four Category",
+        "meta_description", "Category SEO description"
+    ), admin["cookie"], admin["csrf"]));
+    assert(cat["data"]["slug"].starts_with("phase-four"), "category slug generated");
+
+    let brand = body(api(app, "POST", "/admin/api/brands", map(
+        "name", "Brand " + tag, "description", "Test brand"
+    ), admin["cookie"], admin["csrf"]));
+    assert(brand["data"]["id"] != null, "brand created");
+
+    // Validation failures.
+    let missing = api(app, "POST", "/admin/api/products", map("sku", "X"), admin["cookie"], admin["csrf"]);
+    assert(missing["status"] == 422, "missing product fields → 422");
+    let bad_price = api(app, "POST", "/admin/api/products", map(
+        "name", "Bad Price", "category_id", cat["data"]["id"], "sku", "BAD-" + tag, "price_minor", 0
+    ), admin["cookie"], admin["csrf"]);
+    assert(bad_price["status"] == 422, "zero price → 422");
+
+    let created = body(api(app, "POST", "/admin/api/products", map(
+        "name", "Widget " + tag,
+        "category_id", cat["data"]["id"],
+        "brand_id", brand["data"]["id"],
+        "sku", "WID-" + tag,
+        "price_minor", 25000,
+        "compare_at_minor", 30000,
+        "short_description", "Short",
+        "description", "Long description",
+        "meta_title", "Widget SEO Title",
+        "meta_description", "Widget SEO description",
+        "status", "draft"
+    ), admin["cookie"], admin["csrf"]));
+    assert(created["data"]["slug"].starts_with("widget"), "product slug is SEO-friendly");
+    assert(int(created["data"]["price_minor"]) == 25000, "price stored as integer minor units");
+    assert(created["data"]["meta_title"] == "Widget SEO Title", "SEO metadata persisted");
+    assert(created["data"]["status"] == "draft", "publication status defaults to draft");
+    let pid = created["data"]["id"];
+
+    // Inventory row is created with the product.
+    assert(DB.table("inventory").where("product_id", "=", pid).count() == 1, "inventory row initialized");
+
+    // Duplicate SKU rejected globally.
+    let dup = api(app, "POST", "/admin/api/products", map(
+        "name", "Duplicate", "category_id", cat["data"]["id"],
+        "sku", "WID-" + tag, "price_minor", 1000
+    ), admin["cookie"], admin["csrf"]);
+    assert(dup["status"] == 422, "duplicate SKU → 422");
+
+    assert(api(app, "GET", "/admin/api/products/" + string(pid), null, admin["cookie"], admin["csrf"])["status"] == 200, "show product");
+    let list = api(app, "GET", "/admin/api/products", null, admin["cookie"], admin["csrf"]);
+    assert(list["status"] == 200, "products index");
+
+    let upd = body(api(app, "PUT", "/admin/api/products/" + string(pid), map(
+        "price_minor", 27500, "meta_title", "Updated SEO"
+    ), admin["cookie"], admin["csrf"]));
+    assert(int(upd["data"]["price_minor"]) == 27500, "price updated");
+    assert(upd["data"]["meta_title"] == "Updated SEO", "SEO metadata updated");
+
+    let pub = body(api(app, "POST", "/admin/api/products/" + string(pid) + "/publish", null, admin["cookie"], admin["csrf"]));
+    assert(pub["data"]["status"] == "published", "product published");
+    let avail0 = body(api(app, "GET", "/admin/api/products/" + string(pid) + "/availability", null, admin["cookie"], admin["csrf"]));
+    assert(avail0["data"]["available"] == false, "published without stock is unavailable");
+
+    let stock = body(api(app, "POST", "/admin/api/products/" + string(pid) + "/inventory/restock", map("quantity", 7), admin["cookie"], admin["csrf"]));
+    assert(int(stock["data"]["quantity"]) == 7, "restock increased quantity");
+    let hist = body(api(app, "GET", "/admin/api/products/" + string(pid) + "/inventory/history", null, admin["cookie"], admin["csrf"]));
+    assert(hist["data"].len() >= 1, "stock movement history recorded");
+    let avail1 = body(api(app, "GET", "/admin/api/products/" + string(pid) + "/availability", null, admin["cookie"], admin["csrf"]));
+    assert(avail1["data"]["available"] == true, "published + stock = available");
+
+    let unpub = body(api(app, "POST", "/admin/api/products/" + string(pid) + "/unpublish", null, admin["cookie"], admin["csrf"]));
+    assert(unpub["data"]["status"] == "draft", "product unpublished");
+    println("  [PASS] test_product_crud");
+
+    return map("pid", pid, "cat", cat["data"]["id"], "brand", brand["data"]["id"]);
+}
+
+fn test_categories_nested(app, admin, tag: string, cat_id) {
+    let child = body(api(app, "POST", "/admin/api/categories", map(
+        "name", "Child Category " + tag,
+        "parent_id", cat_id
+    ), admin["cookie"], admin["csrf"]));
+    assert(child["data"]["parent_id"] == cat_id, "nested category parent set");
+
+    let tree = body(api(app, "GET", "/admin/api/categories", null, admin["cookie"], admin["csrf"]));
+    let found = false;
+    let i = 0;
+    while i < tree["data"].len() {
+        if tree["data"][i]["id"] == cat_id {
+            let kids = tree["data"][i]["children"];
+            let j = 0;
+            while j < kids.len() {
+                if kids[j]["id"] == child["data"]["id"] {
+                    found = true;
+                }
+                j += 1;
+            }
+        }
+        i += 1;
+    }
+    assert(found, "tree contains the nested child");
+
+    let cycle = api(app, "PUT", "/admin/api/categories/" + string(cat_id), map(
+        "parent_id", cat_id
+    ), admin["cookie"], admin["csrf"]);
+    assert(cycle["status"] == 422, "self-parent cycle rejected");
+
+    let blocked = api(app, "DELETE", "/admin/api/categories/" + string(cat_id), null, admin["cookie"], admin["csrf"]);
+    assert(blocked["status"] == 422, "cannot delete category with children or products");
+    println("  [PASS] test_categories_nested");
+    return child["data"]["id"];
+}
+
+fn test_variants(app, admin, tag: string, pid) {
+    let v = body(api(app, "POST", "/admin/api/products/" + string(pid) + "/variants", map(
+        "sku", "VAR-" + tag,
+        "name", "Large",
+        "price_minor", 30000,
+        "attributes_json", "{\"size\":\"L\"}"
+    ), admin["cookie"], admin["csrf"]));
+    assert(v["data"]["sku"] == "VAR-" + tag, "variant SKU stored");
+
+    let dup = api(app, "POST", "/admin/api/products/" + string(pid) + "/variants", map(
+        "sku", "VAR-" + tag, "name", "Dup", "price_minor", 1000
+    ), admin["cookie"], admin["csrf"]);
+    assert(dup["status"] == 422, "duplicate variant SKU rejected");
+
+    // Product SKUs and variant SKUs share one namespace.
+    let clash = api(app, "POST", "/admin/api/products/" + string(pid) + "/variants", map(
+        "sku", "WID-" + tag, "name", "Clash", "price_minor", 1000
+    ), admin["cookie"], admin["csrf"]);
+    assert(clash["status"] == 422, "variant cannot reuse a product SKU");
+
+    let list = body(api(app, "GET", "/admin/api/products/" + string(pid) + "/variants", null, admin["cookie"], admin["csrf"]));
+    assert(list["data"].len() == 1, "variant listed for product");
+    println("  [PASS] test_variants");
+}
+
+fn test_brands(app, admin, tag: string, brand_id) {
+    let dup = api(app, "POST", "/admin/api/brands", map("name", "Brand " + tag), admin["cookie"], admin["csrf"]);
+    assert(dup["status"] == 422, "duplicate brand name rejected");
+    let blocked = api(app, "DELETE", "/admin/api/brands/" + string(brand_id), null, admin["cookie"], admin["csrf"]);
+    assert(blocked["status"] == 422, "brand with products cannot be deleted");
+    println("  [PASS] test_brands");
+}
+
+fn test_gallery_uploads(app, admin, pid) {
+    let ok = body(api(app, "POST", "/admin/api/products/" + string(pid) + "/images", map(
+        "image", PNG_1PX,
+        "alt_text", "Widget photo",
+        "is_primary", 1
+    ), admin["cookie"], admin["csrf"]));
+    assert(string(ok["data"]["url"]).starts_with("/uploads/products/"), "upload stored on the public disk");
+    let image_id = ok["data"]["id"];
+    let row = DB.table("product_images").where("id", "=", image_id).first();
+    assert(Storage.disk("public").exists(row["path"]), "uploaded file exists on disk");
+    assert(row["is_primary"] == 1 or row["is_primary"] == true, "primary image marked");
+
+    let bad = api(app, "POST", "/admin/api/products/" + string(pid) + "/images", map(
+        "image", "AAAAAAAAAAAAAAAAAAAA"
+    ), admin["cookie"], admin["csrf"]);
+    assert(bad["status"] == 422, "fake image (bad magic bytes) rejected");
+
+    let gallery = body(api(app, "GET", "/admin/api/products/" + string(pid) + "/images", null, admin["cookie"], admin["csrf"]));
+    assert(gallery["data"].len() == 1, "gallery returns the uploaded image");
+
+    let del = api(app, "DELETE", "/admin/api/images/" + string(image_id), null, admin["cookie"], admin["csrf"]);
+    assert(del["status"] == 200, "image deleted");
+    assert(DB.table("product_images").where("id", "=", image_id).count() == 0, "image row removed");
+    println("  [PASS] test_gallery_uploads");
+}
+
+fn test_permission_gate(app, tag: string) {
+    // A plain customer must not reach the catalog API.
+    let svc = new AuthService();
+    let email = "cust-" + tag + "@example.test";
+    let user = svc.register("Catalog Customer", email, "cust-pass");
+    let token = svc.login(email, "cust-pass");
+    let cookie = "spid3r_session=" + token;
+    let res = app.handle_request(map("method", "GET", "path", "/admin/api/products", "headers", map("cookie", cookie)));
+    assert(res["status"] == 403, "customer blocked from catalog API with 403");
+    println("  [PASS] test_permission_gate");
+}
+
+fn cleanup(ids, admin_email: string, tag: string) {
+    let pid = ids["pid"];
+    DB.table("product_images").where("product_id", "=", pid).delete();
+    DB.table("product_variants").where("product_id", "=", pid).delete();
+    DB.table("inventory").where("product_id", "=", pid).delete();
+    DB.table("stock_movements").where("product_id", "=", pid).delete();
+    DB.table("products").where("id", "=", pid).delete();
+    DB.table("categories").where("parent_id", "=", ids["cat"]).delete();
+    DB.table("categories").where("id", "=", ids["cat"]).delete();
+    DB.table("brands").where("id", "=", ids["brand"]).delete();
+    let emails = [admin_email, "cust-" + tag + "@example.test"];
+    let i = 0;
+    while i < emails.len() {
+        let user = DB.table("users").where("email", "=", emails[i]).first();
+        if user != null {
+            DB.table("user_roles").where("user_id", "=", user["id"]).delete();
+            DB.table("sessions").where("user_id", "=", user["id"]).delete();
+            DB.table("email_verifications").where("user_id", "=", user["id"]).delete();
+            DB.table("users").where("id", "=", user["id"]).delete();
+        }
+        i += 1;
+    }
+}
+
+fn main() {
+    println("\n=== Running Store Catalog Test Suite ===");
+    let app = new Application();
+    register_store_middleware(app);
+    register_web_routes();
+    register_queue_jobs();
+    run_database_seeder();
+    let tag = string(unix_time());
+    let admin = make_admin(tag);
+
+    let ids = test_product_crud(app, admin, tag);
+    ids["child"] = test_categories_nested(app, admin, tag, ids["cat"]);
+    test_variants(app, admin, tag, ids["pid"]);
+    test_brands(app, admin, tag, ids["brand"]);
+    test_gallery_uploads(app, admin, ids["pid"]);
+    test_permission_gate(app, tag);
+
+    cleanup(ids, admin["email"], tag);
+    DB.close();
+    println("=== All Store Catalog Tests Passed! ===\n");
+    return 0;
+}

@@ -1,0 +1,367 @@
+// framework/Database/Model.matrix
+// Spid3rWeb Active Record Model Base Class
+//
+// Model lifecycle events (via the global Event facade):
+//   model.<table>.creating / .created    around insert
+//   model.<table>.updating / .updated    around update
+//   model.<table>.deleting / .deleted    around delete
+// Handlers receive the model instance (they may mutate it via .set()).
+// A handler returning exactly `false` cancels the operation: creating →
+// save() returns false with nothing written; updating → save() aborts
+// before the UPDATE; deleting → delete() returns false. The -ing event
+// fires before the query, the -ed event after it succeeded.
+//
+// Eager loading (batched, no N+1): module-level load_has_many() and
+// load_belongs_to() hydrate a whole list of models (or row maps) with one
+// extra query each, storing rows under an attribute key you choose.
+
+import "DB";
+import "framework/Events/Event";
+
+public class Model {
+    public let table;
+    public let primary_key;
+    public let fillable;
+    public let attributes;
+    public let exists;
+    public let uses_timestamps;
+
+    fn new(table_name: string = "models", fillable_list = [], attrs = {}) {
+        self.table = table_name;
+        self.primary_key = "id";
+        self.fillable = fillable_list;
+        if self.fillable == null {
+            self.fillable = [];
+        }
+        self.attributes = {};
+        self.exists = false;
+        self.uses_timestamps = true;
+
+        if attrs != null and type_of(attrs) == "map" {
+            for k in attrs.keys() {
+                self.attributes[k] = attrs[k];
+            }
+            if self.attributes.has(self.primary_key) and self.attributes[self.primary_key] != null {
+                self.exists = true;
+            }
+        }
+    }
+
+    public fn get(self, key: string, default_val = null) {
+        if self.attributes.has(key) {
+            return self.attributes[key];
+        }
+        return default_val;
+    }
+
+    public fn set(self, key: string, value) {
+        self.attributes[key] = value;
+        return self;
+    }
+
+    public fn query(self) {
+        return DB.table(self.table);
+    }
+
+    // ------------------------------------------------------------------------
+    // Model Lifecycle Events
+    // ------------------------------------------------------------------------
+
+    // Event names key on the table name (Spid3r's type_of cannot recover a
+    // class name from an instance). "model." + table + ".<phase>".
+    fn fire(self, phase: string) {
+        return Event.dispatch("model." + self.table + "." + phase, self);
+    }
+
+    fn cancelled(self, results) -> bool {
+        for r in results {
+            if r == false {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // ------------------------------------------------------------------------
+    // Active Record Persistence Operations
+    // ------------------------------------------------------------------------
+
+    public fn save(self) {
+        let now = string(unix_time());
+
+        if self.exists {
+            // Update — respect fillable (timestamps always allowed so the
+            // engine can keep created_at/updated_at fresh)
+            let data_to_update = {};
+            for k in self.attributes.keys() {
+                if k != self.primary_key {
+                    if self.fillable.len() == 0 or self.fillable.contains(k) or k == "created_at" or k == "updated_at" {
+                        data_to_update[k] = self.attributes[k];
+                    }
+                }
+            }
+            if self.uses_timestamps {
+                data_to_update["updated_at"] = now;
+                self.attributes["updated_at"] = now;
+            }
+
+            // A listener returning false vetoes the update.
+            if self.cancelled(self.fire("updating")) {
+                return false;
+            }
+
+            let pk_val = self.attributes[self.primary_key];
+            self.query().where(self.primary_key, "=", pk_val).update(data_to_update);
+            self.fire("updated");
+            return self;
+        } else {
+            // Insert
+            let data_to_insert = {};
+            for k in self.attributes.keys() {
+                if self.fillable.len() == 0 or self.fillable.contains(k) {
+                    data_to_insert[k] = self.attributes[k];
+                }
+            }
+            if self.uses_timestamps {
+                if not data_to_insert.has("created_at") {
+                    data_to_insert["created_at"] = now;
+                    self.attributes["created_at"] = now;
+                }
+                if not data_to_insert.has("updated_at") {
+                    data_to_insert["updated_at"] = now;
+                    self.attributes["updated_at"] = now;
+                }
+            }
+
+            // A listener returning false vetoes the insert.
+            if self.cancelled(self.fire("creating")) {
+                return false;
+            }
+
+            let new_id = self.query().insert(data_to_insert);
+            if new_id == null or int(new_id) == 0 {
+                // A 0 last_id means the row was not persisted — fail loudly
+                // instead of silently setting id = 0 and marking exists.
+                throw "Model insert failed for table " + self.table;
+            }
+            self.attributes[self.primary_key] = new_id;
+            self.exists = true;
+            self.fire("created");
+            return self;
+        }
+    }
+
+    public fn update(self, new_attributes) {
+        for k in new_attributes.keys() {
+            if self.fillable.len() == 0 or self.fillable.contains(k) {
+                self.attributes[k] = new_attributes[k];
+            }
+        }
+        return self.save();
+    }
+
+    public fn delete(self) {
+        if self.exists {
+            // A listener returning false vetoes the delete.
+            if self.cancelled(self.fire("deleting")) {
+                return false;
+            }
+            let pk_val = self.attributes[self.primary_key];
+            self.query().where(self.primary_key, "=", pk_val).delete();
+            self.exists = false;
+            self.fire("deleted");
+            return true;
+        }
+        return false;
+    }
+
+    public fn to_map(self) {
+        let out = {};
+        for k in self.attributes.keys() {
+            out[k] = self.attributes[k];
+        }
+        return out;
+    }
+
+    // ------------------------------------------------------------------------
+    // Relationships
+    // ------------------------------------------------------------------------
+
+    // One-to-many: a QueryBuilder over `table` filtered on foreign_key = pk.
+    // Chain .get() to hydrate, or add more constraints before executing.
+    public fn hasMany(self, table: string, foreign_key: string) {
+        return DB.table(table).where(foreign_key, "=", self.attributes[self.primary_key]);
+    }
+
+    // Many-to-one: the single owner row in `table` whose owner_key matches
+    // this record's foreign_key (null when unset or not found).
+    public fn belongsTo(self, table: string, foreign_key: string, owner_key: string = "id") {
+        return DB.table(table).where(owner_key, "=", self.attributes[foreign_key]).first();
+    }
+
+    // ------------------------------------------------------------------------
+    // Row Refresh Helpers
+    // ------------------------------------------------------------------------
+
+    // Re-fetch this row from the database into self.attributes. exists stays
+    // true when the row is found, becomes false when it disappeared.
+    public fn reload(self) {
+        if not self.exists {
+            return self;
+        }
+        let pk_val = self.attributes[self.primary_key];
+        let rows = self.query().where(self.primary_key, "=", pk_val).limit(1).get();
+        if rows.len() > 0 {
+            let fresh = {};
+            let row = rows[0];
+            for k in row.keys() {
+                fresh[k] = row[k];
+            }
+            self.attributes = fresh;
+            self.exists = true;
+        } else {
+            self.exists = false;
+        }
+        return self;
+    }
+
+    // Update ONLY updated_at (both in the database and on this instance).
+    public fn touch(self) {
+        if not self.exists {
+            return self;
+        }
+        let now = string(unix_time());
+        self.attributes["updated_at"] = now;
+        let pk_val = self.attributes[self.primary_key];
+        self.query().where(self.primary_key, "=", pk_val).update(map("updated_at", now));
+        return self;
+    }
+}
+
+// ============================================================================
+// Eager Loading — batched relation hydration (one extra query, never N+1)
+// ============================================================================
+// These module-level helpers hydrate a whole LIST of records in one shot.
+// Elements may be Model instances or plain row maps — both work, so the same
+// loader serves models fetched via QueryBuilder and rows fetched directly.
+//
+//   let posts = Post_model.query().limit(20).get_models(...) — or plain rows;
+//   load_has_many(posts, "comments", "post_id", "comments");
+//   posts[0].get("comments")  →  list of comment row maps
+//
+// IMPORTANT: iterate result lists by INDEX when mutating — Spid3r's
+// `for x in list` hands out copies.
+
+// Read one key from a model instance or a row map.
+fn _elem_get(m, key: string) {
+    if type_of(m) == "map" {
+        if m.has(key) {
+            return m[key];
+        }
+        return null;
+    }
+    return m.get(key);
+}
+
+// Write one key onto a model instance or a row map.
+fn _elem_set(m, key: string, value) {
+    if type_of(m) == "map" {
+        m[key] = value;
+    } else {
+        m.set(key, value);
+    }
+}
+
+// Batch-load a one-to-many relation. For each element of `models`, sets
+// `as` to the list of rows from `table` whose `foreign_key` matches that
+// element's `owner_key` (default "id"). Exactly one extra SELECT.
+public fn load_has_many(models, table: string, foreign_key: string, as_key: string, owner_key: string = "id") {
+    // 1. Collect distinct parent keys.
+    let key_list = list();
+    let seen = map();
+    let i = 0;
+    while i < len(models) {
+        let k = _elem_get(models[i], owner_key);
+        if k != null {
+            let ks = string(k);
+            if not seen.has(ks) {
+                seen[ks] = true;
+                key_list.push(k);
+            }
+        }
+        i += 1;
+    }
+
+    // 2. One batched query for every child row.
+    let grouped = map();
+    if key_list.len() > 0 {
+        let rows = DB.table(table).whereIn(foreign_key, key_list).get();
+        let j = 0;
+        while j < len(rows) {
+            let fk = string(rows[j][foreign_key]);
+            if not grouped.has(fk) {
+                grouped[fk] = list();
+            }
+            grouped[fk].push(rows[j]);
+            j += 1;
+        }
+    }
+
+    // 3. Attach (empty list when there are no children).
+    i = 0;
+    while i < len(models) {
+        let k = _elem_get(models[i], owner_key);
+        if k != null and grouped.has(string(k)) {
+            _elem_set(models[i], as_key, grouped[string(k)]);
+        } else {
+            _elem_set(models[i], as_key, list());
+        }
+        i += 1;
+    }
+    return models;
+}
+
+// Batch-load a many-to-one relation. For each element of `models`, sets
+// `as` to the single row from `table` whose `owner_key` matches that
+// element's `fk_column` (null when unset or not found). One extra SELECT.
+public fn load_belongs_to(models, table: string, fk_column: string, as_key: string, owner_key: string = "id") {
+    // 1. Collect distinct foreign-key values.
+    let key_list = list();
+    let seen = map();
+    let i = 0;
+    while i < len(models) {
+        let k = _elem_get(models[i], fk_column);
+        if k != null {
+            let ks = string(k);
+            if not seen.has(ks) {
+                seen[ks] = true;
+                key_list.push(k);
+            }
+        }
+        i += 1;
+    }
+
+    // 2. One batched query for every parent row.
+    let parents = map();
+    if key_list.len() > 0 {
+        let rows = DB.table(table).whereIn(owner_key, key_list).get();
+        let j = 0;
+        while j < len(rows) {
+            parents[string(rows[j][owner_key])] = rows[j];
+            j += 1;
+        }
+    }
+
+    // 3. Attach (null when there is no parent).
+    i = 0;
+    while i < len(models) {
+        let k = _elem_get(models[i], fk_column);
+        if k != null and parents.has(string(k)) {
+            _elem_set(models[i], as_key, parents[string(k)]);
+        } else {
+            _elem_set(models[i], as_key, null);
+        }
+        i += 1;
+    }
+    return models;
+}

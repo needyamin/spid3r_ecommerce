@@ -1,0 +1,82 @@
+// app/Repositories/ProductRepository.matrix
+// Phase 2 — catalog data access. All catalog queries live here.
+
+import "framework/Database/DB";
+
+public class ProductRepository {
+    fn new() {}
+
+    // Search/filter/sort/paginate published products.
+    // filters: q, category_id, brand_id, min_price_minor, max_price_minor,
+    //          sort (newest|price_asc|price_desc|name), page, per_page
+    public fn published(self, filters) {
+        let q = DB.table("products").where("status", "=", "published");
+
+        if filters.has("q") and string(filters["q"]).trim() != "" {
+            q.where("name", "LIKE", "%" + string(filters["q"]).trim() + "%");
+        }
+        if filters.has("category_id") and filters["category_id"] != null {
+            q.where("category_id", "=", filters["category_id"]);
+        }
+        if filters.has("brand_id") and filters["brand_id"] != null {
+            q.where("brand_id", "=", filters["brand_id"]);
+        }
+        if filters.has("min_price_minor") and filters["min_price_minor"] != null {
+            q.where("price_minor", ">=", int(filters["min_price_minor"]));
+        }
+        if filters.has("max_price_minor") and filters["max_price_minor"] != null {
+            q.where("price_minor", "<=", int(filters["max_price_minor"]));
+        }
+
+        let sort = "newest";
+        if filters.has("sort") {
+            sort = string(filters["sort"]);
+        }
+        if sort == "price_asc" {
+            q.orderBy("price_minor", "ASC");
+        } elif sort == "price_desc" {
+            q.orderBy("price_minor", "DESC");
+        } elif sort == "name" {
+            q.orderBy("name", "ASC");
+        } else {
+            q.orderBy("id", "DESC");
+        }
+
+        let page = 1;
+        let per_page = 15;
+        if filters.has("page") { page = int(filters["page"]); }
+        if filters.has("per_page") { per_page = int(filters["per_page"]); }
+        return q.paginate(page, per_page);
+    }
+
+    public fn find_by_slug(self, slug: string) {
+        return DB.table("products").where("slug", "=", slug).first();
+    }
+
+    public fn find(self, id) {
+        return DB.table("products").where("id", "=", id).first();
+    }
+
+    public fn images_for(self, product_id) {
+        return DB.table("product_images")
+            .where("product_id", "=", product_id)
+            .orderBy("sort_order", "ASC")
+            .get();
+    }
+
+    public fn variants_for(self, product_id) {
+        return DB.table("product_variants")
+            .where("product_id", "=", product_id)
+            .where("is_active", "=", 1)
+            .get();
+    }
+
+    public fn related(self, product, limit_count: int = 4) {
+        return DB.table("products")
+            .where("status", "=", "published")
+            .where("category_id", "=", product["category_id"])
+            .where("id", "!=", product["id"])
+            .limit(limit_count)
+            .get();
+    }
+}

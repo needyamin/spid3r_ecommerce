@@ -1,0 +1,19 @@
+# deploy/docker-compose.dev.yml — development override.
+#
+# Use ON TOP of the base stack for development: the app container bind-mounts
+# the repository from the host, so you edit on the host and the container runs
+# YOUR working copy (restart the app service to pick up .matrix changes —
+# templates and static assets revalidate automatically in debug mode).
+#
+#   docker compose -f deploy/docker-compose.yml \
+#                  -f deploy/docker-compose.dev.yml up -d --build app
+#
+# The database keeps its volume; migrations/seeds are idempotent.
+
+services:
+  app:
+    volumes:
+      - ../:/var/www/app
+    environment:
+      APP_ENV: development
+    restart: unless-stopped

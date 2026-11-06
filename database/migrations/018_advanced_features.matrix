@@ -1,0 +1,140 @@
+// database/migrations/018_advanced_features.matrix
+// Phase 10 — wishlists (user-only), reviews, recently viewed, loyalty ledger,
+// referrals, gift cards, support tickets, and multi-language/multi-currency
+// extension tables. Coupon tables already exist from Phase 2.
+
+import "framework/Database/Schema";
+import "framework/Database/Migration";
+import "framework/Database/DB";
+
+public class AdvancedFeatureTables extends Migration {
+    fn new(name: string = "018_advanced_features") {
+        super(name);
+    }
+
+    public fn up(self) {
+        // The Phase 2 wishlists schema was already created. Add metadata
+        // only where the existing table does not already provide it.
+        Schema.create("recently_viewed", table => {
+            table.id();
+            table.string("session_key", 128);
+            table.integer("product_id");
+            table.string("viewed_at", 32);
+            table.foreign("product_id", "products", "id", "CASCADE", "CASCADE");
+            table.unique_columns(["session_key", "product_id"]);
+            table.index("idx_recent_session", ["session_key", "viewed_at"]);
+        });
+
+        Schema.create("loyalty_ledger", table => {
+            table.id();
+            table.integer("user_id");
+            table.integer("order_id").nullable();
+            table.integer("points");
+            table.string("reason", 48);
+            table.timestamps();
+            table.foreign("user_id", "users", "id", "CASCADE", "CASCADE");
+            table.foreign("order_id", "orders", "id", "SET NULL", "CASCADE");
+            table.index("idx_loyalty_user", ["user_id", "id"]);
+        });
+
+        Schema.create("referrals", table => {
+            table.id();
+            table.integer("referrer_id");
+            table.string("code", 32).unique();
+            table.integer("referred_user_id").nullable().unique();
+            table.string("status", 24).default("active");
+            table.timestamps();
+            table.foreign("referrer_id", "users", "id", "CASCADE", "CASCADE");
+            table.foreign("referred_user_id", "users", "id", "SET NULL", "CASCADE");
+            table.index("idx_referrals_referrer", ["referrer_id"]);
+        });
+
+        Schema.create("gift_cards", table => {
+            table.id();
+            table.string("code_hash", 64).unique();
+            table.bigint("initial_minor");
+            table.bigint("balance_minor");
+            table.string("currency", 8).default("BDT");
+            table.string("recipient_email", 255).nullable();
+            table.string("status", 24).default("active");
+            table.string("expires_at", 32).nullable();
+            table.timestamps();
+            table.index("idx_gift_status", ["status"]);
+        });
+
+        Schema.create("gift_card_transactions", table => {
+            table.id();
+            table.integer("gift_card_id");
+            table.integer("order_id").nullable();
+            table.bigint("amount_minor");
+            table.string("kind", 24);   // issue | redeem | refund
+            table.timestamps();
+            table.foreign("gift_card_id", "gift_cards", "id", "CASCADE", "CASCADE");
+            table.foreign("order_id", "orders", "id", "SET NULL", "CASCADE");
+        });
+
+        Schema.create("support_tickets", table => {
+            table.id();
+            table.integer("user_id").nullable();
+            table.string("email", 255);
+            table.string("subject", 255);
+            table.text("message");
+            table.string("status", 24).default("open");
+            table.string("priority", 24).default("normal");
+            table.integer("assigned_to").nullable();
+            table.timestamps();
+            table.foreign("user_id", "users", "id", "SET NULL", "CASCADE");
+            table.foreign("assigned_to", "users", "id", "SET NULL", "CASCADE");
+            table.index("idx_tickets_status", ["status", "id"]);
+        });
+
+        Schema.create("campaigns", table => {
+            table.id();
+            table.string("code", 48).unique();
+            table.string("name", 128);
+            table.string("type", 24).default("percent");   // percent | fixed
+            table.bigint("value_minor").default(0);         // fixed minor, or bps for percent
+            table.bigint("min_order_minor").default(0);
+            table.integer("max_uses").default(0);            // 0 = unlimited
+            table.integer("uses").default(0);
+            table.string("starts_at", 32).nullable();
+            table.string("ends_at", 32).nullable();
+            table.integer("is_active").default(0);
+            table.timestamps();
+            table.index("idx_campaigns_active", ["is_active", "code"]);
+        });
+
+        Schema.create("translations", table => {
+            table.id();
+            table.string("locale", 12);
+            table.string("namespace", 48);
+            table.string("translation_key", 128);
+            table.text("value");
+            table.unique_columns(["locale", "namespace", "translation_key"]);
+        });
+
+        Schema.create("currencies", table => {
+            table.id();
+            table.string("code", 8).unique();
+            table.string("name", 64);
+            table.string("symbol", 8);
+            table.integer("minor_digits").default(2);
+            table.integer("is_active").default(0);
+            table.integer("is_default").default(0);
+            table.integer("rate_to_base_bps").default(10000);
+            table.timestamps();
+        });
+    }
+
+    public fn down(self) {
+        Schema.dropIfExists("currencies");
+        Schema.dropIfExists("translations");
+        Schema.dropIfExists("support_tickets");
+        Schema.dropIfExists("gift_card_transactions");
+        Schema.dropIfExists("gift_cards");
+        Schema.dropIfExists("referrals");
+        Schema.dropIfExists("loyalty_ledger");
+        Schema.dropIfExists("campaigns");
+        Schema.dropIfExists("recently_viewed");
+    }
+}

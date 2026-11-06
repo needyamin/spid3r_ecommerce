@@ -1,0 +1,11 @@
+@extends("layouts.store")
+@section('title', title)
+@section('meta_description', meta_description)
+@section("content")
+  <section class="auth-card">
+    <h1>Payment status</h1>
+    <p>Order <strong>{{ order.order_number }}</strong> is currently <strong>{{ status }}</strong>.</p>
+    <p class="cart-unit">We never trust a browser redirect as proof of payment. Your order is updated only after server-side verification or a signed gateway notification.</p>
+    <p class="auth-links"><a href="/orders">View order history</a></p>
+  </section>
+@endsection

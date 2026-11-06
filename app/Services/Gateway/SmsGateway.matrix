@@ -1,0 +1,107 @@
+// app/Services/Gateway/SmsGateway.matrix
+// Phase 10 — outbound SMS delivery.
+//
+// SMS providers differ per merchant contract, so the HTTPS adapter is
+// config-driven:
+//
+//   SMS_DRIVER=log     -> development driver: the message is written to the
+//                         application log and nothing leaves the machine.
+//   SMS_DRIVER=http    -> POST to SMS_SEND_URL with an Authorization header.
+//
+//   SMS_SEND_URL, SMS_API_KEY, SMS_SENDER_ID
+//
+// Contract (mirrors the payment gateways): an UNCONFIGURED gateway fails fast
+// with a 400 instead of pretending a message was delivered. A delivery is
+// only reported as successful when the provider acknowledges it.
+
+import "http";
+import "framework/Log/Log";
+import "framework/HttpException";
+
+fn env_value(key: string, fallback: string) -> string {
+    let v = env(key);
+    if v.is_some() {
+        let s = string(v.unwrap()).trim();
+        if s != "" {
+            return s;
+        }
+    }
+    return fallback;
+}
+
+public class SmsGateway {
+    public let driver;
+    public let sender_id;
+
+    fn new() {
+        let d = env_value("SMS_DRIVER", "log").lower();
+        if d != "log" and d != "http" {
+            d = "log";
+        }
+        self.driver = d;
+        self.sender_id = env_value("SMS_SENDER_ID", "SPID3R");
+    }
+
+    public fn configured(self) -> bool {
+        if self.driver == "log" {
+            return true;
+        }
+        let url = env_value("SMS_SEND_URL", "");
+        let key = env_value("SMS_API_KEY", "");
+        return url != "" and key != "";
+    }
+
+    // Send one SMS. Returns true only when the provider accepted it.
+    public fn send(self, to: string, message: string) -> bool {
+        let number = string(to).trim();
+        if number == "" {
+            throw validation_failed(map("phone", "A phone number is required."));
+        }
+        if len(string(message).trim()) == 0 {
+            throw validation_failed(map("message", "The message body is empty."));
+        }
+        if self.driver == "log" {
+            Log.info("[sms] to=" + number + " body=" + string(message));
+            return true;
+        }
+        let url = env_value("SMS_SEND_URL", "");
+        if url == "" {
+            throw bad_request("SMS gateway is not configured (missing SMS_SEND_URL).");
+        }
+        let key = env_value("SMS_API_KEY", "");
+        if key == "" {
+            throw bad_request("SMS gateway is not configured (missing SMS_API_KEY).");
+        }
+        let headers = map(
+            "content-type", "application/json",
+            "authorization", "Bearer " + key
+        );
+        let payload = map(
+            "to", number,
+            "message", string(message),
+            "sender_id", self.sender_id
+        );
+        let res = http_fetch("POST", url, headers, json_write(payload));
+        if res.is_err() {
+            throw bad_request("SMS gateway request failed: " + string(res.unwrap_err()));
+        }
+        let out = res.unwrap();
+        let status = int(out["status"]);
+        if status < 200 or status >= 300 {
+            throw bad_request("SMS gateway returned HTTP " + string(status));
+        }
+        let parsed = null;
+        try {
+            parsed = json_parse(string(out["body"]));
+        } catch (e) {
+            throw bad_request("SMS gateway returned an invalid response.");
+        }
+        if type_of(parsed) != "map" {
+            throw bad_request("SMS gateway returned an invalid response.");
+        }
+        if parsed.has("status") and string(parsed["status"]).lower() != "ok" {
+            return false;
+        }
+        return true;
+    }
+}

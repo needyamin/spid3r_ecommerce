@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>@yield("title") · {{ store_name }}</title>
+  <meta name="description" content="@yield("meta_description", "Shop quality products at {{ store_name }} — fast delivery, secure checkout, easy returns.")">
+  <link rel="stylesheet" href="/css/store.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="wrap header-row">
+      <a class="brand" href="/"><span class="brand-mark">🕷️</span> {{ store_name }}</a>
+      <nav class="site-nav">
+        <a href="/catalog">{{ nav_catalog }}</a>
+        <a href="/cart">{{ nav_cart }}</a>
+        <a href="/wishlist">{{ nav_wishlist }}</a>
+        <a href="/track">{{ nav_track }}</a>
+        <a href="/support">{{ nav_support }}</a>
+        <a href="/account">{{ nav_account }}</a>
+      </nav>
+    </div>
+@if(currency_options)
+    <div class="wrap header-row header-tools">
+      <form class="switcher" method="post" action="/locale">
+        <input type="hidden" name="_csrf" value="{{ csrf }}">
+        <input type="hidden" name="return_to" value="{{ current_path }}">
+        <label for="currency-select">Currency</label>
+        <select id="currency-select" name="currency">
+@foreach(cur in currency_options)
+@if(cur.selected)
+          <option value="{{ cur.code }}" selected>{{ cur.code }} — {{ cur.name }}</option>
+@else
+          <option value="{{ cur.code }}">{{ cur.code }} — {{ cur.name }}</option>
+@endif
+@endforeach
+        </select>
+        <button class="btn btn-secondary" type="submit">Apply</button>
+      </form>
+@if(locale_options)
+      <form class="switcher" method="post" action="/locale">
+        <input type="hidden" name="_csrf" value="{{ csrf }}">
+        <input type="hidden" name="return_to" value="{{ current_path }}">
+        <label for="locale-select">Language</label>
+        <select id="locale-select" name="locale">
+@foreach(loc in locale_options)
+          <option value="{{ loc }}">{{ loc }}</option>
+@endforeach
+        </select>
+        <button class="btn btn-secondary" type="submit">Apply</button>
+      </form>
+@endif
+    </div>
+@endif
+  </header>
+
+  <main class="wrap">
+    @yield("content")
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap">
+@if(display_currency)
+      <p>© 2026 {{ store_name }} · Built with Spid3rWeb · Prices in {{ display_currency }} · Billed in {{ base_currency }}</p>
+@else
+      <p>© 2026 {{ store_name }} · Built with Spid3rWeb · Currency: {{ currency }}</p>
+@endif
+    </div>
+  </footer>
+</body>
+</html>

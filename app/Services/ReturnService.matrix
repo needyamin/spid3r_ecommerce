@@ -1,0 +1,229 @@
+// app/Services/ReturnService.matrix
+// Phase 11 — returns and exchanges.
+//
+// A return can be requested only for a DELIVERED order that belongs to the
+// customer, within a configurable window measured from the delivery date.
+// The ledger is append-only until an administrator resolves the request:
+//
+//   requested -> approved | rejected
+//   approved  -> received
+//   received  -> refunded      (restocks the items and records the refund)
+//
+// Refund MONEY RULE: the refund amount defaults to the historical line total
+// (quantity x unit price) and can only be lowered by staff, never raised.
+
+import "framework/Database/DB";
+import "framework/HttpException";
+import "app/Repositories/OrderRepository";
+import "app/Repositories/InventoryRepository";
+
+public class ReturnService {
+    public let orders;
+    public let inventory;
+
+    fn new() {
+        self.orders = new OrderRepository();
+        self.inventory = new InventoryRepository();
+    }
+
+    fn window_days(self) -> int {
+        let row = DB.table("settings").where("setting_key", "=", "returns.window_days").first();
+        if row == null {
+            return 14;
+        }
+        let days = int(row["value"]);
+        if days <= 0 {
+            return 14;
+        }
+        return days;
+    }
+
+    // The delivery date the window is measured from: the latest delivered
+    // shipment, or the order's own updated_at when nothing was ever shipped.
+    fn delivered_at_for(self, order_id) {
+        let rows = DB.table("shipments")
+            .where("order_id", "=", order_id)
+            .orderBy("id", "DESC")
+            .get();
+        let i = 0;
+        while i < rows.len() {
+            if rows[i]["delivered_at"] != null {
+                return rows[i]["delivered_at"];
+            }
+            i += 1;
+        }
+        let order = self.orders.find(order_id);
+        if order != null {
+            return order["updated_at"];
+        }
+        return null;
+    }
+
+    public fn request_for(self, return_id, user_id) {
+        let row = DB.table("returns").where("id", "=", return_id).first();
+        if row == null or row["user_id"] == null or user_id == null or int(row["user_id"]) != int(user_id) {
+            throw not_found("Return request not found.");
+        }
+        return row;
+    }
+
+    public fn for_customer(self, user_id) {
+        if user_id == null {
+            return [];
+        }
+        return DB.table("returns").where("user_id", "=", user_id).orderBy("id", "DESC").limit(50).get();
+    }
+
+    public fn all(self) {
+        return DB.table("returns").orderBy("id", "DESC").limit(100).get();
+    }
+
+    // Customer request. `order_item_id` may be null for a whole-order return.
+    public fn request(self, number: string, user_id, order_item_id, quantity: int, reason: string, kind: string) {
+        if len(string(reason).trim()) < 10 {
+            throw validation_failed(map("reason", "Please describe the problem in at least 10 characters."));
+        }
+        if string(kind).trim() != "return" and string(kind).trim() != "exchange" {
+            throw validation_failed(map("kind", "Choose return or exchange."));
+        }
+        if quantity <= 0 {
+            throw validation_failed(map("quantity", "The quantity must be positive."));
+        }
+        return DB.transaction(fn() {
+            let order = self.orders.find_by_number(number);
+            if order == null or order["user_id"] == null or user_id == null or int(order["user_id"]) != int(user_id) {
+                throw not_found("Order not found.");
+            }
+            if string(order["status"]) != "delivered" {
+                throw validation_failed(map("order", "Only delivered orders can be returned."));
+            }
+            let delivered_at = self.delivered_at_for(order["id"]);
+            if delivered_at != null {
+                let deadline = int(delivered_at) + self.window_days() * 86400;
+                if unix_time() > deadline {
+                    throw validation_failed(map("order", "The return window has closed."));
+                }
+            }
+            let item = null;
+            let item_ref = null;
+            if order_item_id != null and string(order_item_id) != "" {
+                item = DB.table("order_items").where("id", "=", order_item_id).first();
+                if item == null or int(item["order_id"]) != int(order["id"]) {
+                    throw not_found("Order item not found.");
+                }
+                if quantity > int(item["quantity"]) {
+                    throw validation_failed(map("quantity", "You cannot return more than you bought."));
+                }
+                item_ref = item["id"];
+            }
+            return DB.table("returns").insert(map(
+                "order_id", order["id"],
+                "user_id", user_id,
+                "order_item_id", item_ref,
+                "quantity", quantity,
+                "kind", string(kind).trim(),
+                "reason", string(reason).trim(),
+                "status", "requested"
+            ));
+        });
+    }
+
+    // Administrator decision. Returns the updated row.
+    public fn resolve(self, return_id, new_status: string, refund_minor: int) {
+        let allowed = map("approved", 1, "rejected", 1, "received", 1, "refunded", 1);
+        if not allowed.has(new_status) {
+            throw validation_failed(map("status", "Unknown return decision."));
+        }
+        return DB.transaction(fn() {
+            let row = DB.table("returns").where("id", "=", return_id).first();
+            if row == null {
+                throw not_found("Return request not found.");
+            }
+            let current = string(row["status"]);
+            let ok = false;
+            if current == "requested" {
+                ok = new_status == "approved" or new_status == "rejected";
+            } elif current == "approved" {
+                ok = new_status == "received" or new_status == "rejected";
+            } elif current == "received" {
+                ok = new_status == "refunded";
+            }
+            if not ok {
+                throw validation_failed(map("status", "A return cannot move from " + current + " to " + new_status + "."));
+            }
+
+            let amount = int(row["refund_minor"]);
+            if new_status == "refunded" {
+                amount = self.refund_amount(row, refund_minor);
+                // Stock comes back exactly once — with the refund.
+                self.restock(row);
+                self.record_refund(row, amount);
+            }
+            DB.table("returns").where("id", "=", return_id).update(map(
+                "status", new_status,
+                "refund_minor", amount,
+                "resolved_at", string(unix_time())
+            ));
+            return DB.table("returns").where("id", "=", return_id).first();
+        });
+    }
+
+    // The refunded amount: staff-supplied, capped at the historical line
+    // value. Never more than the customer actually paid for the items.
+    fn refund_amount(self, row, requested: int) -> int {
+        let line_total = 0;
+        if row["order_item_id"] != null {
+            let item = DB.table("order_items").where("id", "=", row["order_item_id"]).first();
+            if item != null {
+                line_total = int(item["unit_price_minor"]) * int(row["quantity"]);
+            }
+        }
+        let amount = requested;
+        if amount <= 0 {
+            amount = line_total;
+        }
+        if line_total > 0 and amount > line_total {
+            amount = line_total;
+        }
+        if amount < 0 {
+            amount = 0;
+        }
+        return amount;
+    }
+
+    // Return the items to the pool (exchange or refund restock).
+    fn restock(self, row) -> bool {
+        if row["order_item_id"] == null {
+            return false;
+        }
+        let item = DB.table("order_items").where("id", "=", row["order_item_id"]).first();
+        if item == null {
+            return false;
+        }
+        return self.inventory.release(
+            item["product_id"],
+            item["variant_id"],
+            int(row["quantity"]),
+            "return"
+        );
+    }
+
+    // Record the refund in the payment ledger when a payment exists (COD
+    // orders have none — staff settle those offline).
+    fn record_refund(self, row, amount_minor: int) -> bool {
+        if amount_minor <= 0 {
+            return false;
+        }
+        let pays = DB.table("payments").where("order_id", "=", row["order_id"]).get();
+        if pays.len() == 0 {
+            return false;
+        }
+        DB.table("refunds").insert(map(
+            "payment_id", pays[0]["id"],
+            "amount_minor", amount_minor,
+            "reason", "Return " + string(row["id"]),
+            "status", "pending"
+        ));
+        return true;
+    }
+}

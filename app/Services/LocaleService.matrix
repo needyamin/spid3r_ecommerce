@@ -1,0 +1,162 @@
+// app/Services/LocaleService.matrix
+// Phase 10 — multi-language support.
+//
+// Translations live in the `translations` table (locale, namespace, key,
+// value). Lookup order is: requested locale -> default locale -> the
+// supplied fallback -> the key itself, so a missing translation degrades to
+// readable English rather than to an empty string.
+//
+// The customer's choice lives in the `store_locale` cookie; `?lang=` also
+// works for shareable links.
+
+import "framework/Database/DB";
+import "framework/HttpException";
+import "app/Support/CartIdentity" as CartIdentity;
+
+public class LocaleService {
+    public let default_locale;
+
+    fn new(default_locale: string = "en") {
+        let code = string(default_locale).trim().lower();
+        if code == "" {
+            code = "en";
+        }
+        self.default_locale = code;
+    }
+
+    // Every locale that has at least one translation.
+    public fn locales(self) {
+        let rows = DB.table("translations").orderBy("locale", "ASC").get();
+        let seen = [];
+        let i = 0;
+        while i < rows.len() {
+            let code = string(rows[i]["locale"]).trim().lower();
+            if code != "" {
+                let known = false;
+                let j = 0;
+                while j < seen.len() {
+                    if seen[j] == code {
+                        known = true;
+                        break;
+                    }
+                    j += 1;
+                }
+                if not known {
+                    seen.push(code);
+                }
+            }
+            i += 1;
+        }
+        // The default locale is always offered, even before translations exist.
+        let has_default = false;
+        let k = 0;
+        while k < seen.len() {
+            if seen[k] == self.default_locale {
+                has_default = true;
+                break;
+            }
+            k += 1;
+        }
+        if not has_default {
+            seen.push(self.default_locale);
+        }
+        return seen;
+    }
+
+    // The customer's selected locale, validated against the known list.
+    public fn selected(self, req) -> string {
+        let wanted = CartIdentity.cookie_value(req, "store_locale");
+        if wanted == "" and req != null {
+            wanted = string(req.query("lang", ""));
+        }
+        let code = string(wanted).trim().lower();
+        if code == "" {
+            return self.default_locale;
+        }
+        let known = self.locales();
+        let i = 0;
+        while i < known.len() {
+            if known[i] == code {
+                return code;
+            }
+            i += 1;
+        }
+        return self.default_locale;
+    }
+
+    // Whole-locale bundle: namespace -> key -> value.
+    public fn bundle(self, locale: string) {
+        let rows = DB.table("translations").where("locale", "=", locale).get();
+        let out = map();
+        let i = 0;
+        while i < rows.len() {
+            let ns = string(rows[i]["namespace"]);
+            let key = string(rows[i]["translation_key"]);
+            let ns_map = map();
+            if out.has(ns) {
+                ns_map = out[ns];
+            }
+            ns_map[key] = string(rows[i]["value"]);
+            out[ns] = ns_map;
+            i += 1;
+        }
+        return out;
+    }
+
+    // Single translation with graceful fallback.
+    public fn translate(self, locale: string, namespace: string, key: string, fallback: string = "") -> string {
+        let row = DB.table("translations")
+            .where("locale", "=", locale)
+            .where("namespace", "=", namespace)
+            .where("translation_key", "=", key)
+            .first();
+        if row != null and string(row["value"]) != "" {
+            return string(row["value"]);
+        }
+        if locale != self.default_locale {
+            let fallback_row = DB.table("translations")
+                .where("locale", "=", self.default_locale)
+                .where("namespace", "=", namespace)
+                .where("translation_key", "=", key)
+                .first();
+            if fallback_row != null and string(fallback_row["value"]) != "" {
+                return string(fallback_row["value"]);
+            }
+        }
+        if fallback != "" {
+            return fallback;
+        }
+        return key;
+    }
+
+    // Upsert a translation (admin action).
+    public fn set(self, locale: string, namespace: string, key: string, value: string) -> bool {
+        let loc = string(locale).trim().lower();
+        let ns = string(namespace).trim();
+        let k = string(key).trim();
+        if loc == "" or ns == "" or k == "" {
+            throw validation_failed(map("key", "Locale, namespace and key are required."));
+        }
+        let existing = DB.table("translations")
+            .where("locale", "=", loc)
+            .where("namespace", "=", ns)
+            .where("translation_key", "=", k)
+            .first();
+        if existing != null {
+            return DB.table("translations").where("id", "=", existing["id"]).update(map("value", value)) > 0;
+        }
+        DB.table("translations").insert(map(
+            "locale", loc, "namespace", ns, "translation_key", k, "value", value
+        ));
+        return true;
+    }
+
+    // Remove a translation (admin action).
+    public fn remove(self, locale: string, namespace: string, key: string) -> bool {
+        return DB.table("translations")
+            .where("locale", "=", string(locale).trim().lower())
+            .where("namespace", "=", string(namespace).trim())
+            .where("translation_key", "=", string(key).trim())
+            .delete() > 0;
+    }
+}

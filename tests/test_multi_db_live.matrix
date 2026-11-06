@@ -1,0 +1,236 @@
+// tests/test_multi_db_live.matrix
+// Live integration tests for PostgreSQL / MySQL / MariaDB drivers.
+//
+// These tests connect to REAL servers configured via environment variables.
+// If a server is unreachable, that driver's tests print [SKIP] — the suite
+// still passes so CI machines without database servers remain green.
+//
+// Environment:
+//   SPID3R_DB_DRIVER=postgres | mysql | mariadb   (or run per-driver)
+//   SPID3R_PG_HOST/PORT/USER/PASSWORD/DATABASE
+//   SPID3R_MYSQL_HOST/PORT/USER/PASSWORD/DATABASE
+
+import "framework/Database/DB";
+import "framework/Database/DatabaseManager";
+import "framework/Database/Connection";
+
+let passed_count = 0;
+let skipped_count = 0;
+
+fn report_pass(name: string) {
+    passed_count = passed_count + 1;
+    println("  [PASS] " + name);
+}
+
+fn report_skip(name: string, reason: string) {
+    skipped_count = skipped_count + 1;
+    println("  [SKIP] " + name + " (" + reason + ")");
+}
+
+// Open a connection for a driver, returning null when unreachable.
+fn try_open(driver: string) {
+    let mgr = new DatabaseManager();
+    if mgr.driver_name() != driver {
+        println("  [FAIL] driver resolution mismatch: wanted " + driver + " got " + mgr.driver_name());
+        return null;
+    }
+    try {
+        return mgr.connection();
+    } catch (e) {
+        return null;
+    }
+}
+
+fn teardown_probe(conn) {
+    try {
+        conn.statement("DROP TABLE IF EXISTS spid3rweb_driver_probe");
+    } catch (_e) {}
+}
+
+// Full lifecycle per driver: DDL -> INSERT(last_id) -> SELECT -> UPDATE(changes)
+// -> COUNT -> escaping round-trip -> DELETE(changes)
+fn test_driver_lifecycle(driver: string) {
+    let conn = try_open(driver);
+    if conn == null {
+        report_skip("lifecycle/" + driver, "server unreachable");
+        return;
+    }
+
+    teardown_probe(conn);
+
+    // 1. DDL via statement()
+    let ddl = "";
+    if driver == "postgres" {
+        ddl = "CREATE TABLE spid3rweb_driver_probe (id SERIAL PRIMARY KEY, name VARCHAR(255) NOT NULL, payload VARCHAR(255), views INT DEFAULT 0, created_at TEXT)";
+    } else {
+        ddl = "CREATE TABLE spid3rweb_driver_probe (id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(255) NOT NULL, payload VARCHAR(255), views INT DEFAULT 0, created_at VARCHAR(32))";
+    }
+    conn.statement(ddl);
+    report_pass("ddl/" + driver);
+
+    // 2. INSERT via run() -> last_id
+    let r1 = conn.run("INSERT INTO spid3rweb_driver_probe (name, payload, views, created_at) VALUES (?, ?, ?, ?)",
+        ["first row", "it's a test", 5, string(unix_time())]);
+    assert(r1.has("last_id"), "insert result has last_id (" + driver + ")");
+    let first_id = int(r1["last_id"]);
+    assert(first_id > 0, "insert returns positive last_id (" + driver + ")");
+    report_pass("insert-last-id/" + driver + " (id=" + string(first_id) + ")");
+
+    // 3. Escaping round-trip: nasty string goes in and comes back intact
+    let nasty = "Robert'); DROP TABLE spid3rweb_driver_probe;-- \\ \"quotes\" \n newline";
+    let r2 = conn.run("INSERT INTO spid3rweb_driver_probe (name, payload, views, created_at) VALUES (?, ?, ?, ?)",
+        ["nasty row", nasty, 0, string(unix_time())]);
+    let nasty_id = int(r2["last_id"]);
+    assert(nasty_id > 0, "nasty insert succeeded (injection neutralized) (" + driver + ")");
+
+    // Table must still exist and contain exactly the rows we inserted
+    let rows = conn.query("SELECT COUNT(*) AS c FROM spid3rweb_driver_probe");
+    assert(int(rows[0]["c"]) == 2, "table survived injection attempt (" + driver + ")");
+
+    let back = conn.query("SELECT payload FROM spid3rweb_driver_probe WHERE id = ?", [nasty_id]);
+    assert(back.len() == 1, "nasty row readable (" + driver + ")");
+    assert(back[0]["payload"] == nasty, "nasty payload round-trips byte-identical (" + driver + ")");
+    report_pass("escaping-roundtrip/" + driver);
+
+    // 4. Query with interpolated params
+    let found = conn.query("SELECT id, name, views FROM spid3rweb_driver_probe WHERE name = ?", ["first row"]);
+    assert(found.len() == 1, "param query finds row (" + driver + ")");
+    assert(found[0]["name"] == "first row", "param query row content (" + driver + ")");
+    assert(int(found[0]["views"]) == 5, "int column typed correctly (" + driver + ")");
+    report_pass("param-query/" + driver);
+
+    // 5. UPDATE via run() -> changes
+    let r3 = conn.run("UPDATE spid3rweb_driver_probe SET views = ? WHERE name = ?", [99, "first row"]);
+    assert(r3.has("changes"), "update result has changes (" + driver + ")");
+    assert(int(r3["changes"]) >= 1, "update reports changed rows (" + driver + ")");
+    let check = conn.query("SELECT views FROM spid3rweb_driver_probe WHERE name = ?", ["first row"]);
+    assert(int(check[0]["views"]) == 99, "update persisted (" + driver + ")");
+    report_pass("update-changes/" + driver);
+
+    // 6. DELETE via run() -> changes
+    let r4 = conn.run("DELETE FROM spid3rweb_driver_probe WHERE id = ?", [nasty_id]);
+    assert(int(r4["changes"]) == 1, "delete reports 1 changed row (" + driver + ")");
+    let remaining = conn.query("SELECT COUNT(*) AS c FROM spid3rweb_driver_probe");
+    assert(int(remaining[0]["c"]) == 1, "delete persisted (" + driver + ")");
+    report_pass("delete-changes/" + driver);
+
+    teardown_probe(conn);
+    conn.close();
+}
+
+// QueryBuilder integration against a live server (fresh DatabaseManager).
+fn test_driver_query_builder(driver: string) {
+    let mgr = new DatabaseManager();
+    if mgr.driver_name() != driver {
+        report_skip("query-builder/" + driver, "server unreachable");
+        return;
+    }
+
+    let conn = null;
+    try { conn = mgr.connection(); } catch (_e) {
+        report_skip("query-builder/" + driver, "server unreachable");
+        return;
+    }
+
+    let ddl = "";
+    if driver == "postgres" {
+        ddl = "CREATE TABLE spid3rweb_driver_qb (id SERIAL PRIMARY KEY, title VARCHAR(255) NOT NULL, status VARCHAR(32) DEFAULT 'draft', created_at TEXT)";
+    } else {
+        ddl = "CREATE TABLE spid3rweb_driver_qb (id INT AUTO_INCREMENT PRIMARY KEY, title VARCHAR(255) NOT NULL, status VARCHAR(32) DEFAULT 'draft', created_at VARCHAR(32))";
+    }
+    conn.statement("DROP TABLE IF EXISTS spid3rweb_driver_qb");
+    conn.statement(ddl);
+
+    // QueryBuilder.insert -> last id
+    let id1 = mgr.table("spid3rweb_driver_qb").insert(map("title", "alpha", "status", "published", "created_at", string(unix_time())));
+    assert(id1 > 0, "qb insert last_id (" + driver + ")");
+    let id2 = mgr.table("spid3rweb_driver_qb").insert(map("title", "beta's \"quoted\"", "status", "draft", "created_at", string(unix_time())));
+    assert(id2 > id1, "qb second insert id increments (" + driver + ")");
+
+    // where + first
+    let row = mgr.table("spid3rweb_driver_qb").where("title", "=", "beta's \"quoted\"").first();
+    assert(row != null, "qb where finds escaped title (" + driver + ")");
+    assert(row["status"] == "draft", "qb row content (" + driver + ")");
+
+    // orderBy + limit + get
+    let rows = mgr.table("spid3rweb_driver_qb").orderBy("id", "DESC").limit(1).get();
+    assert(rows.len() == 1 and rows[0]["title"] == "beta's \"quoted\"", "qb orderBy+limit (" + driver + ")");
+
+    // count with where
+    let c = mgr.table("spid3rweb_driver_qb").where("status", "=", "published").count();
+    assert(c == 1, "qb count (" + driver + ")");
+
+    // update through QueryBuilder
+    let changes = mgr.table("spid3rweb_driver_qb").where("id", "=", id1).update(map("status", "archived"));
+    assert(int(changes) >= 1, "qb update changes (" + driver + ")");
+
+    // select specific columns
+    let sel = mgr.table("spid3rweb_driver_qb").select(["id", "title"]).where("id", "=", id2).first();
+    assert(sel.has("title") and not sel.has("status"), "qb select columns (" + driver + ")");
+
+    // delete through QueryBuilder
+    let deleted = mgr.table("spid3rweb_driver_qb").where("id", "=", id2).delete();
+    assert(int(deleted) == 1, "qb delete (" + driver + ")");
+
+    conn.statement("DROP TABLE IF EXISTS spid3rweb_driver_qb");
+    report_pass("query-builder/" + driver);
+}
+
+// Migrations table DDL compiles and applies on this driver.
+fn test_driver_migrations_table(driver: string) {
+    let conn = try_open(driver);
+    if conn == null {
+        report_skip("migrations-table/" + driver, "server unreachable");
+        return;
+    }
+    // Same DDL the MigrationRunner uses per dialect
+    let ddl = "";
+    if driver == "postgres" {
+        ddl = "CREATE TABLE IF NOT EXISTS migrations_test_probe (id SERIAL PRIMARY KEY, migration TEXT NOT NULL UNIQUE, batch INTEGER NOT NULL, applied_at TEXT NOT NULL)";
+    } else {
+        ddl = "CREATE TABLE IF NOT EXISTS migrations_test_probe (id INT AUTO_INCREMENT PRIMARY KEY, migration VARCHAR(255) NOT NULL UNIQUE, batch INT NOT NULL, applied_at VARCHAR(32) NOT NULL)";
+    }
+    conn.statement(ddl);
+    conn.statement("INSERT INTO migrations_test_probe (migration, batch, applied_at) VALUES (?, ?, ?)", ["001_test", 1, string(unix_time())]);
+    let rows = conn.query("SELECT migration, batch FROM migrations_test_probe WHERE migration = ?", ["001_test"]);
+    assert(rows.len() == 1 and int(rows[0]["batch"]) == 1, "migrations table insert/select (" + driver + ")");
+    conn.statement("DROP TABLE IF EXISTS migrations_test_probe");
+    conn.close();
+    report_pass("migrations-table/" + driver);
+}
+
+fn main() {
+    println("\n=== Running Multi-DB Live Integration Suite ===");
+    println("Detecting available servers via SPID3R_DB_DRIVER...\n");
+
+    let driver = "sqlite";
+    let d = env("SPID3R_DB_DRIVER");
+    if d.is_some() {
+        let raw = string(d.unwrap()).trim().lower();
+        if raw == "postgres" or raw == "postgresql" or raw == "pg" { driver = "postgres"; }
+        elif raw == "mysql" { driver = "mysql"; }
+        elif raw == "mariadb" { driver = "mariadb"; }
+    }
+
+    if driver == "sqlite" {
+        println("SPID3R_DB_DRIVER not set to a server driver — nothing to test live.");
+        println("Run with: SPID3R_DB_DRIVER=postgres|mysql|mariadb + SPID3R_PG_* / SPID3R_MYSQL_* env vars");
+        println("=== Live Multi-DB Suite Finished (0 run / 0 skipped) ===\n");
+        return 0;
+    }
+
+    println("Target driver: " + driver + "\n");
+
+    test_driver_lifecycle(driver);
+    test_driver_query_builder(driver);
+    test_driver_migrations_table(driver);
+
+    println("");
+    println("=== Live Multi-DB Suite Finished (" + string(passed_count) + " passed / " + string(skipped_count) + " skipped) ===");
+    println("");
+    if passed_count == 0 and skipped_count > 0 {
+        println("WARNING: all tests skipped — server may be down but env vars were set.");
+        return 1;
+    }
+    return 0;
+}

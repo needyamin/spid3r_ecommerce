@@ -1,0 +1,157 @@
+// app/Services/FulfillmentService.matrix
+// Phase 11 — shipment creation, tracking-number management, status updates
+// and delivery confirmation.
+//
+// An order may have SEVERAL shipments (partial fulfilment). Confirming the
+// last outstanding delivery moves the order itself to `delivered`.
+
+import "framework/Database/DB";
+import "framework/HttpException";
+import "app/Repositories/OrderRepository";
+import "app/Services/ShippingService";
+
+public class FulfillmentService {
+    public let orders;
+    public let shipping;
+
+    fn new() {
+        self.orders = new OrderRepository();
+        self.shipping = new ShippingService();
+    }
+
+    // Shipment lifecycle. Delivered and Failed are sinks; Failed may be
+    // retried by creating a fresh shipment or re-shipping.
+    public fn statuses(self) {
+        return ["preparing", "shipped", "in_transit", "delivered", "failed"];
+    }
+
+    fn valid_status(self, status: string) -> bool {
+        let all = self.statuses();
+        let i = 0;
+        while i < all.len() {
+            if all[i] == status {
+                return true;
+            }
+            i += 1;
+        }
+        return false;
+    }
+
+    fn allowed(self, from: string, to: string) -> bool {
+        if from == "preparing" {
+            return to == "shipped" or to == "failed";
+        }
+        if from == "shipped" {
+            return to == "in_transit" or to == "delivered" or to == "failed";
+        }
+        if from == "in_transit" {
+            return to == "delivered" or to == "failed";
+        }
+        if from == "failed" {
+            return to == "shipped";
+        }
+        return false;
+    }
+
+    public fn shipment(self, shipment_id) {
+        return DB.table("shipments").where("id", "=", shipment_id).first();
+    }
+
+    public fn shipments_for(self, order_id) {
+        return DB.table("shipments").where("order_id", "=", order_id).orderBy("id", "ASC").get();
+    }
+
+    // Create a shipment. The tracking number is staff-supplied (courier
+    // reference); a fallback internal reference is generated when omitted.
+    public fn create_shipment(self, order_id, carrier: string, tracking_number: string, method: string, zone_id, estimated_at: string, notes: string) {
+        return DB.transaction(fn() {
+            let order = self.orders.find(order_id);
+            if order == null {
+                throw not_found("Order not found.");
+            }
+            let status = string(order["status"]);
+            if status == "cancelled" or status == "refunded" {
+                throw validation_failed(map("order", "A closed order cannot be shipped."));
+            }
+            if status == "delivered" {
+                throw validation_failed(map("order", "This order is already delivered."));
+            }
+            if string(method).trim() != "" and not self.shipping.is_method(method) {
+                throw validation_failed(map("method", "Unknown shipping method."));
+            }
+            let tracking = string(tracking_number).trim();
+            if tracking == "" {
+                tracking = "SP-" + string(order_id) + "-" + hex_encode(random_bytes(3).unwrap()).upper();
+            }
+            let zone = null;
+            let zone_ref = null;
+            if zone_id != null and string(zone_id) != "" {
+                zone = self.shipping.zone(zone_id);
+                if zone == null {
+                    throw not_found("Shipping zone not found.");
+                }
+                zone_ref = zone["id"];
+            }
+            return DB.table("shipments").insert(map(
+                "order_id", order_id,
+                "carrier", string(carrier).trim(),
+                "tracking_number", tracking,
+                "method", string(method).trim(),
+                "zone_id", zone_ref,
+                "status", "preparing",
+                "estimated_at", string(estimated_at).trim(),
+                "notes", string(notes).trim()
+            ));
+        });
+    }
+
+    // Move a shipment through its lifecycle. `shipped` stamps shipped_at;
+    // `delivered` stamps delivered_at and settles the order.
+    public fn set_status(self, shipment_id, new_status: string) {
+        if not self.valid_status(new_status) {
+            throw validation_failed(map("status", "Unknown shipment status."));
+        }
+        return DB.transaction(fn() {
+            let shipment = self.shipment(shipment_id);
+            if shipment == null {
+                throw not_found("Shipment not found.");
+            }
+            let current = string(shipment["status"]);
+            if not self.allowed(current, new_status) {
+                throw validation_failed(map("status", "A shipment cannot move from " + current + " to " + new_status + "."));
+            }
+            let data = map("status", new_status);
+            if new_status == "shipped" and shipment["shipped_at"] == null {
+                data["shipped_at"] = string(unix_time());
+            }
+            if new_status == "delivered" and shipment["delivered_at"] == null {
+                data["delivered_at"] = string(unix_time());
+            }
+            DB.table("shipments").where("id", "=", shipment_id).update(data);
+            if new_status == "delivered" {
+                self.settle_order(shipment["order_id"]);
+            }
+            return self.shipment(shipment_id);
+        });
+    }
+
+    // Delivery confirmation: the customer-facing action that closes the
+    // shipment and settles the order.
+    public fn confirm_delivery(self, shipment_id) {
+        return self.set_status(shipment_id, "delivered");
+    }
+
+    // Move the order to `delivered` unless it is already settled or closed.
+    fn settle_order(self, order_id) -> bool {
+        let order = self.orders.find(order_id);
+        if order == null {
+            return false;
+        }
+        let status = string(order["status"]);
+        if status == "cancelled" or status == "refunded" or status == "delivered" {
+            return false;
+        }
+        self.orders.set_status(order_id, "delivered");
+        return true;
+    }
+}

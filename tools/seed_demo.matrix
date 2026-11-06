@@ -1,0 +1,121 @@
+// tools/seed_demo.matrix
+// Demo store content for local development — OPT-IN, never part of CI.
+//
+//   spid3r run tools/seed_demo.matrix
+//   (inside the app container: docker compose -f deploy/docker-compose.yml
+//    exec app spid3r run tools/seed_demo.matrix)
+//
+// Creates, idempotently (safe to re-run):
+//   - an admin account:   admin@spid3r.test / secret123   (LOCAL DEV ONLY)
+//   - a customer account: shopper@spid3r.test / secret123
+//   - 2 categories, 4 published products with inventory
+//   - a coupon (WELCOME10), a Dhaka shipping zone with tiered rates
+//
+// WARNING: the credentials above are for a local Docker/dev stack only.
+// Never run this seeder against a public deployment.
+
+import "framework/Database/DB";
+import "app/Services/AuthService";
+import "app/Services/ShippingService";
+import "framework/Log/Log";
+
+fn ensure_product(cat_id, name: string, slug: string, sku: string, price: int, blurb: string) {
+    let hit = DB.table("products").where("slug", "=", slug).first();
+    if hit != null {
+        return hit["id"];
+    }
+    let id = DB.table("products").insert(map(
+        "category_id", cat_id, "name", name, "slug", slug, "sku", sku,
+        "short_description", blurb,
+        "description", blurb + " Ships in recyclable packaging with a 14-day return window.",
+        "price_minor", price, "compare_at_minor", null,
+        "status", "published", "currency", "BDT",
+        "tax_rate_bps", 0, "weight_grams", 500,
+        "meta_title", name, "meta_description", blurb
+    ));
+    DB.table("inventory").insert(map(
+        "product_id", id, "variant_id", null,
+        "quantity", 25, "reserved", 0, "low_stock_threshold", 5
+    ));
+    return id;
+}
+
+fn main() {
+    println("\n=== Seeding demo store content (LOCAL DEV ONLY) ===");
+    let auth = new AuthService();
+
+    // ---- accounts (idempotent on email) ----
+    // register() returns the user ROW (not the id), so keep maps throughout.
+    let admin_row = DB.table("users").where("email", "=", "admin@spid3r.test").first();
+    if admin_row == null {
+        admin_row = auth.register("Store Admin", "admin@spid3r.test", "secret123");
+    }
+    let admin_id = admin_row["id"];
+    let admin_role = DB.table("roles").where("slug", "=", "admin").first();
+    if DB.table("user_roles").where("user_id", "=", admin_id).where("role_id", "=", admin_role["id"]).count() == 0 {
+        DB.table("user_roles").insert(map("user_id", admin_id, "role_id", admin_role["id"]));
+    }
+    if DB.table("users").where("email", "=", "shopper@spid3r.test").count() == 0 {
+        auth.register("Demo Shopper", "shopper@spid3r.test", "secret123");
+    }
+    println("  accounts     admin@spid3r.test / secret123  (admin)");
+    println("               shopper@spid3r.test / secret123 (customer)");
+
+    // ---- catalog (idempotent on slug) ----
+    let audio = DB.table("categories").where("slug", "=", "demo-audio").first();
+    if audio == null {
+        DB.table("categories").insert(map(
+            "name", "Demo Audio", "slug", "demo-audio",
+            "description", "Headphones and speakers from the demo catalog.",
+            "sort_order", 1, "is_active", 1,
+            "meta_title", "Demo Audio", "meta_description", "Demo audio gear"
+        ));
+        audio = DB.table("categories").where("slug", "=", "demo-audio").first();
+    }
+    let desk = DB.table("categories").where("slug", "=", "demo-desk").first();
+    if desk == null {
+        DB.table("categories").insert(map(
+            "name", "Demo Desk Gear", "slug", "demo-desk",
+            "description", "Everyday desk essentials from the demo catalog.",
+            "sort_order", 2, "is_active", 1,
+            "meta_title", "Demo Desk Gear", "meta_description", "Demo desk gear"
+        ));
+        desk = DB.table("categories").where("slug", "=", "demo-desk").first();
+    }
+
+    ensure_product(audio["id"], "Spid3r Wireless Headphones", "demo-headphones", "DEMO-HP-1",
+        1200000, "Over-ear wireless headphones with 30-hour battery life.");
+    ensure_product(audio["id"], "Spid3r Desk Speaker", "demo-speaker", "DEMO-SP-2",
+        650000, "A compact desk speaker with a surprisingly big sound.");
+    ensure_product(desk["id"], "Spid3r Mechanical Keyboard", "demo-keyboard", "DEMO-KB-3",
+        950000, "Tenkeyless mechanical keyboard with hot-swappable switches.");
+    ensure_product(desk["id"], "Spid3r Desk Lamp", "demo-lamp", "DEMO-LP-4",
+        320000, "Warm-to-cool LED desk lamp with a memory dial.");
+    println("  catalog      4 demo products in 2 categories (with stock)");
+
+    // ---- a coupon (idempotent on code) ----
+    if DB.table("coupons").where("code", "=", "WELCOME10").count() == 0 {
+        DB.table("coupons").insert(map(
+            "code", "WELCOME10", "type", "percent", "value_minor", 1000,
+            "min_order_minor", 100000, "max_uses", 0, "uses", 0, "is_active", 1
+        ));
+    }
+    println("  coupon       WELCOME10 — 10% off orders over 1,000.00");
+
+    // ---- a shipping zone with tiered rates (idempotent on zone name) ----
+    let shipping = new ShippingService();
+    let zone_id = null;
+    if DB.table("shipping_zones").where("name", "=", "Dhaka Metro (demo)").count() == 0 {
+        zone_id = shipping.save_zone("Dhaka Metro (demo)", "Bangladesh", "Dhaka", 1);
+        shipping.save_rate(zone_id, "standard", 6000, 0, null, 1, 2, 1);
+        shipping.save_rate(zone_id, "express", 15000, 0, null, 1, 1, 1);
+    } else {
+        zone_id = DB.table("shipping_zones").where("name", "=", "Dhaka Metro (demo)").first()["id"];
+    }
+    println("  shipping     Dhaka Metro zone: standard 60.00 (1-2 days), express 150.00");
+
+    println("\n  Demo content ready — browse http://localhost:8090 and sign in as");
+    println("  admin@spid3r.test / secret123 to open the admin panel.\n");
+    DB.close();
+    return 0;
+}

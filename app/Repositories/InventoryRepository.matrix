@@ -1,0 +1,104 @@
+// app/Repositories/InventoryRepository.matrix
+// Phase 2 — transaction-safe inventory.
+//
+// Model: `quantity` is available-to-promise stock; `reserved` is an
+// informational ledger column. Overselling is prevented by an ATOMIC
+// conditional UPDATE (quantity >= qty) — no read-then-write race. Every
+// change is recorded in stock_movements inside the same transaction.
+
+import "framework/Database/DB";
+import "app/Support/CatalogCache" as CatalogCache;
+
+public class InventoryRepository {
+    fn new() {}
+
+    fn query_for(self, product_id, variant_id, qty) {
+        let q = DB.table("inventory")
+            .where("product_id", "=", product_id)
+            .where("quantity", ">=", qty);
+        if variant_id == null {
+            q.whereNull("variant_id");
+        } else {
+            q.where("variant_id", "=", variant_id);
+        }
+        return q;
+    }
+
+    public fn available(self, product_id, variant_id, qty) -> bool {
+        if qty <= 0 {
+            return false;
+        }
+        let q = DB.table("inventory")
+            .where("product_id", "=", product_id)
+            .where("quantity", ">=", qty);
+        if variant_id == null {
+            q.whereNull("variant_id");
+        } else {
+            q.where("variant_id", "=", variant_id);
+        }
+        return q.count() > 0;
+    }
+
+    // Reserve/deduct stock. Returns false (and writes nothing) when stock
+    // is insufficient. Callers MUST run inside DB.transaction for
+    // multi-step checkout operations.
+    public fn reserve(self, product_id, variant_id, qty, reason: string, reference_type: string = "", reference_id: string = "") -> bool {
+        if qty <= 0 {
+            return false;
+        }
+        return DB.transaction(fn() {
+            let changes = self.query_for(product_id, variant_id, qty).decrement("quantity", qty);
+            if changes == 0 {
+                return false;
+            }
+            DB.table("stock_movements").insert(map(
+                "product_id", product_id,
+                "variant_id", variant_id,
+                "delta", 0 - qty,
+                "reason", reason,
+                "reference_type", reference_type,
+                "reference_id", reference_id
+            ));
+            CatalogCache.bump_catalog_version();
+            return true;
+        });
+    }
+
+    // Return stock to the pool (cancellation / failed payment).
+    public fn release(self, product_id, variant_id, qty, reason: string) -> bool {
+        if qty <= 0 {
+            return false;
+        }
+        return DB.transaction(fn() {
+            let q = DB.table("inventory").where("product_id", "=", product_id);
+            if variant_id == null {
+                q.whereNull("variant_id");
+            } else {
+                q.where("variant_id", "=", variant_id);
+            }
+            let changes = q.increment("quantity", qty);
+            if changes == 0 {
+                return false;
+            }
+            DB.table("stock_movements").insert(map(
+                "product_id", product_id,
+                "variant_id", variant_id,
+                "delta", qty,
+                "reason", reason
+            ));
+            CatalogCache.bump_catalog_version();
+            return true;
+        });
+    }
+
+    public fn restock(self, product_id, variant_id, qty) -> bool {
+        return self.release(product_id, variant_id, qty, "restock");
+    }
+
+    public fn movements_for(self, product_id) {
+        return DB.table("stock_movements")
+            .where("product_id", "=", product_id)
+            .orderBy("id", "DESC")
+            .get();
+    }
+}

@@ -1,0 +1,217 @@
+// framework/Filesystem/Storage.matrix
+// Spid3rWeb Filesystem Subsystem & Facade
+//
+//   import "framework/Filesystem/Storage";
+//   Storage.disk("public").put("receipts/a.txt", "hello");
+//   Storage.disk("public").url("receipts/a.txt");   // "/uploads/receipts/a.txt"
+//   Storage.disk("local").get("secrets.txt");
+//
+// Disks are declared in config/filesystems.matrix. Only the "local" driver
+// ships in this build; roots are relative to the project root.
+//
+// Security: every relative path is normalized and validated — absolute
+// paths, ".." traversal and Windows drive/UNC prefixes are rejected with a
+// thrown error before any file operation touches the disk.
+
+import "framework/Config/Config";
+
+public class LocalDisk {
+    public let name;
+    public let root;
+    public let visibility;
+    public let url_prefix;
+
+    fn new(name: string, root: string, visibility: string, url_prefix: string) {
+        self.name = name;
+        self.root = root;
+        self.visibility = visibility;
+        self.url_prefix = url_prefix;
+    }
+
+    // ------------------------------------------------------------------
+    // Path safety
+    // ------------------------------------------------------------------
+    // Normalize a user-supplied relative path and throw on anything that
+    // could escape the disk root.
+    fn guard(self, rel: string) -> string {
+        let p = string(rel).replace("\\", "/").trim();
+        if p == "" {
+            throw "storage: empty path on disk '" + self.name + "'";
+        }
+        if p.starts_with("/") {
+            throw "storage: absolute paths are not allowed: " + p;
+        }
+        if p.contains(":") {
+            // Windows drive letters (C:/) — ":" never appears in sane names
+            throw "storage: path contains ':' (drive/UNC prefix?): " + p;
+        }
+        let parts = p.split("/");
+        let clean = [];
+        for seg in parts {
+            let s = string(seg).trim();
+            if s == "" or s == "." {
+                continue;
+            }
+            if s == ".." {
+                throw "storage: path traversal is not allowed: " + rel;
+            }
+            clean.push(s);
+        }
+        if clean.len() == 0 {
+            throw "storage: empty normalized path on disk '" + self.name + "'";
+        }
+        let out = "";
+        let i = 0;
+        while i < clean.len() {
+            if i > 0 {
+                out = out + "/";
+            }
+            out = out + clean[i];
+            i = i + 1;
+        }
+        return out;
+    }
+
+    fn full(self, rel: string) -> string {
+        return self.root + "/" + self.guard(rel);
+    }
+
+    fn ensure_root(self) {
+        if not file_exists(self.root) {
+            let parts = self.root.split("/");
+            let dir = parts[0];
+            let i = 1;
+            while i < parts.len() {
+                dir = dir + "/" + parts[i];
+                if not file_exists(dir) {
+                    dir_create(dir);
+                }
+                i = i + 1;
+            }
+        }
+    }
+
+    // Create every directory level leading up to a file path
+    // ("storage/app/a/b.txt" -> ensure storage/, storage/app/, storage/app/a/).
+    fn ensure_parent(self, file_path: string) -> string {
+        let parts = string(file_path).split("/");
+        if parts.len() < 2 {
+            return file_path;
+        }
+        let dir = parts[0];
+        if not file_exists(dir) {
+            dir_create(dir);
+        }
+        let i = 1;
+        while i < parts.len() - 1 {
+            dir = dir + "/" + parts[i];
+            if not file_exists(dir) {
+                dir_create(dir);
+            }
+            i = i + 1;
+        }
+        return file_path;
+    }
+
+    // ------------------------------------------------------------------
+    // Operations
+    // ------------------------------------------------------------------
+    public fn exists(self, rel: string) -> bool {
+        return file_exists(self.full(rel));
+    }
+
+    // Write (overwrite). Creates parent directories as needed.
+    public fn put(self, rel: string, contents: string) -> bool {
+        let path = self.full(rel);
+        self.ensure_root();
+        self.ensure_parent(path);
+        let res = write_file(path, string(contents));
+        return res.is_ok();
+    }
+
+    // Append; creates the file (and its parents) when missing.
+    public fn append(self, rel: string, contents: string) -> bool {
+        let path = self.full(rel);
+        self.ensure_root();
+        self.ensure_parent(path);
+        let existing = "";
+        if file_exists(path) {
+            let res = read_file(path);
+            if res.is_ok() {
+                existing = res.unwrap();
+            }
+        }
+        let res2 = write_file(path, existing + string(contents));
+        return res2.is_ok();
+    }
+
+    // Read; returns null when missing/unreadable.
+    public fn get(self, rel: string) {
+        let path = self.full(rel);
+        if not file_exists(path) {
+            return null;
+        }
+        let res = read_file(path);
+        if res.is_err() {
+            return null;
+        }
+        return res.unwrap();
+    }
+
+    public fn delete(self, rel: string) -> bool {
+        let path = self.full(rel);
+        if not file_exists(path) {
+            return false;
+        }
+        return file_delete(path);
+    }
+
+    // Public path (guarded) — for streaming responses or tooling.
+    public fn path(self, rel: string) -> string {
+        return self.full(rel);
+    }
+
+    // Web URL for files on the disk ("" prefix = not web-servable).
+    public fn url(self, rel: string) -> string {
+        if self.url_prefix == "" {
+            return "";
+        }
+        return self.url_prefix + "/" + self.guard(rel);
+    }
+}
+
+public class StorageManager {
+    // Storage.disk() / Storage.disk("public")
+    public fn disk(self, name: string = "") {
+        let disk_name = string(name);
+        if disk_name == "" {
+            disk_name = string(Config.get("filesystems.default", "local"));
+        }
+        let cfg = Config.get("filesystems.disks." + disk_name, null);
+        if cfg == null or type_of(cfg) != "map" {
+            throw "storage: unknown disk '" + disk_name + "' (check config/filesystems.matrix)";
+        }
+        let driver = "local";
+        if cfg.has("driver") {
+            driver = string(cfg["driver"]);
+        }
+        if driver != "local" {
+            throw "storage: driver '" + driver + "' is not supported in this build (local only)";
+        }
+        let root = "storage/app";
+        if cfg.has("root") {
+            root = string(cfg["root"]);
+        }
+        let vis = "private";
+        if cfg.has("visibility") {
+            vis = string(cfg["visibility"]);
+        }
+        let url = "";
+        if cfg.has("url") {
+            url = string(cfg["url"]);
+        }
+        return new LocalDisk(disk_name, root, vis, url);
+    }
+}
+
+public let Storage = new StorageManager();

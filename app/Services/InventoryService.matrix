@@ -1,0 +1,63 @@
+// app/Services/InventoryService.matrix
+// Phase 4 — inventory management & stock movement history.
+
+import "framework/Database/DB";
+import "app/Support/CatalogCache" as CatalogCache;
+import "framework/HttpException";
+import "app/Repositories/InventoryRepository";
+
+public class InventoryService {
+    public let inventory;
+
+    fn new() {
+        self.inventory = new InventoryRepository();
+    }
+
+    public fn restock(self, product_id, qty: int) {
+        if qty <= 0 {
+            throw validation_failed(map("quantity", "Restock quantity must be positive."));
+        }
+        // Every product got an inventory row at creation.
+        let ok = self.inventory.restock(product_id, null, qty);
+        if not ok {
+            throw not_found("Inventory row not found for this product.");
+        }
+        CatalogCache.bump_catalog_version();
+        return self.status(product_id);
+    }
+
+    // Signed adjustment (positive restock, negative correction).
+    public fn adjust(self, product_id, delta: int, reason: string) {
+        if delta < 0 {
+            let ok = self.inventory.reserve(product_id, null, 0 - delta, "adjustment", "admin", string(product_id));
+            if not ok {
+                throw validation_failed(map("delta", "Not enough stock for this adjustment."));
+            }
+            CatalogCache.bump_catalog_version();
+        } else {
+            return self.restock(product_id, delta);
+        }
+        return self.status(product_id);
+    }
+
+    public fn status(self, product_id) {
+        let inv = DB.table("inventory")
+            .where("product_id", "=", product_id)
+            .whereNull("variant_id")
+            .first();
+        if inv == null {
+            throw not_found("Inventory row not found for this product.");
+        }
+        return map(
+            "product_id", product_id,
+            "quantity", int(inv["quantity"]),
+            "reserved", int(inv["reserved"]),
+            "low_stock_threshold", int(inv["low_stock_threshold"]),
+            "low_stock", int(inv["quantity"]) <= int(inv["low_stock_threshold"])
+        );
+    }
+
+    public fn history(self, product_id) {
+        return self.inventory.movements_for(product_id);
+    }
+}

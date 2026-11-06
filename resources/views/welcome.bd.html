@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Spid3rWeb — a fresh installation of the Spid3r MVC framework. Edit resources/views/welcome.bd.html to begin building.">
+    <title>Welcome — Spid3rWeb</title>
+    <link rel="stylesheet" href="/css/welcome.css">
+</head>
+<body>
+    <main class="welcome">
+        <header class="hero">
+            <span class="badge">Fresh Installation</span>
+            <h1>Spid3rWeb</h1>
+            <p class="tagline">A lightweight MVC framework powered by the Spid3r language.</p>
+        </header>
+
+        <section class="next-steps">
+            <h2>Next steps</h2>
+            <ol>
+                <li>
+                    <span class="step-num" aria-hidden="true">1</span>
+                    <div class="step-body">
+                        <strong>Edit this page</strong>
+                        <span class="step-hint"><code>resources/views/welcome.bd.html</code></span>
+                    </div>
+                </li>
+                <li>
+                    <span class="step-num" aria-hidden="true">2</span>
+                    <div class="step-body">
+                        <strong>Add routes</strong>
+                        <span class="step-hint"><code>routes/web.matrix</code> — register pages with <code>Route.get</code> / <code>Route.post</code></span>
+                    </div>
+                </li>
+                <li>
+                    <span class="step-num" aria-hidden="true">3</span>
+                    <div class="step-body">
+                        <strong>Create models &amp; controllers</strong>
+                        <span class="step-hint"><code>spid3r magic make:model Post</code><br><code>spid3r magic make:controller PostController</code></span>
+                    </div>
+                </li>
+                <li>
+                    <span class="step-num" aria-hidden="true">4</span>
+                    <div class="step-body">
+                        <strong>Run migrations</strong>
+                        <span class="step-hint"><code>spid3r magic migrate</code></span>
+                    </div>
+                </li>
+                <li>
+                    <span class="step-num" aria-hidden="true">5</span>
+                    <div class="step-body">
+                        <strong>Run the test suite</strong>
+                        <span class="step-hint"><code>spid3r magic test</code></span>
+                    </div>
+                </li>
+            </ol>
+        </section>
+
+        <footer class="links">
+            <p>Useful locations in this project:</p>
+            <ul>
+                <li><code>app/</code> — controllers, models, middleware</li>
+                <li><code>resources/views/</code> — SpiderBD templates</li>
+                <li><code>routes/</code> — web, api and queue job registrations</li>
+                <li><code>config/</code> — app, auth, session, mail, queue, logging, filesystems, services</li>
+                <li><code>database/migrations/</code> — schema migrations</li>
+                <li><code>developer-docs.html</code> — full framework documentation</li>
+            </ul>
+        </footer>
+    </main>
+</body>
+</html>

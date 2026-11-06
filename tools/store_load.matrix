@@ -1,0 +1,141 @@
+// tools/store_load.matrix
+// Phase 13 — application-layer load probe for the storefront.
+//
+// Drives the REAL request pipeline (Application.handle_request — routing,
+// middleware, controllers, views) against a seeded catalog and reports
+// per-endpoint throughput and latency. No assertions: a probe that flakes
+// is a probe nobody runs (same rule as benchmarks/bench.matrix).
+//
+//   spid3r run tools/store_load.matrix
+//   LOAD_ITERS=50 spid3r run tools/store_load.matrix     # quick mode
+//
+// Iterations default to 150 per endpoint. Latencies are wall-clock
+// milliseconds around each in-process request.
+
+import "framework/Application";
+import "framework/Router";
+import "framework/Database/DB";
+import "routes/web";
+import "routes/queue";
+import "app/Middleware/StoreMiddleware";
+import "database/seeders/DatabaseSeeder";
+
+fn iterations() -> int {
+    let raw = env("LOAD_ITERS");
+    if raw.is_some() {
+        let n = int(string(raw.unwrap()).trim());
+        if n > 0 {
+            return n;
+        }
+    }
+    return 150;
+}
+
+fn setup_catalog(tag: string) {
+    let cat = DB.table("categories").insert(map(
+        "name", "Load Category " + tag, "slug", "load-cat-" + tag
+    ));
+    let i = 0;
+    while i < 12 {
+        let pid = DB.table("products").insert(map(
+            "category_id", cat,
+            "name", "Load Widget " + string(i) + " " + tag,
+            "slug", "load-widget-" + string(i) + "-" + tag,
+            "sku", "LOAD-" + tag + "-" + string(i),
+            "price_minor", 10000 + i * 1000,
+            "status", "published", "currency", "BDT"
+        ));
+        DB.table("inventory").insert(map(
+            "product_id", pid, "variant_id", null,
+            "quantity", 100, "reserved", 0, "low_stock_threshold", 5
+        ));
+        i += 1;
+    }
+    return "load-widget-0-" + tag;
+}
+
+fn probe(name: string, requests: int, make_request) {
+    // Warm-up (template loader, first DB hits, catalog cache fill).
+    make_request();
+    let start = now_ms();
+    let worst = 0;
+    let i = 0;
+    while i < requests {
+        let t0 = now_ms();
+        make_request();
+        let took = now_ms() - t0;
+        if took > worst {
+            worst = took;
+        }
+        i += 1;
+    }
+    let total = now_ms() - start;
+    let rate = 0;
+    if total > 0 {
+        rate = int(requests * 1000 / total);
+    }
+    let avg = 0;
+    if requests > 0 {
+        avg = int(total / requests);
+    }
+    println("  " + name);
+    println("    " + string(requests) + " requests in " + string(total)
+        + " ms — " + string(rate) + " req/s · avg " + string(avg)
+        + " ms · worst " + string(worst) + " ms");
+}
+
+fn main() {
+    println("\n=== Store Load Probe (application layer, in-process) ===");
+    let app = new Application();
+    register_store_middleware(app);
+    register_web_routes();
+    register_queue_jobs();
+    run_database_seeder();
+
+    let tag = "load" + string(unix_time());
+    let slug = setup_catalog(tag);
+    let iters = iterations();
+
+    println("\nIterations per endpoint: " + string(iters) + "\n");
+
+    probe("GET /health (liveness JSON)", iters, fn() {
+        return app.handle_request(map("method", "GET", "path", "/health", "headers", map()));
+    });
+
+    probe("GET / (home, featured + catalog cache)", iters, fn() {
+        return app.handle_request(map("method", "GET", "path", "/", "headers", map()));
+    });
+
+    probe("GET /catalog (cached listing)", iters, fn() {
+        return app.handle_request(map("method", "GET", "path", "/catalog", "headers", map()));
+    });
+
+    probe("GET /catalog?q=... (uncached search)", iters, fn() {
+        return app.handle_request(map("method", "GET", "path", "/catalog?q=Load%20Widget%201", "headers", map()));
+    });
+
+    probe("GET /product/:slug (cached detail)", iters, fn() {
+        return app.handle_request(map("method", "GET", "path", "/product/" + slug, "headers", map()));
+    });
+
+    probe("GET /cart (guest)", iters, fn() {
+        return app.handle_request(map("method", "GET", "path", "/cart", "headers", map()));
+    });
+
+    // Cleanup.
+    let i = 0;
+    while i < 12 {
+        let row = DB.table("products").where("slug", "=", "load-widget-" + string(i) + "-" + tag).first();
+        if row != null {
+            DB.table("inventory").where("product_id", "=", row["id"]).delete();
+            DB.table("stock_movements").where("product_id", "=", row["id"]).delete();
+            DB.table("products").where("id", "=", row["id"]).delete();
+        }
+        i += 1;
+    }
+    DB.table("categories").where("slug", "=", "load-cat-" + tag).delete();
+
+    DB.close();
+    println("\n=== Load Probe Finished ===\n");
+    return 0;
+}

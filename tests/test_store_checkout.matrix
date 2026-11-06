@@ -1,0 +1,310 @@
+// tests/test_store_checkout.matrix
+// Phase 7 — checkout & order management integration tests.
+
+import "framework/Application";
+import "framework/Router";
+import "framework/Database/DB";
+import "routes/web";
+import "routes/queue";
+import "app/Middleware/StoreMiddleware";
+import "app/Services/AuthService";
+import "database/seeders/DatabaseSeeder";
+
+fn call(app, method: string, path: string, data, cookie: string) {
+    let headers = map();
+    if cookie != "" {
+        headers["cookie"] = cookie;
+    }
+    let payload = map();
+    if data != null {
+        for k in data.keys() {
+            payload[k] = data[k];
+        }
+    }
+    return app.handle_request(map(
+        "method", method, "path", path,
+        "headers", headers, "data", payload
+    ));
+}
+
+fn body(res) {
+    return json_parse(string(res["body"]));
+}
+
+fn cookie_of(res, name: string) -> string {
+    let raw = string(res["headers"]["set-cookie"]);
+    let parts = raw.split(";");
+    let i = 0;
+    while i < parts.len() {
+        let pair = parts[i].trim().split("=");
+        if pair.len() > 1 and pair[0] == name {
+            return pair[1];
+        }
+        i += 1;
+    }
+    return "";
+}
+
+fn session_pair(email: string, password: string) {
+    let svc = new AuthService();
+    let token = svc.login(email, password);
+    let rows = DB.select("SELECT payload FROM sessions WHERE token = ?", [token]);
+    return map(
+        "cookie", "spid3r_session=" + token,
+        "csrf", string(rows[0]["payload"])
+    );
+}
+
+fn setup(tag: string) {
+    let cat = DB.table("categories").insert(map(
+        "name", "Checkout Category " + tag, "slug", "checkout-cat-" + tag
+    ));
+    let product = DB.table("products").insert(map(
+        "category_id", cat, "name", "Checkout Widget " + tag,
+        "slug", "checkout-widget-" + tag, "sku", "CO-" + tag,
+        "price_minor", 25000, "status", "published", "currency", "BDT"
+    ));
+    DB.table("inventory").insert(map(
+        "product_id", product, "variant_id", null,
+        "quantity", 20, "reserved", 0, "low_stock_threshold", 2
+    ));
+    let coupon = DB.table("coupons").insert(map(
+        "code", "SAVE-" + tag, "type", "fixed", "value_minor", 5000,
+        "min_order_minor", 0, "max_uses", 10, "uses", 0,
+        "is_active", 1
+    ));
+
+    let svc = new AuthService();
+    let email = "checkout-" + tag + "@example.test";
+    svc.register("Checkout Customer", email, "checkout-pass");
+    let admin_email = "admin-" + tag + "@example.test";
+    let admin_user = svc.register("Checkout Admin", admin_email, "admin-pass");
+    let role = DB.table("roles").where("slug", "=", "admin").first();
+    DB.table("user_roles").insert(map("user_id", admin_user["id"], "role_id", role["id"]));
+
+    return map(
+        "cat", cat, "product", product, "coupon", coupon,
+        "code", "SAVE-" + tag, "email", email, "admin_email", admin_email
+    );
+}
+
+fn add_to_cart(app, cookie: string, product_id, qty: int) {
+    let res = call(app, "POST", "/cart/items", map(
+        "product_id", product_id, "quantity", qty, "format", "json"
+    ), cookie);
+    assert(res["status"] == 200, "item added to cart");
+    return res;
+}
+
+fn test_quote(app, ids, tag: string) {
+    let first = call(app, "GET", "/cart", null, "");
+    let cookie = "cart=" + cookie_of(first, "cart");
+    add_to_cart(app, cookie, ids["product"], 2);
+
+    let quote = body(call(app, "GET", "/checkout/quote?shipping_method=express&coupon_code=" + ids["code"], null, cookie))["data"];
+    assert(int(quote["subtotal_minor"]) == 50000, "quote subtotal from catalog prices");
+    assert(int(quote["coupon_discount_minor"]) == 5000, "coupon discount applied server-side");
+    assert(int(quote["shipping_minor"]) == 12000, "express shipping fee from settings");
+    assert(int(quote["total_minor"]) == 57000, "total = subtotal − discount + tax + shipping");
+
+    let page = call(app, "GET", "/checkout?shipping_method=express", null, cookie);
+    assert(page["status"] == 200, "checkout page renders");
+    assert(string(page["body"]).contains("Delivery address"), "checkout page has address form");
+
+    let bad_coupon = call(app, "GET", "/checkout/quote?coupon_code=NOPE-" + tag, null, cookie);
+    assert(bad_coupon["status"] == 422, "invalid coupon rejected");
+    println("  [PASS] test_quote");
+    return cookie;
+}
+
+fn place(app, cookie: string, data, ids) {
+    let payload = map(
+        "shipping_method", "standard",
+        "coupon_code", ids["code"],
+        "full_name", "Test Buyer",
+        "phone", "01700000000",
+        "line1", "12 Test Street",
+        "city", "Dhaka",
+        "format", "json"
+    );
+    for k in data.keys() {
+        payload[k] = data[k];
+    }
+    let res = call(app, "POST", "/checkout", payload, cookie);
+    return res;
+}
+
+fn test_place_order(app, ids, cookie: string) {
+    let before = DB.table("inventory").where("product_id", "=", ids["product"]).first();
+    let before_qty = int(before["quantity"]);
+
+    let res = place(app, cookie, map(), ids);
+    assert(res["status"] == 201, "order placed (201)");
+    let number = string(body(res)["data"]["order_number"]);
+    assert(number.starts_with("SP-"), "order number generated");
+
+    let order = DB.table("orders").where("order_number", "=", number).first();
+    assert(order["status"] == "awaiting_payment", "awaiting_payment status");
+    assert(int(order["subtotal_minor"]) == 50000, "order subtotal");
+    assert(int(order["discount_minor"]) == 5000, "coupon discount persisted");
+    assert(int(order["shipping_minor"]) == 6000, "standard shipping fee");
+    assert(int(order["total_minor"]) == 51000, "order total");
+    assert(string(order["shipping_address_json"]).contains("Test Buyer"), "address snapshot stored");
+
+    let items = DB.table("order_items").where("order_id", "=", order["id"]).get();
+    assert(items.len() == 1, "one immutable order line");
+    assert(items[0]["name_snapshot"] == "Checkout Widget " + string(ids["tag"]), "name snapshot");
+    assert(int(items[0]["unit_price_minor"]) == 25000, "historical price snapshot");
+
+    let after = DB.table("inventory").where("product_id", "=", ids["product"]).first();
+    assert(int(after["quantity"]) == before_qty - 2, "stock deducted exactly once");
+    let moves = DB.table("stock_movements").where("product_id", "=", ids["product"]).get();
+    assert(moves.len() >= 1, "stock movement recorded");
+    assert(DB.table("coupon_usages").where("order_id", "=", order["id"]).count() == 1, "coupon usage recorded");
+    assert(int(DB.table("coupons").where("id", "=", ids["coupon"]).first()["uses"]) == 1, "coupon uses incremented");
+
+    let cart_key = cookie.slice(5, len(cookie));
+    let cart = DB.table("carts").where("session_key", "=", cart_key).first();
+    assert(DB.table("cart_items").where("cart_id", "=", cart["id"]).count() == 0, "cart emptied after order");
+
+    let repeat = place(app, cookie, map(), ids);
+    assert(repeat["status"] == 422, "double submit cannot create a second order");
+
+    let confirmation = call(app, "GET", "/checkout/confirmation/" + number, null, cookie);
+    assert(confirmation["status"] == 200, "confirmation page renders");
+    assert(string(confirmation["body"]).contains(number), "confirmation shows order number");
+    println("  [PASS] test_place_order");
+    return order;
+}
+
+fn test_customer_orders(app, ids, tag: string) {
+    // New cart + order for an authenticated customer.
+    let first = call(app, "GET", "/cart", null, "");
+    let key = cookie_of(first, "cart");
+    let guest = "cart=" + key;
+    add_to_cart(app, guest, ids["product"], 1);
+    let login = call(app, "POST", "/login", map(
+        "email", ids["email"], "password", "checkout-pass"
+    ), guest);
+    assert(login["status"] == 302, "HTTP login merges the guest cart");
+    let token = cookie_of(login, "spid3r_session");
+    let rows = DB.select("SELECT payload FROM sessions WHERE token = ?", [token]);
+    let csrf = string(rows[0]["payload"]);
+    let cookie = "spid3r_session=" + token + "; cart=" + key;
+
+    let placed = place(app, cookie, map("_csrf", csrf), ids);
+    assert(placed["status"] == 201, "authenticated order placed with CSRF");
+    let number = string(body(placed)["data"]["order_number"]);
+
+    let history = call(app, "GET", "/orders", null, cookie);
+    assert(history["status"] == 200, "order history renders");
+    assert(string(history["body"]).contains(number), "history lists the order");
+
+    let detail = call(app, "GET", "/orders/" + number, null, cookie);
+    assert(detail["status"] == 200, "order detail renders");
+    assert(string(detail["body"]).contains("Checkout Widget"), "detail shows line items");
+
+    let invoice = call(app, "GET", "/orders/" + number + "/invoice", null, cookie);
+    assert(invoice["status"] == 200, "invoice renders");
+    assert(string(invoice["body"]).contains("Invoice"), "invoice has heading");
+    assert(string(invoice["body"]).contains("Test Buyer"), "invoice shows billing address");
+
+    let before = int(DB.table("inventory").where("product_id", "=", ids["product"]).first()["quantity"]);
+    let cancelled = call(app, "POST", "/orders/" + number + "/cancel", map("_csrf", csrf), cookie);
+    assert(cancelled["status"] == 302, "cancel redirects");
+    assert(DB.table("orders").where("order_number", "=", number).first()["status"] == "cancelled", "order cancelled");
+    let after = int(DB.table("inventory").where("product_id", "=", ids["product"]).first()["quantity"]);
+    assert(after == before + 1, "cancellation returns stock");
+    println("  [PASS] test_customer_orders");
+    return number;
+}
+
+fn test_admin_status(app, ids, order_number: string) {
+    let order = DB.table("orders").where("order_number", "=", order_number).first();
+    let sess = session_pair(ids["admin_email"], "admin-pass");
+    let cookie = sess["cookie"];
+    let path = "/admin/api/orders/" + string(order["id"]) + "/status";
+
+    let paid = call(app, "PUT", path, map("status", "paid", "_csrf", sess["csrf"]), cookie);
+    assert(paid["status"] == 200, "admin can set paid");
+    assert(DB.table("orders").where("id", "=", order["id"]).first()["status"] == "paid", "status persisted");
+
+    let shipped = call(app, "PUT", path, map("status", "shipped", "_csrf", sess["csrf"]), cookie);
+    assert(shipped["status"] == 200, "admin can set shipped");
+    assert(DB.table("shipments").where("order_id", "=", order["id"]).count() == 1, "shipment created on shipped");
+
+    let invalid = call(app, "PUT", path, map("status", "bogus", "_csrf", sess["csrf"]), cookie);
+    assert(invalid["status"] == 422, "unknown status rejected");
+
+    let customer = session_pair(ids["email"], "checkout-pass");
+    let blocked = call(app, "GET", "/admin/api/orders", null, customer["cookie"]);
+    assert(blocked["status"] == 403, "customer blocked from admin orders API");
+    println("  [PASS] test_admin_status");
+}
+
+fn cleanup(ids, tag: string) {
+    try {
+        let orders = DB.table("orders").where("order_number", "LIKE", "SP-%").get();
+        let i = 0;
+        while i < orders.len() {
+            let oid = orders[i]["id"];
+            DB.table("payments").where("order_id", "=", oid).delete();
+            DB.table("order_items").where("order_id", "=", oid).delete();
+            DB.table("coupon_usages").where("order_id", "=", oid).delete();
+            DB.table("shipments").where("order_id", "=", oid).delete();
+            DB.table("orders").where("id", "=", oid).delete();
+            i += 1;
+        }
+        DB.table("stock_movements").where("product_id", "=", ids["product"]).delete();
+        DB.table("inventory").where("product_id", "=", ids["product"]).delete();
+        DB.table("products").where("id", "=", ids["product"]).delete();
+        DB.table("categories").where("id", "=", ids["cat"]).delete();
+        DB.table("coupon_usages").where("coupon_id", "=", ids["coupon"]).delete();
+        DB.table("coupons").where("id", "=", ids["coupon"]).delete();
+        let carts = DB.table("carts").get();
+        i = 0;
+        while i < carts.len() {
+            DB.table("cart_items").where("cart_id", "=", carts[i]["id"]).delete();
+            DB.table("carts").where("id", "=", carts[i]["id"]).delete();
+            i += 1;
+        }
+        let emails = [ids["email"], ids["admin_email"]];
+        i = 0;
+        while i < emails.len() {
+            let user = DB.table("users").where("email", "=", emails[i]).first();
+            if user != null {
+                DB.table("user_roles").where("user_id", "=", user["id"]).delete();
+                DB.table("sessions").where("user_id", "=", user["id"]).delete();
+                DB.table("email_verifications").where("user_id", "=", user["id"]).delete();
+                DB.table("users").where("id", "=", user["id"]).delete();
+            }
+            i += 1;
+        }
+    } catch (e) {
+        println("[cleanup] best-effort: " + string(e));
+    }
+}
+
+fn main() {
+    println("\n=== Running Store Checkout Test Suite ===");
+    let app = new Application();
+    register_store_middleware(app);
+    register_web_routes();
+    register_queue_jobs();
+    run_database_seeder();
+    let tag = string(unix_time());
+    let ids = setup(tag);
+    ids["tag"] = tag;
+
+    try {
+        let cookie = test_quote(app, ids, tag);
+        let order = test_place_order(app, ids, cookie);
+        test_customer_orders(app, ids, tag);
+        test_admin_status(app, ids, string(order["order_number"]));
+    } finally {
+        cleanup(ids, tag);
+    }
+    DB.close();
+    println("=== All Store Checkout Tests Passed! ===\n");
+    return 0;
+}

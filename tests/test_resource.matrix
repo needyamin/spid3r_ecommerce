@@ -1,0 +1,161 @@
+// tests/test_resource.matrix
+// Unit tests for the Spid3rWeb REST resource layer and typed HTTP exceptions.
+
+import "framework/Resource";
+import "framework/HttpException";
+import "framework/Application";
+import "framework/Router";
+import "framework/Database/Model";
+
+fn test_resource_item() {
+    let t = fn(u) {
+        return map("id", u["id"], "handle", u["name"]);
+    };
+    let out = resource_item(map("id", 7, "name", "ada", "password", "secret"), t);
+    assert(out["data"]["id"] == 7, "resource_item transforms fields");
+    assert(out["data"]["handle"] == "ada", "transformer renames fields");
+    assert(not out["data"].has("password"), "transformer omits sensitive columns");
+    assert(out.has("meta") == false, "item envelope carries no meta");
+
+    // Null input → {"data": null}, not an error (miss-or-404 flows).
+    let empty = resource_item(null, t);
+    assert(empty["data"] == null, "resource_item(null) yields null data");
+
+    // No transformer → identity on the plain map.
+    let raw = resource_item(map("id", 1));
+    assert(raw["data"]["id"] == 1, "resource_item without transformer passes the map through");
+    println("  [PASS] test_resource_item");
+}
+
+fn test_resource_item_unwraps_models() {
+    let m = new Model("users");
+    m.set("id", 3);
+    m.set("name", "grace");
+    let t = fn(u) {
+        // The transformer must always receive a plain map — u["k"] works.
+        return map("id", u["id"], "name", u["name"]);
+    };
+    let out = resource_item(m, t);
+    assert(out["data"]["id"] == 3 and out["data"]["name"] == "grace", "model instances are unwrapped to maps for transformers");
+    println("  [PASS] test_resource_item_unwraps_models");
+}
+
+fn test_resource_collection() {
+    let t = fn(u) {
+        return map("id", u["id"]);
+    };
+    let users = list(map("id", 1), map("id", 2), map("id", 3));
+    let out = resource_collection(users, t);
+    assert(out["data"].len() == 3, "collection transforms every element");
+    assert(out["data"][2]["id"] == 3, "order preserved");
+    assert(out["meta"]["count"] == 3, "count in meta");
+
+    let empty = resource_collection(list(), t);
+    assert(empty["data"].len() == 0 and empty["meta"]["count"] == 0, "empty collection is a valid envelope");
+    println("  [PASS] test_resource_collection");
+}
+
+fn test_resource_paginated() {
+    let t = fn(u) {
+        return map("id", u["id"], "title", u["title"]);
+    };
+    let page = map(
+        "data", list(map("id", 16, "title", "p16"), map("id", 17, "title", "p17")),
+        "total", 42,
+        "page", 2,
+        "per_page", 15,
+        "last_page", 3,
+        "from", 16,
+        "to", 17,
+        "has_more", true
+    );
+    let out = resource_paginated(page, t);
+    assert(out["data"].len() == 2 and out["data"][0]["title"] == "p16", "paginated data transformed");
+    let meta = out["meta"];
+    assert(meta["count"] == 2, "meta count is the returned rows");
+    assert(meta["total"] == 42 and meta["page"] == 2 and meta["per_page"] == 15, "pagination facts carried into meta");
+    assert(meta["last_page"] == 3 and meta["from"] == 16 and meta["to"] == 17, "range facts carried into meta");
+    assert(meta["has_more"] == true, "has_more carried into meta");
+    println("  [PASS] test_resource_paginated");
+}
+
+fn test_exception_helpers() {
+    let e = not_found("No such post.");
+    assert(is_http_exception(e), "is_http_exception recognizes built exceptions");
+    assert(e["status"] == 404 and e["message"] == "No such post.", "404 carries status + message");
+
+    assert(unauthorized()["status"] == 401, "401 helper");
+    assert(forbidden()["status"] == 403, "403 helper");
+    assert(bad_request()["status"] == 400, "400 helper");
+    assert(too_many_requests()["status"] == 429, "429 helper");
+
+    let v = validation_failed(map("email", "taken"));
+    assert(v["status"] == 422, "validation failure is 422");
+    assert(v["errors"]["email"] == "taken", "validation errors carried");
+    assert(v["message"] != "", "validation failure has a message");
+
+    assert(not is_http_exception(map("status", 404)), "plain maps are not http exceptions");
+    assert(not is_http_exception("boom"), "strings are not http exceptions");
+    assert(not is_http_exception(null), "null is not an http exception");
+    println("  [PASS] test_exception_helpers");
+}
+
+// Routes that abort with typed exceptions (registered on the global facade;
+// each suite file runs in its own process).
+class AbortController {
+    public fn api_missing(self, req) {
+        throw not_found("Post missing.");
+    }
+    public fn api_invalid(self, req) {
+        throw validation_failed(map("email", "The email has already been taken."));
+    }
+    public fn web_missing(self, req) {
+        throw not_found("Page missing.");
+    }
+    public fn crash(self, req) {
+        throw "raw internal failure: super-secret-detail";
+    }
+}
+
+fn test_exceptions_render_through_http() {
+    let app = new Application();
+    let c = new AbortController();
+    Route.get("/api/posts/missing", fn(req) { return c.api_missing(req); });
+    Route.get("/api/users/invalid", fn(req) { return c.api_invalid(req); });
+    Route.get("/posts/missing", fn(req) { return c.web_missing(req); });
+    Route.get("/api/crash", fn(req) { return c.crash(req); });
+
+    // API 404: JSON body with the typed message.
+    let res = app.handle_request(map("method", "GET", "path", "/api/posts/missing", "headers", map()));
+    assert(res["status"] == 404, "typed not_found renders 404");
+    assert(string(res["body"]).contains("Post missing."), "API error body carries the message");
+
+    // API 422: field errors included.
+    let invalid = app.handle_request(map("method", "GET", "path", "/api/users/invalid", "headers", map()));
+    assert(invalid["status"] == 422, "validation_failed renders 422");
+    assert(string(invalid["body"]).contains("already been taken"), "422 body carries field errors");
+
+    // Web 404: HTML card with status and message, not JSON.
+    let web = app.handle_request(map("method", "GET", "path", "/posts/missing", "headers", map()));
+    assert(web["status"] == 404, "web typed exception keeps its status");
+    assert(string(web["body"]).contains("<h1>404</h1>"), "web error renders the HTML card");
+    assert(string(web["body"]).contains("Page missing."), "web error shows the message");
+
+    // Non-http exceptions stay a generic 500 — internals never leak.
+    let crash = app.handle_request(map("method", "GET", "path", "/api/crash", "headers", map()));
+    assert(crash["status"] == 500, "raw throw renders 500");
+    assert(not string(crash["body"]).contains("super-secret-detail"), "500 body hides internal details");
+    println("  [PASS] test_exceptions_render_through_http");
+}
+
+fn main() {
+    println("\n=== Running Resource & Exception Test Suite ===");
+    test_resource_item();
+    test_resource_item_unwraps_models();
+    test_resource_collection();
+    test_resource_paginated();
+    test_exception_helpers();
+    test_exceptions_render_through_http();
+    println("=== All Resource & Exception Tests Passed! ===\n");
+    return 0;
+}

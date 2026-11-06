@@ -1,0 +1,773 @@
+// tests/test_store_advanced.matrix
+// Phase 10 — advanced e-commerce features integration tests.
+//
+//   wishlist, reviews & ratings, recommendations, recently viewed,
+//   loyalty points, referrals, gift cards, promotional campaigns,
+//   customer support, order tracking, multi-currency, multi-language.
+
+import "framework/Application";
+import "framework/Router";
+import "framework/Database/DB";
+import "routes/web";
+import "routes/queue";
+import "app/Middleware/StoreMiddleware";
+import "app/Services/AuthService";
+import "app/Services/AdvancedStoreService";
+import "app/Services/GiftCardService";
+import "app/Services/CampaignService";
+import "app/Services/CurrencyService";
+import "app/Services/LocaleService";
+import "app/Support/Fx" as Fx;
+import "database/seeders/DatabaseSeeder";
+
+fn call(app, method: string, path: string, data, cookie: string) {
+    let headers = map();
+    if cookie != "" {
+        headers["cookie"] = cookie;
+    }
+    let payload = map();
+    if data != null {
+        for k in data.keys() {
+            payload[k] = data[k];
+        }
+    }
+    return app.handle_request(map(
+        "method", method, "path", path,
+        "headers", headers, "data", payload
+    ));
+}
+
+fn get(app, path: string, cookie: string = "") {
+    return call(app, "GET", path, null, cookie);
+}
+
+fn post(app, path: string, data, cookie: string = "") {
+    return call(app, "POST", path, data, cookie);
+}
+
+fn body(res) {
+    return json_parse(string(res["body"]));
+}
+
+fn cookie_of(res, name: string) -> string {
+    let raw = string(res["headers"]["set-cookie"]);
+    let parts = raw.split(";");
+    let i = 0;
+    while i < parts.len() {
+        let pair = parts[i].trim().split("=");
+        if pair.len() > 1 and pair[0] == name {
+            return pair[1];
+        }
+        i += 1;
+    }
+    return "";
+}
+
+fn session_pair(email: string, password: string) {
+    let svc = new AuthService();
+    let token = svc.login(email, password);
+    let rows = DB.select("SELECT payload FROM sessions WHERE token = ?", [token]);
+    return map(
+        "cookie", "spid3r_session=" + token,
+        "csrf", string(rows[0]["payload"])
+    );
+}
+
+// ---- fixtures -------------------------------------------------------
+
+fn setup(tag: string) {
+    let cat = DB.table("categories").insert(map(
+        "name", "Advanced Category " + tag, "slug", "adv-cat-" + tag
+    ));
+    let other_cat = DB.table("categories").insert(map(
+        "name", "Advanced Other " + tag, "slug", "adv-other-" + tag
+    ));
+    let brand = DB.table("brands").insert(map(
+        "name", "Advanced Brand " + tag, "slug", "adv-brand-" + tag
+    ));
+
+    let ids = [];
+    let names = ["Alpha", "Beta", "Gamma"];
+    let i = 0;
+    while i < 3 {
+        let pid = DB.table("products").insert(map(
+            "category_id", cat, "brand_id", brand,
+            "name", "Advanced " + names[i] + " " + tag,
+            "slug", "adv-" + names[i].lower() + "-" + tag,
+            "sku", "ADV-" + tag + "-" + string(i),
+            "price_minor", 100000, "status", "published", "currency", "BDT"
+        ));
+        DB.table("inventory").insert(map(
+            "product_id", pid, "variant_id", null,
+            "quantity", 50, "reserved", 0, "low_stock_threshold", 2
+        ));
+        ids.push(pid);
+        i += 1;
+    }
+    // A product in another category — must never be recommended.
+    let outside = DB.table("products").insert(map(
+        "category_id", other_cat, "brand_id", brand,
+        "name", "Advanced Outside " + tag, "slug", "adv-outside-" + tag,
+        "sku", "ADVO-" + tag, "price_minor", 100000,
+        "status", "published", "currency", "BDT"
+    ));
+    DB.table("inventory").insert(map(
+        "product_id", outside, "variant_id", null,
+        "quantity", 5, "reserved", 0, "low_stock_threshold", 1
+    ));
+
+    let svc = new AuthService();
+    let email = "adv-" + tag + "@example.test";
+    let user = svc.register("Advanced Customer", email, "adv-pass");
+    let admin_email = "advadmin-" + tag + "@example.test";
+    let admin_user = svc.register("Advanced Admin", admin_email, "advadmin-pass");
+    let role = DB.table("roles").where("slug", "=", "admin").first();
+    DB.table("user_roles").insert(map("user_id", admin_user["id"], "role_id", role["id"]));
+
+    return map(
+        "cat", cat, "other_cat", other_cat, "brand", brand,
+        "ids", ids, "outside", outside,
+        "user", user, "email", email,
+        "admin", admin_user, "admin_email", admin_email,
+        "tag", tag
+    );
+}
+
+fn product_slug(product_id) -> string {
+    let row = DB.table("products").where("id", "=", product_id).first();
+    return string(row["slug"]);
+}
+
+// Place a real order for the signed-in customer and mark it as paid.
+fn place_paid_order(app, ids, cookie: string, csrf: string, product_id) {
+    let first = get(app, "/cart", cookie);
+    let cart_cookie = cookie + "; cart=" + cookie_of(first, "cart");
+    let added = post(app, "/cart/items", map(
+        "product_id", product_id, "quantity", 1, "format", "json", "_csrf", csrf
+    ), cart_cookie);
+    assert(added["status"] == 200, "item added to the cart");
+
+    let res = post(app, "/checkout", map(
+        "shipping_method", "standard",
+        "full_name", "Advanced Buyer",
+        "phone", "01700000000",
+        "line1", "22 Test Road",
+        "city", "Dhaka",
+        "format", "json",
+        "_csrf", csrf
+    ), cart_cookie);
+    assert(res["status"] == 201, "order placed");
+    let number = string(body(res)["data"]["order_number"]);
+    let order = DB.table("orders").where("order_number", "=", number).first();
+    DB.table("orders").where("id", "=", order["id"]).update(map("status", "paid"));
+    return order;
+}
+
+// ---- tests ----------------------------------------------------------
+
+fn test_wishlist(app, ids) {
+    let session = session_pair(string(ids["email"]), "adv-pass");
+    let cookie = string(session["cookie"]);
+    let csrf = string(session["csrf"]);
+    let products = ids["ids"];
+    let product_id = products[0];
+
+    let added = post(app, "/wishlist/add", map(
+        "product_id", product_id, "_csrf", csrf
+    ), cookie);
+    assert(added["status"] == 302, "wishlist add redirects for a browser");
+    assert(DB.table("wishlists").where("user_id", "=", ids["user"]["id"]).count() == 1, "wishlist row stored");
+
+    let again = post(app, "/wishlist/add", map(
+        "product_id", product_id, "_csrf", csrf, "format", "json"
+    ), cookie);
+    assert(body(again)["added"] == false, "adding the same product twice is a no-op");
+    assert(DB.table("wishlists").where("user_id", "=", ids["user"]["id"]).count() == 1, "no duplicate wishlist row");
+
+    let page = get(app, "/wishlist", cookie);
+    assert(page["status"] == 200, "wishlist page renders");
+    assert(string(page["body"]).contains("Advanced Alpha"), "wishlist lists the product");
+
+    let removed = post(app, "/wishlist/remove", map(
+        "product_id", product_id, "_csrf", csrf, "format", "json"
+    ), cookie);
+    assert(body(removed)["removed"] == true, "wishlist item removed");
+    assert(DB.table("wishlists").where("user_id", "=", ids["user"]["id"]).count() == 0, "wishlist row deleted");
+
+    // An anonymous visitor is sent to the login page, never into the
+    // wishlist (the framework `auth` middleware redirects browsers).
+    let anon = post(app, "/wishlist/add", map("product_id", product_id, "format", "json"), "");
+    assert(anon["status"] == 302, "wishlist requires authentication");
+    assert(string(anon["headers"]["location"]).contains("/login"), "an anonymous visitor is redirected to login");
+    assert(DB.table("wishlists").where("product_id", "=", product_id).count() == 0, "no wishlist row for an anonymous visitor");
+    println("  [PASS] test_wishlist");
+}
+
+fn test_reviews(app, ids) {
+    let session = session_pair(string(ids["email"]), "adv-pass");
+    let cookie = string(session["cookie"]);
+    let csrf = string(session["csrf"]);
+    let products = ids["ids"];
+    let bought = products[0];
+
+    // No purchase yet -> a review must be refused.
+    let early = post(app, "/reviews", map(
+        "product_id", bought, "rating", 5, "title", "Too early",
+        "body", "I have not bought this yet at all.", "_csrf", csrf, "format", "json"
+    ), cookie);
+    assert(early["status"] == 403, "a review without a purchase is refused");
+
+    let order = place_paid_order(app, ids, cookie, csrf, bought);
+
+    let reviewed = post(app, "/reviews", map(
+        "product_id", bought, "rating", 4, "title", "Solid",
+        "body", "It arrived quickly and works as described.", "_csrf", csrf, "format", "json"
+    ), cookie);
+    assert(reviewed["status"] == 200, "review accepted for a verified buyer");
+    let rows = DB.table("reviews").where("product_id", "=", bought).get();
+    assert(rows.len() == 1, "review row stored");
+    assert(int(rows[0]["rating"]) == 4, "rating stored");
+    assert(rows[0]["status"] == "pending", "a new review starts as pending");
+    assert(int(rows[0]["order_id"]) == int(order["id"]), "review links the purchased order");
+
+    let twice = post(app, "/reviews", map(
+        "product_id", bought, "rating", 2, "title", "Again",
+        "body", "Trying to review the same product twice.", "_csrf", csrf, "format", "json"
+    ), cookie);
+    assert(twice["status"] == 422, "a second review of the same product is refused");
+
+    let bad_rating = post(app, "/reviews", map(
+        "product_id", products[1], "rating", 9, "title", "Too high",
+        "body", "A rating outside the allowed range.", "_csrf", csrf, "format", "json"
+    ), cookie);
+    assert(bad_rating["status"] == 422, "a rating outside 1..5 is rejected");
+
+    // Pending reviews are invisible to shoppers.
+    let listing = body(get(app, "/reviews/" + string(bought)));
+    assert(listing["data"]["reviews"].len() == 0, "pending reviews are not published");
+
+    // Moderation.
+    let admin_session = session_pair(string(ids["admin_email"]), "advadmin-pass");
+    let admin_cookie = string(admin_session["cookie"]);
+    let admin_csrf = string(admin_session["csrf"]);
+    let moderation = post(app, "/admin/reviews/" + string(rows[0]["id"]), map(
+        "status", "approved", "_csrf", admin_csrf, "format", "json"
+    ), admin_cookie);
+    assert(moderation["status"] == 200, "admin approves a review");
+    let published = body(get(app, "/reviews/" + string(bought)));
+    assert(published["data"]["reviews"].len() == 1, "approved review is published");
+    assert(int(published["data"]["rating"]["count"]) == 1, "rating summary counts the review");
+    assert(string(published["data"]["rating"]["average_display"]) == "4.0", "average rating computed");
+
+    let customer_moderation = post(app, "/admin/reviews/" + string(rows[0]["id"]), map(
+        "status", "rejected", "_csrf", csrf, "format", "json"
+    ), cookie);
+    assert(customer_moderation["status"] == 403, "a customer cannot moderate reviews");
+    println("  [PASS] test_reviews");
+}
+
+fn test_recommendations(app, ids) {
+    let products = ids["ids"];
+    let res = body(get(app, "/recommendations/" + string(products[0])));
+    let list = res["data"];
+    assert(list.len() == 2, "the two sibling products are recommended");
+    let i = 0;
+    while i < list.len() {
+        assert(int(list[i]["id"]) != int(products[0]), "the current product is excluded");
+        assert(int(list[i]["id"]) != int(ids["outside"]), "products from other categories are excluded");
+        i += 1;
+    }
+    println("  [PASS] test_recommendations");
+}
+
+fn test_recently_viewed(app, ids) {
+    let products = ids["ids"];
+    let res = get(app, "/product/" + product_slug(products[0]));
+    assert(res["status"] == 200, "product page renders");
+    let key = cookie_of(res, "rv");
+    assert(key != "", "the recently-viewed cookie is issued");
+
+    get(app, "/product/" + product_slug(products[1]), "rv=" + key);
+    get(app, "/product/" + product_slug(products[2]), "rv=" + key);
+    let listed = body(get(app, "/recently-viewed", "rv=" + key))["data"];
+    assert(listed.len() == 3, "recently viewed lists the visited products");
+    assert(int(listed[0]["id"]) == int(products[2]), "most recent product first");
+
+    // The list is capped at 20 entries: view 25 further products.
+    let bulk = [];
+    let i = 0;
+    while i < 25 {
+        let pid = DB.table("products").insert(map(
+            "category_id", ids["cat"], "name", "Bulk " + string(i) + " " + string(ids["tag"]),
+            "slug", "adv-bulk-" + string(ids["tag"]) + "-" + string(i),
+            "sku", "BULK-" + string(ids["tag"]) + "-" + string(i),
+            "price_minor", 1000, "status", "published", "currency", "BDT"
+        ));
+        bulk.push(pid);
+        i += 1;
+    }
+    let svc = new AdvancedStoreService();
+    i = 0;
+    while i < bulk.len() {
+        svc.track_view(key, bulk[i]);
+        i += 1;
+    }
+    let capped = svc.recently_viewed(key);
+    assert(capped.len() == 20, "recently viewed is capped at 20 entries");
+    println("  [PASS] test_recently_viewed");
+}
+
+fn test_loyalty(app, ids) {
+    let session = session_pair(string(ids["email"]), "adv-pass");
+    let cookie = string(session["cookie"]);
+    let csrf = string(session["csrf"]);
+    let products = ids["ids"];
+    let svc = new AdvancedStoreService();
+
+    let order = place_paid_order(app, ids, cookie, csrf, products[1]);
+    let expected = int(int(order["total_minor"]) / 100);
+    assert(expected > 0, "the order is worth loyalty points");
+
+    let points = svc.award_loyalty(order["id"]);
+    assert(points == expected, "loyalty points awarded from the order total");
+    assert(svc.award_loyalty(order["id"]) == 0, "the award is idempotent — exactly once per order");
+    assert(DB.table("loyalty_ledger").where("order_id", "=", order["id"]).count() == 1, "one ledger entry per order");
+
+    let balance = svc.loyalty_balance(ids["user"]["id"]);
+    assert(balance == expected, "balance reflects the award");
+
+    let page = get(app, "/account/rewards", cookie);
+    assert(page["status"] == 200, "rewards page renders");
+    assert(string(page["body"]).contains(string(expected)), "rewards page shows the balance");
+
+    let redeemed = post(app, "/account/rewards/redeem", map(
+        "points", 100, "_csrf", csrf, "format", "json"
+    ), cookie);
+    assert(redeemed["status"] == 200, "points redeemed");
+    assert(svc.loyalty_balance(ids["user"]["id"]) == expected - 100, "balance reduced by the redeemed points");
+
+    let too_many = post(app, "/account/rewards/redeem", map(
+        "points", 999999, "_csrf", csrf, "format", "json"
+    ), cookie);
+    assert(too_many["status"] == 422, "redeeming more points than the balance is refused");
+    assert(svc.loyalty_balance(ids["user"]["id"]) == expected - 100, "a refused redemption changes nothing");
+    println("  [PASS] test_loyalty");
+}
+
+fn test_referrals(app, ids) {
+    let svc = new AdvancedStoreService();
+    let code = svc.ensure_referral_code(ids["user"]["id"]);
+    assert(code.starts_with("REF-"), "a referral code is issued");
+    assert(svc.ensure_referral_code(ids["user"]["id"]) == code, "the referral code is stable");
+
+    // A customer cannot refer themselves.
+    let self_rejected = false;
+    try {
+        svc.apply_referral(ids["user"]["id"], code);
+    } catch (e) {
+        self_rejected = true;
+    }
+    assert(self_rejected, "a customer cannot refer themselves");
+
+    // A second customer uses the code.
+    let auth = new AuthService();
+    let friend_email = "advfriend-" + string(ids["tag"]) + "@example.test";
+    let friend = auth.register("Referral Friend", friend_email, "friend-pass");
+    assert(svc.apply_referral(friend["id"], code) == true, "a valid referral code is accepted");
+
+    let rows = DB.table("referrals").where("referred_user_id", "=", friend["id"]).get();
+    assert(rows.len() == 1, "the referral is linked");
+    assert(rows[0]["status"] == "pending", "the referral starts as pending");
+
+    // Both sides are rewarded once the referred customer's order settles.
+    let friend_session = session_pair(friend_email, "friend-pass");
+    let friend_cookie = string(friend_session["cookie"]);
+    let friend_csrf = string(friend_session["csrf"]);
+    let products = ids["ids"];
+    let friend_order = place_paid_order(app, ids, friend_cookie, friend_csrf, products[2]);
+    assert(svc.reward_referral(friend_order["id"]) == true, "the referral is rewarded");
+    assert(svc.reward_referral(friend_order["id"]) == false, "the referral reward is not repeated");
+
+    let referrer = DB.table("users").where("id", "=", ids["user"]["id"]).first();
+    assert(int(referrer["loyalty_points"]) >= 500, "the referrer earns points");
+    let rewarded = DB.table("referrals").where("referred_user_id", "=", friend["id"]).first();
+    assert(rewarded["status"] == "rewarded", "the referral is marked as rewarded");
+    println("  [PASS] test_referrals");
+}
+
+fn test_gift_cards(app, ids) {
+    let cards = new GiftCardService();
+    let raw = cards.issue(50000, "BDT", "gift@example.test");
+    assert(len(raw) >= 16, "a gift card code is issued");
+
+    let rows = DB.table("gift_cards").orderBy("id", "DESC").get();
+    let card = rows[0];
+    assert(card["code_hash"] != raw, "the raw code is never stored");
+    assert(string(card["code_hash"]).len() == 64, "the code is stored as a SHA-256 hash");
+    assert(not string(card["code_hash"]).contains(raw), "the raw code does not appear in the database");
+    assert(int(card["balance_minor"]) == 50000, "the balance equals the issued amount");
+    assert(cards.balance(raw) == 50000, "the balance is readable with the code");
+
+    let txns = cards.transactions(card["id"]);
+    assert(txns.len() == 1, "an issue transaction is recorded");
+
+    let applied = cards.redeem(raw, 20000, null);
+    assert(applied == 20000, "a partial redemption applies the requested amount");
+    assert(cards.balance(raw) == 30000, "the balance is reduced");
+
+    let rest = cards.redeem(raw, 99999, null);
+    assert(rest == 30000, "a redemption cannot exceed the balance");
+    assert(cards.balance(raw) == 0, "the balance is exhausted");
+    let spent = DB.table("gift_cards").where("id", "=", card["id"]).first();
+    assert(spent["status"] == "redeemed", "an exhausted card is marked redeemed");
+
+    // An unknown code is refused outright — it never silently succeeds.
+    let invalid_rejected = false;
+    try {
+        cards.redeem("NOT-A-REAL-CODE", 100, null);
+    } catch (e) {
+        invalid_rejected = true;
+    }
+    assert(invalid_rejected, "an unknown code is refused");
+    assert(cards.balance("NOT-A-REAL-CODE") == 0, "an unknown code has no balance");
+
+    // HTTP: the balance endpoint.
+    let probe = post(app, "/gift-card/balance", map(
+        "code", raw, "amount", "1", "format", "json"
+    ), "");
+    assert(probe["status"] == 200, "gift card balance endpoint responds");
+    assert(body(probe)["data"]["balance_minor"] == 0, "balance endpoint reports the remaining balance");
+    println("  [PASS] test_gift_cards");
+}
+
+fn test_gift_card_checkout(app, ids) {
+    let cards = new GiftCardService();
+    let raw = cards.issue(10000, "BDT", "");
+    let products = ids["ids"];
+    let product_id = products[0];
+
+    let first = get(app, "/cart");
+    let cart_cookie = "cart=" + cookie_of(first, "cart");
+    post(app, "/cart/items", map(
+        "product_id", product_id, "quantity", 1, "format", "json"
+    ), cart_cookie);
+
+    let quote = body(get(app, "/checkout/quote?gift_card_code=" + raw, cart_cookie))["data"];
+    assert(int(quote["gift_card_discount_minor"]) == 10000, "the gift card covers part of the order");
+    assert(int(quote["discount_minor"]) == int(quote["volume_discount_minor"]) + 10000, "the gift card stacks on the volume discount");
+
+    let res = post(app, "/checkout", map(
+        "shipping_method", "standard",
+        "gift_card_code", raw,
+        "full_name", "Gift Buyer",
+        "phone", "01700000000",
+        "line1", "33 Test Road",
+        "city", "Dhaka",
+        "format", "json"
+    ), cart_cookie);
+    assert(res["status"] == 201, "the order with a gift card is placed");
+    let number = string(body(res)["data"]["order_number"]);
+    let order = DB.table("orders").where("order_number", "=", number).first();
+    assert(int(order["discount_minor"]) >= 10000, "the gift card discount is persisted on the order");
+
+    let rows = DB.table("gift_card_transactions").where("order_id", "=", order["id"]).get();
+    assert(rows.len() == 1, "the redemption is linked to the order");
+    assert(int(rows[0]["amount_minor"]) == 10000, "the redeemed amount is recorded");
+    assert(cards.balance(raw) == 0, "the card balance is spent");
+    println("  [PASS] test_gift_card_checkout");
+}
+
+fn test_campaigns(app, ids) {
+    let campaigns = new CampaignService();
+    let code = "PROMO-" + string(ids["tag"]);
+    let id = campaigns.save(code, "Spring promo", "percent", 1000, 0, 0);
+    let stored = DB.table("campaigns").where("id", "=", id).first();
+    assert(int(stored["value_minor"]) == 1000, "campaign value stored in basis points");
+    assert(campaigns.active() == null, "an inactive campaign never applies");
+    assert(campaigns.discount(100000) == 0, "an inactive campaign gives no discount");
+
+    campaigns.save(code, "Spring promo", "percent", 1000, 0, 1);
+    let active = campaigns.active();
+    assert(active != null, "the activated campaign is picked up");
+    assert(campaigns.discount(100000) == 10000, "a 10% campaign discounts 100000 minor units");
+
+    // The campaign applies at checkout.
+    let products = ids["ids"];
+    let product_id = products[0];
+    let first = get(app, "/cart");
+    let cart_cookie = "cart=" + cookie_of(first, "cart");
+    post(app, "/cart/items", map(
+        "product_id", product_id, "quantity", 1, "format", "json"
+    ), cart_cookie);
+    let quote = body(get(app, "/checkout/quote", cart_cookie))["data"];
+    assert(int(quote["campaign_discount_minor"]) > 0, "the campaign discount reaches the quote");
+    assert(int(quote["total_minor"]) < int(quote["subtotal_minor"]) + int(quote["shipping_minor"]), "the discount lowers the total");
+
+    // An expired campaign is ignored.
+    DB.table("campaigns").where("id", "=", id).update(map("ends_at", "1"));
+    assert(campaigns.active() == null, "an expired campaign is ignored");
+    DB.table("campaigns").where("id", "=", id).update(map("ends_at", null));
+    println("  [PASS] test_campaigns");
+}
+
+fn test_support(app, ids) {
+    let session = session_pair(string(ids["email"]), "adv-pass");
+    let cookie = string(session["cookie"]);
+    let csrf = string(session["csrf"]);
+
+    let res = post(app, "/support", map(
+        "email", string(ids["email"]), "subject", "Damaged parcel",
+        "message", "The box arrived crushed and the item is broken.",
+        "_csrf", csrf, "format", "json"
+    ), cookie);
+    assert(res["status"] == 200, "a support ticket is accepted");
+    let tickets = DB.table("support_tickets").orderBy("id", "DESC").get();
+    assert(tickets.len() >= 1, "the ticket is stored");
+    assert(tickets[0]["status"] == "open", "a new ticket is open");
+
+    let short = post(app, "/support", map(
+        "email", string(ids["email"]), "subject", "Hi", "message", "short",
+        "_csrf", csrf, "format", "json"
+    ), cookie);
+    assert(short["status"] == 422, "a too-short message is rejected");
+
+    let page = get(app, "/support", cookie);
+    assert(page["status"] == 200, "support page renders");
+    assert(string(page["body"]).contains("Damaged parcel"), "the customer sees their ticket");
+
+    let admin_session = session_pair(string(ids["admin_email"]), "advadmin-pass");
+    let admin_cookie = string(admin_session["cookie"]);
+    let admin_csrf = string(admin_session["csrf"]);
+    let listed = body(get(app, "/admin/api/support-tickets", admin_cookie));
+    assert(listed["data"].len() >= 1, "the admin sees the ticket");
+    let resolved = post(app, "/admin/api/support-tickets/" + string(tickets[0]["id"]), map(
+        "status", "resolved", "_csrf", admin_csrf, "format", "json"
+    ), admin_cookie);
+    assert(resolved["status"] == 200, "the admin resolves the ticket");
+    let after = DB.table("support_tickets").where("id", "=", tickets[0]["id"]).first();
+    assert(after["status"] == "resolved", "the ticket status is updated");
+    println("  [PASS] test_support");
+}
+
+fn test_tracking(app, ids) {
+    let session = session_pair(string(ids["email"]), "adv-pass");
+    let cookie = string(session["cookie"]);
+    let csrf = string(session["csrf"]);
+    let products = ids["ids"];
+    let order = place_paid_order(app, ids, cookie, csrf, products[0]);
+    let number = string(order["order_number"]);
+
+    DB.table("shipments").insert(map(
+        "order_id", order["id"], "carrier", "Spid3r Express",
+        "tracking_number", "TRK-" + number, "status", "shipped",
+        "shipped_at", string(unix_time())
+    ));
+
+    let found = body(post(app, "/track", map(
+        "order_number", number, "email", string(ids["email"]), "format", "json"
+    ), ""));
+    assert(int(found["data"]["total_minor"]) > 0, "the order is returned with proof of identity");
+    assert(found["data"]["shipments"].len() == 1, "the shipment is included");
+    assert(string(found["data"]["shipments"][0]["tracking_number"]) == "TRK-" + number, "tracking number shown");
+
+    let wrong = post(app, "/track", map(
+        "order_number", number, "email", "someone-else@example.test", "format", "json"
+    ), "");
+    assert(wrong["status"] == 404, "a wrong email cannot track the order");
+
+    let unknown = post(app, "/track", map(
+        "order_number", "SP-NOPE", "email", string(ids["email"]), "format", "json"
+    ), "");
+    assert(unknown["status"] == 404, "an unknown order number returns 404");
+    println("  [PASS] test_tracking");
+}
+
+fn test_currency(app, ids) {
+    let currencies = new CurrencyService("BDT");
+    let rates = currencies.rates();
+    assert(rates.has("BDT"), "the base currency is always present");
+    assert(rates.has("USD"), "the seeded display currency is present");
+
+    // 1000.00 BDT at 12100 bps (1 USD = 1.21 BDT) -> 826.45 USD.
+    let converted = Fx.convert(100000, "BDT", "USD", rates);
+    assert(converted == 82645, "the conversion uses integer minor units");
+    assert(Fx.convert(82645, "USD", "BDT", rates) == 100000, "the conversion round-trips");
+    assert(Fx.format(82645, "USD", rates) == "$826.45", "the converted amount is formatted");
+
+    // A tampered cookie can never select an unknown currency.
+    let bogus = currencies.selected(map("headers", map("cookie", "store_currency=XXX")));
+    assert(bogus == "BDT", "an unknown currency falls back to the base currency");
+
+    // The storefront renders the selected currency.
+    let page = get(app, "/catalog", "store_currency=USD");
+    assert(page["status"] == 200, "catalog renders with a display currency");
+    assert(string(page["body"]).contains("Prices in USD"), "the footer states the display currency");
+
+    let products = ids["ids"];
+    let detail = get(app, "/product/" + product_slug(products[0]), "store_currency=USD");
+    assert(detail["status"] == 200, "the product page renders in the display currency");
+    assert(string(detail["body"]).contains("826.45"), "prices are converted for display");
+    assert(string(detail["body"]).contains("$826.45"), "the converted price carries the display symbol");
+
+    // The base currency is untouched.
+    let base_page = get(app, "/catalog");
+    assert(string(base_page["body"]).contains("৳"), "the base currency is the default");
+
+    // Price filters are converted back into the base currency:
+    // 800.00 USD -> 96800 BDT minor (product at 100000 stays visible),
+    // 900.00 USD -> 108900 BDT minor (the same product is filtered out).
+    let cheap = get(app, "/catalog?min_price=800.00", "store_currency=USD");
+    assert(string(cheap["body"]).contains("Advanced Alpha"), "the price filter keeps a matching product");
+    let dear = get(app, "/catalog?min_price=900.00", "store_currency=USD");
+    assert(not string(dear["body"]).contains("Advanced Alpha"), "the price filter excludes a cheaper product");
+    println("  [PASS] test_currency");
+}
+
+fn test_locale(app, ids) {
+    let locales = new LocaleService("en");
+    let known = locales.locales();
+    assert(known.len() >= 2, "more than one locale is available");
+    assert(locales.translate("bn", "nav", "catalog", "Catalog") != "Catalog", "the nav label is translated");
+    assert(locales.translate("en", "nav", "catalog", "") == "Catalog", "the default locale resolves");
+    assert(locales.translate("xx", "nav", "catalog", "Fallback") == "Catalog", "an unknown locale falls back to the default locale");
+    assert(locales.translate("xx", "nav", "no_such_key", "Fallback") == "Fallback", "a missing key falls back to the supplied default");
+
+    // The storefront renders the selected language.
+    let page = get(app, "/catalog", "store_locale=bn");
+    assert(page["status"] == 200, "catalog renders with a language");
+    assert(string(page["body"]).contains("কার্ট"), "the navigation is translated");
+
+    // An unknown locale is rejected by the preference endpoint.
+    let session = session_pair(string(ids["email"]), "adv-pass");
+    let cookie = string(session["cookie"]);
+    let csrf = string(session["csrf"]);
+    let rejected = post(app, "/locale", map(
+        "locale", "zz", "_csrf", csrf, "format", "json"
+    ), cookie);
+    assert(rejected["status"] == 422, "an unknown language is rejected");
+
+    let accepted = post(app, "/locale", map(
+        "locale", "bn", "_csrf", csrf
+    ), cookie);
+    assert(accepted["status"] == 302, "a valid language is stored");
+    assert(string(accepted["headers"]["set-cookie"]).contains("store_locale=bn"), "the language cookie is set");
+    println("  [PASS] test_locale");
+}
+
+// ---- cleanup --------------------------------------------------------
+
+// Remove an order and everything that references it (refunds reference
+// payments with RESTRICT, so they must go first).
+fn drop_order(order_id) {
+    DB.table("gift_card_transactions").where("order_id", "=", order_id).delete();
+    let pays = DB.table("payments").where("order_id", "=", order_id).get();
+    let m = 0;
+    while m < pays.len() {
+        DB.table("refunds").where("payment_id", "=", pays[m]["id"]).delete();
+        m += 1;
+    }
+    DB.table("shipments").where("order_id", "=", order_id).delete();
+    DB.table("payments").where("order_id", "=", order_id).delete();
+    DB.table("coupon_usages").where("order_id", "=", order_id).delete();
+    DB.table("order_items").where("order_id", "=", order_id).delete();
+    DB.table("orders").where("id", "=", order_id).delete();
+}
+
+fn drop_user_data(user_id) {
+    let orders = DB.table("orders").where("user_id", "=", user_id).get();
+    let i = 0;
+    while i < orders.len() {
+        drop_order(orders[i]["id"]);
+        i += 1;
+    }
+    DB.table("wishlists").where("user_id", "=", user_id).delete();
+    DB.table("reviews").where("user_id", "=", user_id).delete();
+    DB.table("loyalty_ledger").where("user_id", "=", user_id).delete();
+    DB.table("referrals").where("referrer_id", "=", user_id).delete();
+    DB.table("referrals").where("referred_user_id", "=", user_id).delete();
+    DB.table("support_tickets").where("user_id", "=", user_id).delete();
+    DB.table("user_roles").where("user_id", "=", user_id).delete();
+    DB.table("sessions").where("user_id", "=", user_id).delete();
+    DB.table("users").where("id", "=", user_id).delete();
+}
+
+fn purge(tag: string) {
+    let emails = [
+        "adv-" + tag + "@example.test",
+        "advadmin-" + tag + "@example.test",
+        "advfriend-" + tag + "@example.test"
+    ];
+    let i = 0;
+    while i < emails.len() {
+        let user = DB.table("users").where("email", "=", emails[i]).first();
+        if user != null {
+            drop_user_data(user["id"]);
+        }
+        i += 1;
+    }
+    DB.table("campaigns").where("code", "LIKE", "PROMO-%").delete();
+    DB.table("recently_viewed").delete();
+    DB.table("gift_card_transactions").delete();
+    DB.table("gift_cards").delete();
+
+    // Collect this run's product ids first: several tables reference them
+    // with RESTRICT semantics, so the dependent rows must go first.
+    let products = DB.table("products").where("slug", "LIKE", "adv-%").get();
+    let pids = [];
+    let k = 0;
+    while k < products.len() {
+        pids.push(products[k]["id"]);
+        k += 1;
+    }
+    if pids.len() > 0 {
+        // Orders (guest or customer) that contain these products.
+        let lines = DB.table("order_items").whereIn("product_id", pids).get();
+        let j = 0;
+        while j < lines.len() {
+            drop_order(lines[j]["order_id"]);
+            j += 1;
+        }
+        DB.table("cart_items").whereIn("product_id", pids).delete();
+        DB.table("wishlists").whereIn("product_id", pids).delete();
+        DB.table("reviews").whereIn("product_id", pids).delete();
+        DB.table("inventory").whereIn("product_id", pids).delete();
+        DB.table("stock_movements").whereIn("product_id", pids).delete();
+        DB.table("product_images").whereIn("product_id", pids).delete();
+    }
+    DB.table("products").where("slug", "LIKE", "adv-%").delete();
+    DB.table("categories").where("slug", "LIKE", "adv-%").delete();
+    DB.table("brands").where("slug", "LIKE", "adv-%").delete();
+}
+
+fn main() {
+    println("\n=== Running Store Advanced Test Suite ===");
+    let app = new Application();
+    register_store_middleware(app);
+    register_web_routes();
+    register_queue_jobs();
+    run_database_seeder();
+    let tag = string(unix_time());
+    purge(tag);
+    let ids = setup(tag);
+
+    try {
+        test_wishlist(app, ids);
+        test_reviews(app, ids);
+        test_recommendations(app, ids);
+        test_recently_viewed(app, ids);
+        test_loyalty(app, ids);
+        test_referrals(app, ids);
+        test_gift_cards(app, ids);
+        test_gift_card_checkout(app, ids);
+        test_campaigns(app, ids);
+        test_support(app, ids);
+        test_tracking(app, ids);
+        test_currency(app, ids);
+        test_locale(app, ids);
+    } finally {
+        purge(tag);
+    }
+    DB.close();
+    println("=== All Store Advanced Tests Passed! ===\n");
+    return 0;
+}

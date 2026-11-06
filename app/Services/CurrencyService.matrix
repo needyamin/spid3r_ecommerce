@@ -1,0 +1,161 @@
+// app/Services/CurrencyService.matrix
+// Phase 10 — multi-currency support.
+//
+// The store keeps ONE canonical price list: integer minor units in the base
+// currency (settings `store.currency`). Alternate currencies are DISPLAY
+// currencies derived from configured rates — never a second price list, and
+// never float maths (see app/Support/Fx).
+//
+// The customer's choice lives in the `store_currency` cookie; an unknown or
+// inactive code silently falls back to the base currency so a tampered
+// cookie can never produce a nonsense price.
+
+import "framework/Database/DB";
+import "framework/HttpException";
+import "app/Support/Fx" as Fx;
+import "app/Support/Money" as Money;
+import "app/Support/CartIdentity" as CartIdentity;
+
+public class CurrencyService {
+    public let base_code;
+
+    fn new(base_code: string = "BDT") {
+        let code = string(base_code).trim().upper();
+        if code == "" {
+            code = "BDT";
+        }
+        self.base_code = code;
+    }
+
+    // Active currencies keyed by code. The base currency is pinned to a 1:1
+    // rate regardless of what the table says.
+    public fn rates(self) {
+        let rows = DB.table("currencies").where("is_active", "=", 1).get();
+        let out = map();
+        let i = 0;
+        while i < rows.len() {
+            let code = string(rows[i]["code"]).trim().upper();
+            if code != "" {
+                out[code] = map(
+                    "digits", int(rows[i]["minor_digits"]),
+                    "rate_bps", int(rows[i]["rate_to_base_bps"]),
+                    "symbol", string(rows[i]["symbol"]),
+                    "name", string(rows[i]["name"])
+                );
+            }
+            i += 1;
+        }
+        // Rebuild the base entry explicitly: the base currency is always
+        // 1:1 with itself, whatever rate the table happens to hold.
+        let bkey = self.base_code;
+        let base_meta = map("digits", 2, "rate_bps", 10000, "symbol", "", "name", bkey);
+        if out.has(bkey) {
+            let existing = out[bkey];
+            base_meta = map(
+                "digits", int(existing["digits"]),
+                "rate_bps", 10000,
+                "symbol", string(existing["symbol"]),
+                "name", string(existing["name"])
+            );
+        }
+        out[bkey] = base_meta;
+        return out;
+    }
+
+    // Currency switcher entries (base first, then active alternates).
+    // `selected_code` marks the active entry.
+    public fn catalog(self, selected_code: string = "") {
+        let rows = DB.table("currencies").where("is_active", "=", 1).orderBy("id", "ASC").get();
+        let chosen = string(selected_code).trim().upper();
+        let bkey = self.base_code;
+        let out = [];
+        let base_row = null;
+        let i = 0;
+        while i < rows.len() {
+            let code = string(rows[i]["code"]).trim().upper();
+            if code == bkey {
+                base_row = rows[i];
+            } else {
+                let flag = 0;
+                if code == chosen {
+                    flag = 1;
+                }
+                out.push(map(
+                    "code", code,
+                    "name", string(rows[i]["name"]),
+                    "symbol", string(rows[i]["symbol"]),
+                    "selected", flag
+                ));
+            }
+            i += 1;
+        }
+        if base_row == null {
+            base_row = map("code", bkey, "name", bkey, "symbol", "");
+        }
+        let base_flag = 0;
+        if chosen == "" or chosen == bkey {
+            base_flag = 1;
+        }
+        let head = map(
+            "code", bkey,
+            "name", string(base_row["name"]),
+            "symbol", string(base_row["symbol"]),
+            "selected", base_flag
+        );
+        let merged = [head];
+        let j = 0;
+        while j < out.len() {
+            merged.push(out[j]);
+            j += 1;
+        }
+        return merged;
+    }
+
+    // The customer's selected display currency, validated against the
+    // active catalog. Falls back to the base currency.
+    public fn selected(self, req) -> string {
+        if req == null {
+            return self.base_code;
+        }
+        let wanted = CartIdentity.cookie_value(req, "store_currency");
+        if wanted == "" {
+            wanted = string(req.query("currency", ""));
+        }
+        let code = string(wanted).trim().upper();
+        if code == "" or code == self.base_code {
+            return self.base_code;
+        }
+        let rates = self.rates();
+        if rates.has(code) {
+            return code;
+        }
+        return self.base_code;
+    }
+
+    // Display context: base code + rates. Null when the store runs in a
+    // single currency, which keeps the legacy pricing path untouched.
+    public fn context(self) {
+        let rates = self.rates();
+        if rates.len() <= 1 {
+            return null;
+        }
+        return map("base", self.base_code, "rates", rates);
+    }
+
+    // Convert base-currency minor units into `code` minor units.
+    public fn convert(self, minor: int, code: string, ctx) -> int {
+        if ctx == null {
+            return minor;
+        }
+        return Fx.convert(minor, string(ctx["base"]), code, ctx["rates"]);
+    }
+
+    // Display string for a base-currency amount in `code`.
+    public fn display(self, minor: int, code: string, ctx) -> string {
+        if ctx == null {
+            return Money.format(minor, code);
+        }
+        let converted = self.convert(minor, code, ctx);
+        return Fx.format(converted, code, ctx["rates"]);
+    }
+}

@@ -1,0 +1,362 @@
+// tests/test_store_security.matrix
+// Phase 12 — security review, as executable checks.
+//
+// Covers: security headers, CSP, cookie flags, XSS escaping, SQL-injection
+// resistance, CSRF, authorization gates, rate limiting, upload validation
+// and error-disclosure prevention.
+
+import "framework/Application";
+import "framework/Router";
+import "framework/Database/DB";
+import "framework/Filesystem/Storage";
+import "routes/web";
+import "routes/queue";
+import "app/Middleware/StoreMiddleware";
+import "app/Services/AuthService";
+import "app/Services/ImageService";
+import "database/seeders/DatabaseSeeder";
+
+fn call(app, method: string, path: string, data, cookie: string) {
+    let headers = map();
+    if cookie != "" {
+        headers["cookie"] = cookie;
+    }
+    let payload = map();
+    if data != null {
+        for k in data.keys() {
+            payload[k] = data[k];
+        }
+    }
+    return app.handle_request(map(
+        "method", method, "path", path,
+        "headers", headers, "data", payload
+    ));
+}
+
+fn get(app, path: string, cookie: string = "") {
+    return call(app, "GET", path, null, cookie);
+}
+
+fn post(app, path: string, data, cookie: string = "") {
+    return call(app, "POST", path, data, cookie);
+}
+
+fn session_pair(email: string, password: string) {
+    let svc = new AuthService();
+    let token = svc.login(email, password);
+    let rows = DB.select("SELECT payload FROM sessions WHERE token = ?", [token]);
+    return map(
+        "cookie", "spid3r_session=" + token,
+        "csrf", string(rows[0]["payload"])
+    );
+}
+
+fn header_of(res, name: string) -> string {
+    let key = string(name).lower();
+    if not res["headers"].has(key) {
+        return "";
+    }
+    return string(res["headers"][key]);
+}
+
+// ---- tests ----------------------------------------------------------
+
+fn test_security_headers(app) {
+    // HTML, JSON and static assets all flow through the same Response
+    // defaults, so every one of them must carry the headers.
+    let page = get(app, "/");
+    assert(page["status"] == 200, "the storefront renders");
+    assert(header_of(page, "x-content-type-options") == "nosniff", "nosniff on HTML");
+    assert(header_of(page, "x-frame-options") != "", "frame options on HTML");
+    assert(header_of(page, "referrer-policy") != "", "referrer policy on HTML");
+    assert(header_of(page, "permissions-policy") != "", "permissions policy on HTML");
+
+    let csp = header_of(page, "content-security-policy");
+    assert(csp != "", "CSP on HTML");
+    assert(csp.contains("script-src 'self'"), "CSP locks scripts to self");
+    assert(csp.contains("frame-ancestors 'none'"), "CSP forbids framing");
+    assert(csp.contains("form-action 'self'"), "CSP locks form targets to self");
+
+    let health = get(app, "/health");
+    assert(header_of(health, "x-content-type-options") == "nosniff", "nosniff on JSON");
+    assert(header_of(health, "content-security-policy") != "", "CSP on JSON");
+
+    let asset = get(app, "/css/store.css");
+    assert(asset["status"] == 200, "static assets are served");
+    assert(header_of(asset, "x-content-type-options") == "nosniff", "nosniff on static assets");
+    assert(header_of(asset, "content-security-policy") != "", "CSP on static assets");
+
+    // Error pages carry them too.
+    let missing = get(app, "/no-such-page");
+    assert(missing["status"] == 404, "unknown pages are 404");
+    assert(header_of(missing, "content-security-policy") != "", "CSP on error pages");
+    println("  [PASS] test_security_headers");
+}
+
+fn test_cookie_flags(app) {
+    let svc = new AuthService();
+    let email = "sec-" + string(unix_time()) + "@example.test";
+    svc.register("Security Probe", email, "sec-pass");
+
+    // HSTS and the Secure flag are opt-in for TLS deployments.
+    env_set("SPID3R_HSTS", "1");
+    env_set("SPID3R_COOKIE_SECURE", "1");
+
+    let res = post(app, "/login", map("email", email, "password", "sec-pass"));
+    assert(res["status"] == 302, "login succeeds");
+    let set_cookie = string(res["headers"]["set-cookie"]);
+    assert(set_cookie.contains("HttpOnly"), "the session cookie is HttpOnly");
+    assert(set_cookie.contains("SameSite=Lax"), "the session cookie is SameSite=Lax");
+    assert(set_cookie.contains("Secure"), "the session cookie is Secure when enabled");
+    assert(header_of(res, "strict-transport-security").contains("max-age=31536000"), "HSTS is opt-in via env");
+
+    // Back to the development defaults for the remaining suites.
+    env_set("SPID3R_HSTS", "0");
+    env_set("SPID3R_COOKIE_SECURE", "0");
+
+    let again = post(app, "/login", map("email", email, "password", "sec-pass"));
+    assert(not string(again["headers"]["set-cookie"]).contains("Secure"), "the Secure flag follows the environment");
+
+    let user = DB.table("users").where("email", "=", email).first();
+    DB.table("sessions").where("user_id", "=", user["id"]).delete();
+    DB.table("users").where("id", "=", user["id"]).delete();
+    println("  [PASS] test_cookie_flags");
+}
+
+fn test_xss_escaping(app) {
+    let tag = "xss" + string(unix_time());
+    let cat = DB.table("categories").insert(map(
+        "name", "XSS Category", "slug", "xss-cat-" + tag
+    ));
+    let evil = "<script>alert(1)</script>";
+    let pid = DB.table("products").insert(map(
+        "category_id", cat, "name", evil,
+        "slug", "xss-probe-" + tag, "sku", "XSS-" + tag,
+        "short_description", "\"><img src=x onerror=alert(2)>",
+        "price_minor", 1000, "status", "published", "currency", "BDT"
+    ));
+    DB.table("inventory").insert(map(
+        "product_id", pid, "variant_id", null,
+        "quantity", 3, "reserved", 0, "low_stock_threshold", 1
+    ));
+
+    let slug = "xss-probe-" + tag;
+    let page = get(app, "/product/" + slug);
+    assert(page["status"] == 200, "the product page renders");
+    let body_text = string(page["body"]);
+    assert(not body_text.contains("<script>alert(1)"), "a script tag in stored data is never rendered");
+    assert(body_text.contains("&lt;script&gt;alert(1)&lt;/script&gt;"), "stored HTML is entity-escaped");
+
+    let listing = get(app, "/catalog?q=xss-probe-" + tag);
+    assert(listing["status"] == 200, "the catalog renders with the probe");
+    assert(not string(listing["body"]).contains("<script>alert(1)"), "the listing escapes stored data too");
+    assert(not string(listing["body"]).contains("<img src=x onerror"), "event-handler injection is escaped");
+
+    DB.table("inventory").where("product_id", "=", pid).delete();
+    DB.table("stock_movements").where("product_id", "=", pid).delete();
+    DB.table("products").where("id", "=", pid).delete();
+    DB.table("categories").where("id", "=", cat).delete();
+    println("  [PASS] test_xss_escaping");
+}
+
+fn test_sql_injection_resistance(app) {
+    // Classic payloads must neither error nor broaden the result set.
+    let payloads = [
+        "' OR 1=1--",
+        "\" OR \"1\"=\"1",
+        "'; DROP TABLE products;--",
+        "1' UNION SELECT id, email FROM users--"
+    ];
+    let i = 0;
+    while i < payloads.len() {
+        let probe = payloads[i];
+        let search = get(app, "/catalog?q=" + url_encode(probe));
+        assert(search["status"] == 200, "search survives payload " + string(i + 1));
+        let body_text = string(search["body"]);
+        assert(not body_text.contains("SQL"), "no SQL fragments leak for payload " + string(i + 1));
+        assert(not body_text.contains("Exception"), "no exception text leaks for payload " + string(i + 1));
+        i += 1;
+    }
+
+    // The price filter is numeric — a payload must not widen it.
+    let filter = get(app, "/catalog?min_price=" + url_encode("0 OR 1=1"));
+    assert(filter["status"] == 200, "the price filter survives injection");
+
+    // Authentication is parameterised too — and the email format rule
+    // rejects the payload before it ever reaches SQL (either way: refused).
+    let login = post(app, "/login", map("email", "' OR 1=1--", "password", "x"));
+    assert(login["status"] == 401 or login["status"] == 422, "a tautology email cannot sign in");
+    println("  [PASS] test_sql_injection_resistance");
+}
+
+fn test_csrf_and_authorization(app) {
+    let svc = new AuthService();
+    let email = "secuser-" + string(unix_time()) + "@example.test";
+    svc.register("Sec Customer", email, "sec-pass");
+    let session = session_pair(email, "sec-pass");
+    let cookie = string(session["cookie"]);
+    let csrf = string(session["csrf"]);
+
+    // A real published product to exercise the CSRF-protected endpoint.
+    let cat = DB.table("categories").insert(map(
+        "name", "Sec CSRF Cat", "slug", "sec-csrf-" + string(unix_time())
+    ));
+    let pid = DB.table("products").insert(map(
+        "category_id", cat, "name", "Sec CSRF Widget",
+        "slug", "sec-csrf-widget-" + string(unix_time()), "sku", "SECCSRF-" + string(unix_time()),
+        "price_minor", 1000, "status", "published", "currency", "BDT"
+    ));
+
+    // CSRF: a cookie-authenticated POST without the token is rejected.
+    let no_token = post(app, "/wishlist/add", map("product_id", pid, "format", "json"), cookie);
+    assert(no_token["status"] == 419, "a POST without the CSRF token is 419");
+    let with_token = post(app, "/wishlist/add", map(
+        "product_id", pid, "_csrf", csrf, "format", "json"
+    ), cookie);
+    assert(with_token["status"] == 200 or with_token["status"] == 302,
+        "a valid token passes the CSRF layer");
+
+    // Authorization: admin surfaces refuse customers and anonymous visitors.
+    let surfaces = [
+        "/admin/shipping",
+        "/admin/returns",
+        "/admin/api/shipping/zones",
+        "/admin/api/orders/1/shipments",
+        "/admin/api/returns",
+        "/admin/api/support-tickets"
+    ];
+    let i = 0;
+    while i < surfaces.len() {
+        let path = surfaces[i];
+        let as_customer = get(app, path, cookie);
+        assert(as_customer["status"] == 403, "a customer is refused on " + path);
+        let anonymous = get(app, path);
+        if path.contains("/api/") {
+            assert(anonymous["status"] == 401, "an anonymous API call is 401 on " + path);
+        } else {
+            assert(anonymous["status"] == 302 or anonymous["status"] == 401,
+                "an anonymous page is sent away on " + path);
+        }
+        i += 1;
+    }
+
+    // A cross-origin state-changing request without a same-origin Origin
+    // header value is rejected outright.
+    let forged = app.handle_request(map(
+        "method", "POST", "path", "/wishlist/add",
+        "headers", map("cookie", cookie, "origin", "https://evil.example"),
+        "data", map("product_id", 1, "_csrf", csrf, "format", "json")
+    ));
+    assert(forged["status"] == 403, "a foreign Origin is rejected with 403");
+
+    let user = DB.table("users").where("email", "=", email).first();
+    DB.table("wishlists").where("user_id", "=", user["id"]).delete();
+    DB.table("sessions").where("user_id", "=", user["id"]).delete();
+    DB.table("users").where("id", "=", user["id"]).delete();
+    DB.table("products").where("id", "=", pid).delete();
+    DB.table("categories").where("id", "=", cat).delete();
+    println("  [PASS] test_csrf_and_authorization");
+}
+
+fn test_rate_limiting(app) {
+    // The support form is throttled to 5 requests / 60 s per client.
+    let limited = 0;
+    let i = 0;
+    while i < 8 {
+        let res = post(app, "/support", map(
+            "email", "spam@example.test", "subject", "Hi",
+            "message", "too short to be accepted"
+        ));
+        if res["status"] == 429 {
+            limited += 1;
+        }
+        i += 1;
+    }
+    assert(limited > 0, "requests beyond the limit are throttled (429)");
+    println("  [PASS] test_rate_limiting");
+}
+
+fn test_upload_validation() {
+    let images = new ImageService();
+    let tag = string(unix_time());
+    let cat = DB.table("categories").insert(map(
+        "name", "Sec Upload Cat", "slug", "sec-upload-" + tag
+    ));
+    let pid = DB.table("products").insert(map(
+        "category_id", cat, "name", "Sec Upload Widget",
+        "slug", "sec-upload-" + tag, "sku", "SECUP-" + tag,
+        "price_minor", 1000, "status", "published", "currency", "BDT"
+    ));
+
+    // Not an image at all: rejected by magic-byte inspection.
+    let not_image = base64_encode("this is plain text, definitely not an image");
+    let rejected = false;
+    try {
+        images.upload(pid, not_image, "nope", false);
+    } catch (e) {
+        rejected = true;
+    }
+    assert(rejected, "a non-image payload is refused");
+
+    // Below the minimum byte count: refused.
+    let tiny = base64_encode("abc");
+    let too_small = false;
+    try {
+        images.upload(pid, tiny, "tiny", false);
+    } catch (e) {
+        too_small = true;
+    }
+    assert(too_small, "a payload under 8 bytes is refused");
+
+    // Nothing was written for the refused payloads.
+    let rows = DB.table("product_images").where("product_id", "=", pid).get();
+    assert(rows.len() == 0, "refused uploads store nothing");
+
+    DB.table("products").where("id", "=", pid).delete();
+    DB.table("categories").where("id", "=", cat).delete();
+    println("  [PASS] test_upload_validation");
+}
+
+fn test_error_disclosure(app) {
+    // A missing page must not leak stack traces, paths or driver errors.
+    let missing = get(app, "/definitely/not/here");
+    let body_text = string(missing["body"]);
+    assert(missing["status"] == 404, "unknown routes are 404");
+    assert(not body_text.contains(".matrix"), "no source paths on error pages");
+    assert(not body_text.contains("Exception"), "no exception details on error pages");
+    assert(not body_text.contains("SELECT"), "no SQL fragments on error pages");
+
+    // A malformed order number cannot leak driver errors either.
+    let track = post(app, "/track", map(
+        "order_number", "' OR 1=1--", "email", "x@example.test", "format", "json"
+    ));
+    assert(track["status"] == 404 or track["status"] == 422, "tracking survives injection");
+    assert(not string(track["body"]).contains("SELECT"), "no SQL fragments from tracking");
+    println("  [PASS] test_error_disclosure");
+}
+
+// ---- cleanup --------------------------------------------------------
+// No purge needed: the throttle counters live in the file-based cache and
+// every fixture in this suite is removed by the test that created it.
+
+fn main() {
+    println("\n=== Running Store Security Test Suite ===");
+    let app = new Application();
+    register_store_middleware(app);
+    register_web_routes();
+    register_queue_jobs();
+    run_database_seeder();
+
+    test_security_headers(app);
+    test_cookie_flags(app);
+    test_xss_escaping(app);
+    test_sql_injection_resistance(app);
+    test_csrf_and_authorization(app);
+    test_rate_limiting(app);
+    test_upload_validation();
+    test_error_disclosure(app);
+
+    DB.close();
+    println("=== All Store Security Tests Passed! ===\n");
+    return 0;
+}

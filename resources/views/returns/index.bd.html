@@ -1,0 +1,30 @@
+@extends("layouts.store")
+@section('title', title)
+@section('meta_description', meta_description)
+@section("content")
+  <nav class="breadcrumb"><a href="/">Home</a> / <a href="/account">Account</a> / <span>Returns</span></nav>
+  <h1 class="page-title">Your returns</h1>
+
+@if(has_returns)
+  <section class="support-tickets">
+    <table class="data-table">
+      <thead><tr><th>Order</th><th>Type</th><th>Quantity</th><th>Reason</th><th>Status</th><th>Refund</th><th>Opened</th></tr></thead>
+      <tbody>
+@foreach(ret in returns)
+        <tr>
+          <td>{{ ret.order_id }}</td>
+          <td>{{ ret.kind }}</td>
+          <td>{{ ret.quantity }}</td>
+          <td>{{ ret.reason }}</td>
+          <td>{{ ret.status }}</td>
+          <td>{{ ret.refund_minor }}</td>
+          <td>{{ ret.created_at }}</td>
+        </tr>
+@endforeach
+      </tbody>
+    </table>
+  </section>
+@else
+  <p class="empty-note">You have not requested any returns.</p>
+@endif
+@endsection

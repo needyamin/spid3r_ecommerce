@@ -1,0 +1,483 @@
+// tests/test_store_shipping.matrix
+// Phase 11 — shipping zones, delivery rates, fulfilment and returns.
+
+import "framework/Application";
+import "framework/Router";
+import "framework/Database/DB";
+import "routes/web";
+import "routes/queue";
+import "app/Middleware/StoreMiddleware";
+import "app/Services/AuthService";
+import "app/Services/ShippingService";
+import "app/Services/FulfillmentService";
+import "app/Services/ReturnService";
+import "database/seeders/DatabaseSeeder";
+
+fn call(app, method: string, path: string, data, cookie: string) {
+    let headers = map();
+    if cookie != "" {
+        headers["cookie"] = cookie;
+    }
+    let payload = map();
+    if data != null {
+        for k in data.keys() {
+            payload[k] = data[k];
+        }
+    }
+    return app.handle_request(map(
+        "method", method, "path", path,
+        "headers", headers, "data", payload
+    ));
+}
+
+fn get(app, path: string, cookie: string = "") {
+    return call(app, "GET", path, null, cookie);
+}
+
+fn post(app, path: string, data, cookie: string = "") {
+    return call(app, "POST", path, data, cookie);
+}
+
+fn body(res) {
+    return json_parse(string(res["body"]));
+}
+
+fn cookie_of(res, name: string) -> string {
+    let raw = string(res["headers"]["set-cookie"]);
+    let parts = raw.split(";");
+    let i = 0;
+    while i < parts.len() {
+        let pair = parts[i].trim().split("=");
+        if pair.len() > 1 and pair[0] == name {
+            return pair[1];
+        }
+        i += 1;
+    }
+    return "";
+}
+
+fn session_pair(email: string, password: string) {
+    let svc = new AuthService();
+    let token = svc.login(email, password);
+    let rows = DB.select("SELECT payload FROM sessions WHERE token = ?", [token]);
+    return map(
+        "cookie", "spid3r_session=" + token,
+        "csrf", string(rows[0]["payload"])
+    );
+}
+
+// ---- fixtures -------------------------------------------------------
+
+fn setup(tag: string) {
+    let cat = DB.table("categories").insert(map(
+        "name", "Ship Category " + tag, "slug", "ship-cat-" + tag
+    ));
+    let product = DB.table("products").insert(map(
+        "category_id", cat, "name", "Ship Widget " + tag,
+        "slug", "ship-widget-" + tag, "sku", "SHIP-" + tag,
+        "price_minor", 25000, "status", "published", "currency", "BDT"
+    ));
+    DB.table("inventory").insert(map(
+        "product_id", product, "variant_id", null,
+        "quantity", 30, "reserved", 0, "low_stock_threshold", 2
+    ));
+
+    let svc = new AuthService();
+    let email = "ship-" + tag + "@example.test";
+    let user = svc.register("Ship Customer", email, "ship-pass");
+    let admin_email = "shipadmin-" + tag + "@example.test";
+    let admin_user = svc.register("Ship Admin", admin_email, "shipadmin-pass");
+    let role = DB.table("roles").where("slug", "=", "admin").first();
+    DB.table("user_roles").insert(map("user_id", admin_user["id"], "role_id", role["id"]));
+
+    return map(
+        "cat", cat, "product", product,
+        "user", user, "email", email,
+        "admin", admin_user, "admin_email", admin_email, "tag", tag
+    );
+}
+
+// Place a paid, then delivered order for the customer.
+fn place_delivered_order(app, ids, cookie: string, csrf: string, district: string) {
+    let first = get(app, "/cart", cookie);
+    let cart_cookie = cookie + "; cart=" + cookie_of(first, "cart");
+    let added = post(app, "/cart/items", map(
+        "product_id", ids["product"], "quantity", 1, "format", "json", "_csrf", csrf
+    ), cart_cookie);
+    assert(added["status"] == 200, "item added to the cart");
+
+    let res = post(app, "/checkout", map(
+        "shipping_method", "standard",
+        "full_name", "Ship Buyer",
+        "phone", "01700000000",
+        "line1", "44 Test Road",
+        "city", "Dhaka",
+        "district", district,
+        "country", "Bangladesh",
+        "format", "json",
+        "_csrf", csrf
+    ), cart_cookie);
+    assert(res["status"] == 201, "order placed");
+    let number = string(body(res)["data"]["order_number"]);
+    let order = DB.table("orders").where("order_number", "=", number).first();
+    DB.table("orders").where("id", "=", order["id"]).update(map("status", "delivered"));
+    return order;
+}
+
+// ---- tests ----------------------------------------------------------
+
+fn test_zone_rates(app, ids) {
+    let shipping = new ShippingService();
+    let zone = shipping.save_zone("Dhaka Metro " + string(ids["tag"]), "Bangladesh", "Dhaka, Gazipur", 1);
+    let outside = shipping.save_zone("Rest of BD " + string(ids["tag"]), "Bangladesh", "", 1);
+
+    // Tiered rate: cheaper inside Dhaka, with a delivery estimate.
+    shipping.save_rate(zone, "standard", 4000, 0, null, 1, 2, 1);
+    // Express only for larger orders in the same zone.
+    shipping.save_rate(zone, "express", 15000, 20000, null, 1, 1, 1);
+    // Country-wide fallback rate.
+    shipping.save_rate(outside, "standard", 9000, 0, null, 5, 9, 1);
+
+    // A Dhaka address matches the SPECIFIC zone, not the country-wide one.
+    let dhaka = shipping.zone_for_address(map("country", "Bangladesh", "district", "Dhaka", "city", "Dhaka"));
+    assert(dhaka != null, "a Dhaka address matches the metro zone");
+    assert(int(dhaka["id"]) == int(zone), "the specific zone wins over the country-wide one");
+
+    // A district outside the list falls back to the country-wide zone.
+    let far = shipping.zone_for_address(map("country", "Bangladesh", "district", "Chittagong"));
+    assert(far != null, "an unlisted district still matches a zone");
+    assert(int(far["id"]) == int(outside), "the country-wide zone is the fallback");
+
+    // Case-insensitive district matching.
+    let caps = shipping.zone_for_address(map("country", "bangladesh", "district", "GAZIPUR"));
+    assert(caps != null and int(caps["id"]) == int(zone), "district matching is case-insensitive");
+
+    // Quote: the zone rate wins over the flat fee.
+    let q = shipping.quote(map("country", "Bangladesh", "district", "Dhaka"), "standard", 25000);
+    assert(int(q["fee_minor"]) == 4000, "the zone rate sets the delivery fee");
+    assert(string(q["source"]) == "zone_rate", "the quote reports the zone source");
+    assert(int(q["estimated_days_min"]) == 1 and int(q["estimated_days_max"]) == 2, "the estimate comes from the rate");
+
+    // Express is only configured for orders >= 20000; 10000 falls back.
+    let small = shipping.quote(map("country", "Bangladesh", "district", "Dhaka"), "express", 10000);
+    assert(string(small["source"]) == "flat", "a value below the tier minimum falls back to the flat fee");
+    let big = shipping.quote(map("country", "Bangladesh", "district", "Dhaka"), "express", 25000);
+    assert(int(big["fee_minor"]) == 15000, "a value inside the tier uses the zone rate");
+
+    // An unknown method is refused.
+    let bad_method = false;
+    try {
+        shipping.quote(map("district", "Dhaka"), "drone", 25000);
+    } catch (e) {
+        bad_method = true;
+    }
+    assert(bad_method, "an unknown shipping method is refused");
+    println("  [PASS] test_zone_rates");
+}
+
+fn test_checkout_zone_fee(app, ids) {
+    let shipping = new ShippingService();
+    // Only this test's zone may be active: earlier zones in the catalogue
+    // would otherwise win the "most specific match" race.
+    let existing = shipping.all_zones();
+    let z = 0;
+    while z < existing.len() {
+        shipping.deactivate_zone(existing[z]["id"]);
+        z += 1;
+    }
+    let zone = shipping.save_zone("Checkout Zone " + string(ids["tag"]), "Bangladesh", "Dhaka", 1);
+    shipping.save_rate(zone, "standard", 3500, 0, null, 1, 2, 1);
+
+    let session = session_pair(string(ids["email"]), "ship-pass");
+    let cookie = string(session["cookie"]);
+    let csrf = string(session["csrf"]);
+
+    // The quote honours the zone when the address names a configured district.
+    let q = body(get(app, "/checkout/quote?shipping_method=standard&district=Dhaka&country=Bangladesh", cookie))["data"];
+    assert(int(q["shipping_minor"]) == 3500, "the checkout quote uses the zone rate");
+    assert(int(q["shipping_days_min"]) == 1, "the checkout quote carries the delivery estimate");
+    assert(string(q["shipping_zone"]) == "Checkout Zone " + string(ids["tag"]), "the quote names the zone");
+
+    // Without an address the flat fee applies (existing behaviour).
+    let flat = body(get(app, "/checkout/quote?shipping_method=standard", cookie))["data"];
+    assert(int(flat["shipping_minor"]) == 6000, "no address falls back to the flat fee");
+    assert(string(flat["shipping_source"]) == "flat", "the flat source is reported");
+
+    // Placement uses the same zone rate and stores it on the order.
+    let first = get(app, "/cart", cookie);
+    let cart_cookie = cookie + "; cart=" + cookie_of(first, "cart");
+    post(app, "/cart/items", map(
+        "product_id", ids["product"], "quantity", 1, "format", "json", "_csrf", csrf
+    ), cart_cookie);
+    let res = post(app, "/checkout", map(
+        "shipping_method", "standard",
+        "full_name", "Zone Buyer",
+        "phone", "01700000000",
+        "line1", "55 Test Road",
+        "city", "Dhaka",
+        "district", "Dhaka",
+        "country", "Bangladesh",
+        "format", "json",
+        "_csrf", csrf
+    ), cart_cookie);
+    assert(res["status"] == 201, "the order is placed with a zone rate");
+    let number = string(body(res)["data"]["order_number"]);
+    let order = DB.table("orders").where("order_number", "=", number).first();
+    assert(int(order["shipping_minor"]) == 3500, "the zone fee is persisted on the order");
+
+    // Public read-only estimate endpoint.
+    let est = body(post(app, "/shipping/estimate", map(
+        "method", "standard", "order_value_minor", 25000,
+        "country", "Bangladesh", "district", "Dhaka"
+    ), ""));
+    assert(int(est["data"]["fee_minor"]) == 3500, "the public estimate uses the zone rate");
+
+    shipping.deactivate_zone(zone);
+    let after = body(post(app, "/shipping/estimate", map(
+        "method", "standard", "order_value_minor", 25000,
+        "country", "Bangladesh", "district", "Dhaka"
+    ), ""));
+    assert(string(after["data"]["source"]) == "flat", "a deactivated zone no longer applies");
+    shipping.save_zone("Checkout Zone " + string(ids["tag"]), "Bangladesh", "Dhaka", 1);
+    println("  [PASS] test_checkout_zone_fee");
+}
+
+fn test_fulfillment(app, ids) {
+    let session = session_pair(string(ids["email"]), "ship-pass");
+    let cookie = string(session["cookie"]);
+    let csrf = string(session["csrf"]);
+    let admin_session = session_pair(string(ids["admin_email"]), "shipadmin-pass");
+    let admin_cookie = string(admin_session["cookie"]);
+    let admin_csrf = string(admin_session["csrf"]);
+
+    let order = place_delivered_order(app, ids, cookie, csrf, "Dhaka");
+    let order_id = order["id"];
+
+    // A closed order cannot be shipped.
+    DB.table("orders").where("id", "=", order_id).update(map("status", "cancelled"));
+    let rejected = post(app, "/admin/api/orders/" + string(order_id) + "/shipments", map(
+        "carrier", "X", "format", "json", "_csrf", admin_csrf
+    ), admin_cookie);
+    assert(rejected["status"] == 422, "a closed order cannot be shipped");
+    DB.table("orders").where("id", "=", order_id).update(map("status", "processing"));
+
+    let created = post(app, "/admin/api/orders/" + string(order_id) + "/shipments", map(
+        "carrier", "Spid3r Express",
+        "tracking_number", "TRK-" + string(order_id),
+        "method", "standard",
+        "estimated_at", "3",
+        "notes", "Handle with care",
+        "format", "json",
+        "_csrf", admin_csrf
+    ), admin_cookie);
+    assert(created["status"] == 201, "a shipment is created");
+    let shipment_id = body(created)["data"]["id"];
+    let shipment = DB.table("shipments").where("id", "=", shipment_id).first();
+    assert(string(shipment["status"]) == "preparing", "a new shipment starts as preparing");
+    assert(string(shipment["tracking_number"]) == "TRK-" + string(order_id), "the tracking number is stored");
+    assert(string(shipment["method"]) == "standard", "the shipping method is stored");
+
+    // Lifecycle guards: preparing -> delivered is not allowed.
+    let skip = post(app, "/admin/api/shipments/" + string(shipment_id) + "/status", map(
+        "status", "delivered", "format", "json", "_csrf", admin_csrf
+    ), admin_cookie);
+    assert(skip["status"] == 422, "a shipment cannot skip lifecycle steps");
+
+    let shipped = post(app, "/admin/api/shipments/" + string(shipment_id) + "/status", map(
+        "status", "shipped", "format", "json", "_csrf", admin_csrf
+    ), admin_cookie);
+    assert(shipped["status"] == 200, "the shipment is marked shipped");
+    let shipped_row = DB.table("shipments").where("id", "=", shipment_id).first();
+    assert(shipped_row["shipped_at"] != null, "shipped_at is stamped");
+
+    // Delivery confirmation settles the order.
+    let done = post(app, "/admin/api/shipments/" + string(shipment_id) + "/deliver", map(
+        "format", "json", "_csrf", admin_csrf
+    ), admin_cookie);
+    assert(done["status"] == 200, "delivery is confirmed");
+    let delivered_row = DB.table("shipments").where("id", "=", shipment_id).first();
+    assert(string(delivered_row["status"]) == "delivered", "the shipment is delivered");
+    assert(delivered_row["delivered_at"] != null, "delivered_at is stamped");
+    let settled = DB.table("orders").where("id", "=", order_id).first();
+    assert(string(settled["status"]) == "delivered", "the order settles as delivered");
+
+    // A customer cannot drive fulfilment.
+    let rogue = post(app, "/admin/api/shipments/" + string(shipment_id) + "/status", map(
+        "status", "failed", "format", "json", "_csrf", csrf
+    ), cookie);
+    assert(rogue["status"] == 403, "a customer cannot update shipments");
+    println("  [PASS] test_fulfillment");
+}
+
+fn test_returns(app, ids) {
+    let session = session_pair(string(ids["email"]), "ship-pass");
+    let cookie = string(session["cookie"]);
+    let csrf = string(session["csrf"]);
+    let admin_session = session_pair(string(ids["admin_email"]), "shipadmin-pass");
+    let admin_cookie = string(admin_session["cookie"]);
+    let admin_csrf = string(admin_session["csrf"]);
+
+    let order = place_delivered_order(app, ids, cookie, csrf, "Dhaka");
+    let order_id = order["id"];
+    let items = DB.table("order_items").where("order_id", "=", order_id).get();
+    let item_id = items[0]["id"];
+
+    // A pending (not delivered) order cannot be returned.
+    DB.table("orders").where("id", "=", order_id).update(map("status", "shipped"));
+    let early = post(app, "/orders/" + string(order["order_number"]) + "/return", map(
+        "quantity", 1, "kind", "return", "reason", "It arrived broken and unusable.",
+        "order_item_id", item_id, "_csrf", csrf, "format", "json"
+    ), cookie);
+    assert(early["status"] == 422, "a non-delivered order cannot be returned");
+    DB.table("orders").where("id", "=", order_id).update(map("status", "delivered"));
+
+    // Another customer cannot return this order.
+    let stranger_email = "shipstranger-" + string(ids["tag"]) + "@example.test";
+    let auth = new AuthService();
+    auth.register("Stranger", stranger_email, "stranger-pass");
+    let stranger = session_pair(stranger_email, "stranger-pass");
+    let foreign = post(app, "/orders/" + string(order["order_number"]) + "/return", map(
+        "quantity", 1, "kind", "return", "reason", "Trying to return someone else's order.",
+        "_csrf", string(stranger["csrf"]), "format", "json"
+    ), string(stranger["cookie"]));
+    assert(foreign["status"] == 404, "another customer's order is invisible for returns");
+
+    // A valid request.
+    let ok = post(app, "/orders/" + string(order["order_number"]) + "/return", map(
+        "quantity", 1, "kind", "return", "reason", "It arrived broken and unusable.",
+        "order_item_id", item_id, "_csrf", csrf, "format", "json"
+    ), cookie);
+    assert(ok["status"] == 201, "the return request is accepted");
+    let return_id = body(ok)["data"]["id"];
+    let row = DB.table("returns").where("id", "=", return_id).first();
+    assert(string(row["status"]) == "requested", "the request starts as requested");
+    assert(int(row["quantity"]) == 1, "the quantity is stored");
+
+    // The return page lists the customer's own request.
+    let page = get(app, "/orders/" + string(order["order_number"]) + "/return", cookie);
+    assert(page["status"] == 200, "the return page renders");
+    assert(string(page["body"]).contains("requested"), "the customer sees their request");
+    let mine = get(app, "/returns", cookie);
+    assert(string(mine["body"]).contains("It arrived broken"), "the returns list shows the request");
+
+    // Lifecycle: approve -> receive -> refund (restocks).
+    let before = DB.table("inventory").where("product_id", "=", ids["product"]).first();
+    let before_qty = int(before["quantity"]);
+
+    let reject_attempt = post(app, "/admin/api/returns/" + string(return_id), map(
+        "status", "refunded", "format", "json", "_csrf", admin_csrf
+    ), admin_cookie);
+    assert(reject_attempt["status"] == 422, "a request cannot skip to refunded");
+
+    post(app, "/admin/api/returns/" + string(return_id), map("status", "approved", "format", "json", "_csrf", admin_csrf), admin_cookie);
+    post(app, "/admin/api/returns/" + string(return_id), map("status", "received", "format", "json", "_csrf", admin_csrf), admin_cookie);
+    let refunded = post(app, "/admin/api/returns/" + string(return_id), map(
+        "status", "refunded", "format", "json", "_csrf", admin_csrf
+    ), admin_cookie);
+    assert(refunded["status"] == 200, "the return is refunded");
+    let after = DB.table("inventory").where("product_id", "=", ids["product"]).first();
+    assert(int(after["quantity"]) == before_qty + 1, "the item is restocked exactly once");
+
+    let final_row = DB.table("returns").where("id", "=", return_id).first();
+    assert(string(final_row["status"]) == "refunded", "the return is marked refunded");
+    assert(int(final_row["refund_minor"]) == int(items[0]["unit_price_minor"]), "the refund equals the historical line value");
+
+    // A closed return cannot be resolved again.
+    let again = post(app, "/admin/api/returns/" + string(return_id), map(
+        "status", "approved", "format", "json", "_csrf", admin_csrf
+    ), admin_cookie);
+    assert(again["status"] == 422, "a refunded return is terminal");
+
+    // The window: backdate the delivery far into the past.
+    let fresh = place_delivered_order(app, ids, cookie, csrf, "Dhaka");
+    let old = unix_time() - 40 * 86400;
+    DB.table("shipments").insert(map(
+        "order_id", fresh["id"], "carrier", "Old Courier",
+        "tracking_number", "OLD-" + string(fresh["id"]),
+        "status", "delivered", "shipped_at", string(old), "delivered_at", string(old)
+    ));
+    let expired = post(app, "/orders/" + string(fresh["order_number"]) + "/return", map(
+        "quantity", 1, "kind", "return", "reason", "Far outside the return window.",
+        "_csrf", csrf, "format", "json"
+    ), cookie);
+    assert(expired["status"] == 422, "a return after the window is refused");
+    println("  [PASS] test_returns");
+}
+
+// ---- cleanup --------------------------------------------------------
+
+fn drop_order(order_id) {
+    DB.table("gift_card_transactions").where("order_id", "=", order_id).delete();
+    let pays = DB.table("payments").where("order_id", "=", order_id).get();
+    let m = 0;
+    while m < pays.len() {
+        DB.table("refunds").where("payment_id", "=", pays[m]["id"]).delete();
+        m += 1;
+    }
+    DB.table("shipments").where("order_id", "=", order_id).delete();
+    DB.table("payments").where("order_id", "=", order_id).delete();
+    DB.table("coupon_usages").where("order_id", "=", order_id).delete();
+    DB.table("order_items").where("order_id", "=", order_id).delete();
+    DB.table("orders").where("id", "=", order_id).delete();
+}
+
+fn purge(tag: string) {
+    let emails = [
+        "ship-" + tag + "@example.test",
+        "shipadmin-" + tag + "@example.test",
+        "shipstranger-" + tag + "@example.test"
+    ];
+    let i = 0;
+    while i < emails.len() {
+        let user = DB.table("users").where("email", "=", emails[i]).first();
+        if user != null {
+            let uid = user["id"];
+            let orders = DB.table("orders").where("user_id", "=", uid).get();
+            let j = 0;
+            while j < orders.len() {
+                drop_order(orders[j]["id"]);
+                j += 1;
+            }
+            DB.table("returns").where("user_id", "=", uid).delete();
+            DB.table("user_roles").where("user_id", "=", uid).delete();
+            DB.table("sessions").where("user_id", "=", uid).delete();
+            DB.table("users").where("id", "=", uid).delete();
+        }
+        i += 1;
+    }
+    DB.table("shipping_rates").delete();
+    DB.table("shipping_zones").delete();
+    let product = DB.table("products").where("slug", "=", "ship-widget-" + tag).first();
+    if product != null {
+        DB.table("inventory").where("product_id", "=", product["id"]).delete();
+        DB.table("stock_movements").where("product_id", "=", product["id"]).delete();
+        DB.table("order_items").where("product_id", "=", product["id"]).delete();
+        DB.table("cart_items").where("product_id", "=", product["id"]).delete();
+        DB.table("products").where("id", "=", product["id"]).delete();
+    }
+    DB.table("categories").where("slug", "=", "ship-cat-" + tag).delete();
+}
+
+fn main() {
+    println("\n=== Running Store Shipping Test Suite ===");
+    let app = new Application();
+    register_store_middleware(app);
+    register_web_routes();
+    register_queue_jobs();
+    run_database_seeder();
+    let tag = string(unix_time());
+    purge(tag);
+    let ids = setup(tag);
+
+    try {
+        test_zone_rates(app, ids);
+        test_checkout_zone_fee(app, ids);
+        test_fulfillment(app, ids);
+        test_returns(app, ids);
+    } finally {
+        purge(tag);
+    }
+    DB.close();
+    println("=== All Store Shipping Tests Passed! ===\n");
+    return 0;
+}

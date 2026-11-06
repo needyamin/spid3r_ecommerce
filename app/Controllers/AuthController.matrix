@@ -1,0 +1,198 @@
+// app/Controllers/AuthController.matrix
+// Phase 3 — HTTP layer for accounts. No business logic here: everything
+// delegates to AuthService, AuthValidators or AccessPolicy.
+
+import "framework/Response";
+import "framework/Config/Config";
+import "framework/HttpException";
+import "framework/View/BD";
+import "framework/Container/Container";
+import "framework/Database/DB";
+import "app/Services/AuthService";
+import "app/Support/StoreChrome" as StoreChrome;
+import "app/Services/CartService";
+import "app/Validators/AuthValidators" as AuthValidators;
+
+public class AuthController {
+    public let auth;
+    public let settings;
+
+    fn new() {
+        self.auth = new AuthService();
+        self.settings = Container.make("store.settings");
+    }
+
+    // Base view context: layout needs store_name/currency; @yield("title")
+    // and the optional meta description keep pages SEO-friendly.
+    fn render(self, req, view_name: string, title: string, extra) {
+        let ctx = map(
+            "store_name", self.settings["name"],
+            "currency", self.settings["currency"],
+            "title", title,
+            "meta_description", title + " — " + self.settings["name"],
+            "csrf", ""
+        );
+        let chrome = StoreChrome.build(req, self.settings);
+        for ck in chrome.keys() {
+            ctx[ck] = chrome[ck];
+        }
+        if extra != null {
+            for k in extra.keys() {
+                ctx[k] = extra[k];
+            }
+        }
+        return view(view_name, ctx);
+    }
+
+    fn cookie_name(self) -> string {
+        return string(Config.get("session.cookie", "spid3r_session"));
+    }
+
+    // Phase 6 — merge the guest cart after a successful login.
+    fn merge_guest_cart(self, req, email: string) -> bool {
+        let key = "";
+        if req.headers.has("cookie") {
+            let parts = string(req.headers["cookie"]).split(";");
+            let i = 0;
+            while i < parts.len() {
+                let pair = parts[i].trim().split("=");
+                if pair.len() > 1 and pair[0] == "cart" {
+                    key = pair[1];
+                }
+                i += 1;
+            }
+        }
+        if key == "" {
+            return false;
+        }
+        let user = DB.table("users").where("email", "=", string(email).trim().lower()).first();
+        if user == null {
+            return false;
+        }
+        let cart = new CartService();
+        return cart.merge_on_login(key, user["id"]);
+    }
+
+    public fn show_login(self, req) {
+        return self.render(req, "auth/login", "Sign in", map("error", "", "csrf", req.auth.csrf()));
+    }
+
+    public fn login(self, req) {
+        let v = req.validate(AuthValidators.login_rules());
+        if v.fails() {
+            throw validation_failed(v.error_messages());
+        }
+        let token = self.auth.login(req.input("email", ""), req.input("password", ""));
+        if token == null {
+            let res = self.render(req, "auth/login", "Sign in", map(
+                "error", "Invalid credentials or inactive account.",
+                "csrf", req.auth.csrf()
+            ));
+            res.status(401);
+            return res;
+        }
+        // Merge the guest cart into the customer's cart (no-op if none).
+        self.merge_guest_cart(req, req.input("email", ""));
+        let res = redirect("/account");
+        res.cookie(self.cookie_name(), token, "/", 86400);
+        return res;
+    }
+
+    public fn show_register(self, req) {
+        return self.render(req, "auth/register", "Create account", map("error", "", "csrf", req.auth.csrf()));
+    }
+
+    public fn register(self, req) {
+        let v = req.validate(AuthValidators.registration_rules());
+        if v.fails() {
+            throw validation_failed(v.error_messages());
+        }
+        let user = self.auth.register(
+            req.input("name", ""),
+            req.input("email", ""),
+            req.input("password", "")
+        );
+        if user == null {
+            throw validation_failed(map("email", "That email is already registered."));
+        }
+        // Never auto-login: email verification is required first.
+        return redirect("/login?registered=1");
+    }
+
+    public fn update_profile(self, req) {
+        let v = req.validate(map("name", "required|min:2|max:128"));
+        if v.fails() {
+            throw validation_failed(v.error_messages());
+        }
+        DB.table("users").where("id", "=", req.auth.id()).update(map(
+            "name", req.input("name", ""),
+            "updated_at", string(unix_time())
+        ));
+        return redirect("/account?updated=1");
+    }
+
+    public fn logout(self, req) {
+        self.auth.logout(req.session_id);
+        let res = redirect("/");
+        res.cookie(self.cookie_name(), "", "/", 0);
+        return res;
+    }
+
+    public fn account(self, req) {
+        return self.render(req, "account/index", "My account", map(
+            "user", req.auth.user(),
+            "csrf", req.auth.csrf()
+        ));
+    }
+
+    public fn show_forgot(self, req) {
+        return self.render(req, "auth/forgot", "Reset password", map("csrf", req.auth.csrf()));
+    }
+
+    public fn forgot(self, req) {
+        let v = req.validate(AuthValidators.forgot_rules());
+        if v.fails() {
+            throw validation_failed(v.error_messages());
+        }
+        // Deliberately identical response for known/unknown addresses —
+        // prevents account enumeration.
+        self.auth.request_password_reset(req.input("email", ""));
+        return self.render(req, "auth/forgot", "Reset password", map(
+            "sent", true,
+            "csrf", req.auth.csrf()
+        ));
+    }
+
+    public fn show_reset(self, req) {
+        let token = "";
+        if req.query_params.has("token") {
+            token = string(req.query_params["token"]);
+        }
+        return self.render(req, "auth/reset", "Choose a new password", map(
+            "token", token,
+            "csrf", req.auth.csrf()
+        ));
+    }
+
+    public fn reset(self, req) {
+        let v = req.validate(AuthValidators.reset_rules());
+        if v.fails() {
+            throw validation_failed(v.error_messages());
+        }
+        if not self.auth.reset_password(req.input("token", ""), req.input("password", "")) {
+            throw bad_request("This reset link is invalid or has expired.");
+        }
+        return redirect("/login?reset=1");
+    }
+
+    public fn verify_email(self, req) {
+        let token = "";
+        if req.params.has("token") {
+            token = string(req.params["token"]);
+        }
+        if not self.auth.verify_email(token) {
+            throw bad_request("This verification link is invalid or has expired.");
+        }
+        return redirect("/login?verified=1");
+    }
+}

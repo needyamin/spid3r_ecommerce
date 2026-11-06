@@ -1,0 +1,60 @@
+// app/Repositories/PaymentRepository.matrix
+// Phase 2 — payment records with idempotency (the Phase 8 gateway
+// adapters build on this). Duplicate callbacks can never double-charge:
+// idempotency_key is UNIQUE and verification is status-guarded.
+
+import "framework/Database/DB";
+
+public class PaymentRepository {
+    fn new() {}
+
+    public fn initiate(self, order_id, provider: string, amount_minor, idempotency_key: string) {
+        let existing = DB.table("payments")
+            .where("idempotency_key", "=", idempotency_key)
+            .first();
+        if existing != null {
+            return existing;
+        }
+        let id = DB.table("payments").insert(map(
+            "order_id", order_id,
+            "provider", provider,
+            "amount_minor", int(amount_minor),
+            "currency", "BDT",
+            "status", "initiated",
+            "idempotency_key", idempotency_key,
+            "payload_json", "{}"
+        ));
+        return DB.table("payments").where("id", "=", id).first();
+    }
+
+    // Server-to-server verification result; only "initiated"/"pending"
+    // payments transition, so replayed callbacks are no-ops.
+    public fn mark_verified(self, payment_id, gateway_transaction_id: string, payload_json: string) -> bool {
+        return DB.transaction(fn() {
+            let payment = DB.table("payments").where("id", "=", payment_id).first();
+            if payment == null {
+                return false;
+            }
+            if payment["status"] == "paid" {
+                return false;   // duplicate callback — already settled
+            }
+            let changes = DB.table("payments")
+                .where("id", "=", payment_id)
+                .where("status", "!=", "paid")
+                .update(map(
+                    "status", "paid",
+                    "gateway_transaction_id", gateway_transaction_id,
+                    "payload_json", payload_json,
+                    "verified_at", string(unix_time())
+                ));
+            return changes > 0;
+        });
+    }
+
+    public fn for_order(self, order_id) {
+        return DB.table("payments")
+            .where("order_id", "=", order_id)
+            .orderBy("id", "ASC")
+            .get();
+    }
+}

@@ -1,0 +1,110 @@
+// framework/Config/Config.matrix
+// Spid3rWeb Configuration Repository
+//
+// Central dot-notation access to every config/*.matrix file:
+//
+//   Config.get("app.name")                        -> "Spid3rWeb Developer Platform"
+//   Config.get("session.lifetime", 3600)          -> value or fallback
+//   Config.get("logging.channels.mail.path")
+//
+// Conventions (mirroring config/cache & config/database):
+//   - Mutable settings are resolved from environment variables at READ time
+//     via "*_env" keys (e.g. "driver_env": "SPID3R_CACHE_DRIVER"), so the
+//     same codebase runs anywhere without code edits.
+//   - `Config` is a process-wide singleton (same pattern as `Auth`/`Cache`).
+//
+// Importing this module loads and registers every bundled config file.
+
+import "config/app";
+import "config/cache";
+import "config/database";
+import "config/auth";
+import "config/session";
+import "config/filesystems";
+import "config/logging";
+import "config/mail";
+import "config/queue";
+import "config/services";
+
+public class ConfigRepository {
+    public let items;
+
+    fn new() {
+        self.items = map();
+        // Register every bundled config file. Application config files can
+        // register their own via Config.load("name", some_map).
+        self.load("app", config_app);
+        self.load("cache", config_cache);
+        self.load("database", config_database);
+        self.load("auth", config_auth);
+        self.load("session", config_session);
+        self.load("filesystems", config_filesystems);
+        self.load("logging", config_logging);
+        self.load("mail", config_mail);
+        self.load("queue", config_queue);
+        self.load("services", config_services);
+    }
+
+    // Register (or replace) a config namespace at runtime.
+    public fn load(self, name: string, data) -> bool {
+        self.items[name] = data;
+        return true;
+    }
+
+    // Dot-notation read: "logging.channels.mail.path".
+    // Returns `fallback` when any path segment is missing.
+    public fn get(self, key: string, fallback = null) {
+        let node = self.items;
+        let parts = string(key).split(".");
+        for p in parts {
+            if type_of(node) != "map" {
+                return fallback;
+            }
+            if not node.has(p) {
+                return fallback;
+            }
+            node = node[p];
+        }
+        return node;
+    }
+
+    // True when the dot-path resolves to an existing value.
+    public fn has(self, key: string) -> bool {
+        let node = self.items;
+        let parts = string(key).split(".");
+        for p in parts {
+            if type_of(node) != "map" or not node.has(p) {
+                return false;
+            }
+            node = node[p];
+        }
+        return true;
+    }
+
+    // Dot-notation write: Config.set("app.maintenance", true).
+    // Creates intermediate maps as needed. Returns false for scalar
+    // collisions along the path.
+    public fn set(self, key: string, value) -> bool {
+        let parts = string(key).split(".");
+        let last = parts[parts.len() - 1];
+        let node = self.items;
+        let i = 0;
+        while i < parts.len() - 1 {
+            let p = parts[i];
+            if not node.has(p) or type_of(node[p]) != "map" {
+                node[p] = map();
+            }
+            node = node[p];
+            i = i + 1;
+        }
+        node[last] = value;
+        return true;
+    }
+
+    // Every registered namespace: ["app", "auth", ...]
+    public fn namespaces(self) {
+        return self.items.keys();
+    }
+}
+
+public let Config = new ConfigRepository();

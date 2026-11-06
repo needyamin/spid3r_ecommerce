@@ -1,0 +1,28 @@
+// routes/checkout.matrix
+// Phase 7 — checkout, customer order pages, admin order management.
+
+import "framework/Router";
+import "app/Controllers/CheckoutController";
+import "app/Controllers/OrderController";
+
+public fn register_checkout_routes() {
+    let checkout = new CheckoutController();
+    let orders = new OrderController();
+
+    // Public checkout (guests provide an address inline).
+    Route.get("/checkout", fn(req) { return checkout.show(req); }).name("checkout");
+    Route.get("/checkout/quote", fn(req) { return checkout.quote_json(req); });
+    Route.post("/checkout", fn(req) { return checkout.place(req); }).name("checkout.place");
+    Route.get("/checkout/confirmation/:number", fn(req) { return checkout.confirmation(req); });
+
+    // Authenticated customer area.
+    Route.post("/account/addresses", fn(req) { return checkout.store_address(req); }).middleware("auth");
+    Route.get("/orders", fn(req) { return orders.index(req); }).middleware("auth");
+    Route.get("/orders/:number/invoice", fn(req) { return orders.invoice(req); }).middleware("auth");
+    Route.get("/orders/:number", fn(req) { return orders.show(req); }).middleware("auth");
+    Route.post("/orders/:number/cancel", fn(req) { return orders.cancel(req); }).middleware("auth");
+
+    // Admin order management.
+    Route.get("/admin/api/orders", fn(req) { return orders.admin_index(req); }).middleware("permission:orders.manage");
+    Route.put("/admin/api/orders/:id/status", fn(req) { return orders.admin_status(req); }).middleware("permission:orders.manage");
+}

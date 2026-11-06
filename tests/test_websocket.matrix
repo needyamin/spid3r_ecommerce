@@ -1,0 +1,229 @@
+// tests/test_websocket.matrix
+// Integration tests for the Spid3rWeb WebSocket server: real RFC 6455
+// handshakes over loopback TCP, echo round-trips, broadcast, and rejection
+// of non-WebSocket probes.
+//
+// Uses port 0 (ephemeral) and bounded serve(max_connections) so the suite
+// is self-terminating.
+
+import "framework/WebSocket/WsServer";
+
+fn wait_until(check, timeout_ms) -> bool {
+    let waited = 0;
+    while waited < timeout_ms {
+        if check() {
+            return true;
+        }
+        sleep_ms(25);
+        waited += 25;
+    }
+    return check();
+}
+
+fn test_echo_over_websocket() {
+    let server = new WsServer();
+    server.on_connection(fn(h) {
+        // Echo loop: every text frame comes back prefixed.
+        while true {
+            let r = ws_recv(h);
+            if r.is_err() {
+                break;
+            }
+            let msg = r.unwrap();
+            if msg == null {
+                break;
+            }
+            let w = ws_send(h, "echo: " + msg);
+            if w.is_err() {
+                break;
+            }
+        }
+    });
+    let addr = server.bind("127.0.0.1:0");
+    let stats = map("served", -1);
+    spawn fn() {
+        stats["served"] = server.serve(1);
+        return 0;
+    };
+
+    let client = ws_connect("ws://" + addr);
+    assert(client.is_ok(), "client completed the WebSocket handshake");
+    let c = client.unwrap();
+
+    assert(ws_send(c, "hello").is_ok(), "client send succeeded");
+    let resp = ws_recv(c);
+    assert(resp.is_ok(), "client received a reply");
+    assert(resp.unwrap() == "echo: hello", "server echoed the message with prefix");
+
+    assert(ws_send(c, "second").is_ok(), "second send on the same connection");
+    let resp2 = ws_recv(c);
+    assert(resp2.is_ok() and resp2.unwrap() == "echo: second", "connection stays usable across frames");
+
+    ws_close(c);
+    assert(wait_until(fn() { return server.client_count() == 0; }, 2000), "closed client pruned from the registry");
+    assert(wait_until(fn() { return stats["served"] == 1; }, 2000), "serve(1) returned after one connection");
+    println("  [PASS] test_echo_over_websocket");
+}
+
+fn test_stateful_protocol_within_handler() {
+    // A per-connection session protocol: the handler owns its socket and
+    // keeps state across frames (a running sum). This is the supported
+    // concurrency model — see the runtime constraint in WsServer's notes.
+    let server = new WsServer();
+    server.on_connection(fn(h) {
+        let total = map("n", 0);
+        while true {
+            let r = ws_recv(h);
+            if r.is_err() {
+                break;
+            }
+            let msg = r.unwrap();
+            if msg == null {
+                break;
+            }
+            if msg.starts_with("add:") {
+                let part = int(msg.slice(4, len(msg)));
+                total["n"] = total["n"] + part;
+                ws_send(h, "total=" + string(total["n"]));
+            } elif msg == "quit" {
+                ws_send(h, "bye");
+                break;
+            } else {
+                ws_send(h, "error: send add:<int> or quit");
+            }
+        }
+    });
+    let addr = server.bind("127.0.0.1:0");
+    let stats = map("served", -1);
+    spawn fn() {
+        stats["served"] = server.serve(2);
+        return 0;
+    };
+
+    let c = ws_connect("ws://" + addr).unwrap();
+    ws_send(c, "add:2");
+    assert(ws_recv(c).unwrap() == "total=2", "running state after first add");
+    ws_send(c, "add:40");
+    assert(ws_recv(c).unwrap() == "total=42", "state accumulates across frames");
+    ws_send(c, "nonsense");
+    assert(ws_recv(c).unwrap() == "error: send add:<int> or quit", "unknown commands get an error frame");
+    ws_send(c, "quit");
+    assert(ws_recv(c).unwrap() == "bye", "protocol-level goodbye before close");
+    ws_close(c);
+
+    // A second client gets its OWN state (no cross-connection leakage).
+    let c2 = ws_connect("ws://" + addr).unwrap();
+    ws_send(c2, "add:7");
+    assert(ws_recv(c2).unwrap() == "total=7", "per-connection state is independent");
+    ws_close(c2);
+    assert(wait_until(fn() { return server.client_count() == 0; }, 2000), "all clients pruned");
+    assert(wait_until(fn() { return stats["served"] == 2; }, 2000), "serve(2) returned");
+    println("  [PASS] test_stateful_protocol_within_handler");
+}
+
+fn test_broadcast_reaches_all_clients() {
+    // The proof case for the runtime's independent write half: two handler
+    // tasks are PARKED in ws_recv while the main task broadcasts to both.
+    let server = new WsServer();
+    server.on_connection(fn(h) {
+        // Hold the connection open until the peer goes away.
+        while true {
+            let r = ws_recv(h);
+            if r.is_err() {
+                break;
+            }
+            if r.unwrap() == null {
+                break;
+            }
+        }
+    });
+    let addr = server.bind("127.0.0.1:0");
+    let stats = map("served", -1);
+    spawn fn() {
+        stats["served"] = server.serve(2);
+        return 0;
+    };
+
+    let c1 = ws_connect("ws://" + addr);
+    let c2 = ws_connect("ws://" + addr);
+    assert(c1.is_ok() and c2.is_ok(), "both clients upgraded");
+    let a = c1.unwrap();
+    let b = c2.unwrap();
+
+    assert(wait_until(fn() { return server.client_count() == 2; }, 2000), "both clients registered");
+
+    let sent = server.broadcast("hello all");
+    assert(sent == 2, "broadcast reported two deliveries");
+
+    let r1 = ws_recv(a);
+    assert(r1.is_ok() and r1.unwrap() == "hello all", "client 1 received the broadcast");
+    let r2 = ws_recv(b);
+    assert(r2.is_ok() and r2.unwrap() == "hello all", "client 2 received the broadcast");
+
+    ws_close(a);
+    ws_close(b);
+    assert(wait_until(fn() { return server.client_count() == 0; }, 2000), "registry empty after both close");
+    println("  [PASS] test_broadcast_reaches_all_clients");
+}
+
+fn test_non_ws_probe_rejected() {
+    let server = new WsServer();
+    let out = map("accepted", -1, "handler_hits", 0);
+    let o = out;
+    server.on_connection(fn(h) {
+        o["handler_hits"] = o["handler_hits"] + 1;
+        return null;
+    });
+    let addr = server.bind("127.0.0.1:0");
+    spawn fn() {
+        o["accepted"] = server.serve(1);
+        return 0;
+    };
+
+    // A plain HTTP request is not a WebSocket handshake: the connection is
+    // accepted, then dropped by the framework without invoking the handler.
+    let conn = tcp_connect(addr);
+    assert(conn.is_ok(), "probe TCP-connects");
+    let c = conn.unwrap();
+    assert(tcp_write(c, "GET / HTTP/1.1\r\nHost: probe\r\n\r\n").is_ok(), "probe request written");
+    assert(wait_until(fn() { return o["accepted"] == 1; }, 2000), "probe connection accepted");
+
+    // The handler must never run for a failed handshake.
+    assert(o["handler_hits"] == 0, "handler not invoked for non-WebSocket probe");
+    tcp_close(c);
+    println("  [PASS] test_non_ws_probe_rejected");
+}
+
+fn test_contract_errors() {
+    let server = new WsServer();
+    let threw = false;
+    try {
+        server.serve(1);
+    } catch (e) {
+        threw = true;
+    }
+    assert(threw, "serve() without a handler throws");
+
+    let threw2 = false;
+    try {
+        server.on_connection(fn(h) { return null; });
+        server.serve(1);
+    } catch (e) {
+        threw2 = true;
+    }
+    assert(threw2, "serve() before bind() throws");
+
+    assert(server.client_count() == 0, "fresh server has zero clients");
+    println("  [PASS] test_contract_errors");
+}
+
+fn main() {
+    println("\n=== Running WebSocket Test Suite ===");
+    test_echo_over_websocket();
+    test_stateful_protocol_within_handler();
+    test_broadcast_reaches_all_clients();
+    test_non_ws_probe_rejected();
+    test_contract_errors();
+    println("=== All WebSocket Tests Passed! ===\n");
+    return 0;
+}

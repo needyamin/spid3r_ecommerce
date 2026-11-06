@@ -1,0 +1,14 @@
+// routes/api.matrix
+// Spid3rWeb JSON REST API Routes
+// Fresh installation: no API routes registered yet.
+
+import "framework/Router";
+
+public fn register_api_routes() {
+    // Add JSON endpoints here, for example:
+    // Route.group(map("prefix", "/api/v1"), fn() {
+    //     Route.get("/status", fn(_req) {
+    //         return json(map("status", "healthy", "framework", "Spid3rWeb"));
+    //     });
+    // });
+}

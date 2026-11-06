@@ -1,0 +1,140 @@
+@extends("layouts.store")
+@section('title', product.name)
+@section('meta_description', meta_description)
+@section("content")
+  <nav class="breadcrumb"><a href="/">Home</a> / <a href="/catalog">Catalog</a> / <span>{{ product.name }}</span></nav>
+
+  <article class="product-detail">
+    <div class="product-media">
+@if(has_gallery)
+@foreach(image in gallery)
+      <img class="detail-image" src="{{ image.url }}" alt="{{ image.alt_text }}" loading="lazy" decoding="async">
+@endforeach
+@else
+      <div class="image-placeholder">No image yet</div>
+@endif
+    </div>
+    <div class="product-info">
+      <h1>{{ product.name }}</h1>
+      <p class="detail-sku">SKU: {{ product.sku }}</p>
+@if(product.compare_display)
+      <p class="product-price-old">{{ product.compare_display }}</p>
+@endif
+      <p class="detail-price">{{ product.price_display }}</p>
+@if(in_stock)
+      <p class="stock-badge stock-in">In stock</p>
+@else
+      <p class="stock-badge stock-out">Out of stock</p>
+@endif
+@if(product.short_description)
+      <p class="detail-short">{{ product.short_description }}</p>
+@endif
+@if(has_variants)
+      <h2>Options</h2>
+      <ul class="variant-list">
+@foreach(variant in variants)
+        <li>{{ variant.name }} — {{ variant.sku }}</li>
+@endforeach
+      </ul>
+@endif
+      <div class="hero-actions">
+        <a class="btn btn-primary" href="/catalog">Continue shopping</a>
+@if(signed_in)
+        <form method="post" action="/wishlist/add" class="inline-form">
+          <input type="hidden" name="_csrf" value="{{ csrf }}">
+          <input type="hidden" name="product_id" value="{{ product.id }}">
+@if(in_wishlist)
+          <button class="btn btn-secondary" type="submit" disabled>Saved to wishlist</button>
+@else
+          <button class="btn btn-secondary" type="submit">Add to wishlist</button>
+@endif
+        </form>
+@endif
+      </div>
+    </div>
+  </article>
+
+@if(product.description)
+  <section class="detail-description">
+    <h2>Description</h2>
+    <p>{{ product.description }}</p>
+  </section>
+@endif
+
+  <section class="reviews">
+    <h2>Customer reviews</h2>
+    <p class="rating-summary"><strong>{{ rating.average_display }}</strong> / 5 — {{ rating.count }} review(s)</p>
+@if(has_reviews)
+@foreach(review in reviews)
+    <article class="review">
+      <h3>{{ review.title }}</h3>
+      <p class="review-rating">{{ review.rating }} / 5</p>
+      <p>{{ review.body }}</p>
+    </article>
+@endforeach
+@else
+    <p class="empty-note">No reviews yet.</p>
+@endif
+@if(signed_in)
+    <h3>Write a review</h3>
+    <form method="post" action="/reviews" class="review-form">
+      <input type="hidden" name="_csrf" value="{{ csrf }}">
+      <input type="hidden" name="product_id" value="{{ product.id }}">
+      <label>Rating
+        <select name="rating">
+          <option value="5">5 — Excellent</option>
+          <option value="4">4 — Good</option>
+          <option value="3">3 — Average</option>
+          <option value="2">2 — Poor</option>
+          <option value="1">1 — Terrible</option>
+        </select>
+      </label>
+      <label>Title <input type="text" name="title" maxlength="120"></label>
+      <label>Your review <textarea name="body" rows="4" maxlength="4000" required></textarea></label>
+      <button class="btn btn-primary" type="submit">Submit review</button>
+    </form>
+@endif
+  </section>
+
+@if(has_recommendations)
+  <section class="catalog-teaser">
+    <h2>You might also like</h2>
+    <div class="product-grid">
+@foreach(rec in recommendations)
+      <a class="product-card" href="{{ rec.url }}">
+        <div class="product-name">{{ rec.name }}</div>
+        <div class="product-price">{{ rec.price_display }}</div>
+      </a>
+@endforeach
+    </div>
+  </section>
+@endif
+
+@if(has_recently_viewed)
+  <section class="catalog-teaser">
+    <h2>Recently viewed</h2>
+    <div class="product-grid">
+@foreach(seen in recently_viewed)
+      <a class="product-card" href="{{ seen.url }}">
+        <div class="product-name">{{ seen.name }}</div>
+        <div class="product-price">{{ seen.price_display }}</div>
+      </a>
+@endforeach
+    </div>
+  </section>
+@endif
+
+@if(has_related)
+  <section class="catalog-teaser">
+    <h2>Related products</h2>
+    <div class="product-grid">
+@foreach(rel in related)
+      <a class="product-card" href="{{ rel.url }}">
+        <div class="product-name">{{ rel.name }}</div>
+        <div class="product-price">{{ rel.price_display }}</div>
+      </a>
+@endforeach
+    </div>
+  </section>
+@endif
+@endsection

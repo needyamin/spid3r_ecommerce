@@ -1,0 +1,54 @@
+// tests/test_store.matrix
+// Spid3r Store — Phase 1 smoke tests: bootstrap, home page, health
+// endpoint, and the Money helpers.
+
+import "framework/Application";
+import "framework/Router";
+import "framework/Container/Container";
+import "routes/web";
+import "app/Support/Money" as Money;
+
+fn test_store_home_and_health() {
+    let app = new Application();
+    register_web_routes();
+
+    let res = app.handle_request(map("method", "GET", "path", "/", "headers", map()));
+    assert(res["status"] == 200, "store home answers 200");
+    assert(string(res["body"]).contains("Spid3r Store"), "home renders the store name");
+
+    let health = app.handle_request(map("method", "GET", "path", "/health", "headers", map()));
+    assert(health["status"] == 200, "health answers 200");
+    let health_body = string(health["body"]);
+    assert(health_body.contains("\"status\"") and health_body.contains("\"ok\""), "health reports ok");
+
+    // Store settings came through the container from the provider.
+    let settings = Container.make("store.settings");
+    assert(settings["currency"] == "BDT", "default currency is BDT");
+
+    // Double registration must be harmless (boot guard).
+    register_web_routes();
+    let again = app.handle_request(map("method", "GET", "path", "/health", "headers", map()));
+    assert(again["status"] == 200, "re-registration stays healthy");
+    println("  [PASS] test_store_home_and_health");
+}
+
+fn test_money_helpers() {
+    assert(Money.to_minor("1234.56") == 123456, "to_minor parses major.minor");
+    assert(Money.to_minor("1,234.56") == 123456, "to_minor strips thousands separators");
+    assert(Money.to_minor("42") == 4200, "to_minor defaults fraction to .00");
+    assert(Money.to_minor("-9.99") == -999, "to_minor handles negatives");
+    assert(Money.to_major(123456) == "1234.56", "to_major formats minor units");
+    assert(Money.to_major(5) == "0.05", "to_major pads the fraction");
+    assert(Money.format(123456, "BDT") == "৳1,234.56", "format groups thousands with symbol");
+    assert(Money.format(999, "USD") == "$9.99", "format switches currency symbol");
+    assert(Money.format(-123456, "BDT") == "-৳1,234.56", "format keeps the sign");
+    println("  [PASS] test_money_helpers");
+}
+
+fn main() {
+    println("\n=== Running Store Smoke Test Suite ===");
+    test_store_home_and_health();
+    test_money_helpers();
+    println("=== All Store Smoke Tests Passed! ===\n");
+    return 0;
+}

@@ -1,0 +1,56 @@
+@extends("layouts.store")
+@section('title', title)
+@section('meta_description', meta_description)
+@section("content")
+  <nav class="breadcrumb"><a href="/">Home</a> / <a href="/orders">Orders</a> / <a href="/orders/{{ order_number }}">{{ order_number }}</a> / <span>Return</span></nav>
+  <h1 class="page-title">Return or exchange</h1>
+  <p class="rewards-hint">Tell us what went wrong. We answer every request.</p>
+
+  <section class="auth-card">
+    <h2>Order {{ order_number }}</h2>
+    <form method="post" action="/orders/{{ order_number }}/return" class="review-form">
+      <input type="hidden" name="_csrf" value="{{ csrf }}">
+      <label>Item
+@if(has_items)
+        <select name="order_item_id">
+@foreach(item in items)
+          <option value="{{ item.id }}">{{ item.name_snapshot }} ({{ item.sku_snapshot }})</option>
+@endforeach
+        </select>
+@else
+        <input type="hidden" name="order_item_id" value="">
+        <span>Whole order</span>
+@endif
+      </label>
+      <label>Quantity <input type="number" name="quantity" min="1" value="1"></label>
+      <label>Type
+        <select name="kind">
+          <option value="return">Return for refund</option>
+          <option value="exchange">Exchange</option>
+        </select>
+      </label>
+      <label>What went wrong? <textarea name="reason" rows="4" maxlength="2000" required></textarea></label>
+      <button class="btn btn-primary" type="submit">Send request</button>
+    </form>
+  </section>
+
+@if(has_requests)
+  <section class="support-tickets">
+    <h2>Your requests for this order</h2>
+    <table class="data-table">
+      <thead><tr><th>Type</th><th>Quantity</th><th>Status</th><th>Refund</th><th>Opened</th></tr></thead>
+      <tbody>
+@foreach(ret in requests)
+        <tr>
+          <td>{{ ret.kind }}</td>
+          <td>{{ ret.quantity }}</td>
+          <td>{{ ret.status }}</td>
+          <td>{{ ret.refund_minor }}</td>
+          <td>{{ ret.created_at }}</td>
+        </tr>
+@endforeach
+      </tbody>
+    </table>
+  </section>
+@endif
+@endsection

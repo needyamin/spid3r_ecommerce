@@ -1,0 +1,115 @@
+// app/Repositories/OrderRepository.matrix
+// Phase 2 — order creation with immutable price snapshots, in ONE
+// transaction. Payment logic deliberately does NOT live here.
+
+import "framework/Database/DB";
+
+public class OrderRepository {
+    fn new() {}
+
+    // items: list of maps with product_id, variant_id, name_snapshot,
+    // sku_snapshot, unit_price_minor, quantity, discount_minor, tax_minor,
+    // line_total_minor. All prices are integer minor units.
+    public fn create(self, order_data, items) {
+        return DB.transaction(fn() {
+            let order_number = "SP-" + string(unix_time()) + "-" + hex_encode(random_bytes(4).unwrap());
+            let payload = map(
+                "order_number", order_number,
+                "status", "pending",
+                "subtotal_minor", 0,
+                "discount_minor", 0,
+                "shipping_minor", 0,
+                "tax_minor", 0,
+                "total_minor", 0,
+                "currency", "BDT",
+                "shipping_address_json", "{}",
+                "billing_address_json", "{}",
+                "placed_at", string(unix_time())
+            );
+            for k in order_data.keys() {
+                if k != "order_discount_minor" and k != "order_tax_minor" {
+                    payload[k] = order_data[k];
+                }
+            }
+            let order_id = DB.table("orders").insert(payload);
+            if int(order_id) == 0 {
+                throw "order insert failed";
+            }
+
+            let shipping = 0;
+            if payload.has("shipping_minor") {
+                shipping = int(payload["shipping_minor"]);
+            }
+            let subtotal = 0;
+            // Order-level discount (coupons / cart promotions) is separate
+            // from per-item discounts. The caller supplies it in
+            // order_data["order_discount_minor"].
+            let order_discount = 0;
+            if order_data.has("order_discount_minor") {
+                order_discount = int(order_data["order_discount_minor"]);
+            }
+            let discount = order_discount;
+            let tax = 0;
+            if order_data.has("order_tax_minor") {
+                tax = int(order_data["order_tax_minor"]);
+            }
+            let i = 0;
+            while i < items.len() {
+                let it = items[i];
+                DB.table("order_items").insert(map(
+                    "order_id", order_id,
+                    "product_id", it["product_id"],
+                    "variant_id", it["variant_id"],
+                    "name_snapshot", it["name_snapshot"],
+                    "sku_snapshot", it["sku_snapshot"],
+                    "unit_price_minor", int(it["unit_price_minor"]),
+                    "quantity", int(it["quantity"]),
+                    "discount_minor", int(it["discount_minor"]),
+                    "tax_minor", int(it["tax_minor"]),
+                    "line_total_minor", int(it["line_total_minor"])
+                ));
+                subtotal = subtotal + int(it["unit_price_minor"]) * int(it["quantity"]);
+                discount = discount + int(it["discount_minor"]);
+                tax = tax + int(it["tax_minor"]);
+                i += 1;
+            }
+            DB.table("orders").where("id", "=", order_id).update(map(
+                "subtotal_minor", subtotal,
+                "discount_minor", discount,
+                "shipping_minor", shipping,
+                "tax_minor", tax,
+                "total_minor", subtotal - discount + tax + shipping
+            ));
+            return DB.table("orders").where("id", "=", order_id).first();
+        });
+    }
+
+    public fn find_by_number(self, order_number: string) {
+        return DB.table("orders").where("order_number", "=", order_number).first();
+    }
+
+    public fn items_for(self, order_id) {
+        return DB.table("order_items").where("order_id", "=", order_id).get();
+    }
+
+    public fn for_user(self, user_id, page: int = 1, per_page: int = 15) {
+        return DB.table("orders")
+            .where("user_id", "=", user_id)
+            .orderBy("id", "DESC")
+            .paginate(page, per_page);
+    }
+
+    public fn find(self, id) {
+        return DB.table("orders").where("id", "=", id).first();
+    }
+
+    public fn admin_list(self, page: int = 1, per_page: int = 20) {
+        return DB.table("orders")
+            .orderBy("id", "DESC")
+            .paginate(page, per_page);
+    }
+
+    public fn set_status(self, order_id, status: string) -> bool {
+        return DB.table("orders").where("id", "=", order_id).update(map("status", status)) > 0;
+    }
+}

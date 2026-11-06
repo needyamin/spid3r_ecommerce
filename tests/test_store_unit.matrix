@@ -1,0 +1,106 @@
+// tests/test_store_unit.matrix
+// Phase 14 — unit tests for the pure support helpers.
+//
+// These need no HTTP layer and no fixtures: value in, value out. They pin
+// the exact behaviour the whole store depends on — integer money, FX
+// conversion, slug generation and cache generation bookkeeping.
+
+import "app/Support/Money" as Money;
+import "app/Support/Fx" as Fx;
+import "app/Support/Slug" as Slug;
+import "app/Support/CatalogCache" as CatalogCache;
+
+fn test_money_to_minor() {
+    // Canonical inputs.
+    assert(Money.to_minor("1234.56") == 123456, "1234.56 -> 123456");
+    assert(Money.to_minor("1234") == 123400, "1234 -> 123400");
+    assert(Money.to_minor("1,234.56") == 123456, "grouped digits accepted");
+    assert(Money.to_minor("0.99") == 99, "fraction only");
+    assert(Money.to_minor("12.3") == 1230, "one decimal digit padded");
+
+    // Truncation beyond minor precision (never rounds money up).
+    assert(Money.to_minor("12.345") == 1234, "third decimal truncated");
+    assert(Money.to_minor("12.999") == 1299, "999 truncates, not rounds");
+
+    // Signed amounts.
+    assert(Money.to_minor("-5") == 0 - 500, "negative amounts supported");
+
+    // Hardening (Phase 12): garbage and injection payloads yield 0.
+    assert(Money.to_minor("") == 0, "empty -> 0");
+    assert(Money.to_minor("abc") == 0, "letters -> 0");
+    assert(Money.to_minor("0 OR 1=1") == 0, "injection payload -> 0");
+    assert(Money.to_minor("1.2.3") == 0, "two dots -> 0");
+    assert(Money.to_minor("--5") == 0, "double sign -> 0");
+    assert(Money.to_minor("1e9") == 0, "exponent notation -> 0");
+
+    // Round-trip with to_major.
+    assert(Money.to_minor(Money.to_major(123456)) == 123456, "to_major -> to_minor round-trips");
+    println("  [PASS] test_money_to_minor");
+}
+
+fn test_money_format() {
+    assert(Money.format(123456, "BDT") == "৳1,234.56", "BDT formatting with symbol");
+    assert(Money.format(5, "BDT") == "৳0.05", "small amounts zero-padded");
+    assert(Money.format(1000000000, "BDT") == "৳10,000,000.00", "millions grouped");
+    assert(Money.format(0, "USD") == "$0.00", "zero formats");
+    println("  [PASS] test_money_format");
+}
+
+fn test_fx() {
+    let rates = map(
+        "BDT", map("digits", 2, "rate_bps", 10000, "symbol", "৳", "name", "Bangladeshi Taka"),
+        "USD", map("digits", 2, "rate_bps", 12100, "symbol", "$", "name", "US Dollar"),
+        "JPY", map("digits", 0, "rate_bps", 82, "symbol", "¥", "name", "Japanese Yen")
+    );
+
+    // Same currency is an identity, whatever the rate says.
+    assert(Fx.convert(123456, "BDT", "BDT", rates) == 123456, "same-currency conversion is identity");
+
+    // 1000.00 BDT at 1 USD = 1.21 BDT -> 826.45 USD.
+    assert(Fx.convert(100000, "BDT", "USD", rates) == 82645, "BDT -> USD converts in minor units");
+    assert(Fx.convert(82645, "USD", "BDT", rates) == 100000, "USD -> BDT round-trips");
+
+    // A zero-minor-digit currency: 1000.00 BDT at 82 bps -> 121,951 yen.
+    assert(Fx.convert(100000, "BDT", "JPY", rates) == 121951, "zero-minor-digit currencies convert");
+    assert(Fx.format(121951, "JPY", rates) == "¥121,951", "zero-decimal formatting has no fraction");
+
+    // Unknown codes fall back to the 2-decimal 1:1 meta.
+    assert(Fx.convert(1000, "BDT", "XXX", rates) == 1000, "an unknown target falls back 1:1");
+    assert(Fx.format(1000, "XXX", rates) == "10.00", "unknown-code formatting has no symbol");
+
+    // Formatting.
+    assert(Fx.format(82645, "USD", rates) == "$826.45", "converted amounts carry the display symbol");
+    println("  [PASS] test_fx");
+}
+
+fn test_slug() {
+    assert(Slug.make("Store Widget — Limited Edition") == "store-widget-limited-edition",
+        "slugify lowercases, strips punctuation and hyphenates");
+    assert(Slug.make("  Already A Slug  ") == "already-a-slug", "slugs are trimmed");
+    let taken = fn(candidate) {
+        return candidate == "widget";
+    };
+    assert(Slug.unique("widget", taken) != "widget", "a taken slug is uniquified");
+    assert(Slug.unique("available", taken) == "available", "a free slug is used verbatim");
+    println("  [PASS] test_slug");
+}
+
+fn test_catalog_generations() {
+    let before = CatalogCache.catalog_version();
+    let after = CatalogCache.bump_catalog_version();
+    assert(after == before + 1, "bumping the catalog cache advances the generation");
+    assert(CatalogCache.catalog_version() == after, "the generation is stable until the next bump");
+    println("  [PASS] test_catalog_generations");
+}
+
+fn main() {
+    println("\n=== Running Store Unit Test Suite ===");
+    test_money_to_minor();
+    test_money_format();
+    test_fx();
+    test_slug();
+    test_catalog_generations();
+
+    println("=== All Store Unit Tests Passed! ===\n");
+    return 0;
+}

@@ -1,0 +1,37 @@
+// config/cache.matrix
+// Spid3rWeb Cache Configuration
+//
+// The active driver is selected via the SPID3R_CACHE_DRIVER environment
+// variable (or a .env file) — see framework/Cache/Cache.matrix:
+//
+//   SPID3R_CACHE_DRIVER=memory | file | database     (default: memory)
+//
+//   memory    — per-process in-memory store, fastest, cleared on restart
+//   file      — storage/framework/cache/, survives restarts
+//   database  — `cache` table via the DB facade, shared across processes,
+//               works on every configured database engine
+//
+// TTL convention: seconds > 0 expire after N seconds; 0/null = forever.
+
+public let config_cache = map(
+    "default", "memory",
+    "driver_env", "SPID3R_CACHE_DRIVER",
+    "stores", map(
+        "memory", map(
+            "driver", "memory",
+            "persistent", false
+        ),
+        "file", map(
+            "driver", "file",
+            "path", "storage/framework/cache",
+            "persistent", true
+        ),
+        "database", map(
+            "driver", "database",
+            "table", "cache",
+            "persistent", true,
+            "shared", true,
+            "engines", "sqlite | postgres | mysql | mariadb"
+        )
+    )
+);

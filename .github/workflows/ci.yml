@@ -1,0 +1,250 @@
+# Continuous Integration for Spid3rWeb.
+#
+# Standards followed:
+#   - Least-privilege `permissions` block (contents: read only)
+#   - Pinned major versions of all third-party actions (@v4)
+#   - Concurrency group cancels superseded runs on the same ref
+#   - fail-fast: false so one engine failing does not hide the others
+#   - No secrets needed: everything runs against throwaway service containers
+#   - Matrix values reach shells via $ENGINE / $GITHUB_ENV, never via
+#     direct ${{ }} interpolation inside run blocks (injection-safe)
+#
+# Pipeline:
+#   lint  — shellcheck (install.sh) + actionlint (this workflow)
+#   test  — full framework suite on SQLite, MySQL 8.0 and PostgreSQL 16
+#           (migrate -> seed -> route:list -> serve --dry-run -> magic test)
+
+name: CI
+
+on:
+  push:
+    branches: [main, master, eCommerce]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Lint (shellcheck + actionlint)
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: shellcheck shell scripts (POSIX sh)
+        run: |
+          shellcheck -s sh install.sh
+          shellcheck -s sh deploy/docker-smoke.sh
+
+      # NOTE: the download script requires a bare version ("1.7.7" — the
+      # leading "v" fails its ^\d+\.\d+\.\d+$ check and exits 1).
+      - name: actionlint (workflow syntax + semantics)
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash | bash -s -- 1.7.7
+          ./actionlint -color
+
+  test:
+    name: Tests (${{ matrix.engine }})
+    runs-on: ubuntu-24.04
+    needs: lint
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        engine: [sqlite, mysql, postgres]
+
+    # Throwaway servers shared by the matrix; each job only talks to its
+    # own engine. MySQL ships with caching_sha2_password by default, so a
+    # dedicated step below creates the CI user with mysql_native_password
+    # (the Spid3r runtime's MySQL client requirement).
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: ciroot
+          MYSQL_DATABASE: spid3r
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -pciroot"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=15
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: spid3r
+          POSTGRES_USER: postgres
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres -d spid3r"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+
+    env:
+      ENGINE: ${{ matrix.engine }}
+      SPID3R_DB_DRIVER: ${{ matrix.engine }}
+      # Direct `spid3r run tests/...` invocations (the VM-engine steps and
+      # the example/bench smokes) resolve `framework/*` imports through
+      # SPID3R_PATH — set it here so they work from any cwd. magic test
+      # sets it itself, matching this value.
+      SPID3R_PATH: .
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Cache cargo (speeds up the source-build fallback)
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: cargo-spid3r-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: cargo-spid3r-${{ runner.os }}-
+
+      # Prefer the prebuilt release tarball; fall back to a core-only
+      # source build (needs just cargo + cc, both preinstalled) while the
+      # spid3r release only ships the Windows installer. Both paths
+      # install into ~/.spid3r/bin.
+      - name: Install Spid3r toolchain
+        run: |
+          if ! curl -fsSL https://raw.githubusercontent.com/needyamin/spid3r/main/install.sh | sh -s -- --no-modify-path; then
+            echo "Prebuilt install unavailable — building spid3r from source (core only)..."
+            curl -fsSL https://raw.githubusercontent.com/needyamin/spid3r/main/install.sh | sh -s -- --source --core --no-modify-path
+          fi
+          echo "$HOME/.spid3r/bin" >> "$GITHUB_PATH"
+
+      # NOTE: GITHUB_PATH only affects LATER steps — do not call spid3r in
+      # the install step itself.
+      - name: Toolchain version
+        run: spid3r --version
+
+      - name: Prepare project (.env from example + engine connection)
+        env:
+          SPID3R_MYSQL_HOST: 127.0.0.1
+          SPID3R_MYSQL_PORT: "3306"
+          SPID3R_MYSQL_USER: spid3r
+          SPID3R_MYSQL_PASSWORD: spid3r
+          SPID3R_MYSQL_DATABASE: spid3r
+          SPID3R_PG_HOST: 127.0.0.1
+          SPID3R_PG_PORT: "5432"
+          SPID3R_PG_USER: postgres
+          SPID3R_PG_PASSWORD: postgres
+          SPID3R_PG_DATABASE: spid3r
+        run: |
+          cp .env.example .env
+          # Engine-specific connection vars must be real OS env for every
+          # later step -> persist the ones for THIS engine via GITHUB_ENV.
+          case "$ENGINE" in
+            mysql)
+              echo "SPID3R_MYSQL_HOST=$SPID3R_MYSQL_HOST"       >> "$GITHUB_ENV"
+              echo "SPID3R_MYSQL_PORT=$SPID3R_MYSQL_PORT"       >> "$GITHUB_ENV"
+              echo "SPID3R_MYSQL_USER=$SPID3R_MYSQL_USER"       >> "$GITHUB_ENV"
+              echo "SPID3R_MYSQL_PASSWORD=$SPID3R_MYSQL_PASSWORD" >> "$GITHUB_ENV"
+              echo "SPID3R_MYSQL_DATABASE=$SPID3R_MYSQL_DATABASE" >> "$GITHUB_ENV"
+              ;;
+            postgres)
+              echo "SPID3R_PG_HOST=$SPID3R_PG_HOST"             >> "$GITHUB_ENV"
+              echo "SPID3R_PG_PORT=$SPID3R_PG_PORT"             >> "$GITHUB_ENV"
+              echo "SPID3R_PG_USER=$SPID3R_PG_USER"             >> "$GITHUB_ENV"
+              echo "SPID3R_PG_PASSWORD=$SPID3R_PG_PASSWORD"     >> "$GITHUB_ENV"
+              echo "SPID3R_PG_DATABASE=$SPID3R_PG_DATABASE"     >> "$GITHUB_ENV"
+              ;;
+            sqlite)
+              : # zero config — database/database.sqlite is created by migrate
+              ;;
+            *)
+              echo "Unknown engine: $ENGINE" >&2
+              exit 1
+              ;;
+          esac
+
+      # The runtime's MySQL client speaks mysql_native_password only, while
+      # MySQL 8.0 defaults to caching_sha2_password — create the user with
+      # the compatible plugin explicitly.
+      - name: Create MySQL user (mysql_native_password)
+        if: matrix.engine == 'mysql'
+        run: |
+          mysql -h 127.0.0.1 -uroot -pciroot -e "CREATE USER IF NOT EXISTS 'spid3r'@'%' IDENTIFIED WITH mysql_native_password BY 'spid3r'; GRANT ALL PRIVILEGES ON spid3r.* TO 'spid3r'@'%'; FLUSH PRIVILEGES;"
+
+      - name: Migrate database
+        run: spid3r magic migrate
+
+      - name: Seed database (no-op on fresh install)
+        run: spid3r magic db:seed
+
+      - name: Route table smoke check
+        run: spid3r magic route:list
+
+      - name: Server boot smoke check
+        run: spid3r magic serve --dry-run
+
+      - name: Full test suite (${{ matrix.engine }})
+        run: spid3r magic test
+
+      # The remaining checks only need SQLite (the matrix leg that always
+      # has a working engine) — run them once, on the sqlite leg.
+      # NOTE: run_all.matrix spawns its suites without an engine flag, so
+      # to genuinely exercise the bytecode VM we run key suites under
+      # --engine vm directly.
+      - name: Bytecode VM engine runs (sqlite leg)
+        if: matrix.engine == 'sqlite'
+        run: |
+          set -e
+          for t in test_router test_container test_events test_model test_resource test_websocket test_store test_store_schema test_store_auth test_store_catalog test_store_storefront test_store_cart test_store_checkout test_store_payment test_store_admin test_store_advanced test_store_shipping test_store_security test_store_performance test_store_unit test_store_journey; do
+            spid3r run --engine vm "tests/$t.matrix"
+          done
+
+      - name: Full-stack example (sqlite leg)
+        if: matrix.engine == 'sqlite'
+        run: spid3r run examples/task-api/main.matrix
+
+      - name: Benchmarks execute cleanly (sqlite leg)
+        if: matrix.engine == 'sqlite'
+        run: spid3r run benchmarks/bench.matrix
+
+      # Phase 13 — application-layer load probe (small iteration count in
+      # CI; the point is that it runs and reports, not the absolute numbers).
+      - name: Store load probe (sqlite leg)
+        if: matrix.engine == 'sqlite'
+        env:
+          LOAD_ITERS: "25"
+        run: spid3r run tools/store_load.matrix
+
+      # Phase 15 — the REAL server, booted as a live process and verified
+      # over TCP (the suites drive handle_request in-process; this proves
+      # the actual HTTP server serves the store end to end).
+      - name: Real server smoke (sqlite leg)
+        if: matrix.engine == 'sqlite'
+        run: |
+          set -e
+          spid3r magic serve --port=8010 &
+          SERVER_PID=$!
+          tries=0
+          until curl -fsS http://127.0.0.1:8010/health >/dev/null 2>&1; do
+            tries=$((tries + 1))
+            if [ "$tries" -ge 30 ]; then
+              echo "server did not become ready in time" >&2
+              kill $SERVER_PID 2>/dev/null || true
+              exit 1
+            fi
+            sleep 1
+          done
+          curl -fsS http://127.0.0.1:8010/health
+          curl -fsS http://127.0.0.1:8010/ >/dev/null
+          curl -fsS http://127.0.0.1:8010/catalog >/dev/null
+          curl -fsS http://127.0.0.1:8010/sitemap.xml >/dev/null
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8010/no-such-page)" = "404"
+          curl -fsS -D - -o /dev/null http://127.0.0.1:8010/ | grep -qi 'content-security-policy'
+          kill $SERVER_PID

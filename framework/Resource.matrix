@@ -1,0 +1,93 @@
+// framework/Resource.matrix
+// Spid3rWeb REST Resource Layer
+//
+// Consistent JSON envelopes for API responses. Transform models or row maps
+// into API shapes with a transformer function (so API structure never leaks
+// database columns like password hashes or internal flags):
+//
+//   import "framework/Resource";
+//
+//   let user_transformer = fn(u) {
+//       return map("id", u["id"], "name", u["name"], "email", u["email"]);
+//   };
+//
+//   return json(resource_item(user, user_transformer));            // single
+//   return json(resource_collection(users, user_transformer));     // list
+//   return json(resource_paginated(page, user_transformer));       // paginate() result
+//
+// Envelopes:
+//   resource_item        →  {"data": {...}}
+//   resource_collection  →  {"data": [...], "meta": {"count": n}}
+//   resource_paginated   →  {"data": [...], "meta": {"count", "total",
+//                            "page", "per_page", "last_page", "has_more",
+//                            "from", "to"}}
+//
+// Transformers always receive a PLAIN MAP: Model instances are unwrapped
+// via to_map() first, so `u["field"]` works uniformly. Null input produces
+// {"data": null} (never an error) — the natural shape for miss-or-404 flows.
+
+import "framework/Database/Model";
+
+// Normalize one record to a plain map (instances → to_map()).
+fn _resource_plain(item) {
+    if item == null {
+        return null;
+    }
+    if type_of(item) == "map" {
+        return item;
+    }
+    return item.to_map();
+}
+
+// Single record: {"data": transformed}
+public fn resource_item(item, transformer = null) {
+    let plain = _resource_plain(item);
+    if transformer != null and plain != null {
+        return map("data", transformer(plain));
+    }
+    return map("data", plain);
+}
+
+// List of records: {"data": [...], "meta": {"count": n}}
+public fn resource_collection(items, transformer = null) {
+    let out = list();
+    let i = 0;
+    while i < len(items) {
+        let plain = _resource_plain(items[i]);
+        if transformer != null {
+            out.push(transformer(plain));
+        } else {
+            out.push(plain);
+        }
+        i += 1;
+    }
+    return map("data", out, "meta", map("count", len(out)));
+}
+
+// QueryBuilder.paginate() result → full pagination envelope. The page map's
+// "data" rows are transformed; every other key becomes "meta".
+public fn resource_paginated(page_result, transformer = null) {
+    let rows = page_result["data"];
+    let out = list();
+    let i = 0;
+    while i < len(rows) {
+        let plain = _resource_plain(rows[i]);
+        if transformer != null {
+            out.push(transformer(plain));
+        } else {
+            out.push(plain);
+        }
+        i += 1;
+    }
+    let meta = map(
+        "count", len(out),
+        "total", page_result["total"],
+        "page", page_result["page"],
+        "per_page", page_result["per_page"],
+        "last_page", page_result["last_page"],
+        "from", page_result["from"],
+        "to", page_result["to"],
+        "has_more", page_result["has_more"]
+    );
+    return map("data", out, "meta", meta);
+}

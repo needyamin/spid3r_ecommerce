@@ -1,0 +1,125 @@
+/* welcome.css — fresh-installation welcome page (mobile-first) */
+
+:root {
+    --bg: #0f172a;
+    --panel: #1e293b;
+    --text: #e2e8f0;
+    --muted: #94a3b8;
+    --accent: #38bdf8;
+    --accent-strong: #0ea5e9;
+    --border: #334155;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    min-height: 100vh;
+}
+
+.welcome {
+    max-width: 680px;
+    margin: 0 auto;
+    padding: 3rem 1.25rem 4rem;
+}
+
+.hero { text-align: center; margin-bottom: 2.5rem; }
+
+.badge {
+    display: inline-block;
+    padding: 0.25rem 0.85rem;
+    border: 1px solid var(--accent-strong);
+    border-radius: 999px;
+    color: var(--accent);
+    font-size: 0.8rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    margin-bottom: 1rem;
+}
+
+.hero h1 {
+    font-size: clamp(2rem, 6vw, 3rem);
+    letter-spacing: -0.02em;
+    color: var(--accent);
+    overflow-wrap: anywhere;
+}
+
+.tagline {
+    color: var(--muted);
+    margin-top: 0.5rem;
+    overflow-wrap: break-word;
+}
+
+.next-steps,
+.links {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+}
+
+.next-steps h2 { font-size: 1.15rem; margin-bottom: 1rem; }
+
+.next-steps ol { list-style: none; }
+
+.next-steps li {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+    padding: 0.7rem 0;
+    border-bottom: 1px solid var(--border);
+}
+
+.next-steps li:last-child { border-bottom: none; }
+
+.step-num {
+    flex: 0 0 auto;
+    width: 1.75rem;
+    height: 1.75rem;
+    border-radius: 50%;
+    background: var(--accent-strong);
+    color: #fff;
+    font-size: 0.85rem;
+    font-weight: 700;
+    line-height: 1.75rem;
+    text-align: center;
+    margin-top: 0.15rem;
+}
+
+/* min-width: 0 lets long tokens shrink and wrap instead of overflowing */
+.step-body { flex: 1 1 auto; min-width: 0; }
+
+.next-steps strong { display: block; }
+
+.step-hint {
+    display: block;
+    color: var(--muted);
+    font-size: 0.9rem;
+    overflow-wrap: anywhere;
+}
+
+code {
+    background: rgba(56, 189, 248, 0.12);
+    color: var(--accent);
+    padding: 0.1rem 0.4rem;
+    border-radius: 6px;
+    font-size: 0.85em;
+    overflow-wrap: anywhere;
+}
+
+.links p { color: var(--muted); margin-bottom: 0.5rem; }
+
+.links ul { list-style: none; }
+
+.links li { padding: 0.2rem 0; font-size: 0.92rem; overflow-wrap: anywhere; }
+
+@media (min-width: 640px) {
+    .welcome { padding-top: 5rem; }
+    .next-steps, .links { padding: 2rem; }
+}

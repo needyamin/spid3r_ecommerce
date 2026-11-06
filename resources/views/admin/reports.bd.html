@@ -1,0 +1,30 @@
+@extends("layouts.store")
+@section('title', title)
+@section('meta_description', meta_description)
+@section("content")
+  <nav class="admin-nav">
+    <a href="/admin/dashboard">Overview</a>
+    <a href="/admin/orders">Orders</a>
+    <a href="/admin/products">Products</a>
+    <a href="/admin/inventory">Inventory</a>
+    <a href="/admin/customers">Customers</a>
+    <a href="/admin/coupons">Coupons</a>
+    <a href="/admin/settings">Settings</a>
+    <a href="/admin/audit">Audit</a>
+    <a href="/admin/reports">Reports</a>
+  </nav>
+  <h1 class="page-title">Sales &amp; revenue reports</h1>
+  <div class="stat-grid">
+    <div class="stat-card"><span>Revenue (settled)</span><strong>{{ revenue_display }}</strong></div>
+    <div class="stat-card"><span>All orders</span><strong>{{ order_count }}</strong></div>
+    <div class="stat-card"><span>Settled rows</span><strong>{{ settled_rows }}</strong></div>
+  </div>
+  <section class="checkout-panel">
+    <h2>Export</h2>
+    <p class="cart-unit">Settled orders only (paid, processing, packed, shipped, delivered).</p>
+    <div class="hero-actions">
+      <a class="btn btn-primary" href="/admin/reports/export?format=csv">Download CSV</a>
+      <a class="btn btn-secondary" href="/admin/reports/export?format=json">JSON data</a>
+    </div>
+  </section>
+@endsection

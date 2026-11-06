@@ -1,0 +1,144 @@
+// database/seeders/DatabaseSeeder.matrix
+// Phase 2 — baseline store data. Idempotent: every row is checked before
+// insert, so `magic db:seed` is safe to run repeatedly.
+
+import "framework/Database/DB";
+
+fn ensure(table_name: string, column: string, value, data) {
+    let hits = DB.table(table_name).where(column, "=", value).count();
+    if hits > 0 {
+        return false;
+    }
+    DB.table(table_name).insert(data);
+    return true;
+}
+
+fn seed_roles() {
+    ensure("roles", "slug", "customer", map("name", "Customer", "slug", "customer", "description", "Storefront customer"));
+    ensure("roles", "slug", "staff", map("name", "Staff", "slug", "staff", "description", "Operations staff"));
+    ensure("roles", "slug", "admin", map("name", "Administrator", "slug", "admin", "description", "Full store access"));
+}
+
+fn seed_permissions() {
+    ensure("permissions", "slug", "catalog.manage", map("name", "Manage catalog", "slug", "catalog.manage"));
+    ensure("permissions", "slug", "orders.manage", map("name", "Manage orders", "slug", "orders.manage"));
+    ensure("permissions", "slug", "customers.manage", map("name", "Manage customers", "slug", "customers.manage"));
+    ensure("permissions", "slug", "settings.manage", map("name", "Manage settings", "slug", "settings.manage"));
+    ensure("permissions", "slug", "reports.view", map("name", "View reports", "slug", "reports.view"));
+    ensure("permissions", "slug", "payments.manage", map("name", "Manage payments", "slug", "payments.manage"));
+}
+
+fn seed_role_permissions() {
+    let admin = DB.table("roles").where("slug", "=", "admin").first();
+    if admin == null {
+        return false;
+    }
+    let perms = DB.table("permissions").get();
+    let i = 0;
+    while i < perms.len() {
+        let perm = perms[i];
+        let exists = DB.table("role_permissions")
+            .where("role_id", "=", admin["id"])
+            .where("permission_id", "=", perm["id"])
+            .count();
+        if exists == 0 {
+            DB.table("role_permissions").insert(map("role_id", admin["id"], "permission_id", perm["id"]));
+        }
+        i += 1;
+    }
+    return true;
+}
+
+fn seed_settings() {
+    ensure("settings", "setting_key", "store.name", map("setting_key", "store.name", "value", "Spid3r Store", "setting_group", "general"));
+    ensure("settings", "setting_key", "store.currency", map("setting_key", "store.currency", "value", "BDT", "setting_group", "general"));
+    ensure("settings", "setting_key", "store.tax_rate_bps", map("setting_key", "store.tax_rate_bps", "value", "0", "setting_group", "tax"));
+    ensure("settings", "setting_key", "shipping.flat_minor", map("setting_key", "shipping.flat_minor", "value", "6000", "setting_group", "shipping"));
+    ensure("settings", "setting_key", "shipping.free_threshold_minor", map("setting_key", "shipping.free_threshold_minor", "value", "200000", "setting_group", "shipping"));
+    // Phase 7 — express shipping surcharge.
+    ensure("settings", "setting_key", "shipping.express_minor", map("setting_key", "shipping.express_minor", "value", "12000", "setting_group", "shipping"));
+    // Phase 8 — DEV-ONLY webhook secret. Production MUST override with
+    // <PROVIDER>_WEBHOOK_SECRET / COD_WEBHOOK_SECRET environment variables.
+    ensure("settings", "setting_key", "payments.webhook_secret", map("setting_key", "payments.webhook_secret", "value", "dev-webhook-secret-change-me", "setting_group", "payments"));
+    // Phase 6 — volume discount (5% off carts at/above 1000.00).
+    ensure("settings", "setting_key", "cart.discount_threshold_minor", map("setting_key", "cart.discount_threshold_minor", "value", "100000", "setting_group", "promotions"));
+    ensure("settings", "setting_key", "cart.discount_bps", map("setting_key", "cart.discount_bps", "value", "500", "setting_group", "promotions"));
+    // Phase 11 — how many days after delivery a return may be requested.
+    ensure("settings", "setting_key", "returns.window_days", map("setting_key", "returns.window_days", "value", "14", "setting_group", "shipping"));
+}
+
+fn ensure_setting_value(table_name: string, column: string, value, data) {
+    let hits = DB.table(table_name).where(column, "=", value).count();
+    if hits > 0 {
+        return false;
+    }
+    DB.table(table_name).insert(data);
+    return true;
+}
+
+// Phase 10 — currency catalog. The base currency (settings store.currency)
+// is always 1:1 with itself; alternates are DISPLAY currencies derived
+// from rate_to_base_bps (basis points of base currency per major unit).
+fn seed_currencies() {
+    ensure_setting_value("currencies", "code", "BDT", map(
+        "code", "BDT", "name", "Bangladeshi Taka", "symbol", "৳",
+        "minor_digits", 2, "rate_to_base_bps", 10000,
+        "is_active", 1, "is_default", 1
+    ));
+    ensure_setting_value("currencies", "code", "USD", map(
+        "code", "USD", "name", "US Dollar", "symbol", "$",
+        "minor_digits", 2, "rate_to_base_bps", 12100,
+        "is_active", 1, "is_default", 0
+    ));
+    ensure_setting_value("currencies", "code", "EUR", map(
+        "code", "EUR", "name", "Euro", "symbol", "€",
+        "minor_digits", 2, "rate_to_base_bps", 13900,
+        "is_active", 1, "is_default", 0
+    ));
+}
+
+// Phase 10 — translations. `ensure_translation` is idempotent on the
+// (locale, namespace, key) triple.
+fn ensure_translation(locale: string, namespace: string, key: string, value: string) {
+    let hits = DB.table("translations")
+        .where("locale", "=", locale)
+        .where("namespace", "=", namespace)
+        .where("translation_key", "=", key)
+        .count();
+    if hits > 0 {
+        return false;
+    }
+    DB.table("translations").insert(map(
+        "locale", locale, "namespace", namespace,
+        "translation_key", key, "value", value
+    ));
+    return true;
+}
+
+fn seed_translations() {
+    ensure_translation("en", "nav", "catalog", "Catalog");
+    ensure_translation("en", "nav", "cart", "Cart");
+    ensure_translation("en", "nav", "wishlist", "Wishlist");
+    ensure_translation("en", "nav", "track", "Track order");
+    ensure_translation("en", "nav", "support", "Support");
+    ensure_translation("en", "nav", "account", "Account");
+    ensure_translation("bn", "nav", "catalog", "ক্যাটালগ");
+    ensure_translation("bn", "nav", "cart", "কার্ট");
+    ensure_translation("bn", "nav", "wishlist", "ইচ্ছেতালিকা");
+    ensure_translation("bn", "nav", "track", "অর্ডার ট্র্যাক করুন");
+    ensure_translation("bn", "nav", "support", "সাপোর্ট");
+    ensure_translation("bn", "nav", "account", "অ্যাকাউন্ট");
+}
+
+public fn run_database_seeder() {
+    DB.transaction(fn() {
+        seed_roles();
+        seed_permissions();
+        seed_role_permissions();
+        seed_settings();
+        seed_currencies();
+        seed_translations();
+        return true;
+    });
+    return true;
+}

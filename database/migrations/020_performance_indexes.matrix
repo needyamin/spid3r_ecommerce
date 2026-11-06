@@ -1,0 +1,63 @@
+// database/migrations/020_performance_indexes.matrix
+// Phase 13 — indexes for the hot read paths that Phase 2's schema did not
+// cover: verified-purchase review lookups, loyalty idempotency, coupon usage
+// accounting, session garbage collection and queue polling.
+//
+// Migrations run once (tracked in the migrations table), so plain
+// CREATE INDEX is used — MySQL has no CREATE INDEX IF NOT EXISTS.
+
+import "framework/Database/Schema";
+import "framework/Database/Migration";
+import "framework/Database/DB";
+
+public class PerformanceIndexes extends Migration {
+    fn new(name: string = "020_performance_indexes") {
+        super(name);
+    }
+
+    public fn up(self) {
+        // Reviews: verified-purchase check scans order_lines by product.
+        DB.statement("CREATE INDEX idx_order_items_product ON order_items (product_id)", []);
+
+        // Loyalty: exactly-one-award-per-order check.
+        DB.statement("CREATE INDEX idx_loyalty_order ON loyalty_ledger (order_id)", []);
+
+        // Coupons: usage lookups per coupon.
+        DB.statement("CREATE INDEX idx_coupon_usages_coupon ON coupon_usages (coupon_id)", []);
+
+        // Sessions: garbage collection prunes by last_activity.
+        DB.statement("CREATE INDEX idx_sessions_activity ON sessions (last_activity)", []);
+
+        // Queue: the worker polls for available jobs per queue.
+        DB.statement("CREATE INDEX idx_jobs_poll ON jobs (queue, available_at)", []);
+
+        // Storefront: status+featured listing scan and slug lookups.
+        DB.statement("CREATE INDEX idx_products_listing ON products (status, id)", []);
+    }
+
+    public fn down(self) {
+        // DROP INDEX has no portable form: MySQL needs "ON <table>",
+        // SQLite/PostgreSQL do not. Resolve by driver.
+        let drops = [
+            ["idx_order_items_product", "order_items"],
+            ["idx_loyalty_order", "loyalty_ledger"],
+            ["idx_coupon_usages_coupon", "coupon_usages"],
+            ["idx_sessions_activity", "sessions"],
+            ["idx_jobs_poll", "jobs"],
+            ["idx_products_listing", "products"]
+        ];
+        let manager = DB;
+        let driver = manager.driver_name();
+        let i = 0;
+        while i < drops.len() {
+            let name = drops[i][0];
+            let table = drops[i][1];
+            if driver == "mysql" or driver == "mariadb" {
+                DB.statement("DROP INDEX " + name + " ON " + table, []);
+            } else {
+                DB.statement("DROP INDEX " + name, []);
+            }
+            i += 1;
+        }
+    }
+}

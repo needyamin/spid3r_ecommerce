@@ -1,0 +1,42 @@
+// routes/catalog.matrix
+// Phase 4 — product management API (admin only).
+// Every route is permission-gated; state-changing calls additionally pass
+// through the framework's CSRF layers (include _csrf for cookie sessions).
+
+import "framework/Router";
+import "app/Controllers/AdminCatalogController";
+
+public fn register_catalog_routes() {
+    let ctl = new AdminCatalogController();
+    let gate = "permission:catalog.manage";
+
+    Route.get("/admin/api/products", fn(req) { return ctl.products_index(req); }).middleware(gate);
+    Route.post("/admin/api/products", fn(req) { return ctl.product_store(req); }).middleware(gate);
+    Route.get("/admin/api/products/:id", fn(req) { return ctl.product_show(req); }).middleware(gate);
+    Route.put("/admin/api/products/:id", fn(req) { return ctl.product_update(req); }).middleware(gate);
+    Route.delete("/admin/api/products/:id", fn(req) { return ctl.product_delete(req); }).middleware(gate);
+    Route.post("/admin/api/products/:id/publish", fn(req) { return ctl.product_publish(req); }).middleware(gate);
+    Route.post("/admin/api/products/:id/unpublish", fn(req) { return ctl.product_unpublish(req); }).middleware(gate);
+    Route.get("/admin/api/products/:id/availability", fn(req) { return ctl.product_availability(req); }).middleware(gate);
+
+    Route.get("/admin/api/products/:id/inventory", fn(req) { return ctl.inventory_show(req); }).middleware(gate);
+    Route.post("/admin/api/products/:id/inventory/restock", fn(req) { return ctl.inventory_restock(req); }).middleware(gate);
+    Route.get("/admin/api/products/:id/inventory/history", fn(req) { return ctl.inventory_history(req); }).middleware(gate);
+
+    Route.get("/admin/api/categories", fn(req) { return ctl.categories_index(req); }).middleware(gate);
+    Route.post("/admin/api/categories", fn(req) { return ctl.category_store(req); }).middleware(gate);
+    Route.put("/admin/api/categories/:id", fn(req) { return ctl.category_update(req); }).middleware(gate);
+    Route.delete("/admin/api/categories/:id", fn(req) { return ctl.category_delete(req); }).middleware(gate);
+
+    Route.get("/admin/api/brands", fn(req) { return ctl.brands_index(req); }).middleware(gate);
+    Route.post("/admin/api/brands", fn(req) { return ctl.brand_store(req); }).middleware(gate);
+    Route.put("/admin/api/brands/:id", fn(req) { return ctl.brand_update(req); }).middleware(gate);
+    Route.delete("/admin/api/brands/:id", fn(req) { return ctl.brand_delete(req); }).middleware(gate);
+
+    Route.get("/admin/api/products/:id/variants", fn(req) { return ctl.variants_index(req); }).middleware(gate);
+    Route.post("/admin/api/products/:id/variants", fn(req) { return ctl.variant_store(req); }).middleware(gate);
+
+    Route.get("/admin/api/products/:id/images", fn(req) { return ctl.images_index(req); }).middleware(gate);
+    Route.post("/admin/api/products/:id/images", fn(req) { return ctl.image_store(req); }).middleware(gate);
+    Route.delete("/admin/api/images/:id", fn(req) { return ctl.image_delete(req); }).middleware(gate);
+}

@@ -1,0 +1,13 @@
+# Keep the Docker build context lean (the Dockerfile COPYs only what it needs).
+.git
+.github
+.idea
+.vscode
+database/*.sqlite
+database/*.sqlite-shm
+database/*.sqlite-wal
+storage/logs
+storage/framework/cache
+node_modules
+deliverables
+docs/history

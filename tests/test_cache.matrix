@@ -1,0 +1,178 @@
+// tests/test_cache.matrix
+// Unit tests for the Spid3rWeb caching system (memory, file, database drivers)
+
+import "framework/Cache/Cache";
+import "framework/Cache/CacheStore";
+import "framework/Database/DB";
+
+// Run the standard operation battery against one store instance.
+fn exercise_store(s, label: string) {
+    // 1. Miss on empty
+    assert(s.get("missing_key") == null, label + ": missing key returns null");
+    assert(s.get("missing_key", "fallback") == "fallback", label + ": missing key returns default");
+    assert(s.has("missing_key") == false, label + ": has() false on empty");
+
+    // 2. Put + get (string)
+    s.put("greeting", "hello world", 60);
+    assert(s.get("greeting") == "hello world", label + ": string round-trip");
+    assert(s.has("greeting") == true, label + ": has() true after put");
+
+    // 3. Structured values round-trip (JSON-based stores)
+    s.put("profile", map("name", "ada", "age", 36, "tags", ["math", "code"]), 60);
+    let p = s.get("profile");
+    assert(p["name"] == "ada", label + ": map value round-trip (name)");
+    assert(int(p["age"]) == 36, label + ": map value round-trip (age)");
+    assert(p["tags"].len() == 2, label + ": list inside map round-trip");
+
+    s.put("numbers", [1, 2, 3], 60);
+    assert(s.get("numbers").len() == 3, label + ": list value round-trip");
+
+    // 4. Overwrite
+    s.put("greeting", "updated", 60);
+    assert(s.get("greeting") == "updated", label + ": put overwrites");
+
+    // 5. TTL expiry (2 seconds in the past)
+    s.put("shortlived", "gone soon", -1);
+    assert(s.get("shortlived") == null, label + ": expired entry is a miss");
+    assert(s.has("shortlived") == false, label + ": has() false after expiry");
+
+    // 6. Forever entries (0 = never expires)
+    s.put("forever_key", "eternal", 0);
+    assert(s.get("forever_key") == "eternal", label + ": forever entry stored");
+
+    // 7. Forget
+    s.forget("greeting");
+    assert(s.get("greeting") == null, label + ": forget removes key");
+
+    // 8. add() semantics are facade-level; store-level put verified above
+
+    // 9. Flush
+    s.put("flush_a", 1, 60);
+    s.put("flush_b", 2, 60);
+    s.flush();
+    assert(s.get("flush_a") == null and s.get("flush_b") == null, label + ": flush clears everything");
+}
+
+fn test_memory_store() {
+    exercise_store(new MemoryCacheStore(), "memory");
+    println("  [PASS] test_memory_store");
+}
+
+fn test_file_store() {
+    exercise_store(new FileCacheStore("storage/framework/cache_test"), "file");
+    // Clean the test directory afterwards
+    let s = new FileCacheStore("storage/framework/cache_test");
+    s.flush();
+    println("  [PASS] test_file_store");
+}
+
+fn test_database_store() {
+    exercise_store(new DatabaseCacheStore(), "database");
+    println("  [PASS] test_database_store");
+}
+
+// ---------------------------------------------------------------------------
+
+fn test_facade_defaults_and_selection() {
+    // Default driver resolution: memory, unless the environment overrides it
+    let expected_default = "memory";
+    let d = env("SPID3R_CACHE_DRIVER");
+    if d.is_some() {
+        let raw = string(d.unwrap()).trim().lower();
+        if raw == "file" {
+            expected_default = "file";
+        } elif raw == "database" or raw == "db" {
+            expected_default = "database";
+        }
+    }
+    assert(Cache.driver_name() == expected_default, "default driver resolution");
+
+    // Explicit store switching shares instances (lazy singleton per name)
+    let m1 = Cache.store("memory");
+    let m2 = Cache.store("memory");
+    assert(m1 == m2, "store() reuses instances");
+
+    // Facade delegates to default driver
+    Cache.put("facade_key", "facade_value", 60);
+    assert(Cache.get("facade_key") == "facade_value", "facade put/get");
+    assert(Cache.has("facade_key"), "facade has");
+    Cache.forget("facade_key");
+    assert(Cache.missing("facade_key"), "facade forget");
+
+    // Env override resolution (fresh manager)
+    env_set("SPID3R_CACHE_DRIVER", "file");
+    let c1 = new CacheManager();
+    assert(c1.driver_name() == "file", "env driver: file");
+    env_set("SPID3R_CACHE_DRIVER", "database");
+    let c2 = new CacheManager();
+    assert(c2.driver_name() == "database", "env driver: database");
+    env_set("SPID3R_CACHE_DRIVER", "db");
+    let c3 = new CacheManager();
+    assert(c3.driver_name() == "database", "env driver: db alias");
+    env_set("SPID3R_CACHE_DRIVER", "garbage");
+    let c4 = new CacheManager();
+    assert(c4.driver_name() == "memory", "unknown env driver falls back to memory");
+    env_set("SPID3R_CACHE_DRIVER", "");
+
+    println("  [PASS] test_facade_defaults_and_selection");
+}
+
+fn test_facade_remember_and_add() {
+    let s = Cache.store();
+    s.flush();
+
+    let calls = 0;
+    let computer = fn() {
+        // Closures can't mutate outer locals portably; use a sentinel map
+        return map("computed", true, "stamp", string(unix_time()));
+    };
+
+    // remember: computes and stores on miss
+    let v1 = Cache.remember("report", 60, computer);
+    assert(v1["computed"] == true, "remember computes on miss");
+    // remember: returns cached on hit (same object content)
+    let v2 = Cache.remember("report", 60, computer);
+    assert(v2["stamp"] == v1["stamp"], "remember returns cached on hit");
+
+    // rememberForever
+    let v3 = Cache.rememberForever("eternal_report", computer);
+    assert(v3["computed"] == true, "rememberForever works");
+
+    // add: succeeds on absent key, fails on present key
+    s.flush();
+    assert(Cache.add("once", "first", 60) == true, "add succeeds on absent key");
+    assert(Cache.add("once", "second", 60) == false, "add refuses existing key");
+    assert(Cache.get("once") == "first", "add does not overwrite");
+
+    // increment / decrement
+    s.flush();
+    assert(Cache.increment("counter") == 1, "increment from zero");
+    assert(Cache.increment("counter", 5) == 6, "increment by 5");
+    assert(Cache.decrement("counter", 2) == 4, "decrement by 2");
+
+    // Cleanup
+    Cache.flush();
+    println("  [PASS] test_facade_remember_and_add");
+}
+
+fn test_cache_across_engines_note() {
+    // The database store rides the DB facade — driver-agnostic by design.
+    // This assertion documents the contract; live per-engine coverage comes
+    // from the multi-db suite.
+    let s = new DatabaseCacheStore();
+    assert(s.driver_name() == "database", "database store driver name");
+    println("  [PASS] test_cache_across_engines_note");
+}
+
+fn main() {
+    println("\n=== Running Cache Test Suite ===");
+    test_memory_store();
+    test_file_store();
+    test_database_store();
+    test_facade_defaults_and_selection();
+    test_facade_remember_and_add();
+    test_cache_across_engines_note();
+    DB.close();
+    println("=== All Cache Tests Passed! ===\n");
+    return 0;
+}

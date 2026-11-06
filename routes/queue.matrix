@@ -1,0 +1,77 @@
+// routes/queue.matrix
+// Queue job handler registrations.
+//
+// Handlers MUST be registered here before Queue.push("name", ...) works —
+// the registry is process-local, so this file is imported by both entry
+// points (`magic` and `server.matrix`). Add your own jobs to the function
+// below; the worker resolves them by name at run time.
+
+import "framework/Queue/Queue";
+import "framework/Mail/Mail";
+import "framework/Log/Log";
+import "app/Services/Gateway/SmsGateway";
+
+public fn register_queue_jobs() {
+    // Log a message — handy for proving the pipeline works end-to-end.
+    Queue.job("log.message", fn(data) {
+        let msg = "(empty)";
+        if data != null and type_of(data) == "map" and data.has("message") {
+            msg = string(data["message"]);
+        }
+        Log.info("[job] log.message: " + msg, data);
+        return true;
+    });
+
+    // Send an email via the Mail facade (log driver in development).
+    Queue.job("mail.send", fn(data) {
+        return Mail.send(data);
+    });
+
+    // Phase 3 — account emails. queued, never inline: no SMTP dependency
+    // in the request path, and the log driver records them for verification.
+    Queue.job("store.password_reset", fn(data) {
+        let link = "/reset-password?token=" + string(data["token"]);
+        return Mail.to(
+            string(data["email"]),
+            "Reset your Spid3r Store password",
+            "Use this link within one hour: " + link
+        );
+    });
+
+    Queue.job("store.email_verification", fn(data) {
+        let link = "/verify-email/" + string(data["token"]);
+        return Mail.to(
+            string(data["email"]),
+            "Verify your Spid3r Store email",
+            "Confirm your address: " + link
+        );
+    });
+
+    // Phase 10 — order confirmation email. Queued, never inline: the
+    // request path must not depend on an SMTP round trip.
+    Queue.job("store.order_confirmation", fn(data) {
+        return Mail.to(
+            string(data["email"]),
+            "Your Spid3r Store order " + string(data["order_number"]),
+            "Thank you for your order " + string(data["order_number"]) +
+            ". We will let you know as soon as it ships."
+        );
+    });
+
+    // Phase 10 — customer support acknowledgement.
+    Queue.job("store.support_ticket", fn(data) {
+        return Mail.to(
+            string(data["email"]),
+            "We received your support request",
+            "Ticket " + string(data["ticket_id"]) + " — \"" + string(data["subject"]) +
+            "\" is with our team. We will reply to this address."
+        );
+    });
+
+    // Phase 10 — SMS notifications. The gateway fails fast when it is not
+    // configured; it never reports a message as sent when it was not.
+    Queue.job("store.sms_notification", fn(data) {
+        let gateway = new SmsGateway();
+        return gateway.send(string(data["phone"]), string(data["message"]));
+    });
+}

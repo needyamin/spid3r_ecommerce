@@ -1,0 +1,88 @@
+// tools/backup_store.matrix
+// Phase 2 — portable database backup & verify (works on SQLite, PostgreSQL,
+// MySQL/MariaDB because it goes through the framework DB facade, not
+// engine-specific dump binaries).
+//
+//   SPID3R_PATH=. SPID3R_DB_DRIVER=sqlite spid3r run tools/backup_store.matrix
+//   ... writes storage/backups/store-<unix>-<random>.json
+//   ... and verifies the file can be parsed back with the same table set.
+//
+// Restore is deliberately conservative: it only re-inserts rows into EMPTY
+// tables (never overwrites existing data). See docs/ecommerce/BACKUP.md.
+
+import "framework/Database/DB";
+import "framework/Filesystem/Storage";
+
+let store_tables = [
+    "users", "roles", "permissions", "user_roles", "role_permissions",
+    "addresses", "categories", "brands", "products", "product_variants",
+    "product_images", "inventory", "stock_movements", "carts", "cart_items",
+    "wishlists", "orders", "order_items", "payments", "refunds", "shipments",
+    "coupons", "coupon_usages", "reviews", "audit_logs", "settings"
+];
+
+public fn dump_tables() {
+    let dump = map("format", "spid3r-store-backup-v1", "created_at", string(unix_time()), "tables", map());
+    let i = 0;
+    while i < store_tables.len() {
+        let name = store_tables[i];
+        dump["tables"][name] = DB.table(name).get();
+        i += 1;
+    }
+    return dump;
+}
+
+// Write a dump and return its relative path. Verifies round-trip parse.
+public fn backup() -> string {
+    let dump = dump_tables();
+    let filename = "backups/store-" + string(unix_time()) + "-" + hex_encode(random_bytes(4).unwrap()) + ".json";
+    let text = json_write(dump);
+    let disk = Storage.disk("local");
+    disk.put(filename, text);
+    let read_back = disk.get(filename);
+    let parsed = json_parse(read_back);
+    if parsed["format"] != "spid3r-store-backup-v1" {
+        throw "backup verification failed: bad header";
+    }
+    let i = 0;
+    while i < store_tables.len() {
+        if not parsed["tables"].has(store_tables[i]) {
+            throw "backup verification failed: missing table " + store_tables[i];
+        }
+        i += 1;
+    }
+    return filename;
+}
+
+// Conservative restore: inserts rows only when the target table is empty.
+public fn restore(rel_path: string) -> int {
+    let parsed = json_parse(Storage.disk("local").get(rel_path));
+    if parsed["format"] != "spid3r-store-backup-v1" {
+        throw "not a Spid3r Store backup file";
+    }
+    let counter = map("n", 0);
+    DB.transaction(fn() {
+        let i = 0;
+        while i < store_tables.len() {
+            let name = store_tables[i];
+            let rows = parsed["tables"][name];
+            if rows.len() > 0 and DB.table(name).count() == 0 {
+                let j = 0;
+                while j < rows.len() {
+                    DB.table(name).insert(rows[j]);
+                    j += 1;
+                }
+                counter["n"] = counter["n"] + rows.len();
+            }
+            i += 1;
+        }
+        return true;
+    });
+    return counter["n"];
+}
+
+fn main() {
+    let path = backup();
+    println("[Backup] Wrote and verified: storage/" + path);
+    return 0;
+}

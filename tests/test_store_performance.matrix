@@ -1,0 +1,189 @@
+// tests/test_store_performance.matrix
+// Phase 13 — performance work, verified functionally:
+//
+//   - the Phase 13 indexes exist on every supported engine
+//   - the catalog cache serves requests AND is invalidated by writes
+//   - storefront images are lazy-loaded
+//   - the load probe harness is present
+
+import "framework/Application";
+import "framework/Router";
+import "framework/Database/DB";
+import "routes/web";
+import "routes/queue";
+import "app/Middleware/StoreMiddleware";
+import "app/Services/ProductService";
+import "app/Support/CatalogCache" as CatalogCache;
+import "database/seeders/DatabaseSeeder";
+
+fn get(app, path: string) {
+    return app.handle_request(map("method", "GET", "path", path, "headers", map()));
+}
+
+fn index_exists(name: string) -> bool {
+    let driver = DB.driver_name();
+    if driver == "postgres" {
+        let rows = DB.select("SELECT indexname FROM pg_indexes WHERE indexname = ?", [name]);
+        return rows.len() > 0;
+    }
+    if driver == "mysql" or driver == "mariadb" {
+        let rows = DB.select(
+            "SELECT DISTINCT INDEX_NAME FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND INDEX_NAME = ?",
+            [name]
+        );
+        return rows.len() > 0;
+    }
+    let rows = DB.select("SELECT name FROM sqlite_master WHERE type = 'index' AND name = ?", [name]);
+    return rows.len() > 0;
+}
+
+// ---- tests ----------------------------------------------------------
+
+fn test_performance_indexes() {
+    let required = [
+        "idx_order_items_product",
+        "idx_loyalty_order",
+        "idx_coupon_usages_coupon",
+        "idx_sessions_activity",
+        "idx_jobs_poll",
+        "idx_products_listing"
+    ];
+    let i = 0;
+    while i < required.len() {
+        assert(index_exists(required[i]), "index " + required[i] + " exists on " + DB.driver_name());
+        i += 1;
+    }
+    println("  [PASS] test_performance_indexes");
+}
+
+fn test_catalog_cache(app) {
+    let tag = string(unix_time());
+    let cat = DB.table("categories").insert(map(
+        "name", "Perf Category " + tag, "slug", "perf-cat-" + tag
+    ));
+    let products = new ProductService();
+    let created = products.create(map(
+        "name", "Perf Cached Widget " + tag,
+        "sku", "PERF-" + tag,
+        "category_id", cat,
+        "brand_id", null,
+        "short_description", "Cache probe",
+        "description", "Cache probe product",
+        "status", "published",
+        "price_minor", "5000",
+        "tax_rate_bps", "0",
+        "weight_grams", "0",
+        "meta_title", "", "meta_description", ""
+    ));
+    let slug = string(created["slug"]);
+    DB.table("inventory").where("product_id", "=", created["id"]).update(map("quantity", 10));
+
+    // First render fills the cache.
+    let first = get(app, "/catalog");
+    assert(first["status"] == 200, "the catalog renders");
+    assert(string(first["body"]).contains("Perf Cached Widget"), "the product is listed");
+
+    // A write that bypasses the invalidation (raw insert) is NOT visible
+    // until the version moves: the cache is genuinely serving.
+    let hidden_id = DB.table("products").insert(map(
+        "category_id", cat, "name", "Perf Hidden Widget " + tag,
+        "slug", "perf-hidden-" + tag, "sku", "PERFH-" + tag,
+        "price_minor", 5000, "status", "published", "currency", "BDT"
+    ));
+    DB.table("inventory").insert(map(
+        "product_id", hidden_id, "variant_id", null,
+        "quantity", 5, "reserved", 0, "low_stock_threshold", 1
+    ));
+    let stale = get(app, "/catalog");
+    assert(stale["status"] == 200, "the cached catalog renders");
+    assert(not string(stale["body"]).contains("Perf Hidden Widget"), "an uninvalidated write stays cached");
+
+    // Bumping the generation orphans the old entries: the write shows up.
+    CatalogCache.bump_catalog_version();
+    let fresh = get(app, "/catalog");
+    assert(string(fresh["body"]).contains("Perf Hidden Widget"), "the version bump invalidates the cache");
+
+    // A service write (which bumps) is visible immediately.
+    let second = products.create(map(
+        "name", "Perf Second Widget " + tag,
+        "sku", "PERF2-" + tag,
+        "category_id", cat,
+        "brand_id", null,
+        "short_description", "Second probe",
+        "description", "Second probe product",
+        "status", "published",
+        "price_minor", "6000",
+        "tax_rate_bps", "0",
+        "weight_grams", "0",
+        "meta_title", "", "meta_description", ""
+    ));
+    DB.table("inventory").where("product_id", "=", second["id"]).update(map("quantity", 10));
+    let after_write = get(app, "/catalog");
+    assert(string(after_write["body"]).contains("Perf Second Widget"), "a service write is visible at once");
+
+    // Cleanup (slug-anchored, other suites unaffected).
+    DB.table("inventory").where("product_id", "=", hidden_id).delete();
+    DB.table("stock_movements").where("product_id", "=", hidden_id).delete();
+    DB.table("products").where("slug", "LIKE", "perf-%").delete();
+    DB.table("categories").where("slug", "=", "perf-cat-" + tag).delete();
+    CatalogCache.bump_catalog_version();
+    println("  [PASS] test_catalog_cache");
+}
+
+fn test_lazy_loading(app) {
+    let tag = string(unix_time());
+    let cat = DB.table("categories").insert(map(
+        "name", "Perf Img Category " + tag, "slug", "perf-img-" + tag
+    ));
+    let pid = DB.table("products").insert(map(
+        "category_id", cat, "name", "Perf Image Widget " + tag,
+        "slug", "perf-img-widget-" + tag, "sku", "PERFIMG-" + tag,
+        "price_minor", 5000, "status", "published", "currency", "BDT"
+    ));
+    DB.table("inventory").insert(map(
+        "product_id", pid, "variant_id", null,
+        "quantity", 5, "reserved", 0, "low_stock_threshold", 1
+    ));
+    DB.table("product_images").insert(map(
+        "product_id", pid, "path", "products/perf/" + tag + ".png",
+        "alt_text", "Probe", "sort_order", 0, "is_primary", 1
+    ));
+    CatalogCache.bump_catalog_version();
+
+    let page = get(app, "/product/perf-img-widget-" + tag);
+    assert(page["status"] == 200, "the product page renders");
+    let body_text = string(page["body"]);
+    assert(body_text.contains("loading=\"lazy\""), "product images are lazy-loaded");
+    assert(body_text.contains("decoding=\"async\""), "product images decode asynchronously");
+
+    DB.table("product_images").where("product_id", "=", pid).delete();
+    DB.table("inventory").where("product_id", "=", pid).delete();
+    DB.table("stock_movements").where("product_id", "=", pid).delete();
+    DB.table("products").where("id", "=", pid).delete();
+    DB.table("categories").where("id", "=", cat).delete();
+    CatalogCache.bump_catalog_version();
+    println("  [PASS] test_lazy_loading");
+}
+
+fn test_load_probe_available() {
+    assert(file_exists("tools/store_load.matrix"), "the load probe harness exists");
+    println("  [PASS] test_load_probe_available");
+}
+
+fn main() {
+    println("\n=== Running Store Performance Test Suite ===");
+    let app = new Application();
+    register_store_middleware(app);
+    register_web_routes();
+    register_queue_jobs();
+    run_database_seeder();
+
+    test_performance_indexes();
+    test_catalog_cache(app);
+    test_lazy_loading(app);
+    test_load_probe_available();
+
+    DB.close();
+    println("=== All Store Performance Tests Passed! ===\n");
+    return 0;
+}

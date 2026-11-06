@@ -1,0 +1,37 @@
+// config/mail.matrix
+// Spid3rWeb Mail Configuration
+//
+// Consumed by framework/Mail/Mail.matrix.
+//
+// Drivers:
+//   log  — renders every message into the "mail" log channel
+//          (storage/logs/mail.log). Default and always available.
+//   smtp — RESERVED. The Spid3r runtime currently exposes no outbound TCP
+//          API (only tcp_listen for serving), so selecting smtp throws a
+//          clear runtime error until the language gains socket support.
+//          Keep SPID3R_MAIL_MAILER=log in all environments for now.
+
+public let config_mail = map(
+    "default", "log",
+    "mailer_env", "SPID3R_MAIL_MAILER",
+    "from", map(
+        "address", "hello@spid3r.test",
+        "name", "Spid3r Bazaar"
+    ),
+    "mailers", map(
+        "log", map(
+            "driver", "log",
+            "channel", "mail"
+        ),
+        "smtp", map(
+            "driver", "smtp",
+            "host_env", "SPID3R_MAIL_HOST",
+            "host", "127.0.0.1",
+            "port_env", "SPID3R_MAIL_PORT",
+            "port", 1025,
+            "username_env", "SPID3R_MAIL_USERNAME",
+            "password_env", "SPID3R_MAIL_PASSWORD",
+            "encryption", "none"
+        )
+    )
+);

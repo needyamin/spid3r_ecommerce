@@ -1,0 +1,11 @@
+// app/Support/DbErrors.matrix
+// Centralized database error handling: log the real cause server-side,
+// return a sanitized HTTP exception to the client (no SQL/schema leaks).
+
+import "framework/Log/Log";
+import "framework/HttpException";
+
+public fn sanitize(label: string, error) {
+    Log.error("db failure: " + label, map("error", string(error)));
+    return make_http_exception(500, "A database operation failed. Please try again.");
+}

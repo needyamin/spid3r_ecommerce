@@ -1,0 +1,106 @@
+// database/migrations/014_orders_payments.matrix
+// Phase 2 — orders, immutable order items, payments, refunds, shipments.
+// order_items snapshot name/SKU/price: catalog edits never mutate history.
+// Payments are isolated from orders by design (Phase 8 adapters).
+
+import "framework/Database/Schema";
+import "framework/Database/Migration";
+import "framework/Database/DB";
+
+public class OrderPaymentTables extends Migration {
+    fn new(name: string = "014_orders_payments") {
+        super(name);
+    }
+
+    public fn up(self) {
+        Schema.create("orders", table => {
+            table.id();
+            table.string("order_number", 32).unique();
+            table.integer("user_id").nullable();
+            table.string("status", 32).default("pending");
+            table.bigint("subtotal_minor").default(0);
+            table.bigint("discount_minor").default(0);
+            table.bigint("shipping_minor").default(0);
+            table.bigint("tax_minor").default(0);
+            table.bigint("total_minor").default(0);
+            table.string("currency", 8).default("BDT");
+            table.text("shipping_address_json");
+            table.text("billing_address_json").nullable();
+            table.string("shipping_method", 48).nullable();
+            table.integer("coupon_id").nullable();
+            table.string("placed_at", 32).nullable();
+            table.timestamps();
+            table.foreign("user_id", "users", "id", "SET NULL", "CASCADE");
+            table.index("idx_orders_user", ["user_id", "status"]);
+            table.index("idx_orders_status", ["status", "placed_at"]);
+        });
+
+        Schema.create("order_items", table => {
+            table.id();
+            table.integer("order_id");
+            table.integer("product_id");
+            table.integer("variant_id").nullable();
+            table.string("name_snapshot", 255);
+            table.string("sku_snapshot", 64);
+            table.bigint("unit_price_minor");   // historical price
+            table.integer("quantity");
+            table.bigint("discount_minor").default(0);
+            table.bigint("tax_minor").default(0);
+            table.bigint("line_total_minor");
+            table.timestamps();
+            table.foreign("order_id", "orders", "id", "CASCADE", "CASCADE");
+            table.foreign("product_id", "products", "id", "RESTRICT", "CASCADE");
+            table.index("idx_order_items_order", ["order_id"]);
+        });
+
+        Schema.create("payments", table => {
+            table.id();
+            table.integer("order_id");
+            table.string("provider", 32);        // cod | bkash | nagad | sslcommerz | stripe
+            table.string("method", 48).nullable();
+            table.bigint("amount_minor");
+            table.string("currency", 8).default("BDT");
+            table.string("status", 32).default("initiated");
+            table.string("gateway_transaction_id", 128).nullable();
+            table.string("idempotency_key", 128).unique();   // duplicate callback protection
+            table.text("payload_json").nullable();
+            table.string("verified_at", 32).nullable();
+            table.timestamps();
+            table.foreign("order_id", "orders", "id", "RESTRICT", "CASCADE");
+            table.index("idx_payments_order", ["order_id", "status"]);
+            table.index("idx_payments_gateway", ["gateway_transaction_id"]);
+        });
+
+        Schema.create("refunds", table => {
+            table.id();
+            table.integer("payment_id");
+            table.bigint("amount_minor");
+            table.string("reason", 255).nullable();
+            table.string("status", 32).default("pending");
+            table.string("gateway_refund_id", 128).nullable();
+            table.timestamps();
+            table.foreign("payment_id", "payments", "id", "RESTRICT", "CASCADE");
+        });
+
+        Schema.create("shipments", table => {
+            table.id();
+            table.integer("order_id");
+            table.string("carrier", 96).nullable();
+            table.string("tracking_number", 128).nullable();
+            table.string("status", 32).default("pending");
+            table.string("shipped_at", 32).nullable();
+            table.string("delivered_at", 32).nullable();
+            table.timestamps();
+            table.foreign("order_id", "orders", "id", "CASCADE", "CASCADE");
+            table.index("idx_shipments_order", ["order_id"]);
+        });
+    }
+
+    public fn down(self) {
+        Schema.dropIfExists("shipments");
+        Schema.dropIfExists("refunds");
+        Schema.dropIfExists("payments");
+        Schema.dropIfExists("order_items");
+        Schema.dropIfExists("orders");
+    }
+}

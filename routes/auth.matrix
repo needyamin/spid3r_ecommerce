@@ -1,0 +1,41 @@
+// routes/auth.matrix
+// Phase 3 — account & admin routes.
+// Login POST is rate-limited via the framework's cache-backed throttle
+// alias (5 attempts / 60 s per client). Admin area uses role:admin.
+
+import "framework/Router";
+import "framework/Response";
+import "framework/View/BD";
+import "app/Controllers/AuthController";
+import "app/Controllers/AdminController";
+
+public fn register_auth_routes() {
+    let ctl = new AuthController();
+
+    Route.get("/login", fn(req) { return ctl.show_login(req); }).name("login");
+    Route.post("/login", fn(req) { return ctl.login(req); }).middleware("throttle:5,60");
+    Route.get("/register", fn(req) { return ctl.show_register(req); }).name("register");
+    Route.post("/register", fn(req) { return ctl.register(req); }).middleware("throttle:5,60");
+    Route.post("/logout", fn(req) { return ctl.logout(req); });
+
+    Route.get("/forgot-password", fn(req) { return ctl.show_forgot(req); });
+    Route.post("/forgot-password", fn(req) { return ctl.forgot(req); }).middleware("throttle:5,60");
+    Route.get("/reset-password", fn(req) { return ctl.show_reset(req); });
+    Route.post("/reset-password", fn(req) { return ctl.reset(req); });
+    Route.get("/verify-email/:token", fn(req) { return ctl.verify_email(req); });
+
+    Route.get("/account", fn(req) { return ctl.account(req); }).middleware("auth");
+    Route.post("/account/profile", fn(req) { return ctl.update_profile(req); }).middleware("auth");
+
+    Route.group(map("prefix", "/admin", "middleware", "role:admin"), fn() {
+        let panel = new AdminController();
+        Route.get("/", fn(req) {
+            return panel.dashboard(req);
+        }).name("admin.dashboard");
+    });
+
+    // Permission-gated example used by the RBAC tests & future modules.
+    Route.get("/admin/catalog", fn(req) {
+        return json(map("ok", true, "area", "catalog"));
+    }).middleware("permission:catalog.manage");
+}

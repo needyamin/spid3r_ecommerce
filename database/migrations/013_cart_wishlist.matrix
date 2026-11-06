@@ -1,0 +1,57 @@
+// database/migrations/013_cart_wishlist.matrix
+// Phase 2 — carts (guest + authenticated), cart items, wishlists.
+
+import "framework/Database/Schema";
+import "framework/Database/Migration";
+import "framework/Database/DB";
+
+public class CartWishlistTables extends Migration {
+    fn new(name: string = "013_cart_wishlist") {
+        super(name);
+    }
+
+    public fn up(self) {
+        Schema.create("carts", table => {
+            table.id();
+            table.integer("user_id").nullable();
+            table.string("session_key", 128);   // guest cart cookie
+            table.string("status", 24).default("active");
+            table.string("currency", 8).default("BDT");
+            table.timestamps();
+            table.foreign("user_id", "users", "id", "CASCADE", "CASCADE");
+            table.index("idx_carts_session", ["session_key"]);
+            table.index("idx_carts_user", ["user_id", "status"]);
+        });
+
+        Schema.create("cart_items", table => {
+            table.id();
+            table.integer("cart_id");
+            table.integer("product_id");
+            table.integer("variant_id").nullable();
+            table.integer("quantity").default(1);
+            // Server recalculates prices at checkout; this is the last
+            // shown price, never the authoritative total.
+            table.bigint("unit_price_minor");
+            table.timestamps();
+            table.foreign("cart_id", "carts", "id", "CASCADE", "CASCADE");
+            table.foreign("product_id", "products", "id", "RESTRICT", "CASCADE");
+            table.unique_columns(["cart_id", "product_id", "variant_id"]);
+        });
+
+        Schema.create("wishlists", table => {
+            table.id();
+            table.integer("user_id");
+            table.integer("product_id");
+            table.timestamps();
+            table.foreign("user_id", "users", "id", "CASCADE", "CASCADE");
+            table.foreign("product_id", "products", "id", "CASCADE", "CASCADE");
+            table.unique_columns(["user_id", "product_id"]);
+        });
+    }
+
+    public fn down(self) {
+        Schema.dropIfExists("wishlists");
+        Schema.dropIfExists("cart_items");
+        Schema.dropIfExists("carts");
+    }
+}

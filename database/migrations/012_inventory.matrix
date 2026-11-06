@@ -1,0 +1,51 @@
+// database/migrations/012_inventory.matrix
+// Phase 2 — inventory & stock movement history.
+// Overselling is prevented by atomic conditional UPDATEs in transactions
+// (see app/Repositories/InventoryRepository), never read-then-write.
+
+import "framework/Database/Schema";
+import "framework/Database/Migration";
+import "framework/Database/DB";
+
+public class InventoryTables extends Migration {
+    fn new(name: string = "012_inventory") {
+        super(name);
+    }
+
+    public fn up(self) {
+        Schema.create("inventory", table => {
+            table.id();
+            table.integer("product_id");
+            table.integer("variant_id").nullable();
+            table.integer("quantity").default(0);
+            table.integer("reserved").default(0);
+            table.integer("low_stock_threshold").default(5);
+            table.timestamps();
+            table.foreign("product_id", "products", "id", "CASCADE", "CASCADE");
+            table.foreign("variant_id", "product_variants", "id", "SET NULL", "CASCADE");
+            table.unique_columns(["product_id", "variant_id"]);
+            table.index("idx_inventory_low", ["quantity"]);
+        });
+
+        Schema.create("stock_movements", table => {
+            table.id();
+            table.integer("product_id");
+            table.integer("variant_id").nullable();
+            table.integer("delta");
+            table.string("reason", 48);          // sale | restock | return | adjustment
+            table.string("reference_type", 48).nullable();
+            table.string("reference_id", 64).nullable();
+            table.integer("created_by").nullable();
+            table.text("note").nullable();
+            table.timestamps();
+            table.foreign("product_id", "products", "id", "CASCADE", "CASCADE");
+            table.foreign("created_by", "users", "id", "SET NULL", "CASCADE");
+            table.index("idx_movements_product", ["product_id", "id"]);
+        });
+    }
+
+    public fn down(self) {
+        Schema.dropIfExists("stock_movements");
+        Schema.dropIfExists("inventory");
+    }
+}

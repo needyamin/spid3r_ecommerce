@@ -1,0 +1,442 @@
+// tests/test_drivers.matrix
+// Unit tests for the multi-driver database layer (escaping, interpolation,
+// dialect DDL compilation, driver resolution). No live server required.
+
+import "framework/Database/DB";
+import "framework/Database/DatabaseManager";
+import "framework/Database/Schema";
+import "framework/Database/Connection";
+import "framework/Env";
+
+// ----------------------------------------------------------------------------
+// 1. String escaping
+// ----------------------------------------------------------------------------
+
+fn test_pg_string_escaping() {
+    assert(sql_escape_string("O'Brien", "postgres") == "O''Brien", "pg: single quote doubled");
+    assert(sql_escape_string("back\\slash", "postgres") == "back\\slash", "pg: backslash literal (standard_conforming_strings)");
+    assert(sql_escape_string("plain", "postgres") == "plain", "pg: plain text unchanged");
+    assert(sql_escape_string("", "postgres") == "", "pg: empty string unchanged");
+    assert(sql_escape_string("a'b'c", "postgres") == "a''b''c", "pg: multiple quotes doubled");
+    println("  [PASS] test_pg_string_escaping");
+}
+
+fn test_mysql_string_escaping() {
+    assert(sql_escape_string("back\\slash", "mysql") == "back\\\\slash", "mysql: backslash doubled first");
+    // Quote doubling ('') — correct under BOTH default sql_mode and NO_BACKSLASH_ESCAPES
+    assert(sql_escape_string("O'Brien", "mysql") == "O''Brien", "mysql: quote doubled");
+    assert(sql_escape_string("say \"hi\"", "mysql") == "say \"hi\"", "mysql: double quote untouched (safe inside single-quoted literal)");
+    assert(sql_escape_string("line1\nline2", "mysql") == "line1\\nline2", "mysql: newline escaped");
+    assert(sql_escape_string("cr\rtest", "mysql") == "cr\\rtest", "mysql: carriage return escaped");
+    // MariaDB rides the same escaping (driver name normalized to mysql path)
+    assert(sql_escape_string("O'Brien", "mariadb") == "O''Brien", "mariadb: same escaping as mysql");
+    println("  [PASS] test_mysql_string_escaping");
+}
+
+// ----------------------------------------------------------------------------
+// 2. Value rendering
+// ----------------------------------------------------------------------------
+
+fn test_value_rendering() {
+    assert(sql_quote_value(null, "postgres") == "NULL", "null -> NULL");
+    assert(sql_quote_value(null, "mysql") == "NULL", "null -> NULL (mysql)");
+    assert(sql_quote_value(42, "postgres") == "42", "int -> literal");
+    assert(sql_quote_value(42, "mysql") == "42", "int -> literal (mysql)");
+    assert(sql_quote_value(2.5, "postgres") == "2.5", "float -> literal");
+    assert(sql_quote_value(true, "postgres") == "TRUE", "bool -> TRUE (pg)");
+    assert(sql_quote_value(false, "postgres") == "FALSE", "bool -> FALSE (pg)");
+    assert(sql_quote_value(true, "mysql") == "1", "bool -> 1 (mysql)");
+    assert(sql_quote_value(false, "mysql") == "0", "bool -> 0 (mysql)");
+    assert(sql_quote_value("hi", "postgres") == "'hi'", "string -> quoted");
+    println("  [PASS] test_value_rendering");
+}
+
+// ----------------------------------------------------------------------------
+// 3. Injection resistance (the critical security property)
+// ----------------------------------------------------------------------------
+
+fn test_injection_resistance() {
+    // Classic SQL injection payloads must remain inside the string literal
+    let payload1 = "Robert'); DROP TABLE users;--";
+    let pg_lit = sql_quote_value(payload1, "postgres");
+    assert(pg_lit == "'Robert''); DROP TABLE users;--'", "pg: injection payload fully contained in literal");
+
+    let payload2 = "x'; DELETE FROM sessions WHERE '1'='1";
+    let my_lit = sql_quote_value(payload2, "mysql");
+    assert(my_lit == "'x''; DELETE FROM sessions WHERE ''1''=''1'", "mysql: injection payload fully contained in literal");
+
+    // Unicode / weird bytes stay escaped
+    let payload3 = "emoji 🕷️ ' quote";
+    let pg_lit2 = sql_quote_value(payload3, "postgres");
+    assert(pg_lit2.starts_with("'emoji"), "pg: unicode payload kept in literal");
+    assert(pg_lit2 == "'emoji 🕷️ '' quote'", "pg: interior quote escaped, unicode preserved");
+
+    println("  [PASS] test_injection_resistance");
+}
+
+// ----------------------------------------------------------------------------
+// 4. Placeholder interpolation
+// ----------------------------------------------------------------------------
+
+fn test_interpolation() {
+    // Single placeholder
+    let s1 = sql_interpolate("SELECT * FROM users WHERE email = ?", ["ada@example.com"], "postgres");
+    assert(s1 == "SELECT * FROM users WHERE email = 'ada@example.com'", "pg: single placeholder substituted");
+
+    // Multiple placeholders
+    let s2 = sql_interpolate("INSERT INTO t (a, b) VALUES (?, ?)", [1, "two"], "mysql");
+    assert(s2 == "INSERT INTO t (a, b) VALUES (1, 'two')", "mysql: multiple placeholders substituted");
+
+    // No params -> unchanged
+    let s3 = sql_interpolate("SELECT 1", [], "postgres");
+    assert(s3 == "SELECT 1", "empty params -> unchanged");
+
+    // Null params list
+    let s4 = sql_interpolate("SELECT 1", null, "postgres");
+    assert(s4 == "SELECT 1", "null params -> unchanged");
+
+    // Injection via placeholder
+    let s5 = sql_interpolate("SELECT * FROM t WHERE name = ?", ["x'; DROP TABLE t;--"], "postgres");
+    assert(s5 == "SELECT * FROM t WHERE name = 'x''; DROP TABLE t;--'", "pg: placeholder value escaped");
+
+    // WHERE with multiple conditions (QueryBuilder pattern)
+    let s6 = sql_interpolate("SELECT * FROM orders WHERE status = ? AND user_id = ? ORDER BY id DESC", ["published", 7], "mysql");
+    assert(s6 == "SELECT * FROM orders WHERE status = 'published' AND user_id = 7 ORDER BY id DESC", "mysql: multi-condition interpolation");
+
+    println("  [PASS] test_interpolation");
+}
+
+// ----------------------------------------------------------------------------
+// 5. Dialect DDL compilation
+// ----------------------------------------------------------------------------
+
+fn blueprint_dialect_sql(dialect: string) -> string {
+    let bp = new Blueprint();
+    bp.id();
+    bp.string("title");
+    bp.string("slug").unique();
+    bp.text("content");
+    bp.integer("views_count");
+    bp.float("rating");
+    bp.boolean("is_active");
+    bp.timestamps();
+    return bp.to_sql("probe_dialect", dialect);
+}
+
+fn test_dialect_ddl_sqlite() {
+    let sql = blueprint_dialect_sql("sqlite");
+    assert(sql.contains("id INTEGER PRIMARY KEY AUTOINCREMENT"), "sqlite: id column");
+    assert(sql.contains("title TEXT NOT NULL"), "sqlite: string -> TEXT");
+    assert(sql.contains("slug TEXT UNIQUE NOT NULL"), "sqlite: unique modifier");
+    assert(sql.contains("views_count INTEGER NOT NULL"), "sqlite: integer -> INTEGER");
+    assert(sql.contains("rating REAL NOT NULL"), "sqlite: float -> REAL");
+    assert(sql.contains("is_active INTEGER NOT NULL"), "sqlite: boolean -> INTEGER");
+    assert(sql.contains("created_at TEXT"), "sqlite: timestamps present");
+    assert(sql.starts_with("CREATE TABLE IF NOT EXISTS probe_dialect"), "sqlite: create stmt");
+    println("  [PASS] test_dialect_ddl_sqlite");
+}
+
+fn test_dialect_ddl_postgres() {
+    let sql = blueprint_dialect_sql("postgres");
+    assert(sql.contains("id SERIAL PRIMARY KEY"), "pg: id -> SERIAL");
+    assert(sql.contains("title VARCHAR(255) NOT NULL"), "pg: string -> VARCHAR(255)");
+    assert(sql.contains("views_count INTEGER NOT NULL"), "pg: integer -> INTEGER");
+    assert(sql.contains("rating DOUBLE PRECISION NOT NULL"), "pg: float -> DOUBLE PRECISION");
+    // Boolean columns are INTEGER on every dialect: the runtime SQL binder
+    // cannot bind bool params, so 0/1 integers are the portable storage
+    // (see framework/Database/Schema.matrix).
+    assert(sql.contains("is_active INTEGER NOT NULL"), "pg: boolean -> INTEGER (portable 0/1)");
+    assert(sql.starts_with("CREATE TABLE IF NOT EXISTS probe_dialect"), "pg: create stmt");
+    println("  [PASS] test_dialect_ddl_postgres");
+}
+
+fn test_dialect_ddl_mysql() {
+    let sql = blueprint_dialect_sql("mysql");
+    assert(sql.contains("id INT AUTO_INCREMENT PRIMARY KEY"), "mysql: id -> AUTO_INCREMENT");
+    assert(sql.contains("title VARCHAR(255) NOT NULL"), "mysql: string -> VARCHAR(255)");
+    assert(sql.contains("views_count INT NOT NULL"), "mysql: integer -> INT");
+    assert(sql.contains("rating DOUBLE NOT NULL"), "mysql: float -> DOUBLE");
+    assert(sql.contains("is_active TINYINT(1) NOT NULL"), "mysql: boolean -> TINYINT(1)");
+    println("  [PASS] test_dialect_ddl_mysql");
+}
+
+// ----------------------------------------------------------------------------
+// 6. Driver resolution
+// ----------------------------------------------------------------------------
+
+fn test_driver_resolution() {
+    // If a project-root .env exists it legitimately supplies driver/connection
+    // values (empty OS vars fall back to it), so the default-value assertions
+    // below would not hold. Skip — .env behavior is covered by
+    // test_env_file_loading / test_env_file_drives_driver.
+    if file_exists(".env") {
+        println("  [SKIP] test_driver_resolution (project .env present)");
+        return;
+    }
+
+    // Hermeticity: clear any inherited connection env vars so default-value
+    // assertions below test true defaults regardless of the host environment.
+    let env_keys = list(
+        "SPID3R_PG_HOST", "SPID3R_PG_PORT", "SPID3R_PG_USER", "SPID3R_PG_PASSWORD", "SPID3R_PG_DATABASE",
+        "SPID3R_MYSQL_HOST", "SPID3R_MYSQL_PORT", "SPID3R_MYSQL_USER", "SPID3R_MYSQL_PASSWORD", "SPID3R_MYSQL_DATABASE"
+    );
+    for k in env_keys {
+        env_set(k, "");
+    }
+
+    env_set("SPID3R_DB_DRIVER", "postgres");
+    let m1 = new DatabaseManager();
+    assert(m1.driver_name() == "postgres", "postgres driver resolved");
+    assert(m1.conn_config["addr"] == "127.0.0.1:5432", "pg default addr");
+    assert(m1.conn_config["user"] == "spid3r", "pg default user");
+
+    env_set("SPID3R_DB_DRIVER", "postgresql");
+    let m2 = new DatabaseManager();
+    assert(m2.driver_name() == "postgres", "postgresql normalizes to postgres");
+
+    env_set("SPID3R_DB_DRIVER", "pg");
+    let m3 = new DatabaseManager();
+    assert(m3.driver_name() == "postgres", "pg alias resolves");
+
+    env_set("SPID3R_DB_DRIVER", "mysql");
+    let m4 = new DatabaseManager();
+    assert(m4.driver_name() == "mysql", "mysql driver resolved");
+    assert(m4.conn_config["addr"] == "127.0.0.1:3306", "mysql default addr");
+
+    env_set("SPID3R_DB_DRIVER", "mariadb");
+    let m5 = new DatabaseManager();
+    assert(m5.driver_name() == "mariadb", "mariadb driver resolved");
+
+    env_set("SPID3R_DB_DRIVER", "sqlite");
+    let m6 = new DatabaseManager();
+    assert(m6.driver_name() == "sqlite", "sqlite driver resolved");
+
+    env_set("SPID3R_DB_DRIVER", "");
+    let m7 = new DatabaseManager();
+    assert(m7.driver_name() == "sqlite", "empty driver falls back to sqlite");
+
+    env_set("SPID3R_DB_DRIVER", "totally-unknown");
+    let m8 = new DatabaseManager();
+    assert(m8.driver_name() == "sqlite", "unknown driver falls back to sqlite");
+
+    env_set("SPID3R_DB_DRIVER", "sqlite");
+
+    // Custom host/port
+    env_set("SPID3R_DB_DRIVER", "postgres");
+    env_set("SPID3R_PG_HOST", "db.example.com");
+    env_set("SPID3R_PG_PORT", "6543");
+    let m9 = new DatabaseManager();
+    assert(m9.conn_config["addr"] == "db.example.com:6543", "pg custom host/port");
+    env_set("SPID3R_PG_HOST", "");
+    env_set("SPID3R_PG_PORT", "");
+
+    env_set("SPID3R_DB_DRIVER", "sqlite");
+
+    println("  [PASS] test_driver_resolution");
+}
+
+// ----------------------------------------------------------------------------
+// 7. MariaDB schema dialect normalization
+// ----------------------------------------------------------------------------
+
+fn test_mariadb_schema_dialect() {
+    // SchemaBuilder.dialect() maps mariadb -> mysql DDL
+    let sb = new SchemaBuilder();
+    let bp = new Blueprint();
+    bp.id();
+    bp.string("name");
+    // Call create against the global DB (sqlite default) — but compile SQL
+    // directly to verify mariadb normalization without a server.
+    let sql = bp.to_sql("t", "mysql");
+    assert(sql.contains("INT AUTO_INCREMENT PRIMARY KEY"), "mariadb compiles with mysql DDL");
+    println("  [PASS] test_mariadb_schema_dialect");
+}
+
+// ----------------------------------------------------------------------------
+// 7. Security hardening (post-audit F-1/F-5/F-6/F-7/F-8)
+// ----------------------------------------------------------------------------
+
+fn test_quote_aware_interpolation() {
+    // A `?` inside a string literal is NOT a placeholder (audit F-5)
+    let s1 = sql_interpolate("SELECT 'what?col' AS v, ? AS w", [42], "postgres");
+    assert(s1 == "SELECT 'what?col' AS v, 42 AS w", "pg: ? inside literal untouched");
+
+    let s2 = sql_interpolate("SELECT 'a?b' AS v, ? AS w", ["x"], "mysql");
+    assert(s2 == "SELECT 'a?b' AS v, 'x' AS w", "mysql: ? inside literal untouched");
+
+    // Doubled quote inside literal keeps literal state
+    let s3 = sql_interpolate("SELECT 'it''s ? ok' AS v, ? AS w", [1], "postgres");
+    assert(s3 == "SELECT 'it''s ? ok' AS v, 1 AS w", "pg: doubled quote keeps literal open");
+
+    // Placeholder count mismatch throws (audit F-5/F-6)
+    let threw = false;
+    try {
+        sql_interpolate("SELECT * FROM t WHERE a = ? AND b = ?", [1], "postgres");
+    } catch (_e) { threw = true; }
+    assert(threw, "fewer params than placeholders throws");
+
+    threw = false;
+    try {
+        sql_interpolate("SELECT * FROM t WHERE a = ?", [1, 2], "postgres");
+    } catch (_e) { threw = true; }
+    assert(threw, "more params than placeholders throws");
+    println("  [PASS] test_quote_aware_interpolation");
+}
+
+fn test_bytes_rejected() {
+    let threw = false;
+    try {
+        sql_quote_value("text".bytes(), "postgres");
+    } catch (_e) { threw = true; }
+    assert(threw, "bytes value throws instead of corrupting (F-7)");
+    println("  [PASS] test_bytes_rejected");
+}
+
+fn test_identifier_guardrail() {
+    // Valid identifiers pass through
+    assert(sql_check_identifier("users") == "users", "plain identifier ok");
+    assert(sql_check_identifier("orders.user_id") == "orders.user_id", "qualified identifier ok");
+    assert(sql_check_identifier("col_1") == "col_1", "underscore ok");
+
+    // Injection-shaped identifiers throw
+    let threw = false;
+    try { sql_check_identifier("users; DROP TABLE users"); } catch (_e) { threw = true; }
+    assert(threw, "semicolon identifier throws");
+    threw = false;
+    try { sql_check_identifier("id) FROM users--"); } catch (_e) { threw = true; }
+    assert(threw, "comment identifier throws");
+    threw = false;
+    try { sql_check_identifier("' OR '1'='1"); } catch (_e) { threw = true; }
+    assert(threw, "quote identifier throws");
+    threw = false;
+    try { sql_check_identifier(""); } catch (_e) { threw = true; }
+    assert(threw, "empty identifier throws");
+
+    // QueryBuilder surfaces the guardrail
+    threw = false;
+    try { DB.table("users").orderBy("id; DROP TABLE users", "DESC"); } catch (_e) { threw = true; }
+    assert(threw, "orderBy injection throws");
+
+    // orderBy direction whitelist
+    let q = DB.table("users");
+    q.orderBy("id", "DESC; DROP TABLE users");
+    assert(q.order_dir == "ASC", "invalid order direction falls back to ASC");
+    println("  [PASS] test_identifier_guardrail");
+}
+
+// ----------------------------------------------------------------------------
+// 8. .env file loading
+// ----------------------------------------------------------------------------
+
+fn test_env_file_loading() {
+    // Missing file is a no-op
+    assert(not load_env_file(".env_definitely_missing_xyz"), "missing .env returns false");
+
+    // Write a test .env with comments, quotes, export prefix, blank lines
+    let content = "# comment line\n\nSPID3R_TEST_PLAIN=hello\nSPID3R_TEST_QUOTED=\"quoted value\"\nSPID3R_TEST_SINGLE='single quoted'\nexport SPID3R_TEST_EXPORTED=exported\nSPID3R_TEST_EMPTY=\nSPID3R_TEST_EQ=a=b=c\n";
+    let w = write_file(".env_test", content);
+    assert(w.is_ok(), "test .env written");
+
+    assert(load_env_file(".env_test"), "existing .env returns true");
+
+    assert(env("SPID3R_TEST_PLAIN").unwrap() == "hello", "plain KEY=VALUE parsed");
+    assert(env("SPID3R_TEST_QUOTED").unwrap() == "quoted value", "double quotes stripped");
+    assert(env("SPID3R_TEST_SINGLE").unwrap() == "single quoted", "single quotes stripped");
+    assert(env("SPID3R_TEST_EXPORTED").unwrap() == "exported", "export prefix stripped");
+    assert(env("SPID3R_TEST_EMPTY").unwrap() == "", "empty value allowed");
+    assert(env("SPID3R_TEST_EQ").unwrap() == "a=b=c", "only first = is the separator");
+
+    // Precedence: existing non-empty OS env wins over .env
+    env_set("SPID3R_TEST_PRECEDENCE", "from_os");
+    let w2 = write_file(".env_test", "SPID3R_TEST_PRECEDENCE=from_file\n");
+    assert(w2.is_ok(), "precedence .env written");
+    load_env_file(".env_test");
+    assert(env("SPID3R_TEST_PRECEDENCE").unwrap() == "from_os", "OS env wins over .env");
+
+    // Cleanup
+    file_delete(".env_test");
+    println("  [PASS] test_env_file_loading");
+}
+
+fn test_env_file_drives_driver() {
+    // A .env in the project root must control driver resolution.
+    // A real user .env is backed up and restored on all paths.
+    let had_env = file_exists(".env");
+    let backup_content = "";
+    if had_env {
+        let r = read_file(".env");
+        if r.is_ok() {
+            backup_content = r.unwrap();
+        }
+    }
+
+    let ok_driver = false;
+    let ok_addr = false;
+    let ok_fallback = false;
+    try {
+        let w = write_file(".env", "SPID3R_DB_DRIVER=mysql\nSPID3R_MYSQL_HOST=db.test\nSPID3R_MYSQL_PORT=3400\n");
+        assert(w.is_ok(), "root .env written");
+
+        // Clear conflicting env so .env values apply
+        env_set("SPID3R_DB_DRIVER", "");
+        env_set("SPID3R_MYSQL_HOST", "");
+        env_set("SPID3R_MYSQL_PORT", "");
+
+        let m = new DatabaseManager();
+        ok_driver = m.driver_name() == "mysql";
+        ok_addr = m.conn_config["addr"] == "db.test:3400";
+
+        // Restore previous state before checking fallback:
+        // remove the test .env (or restore the original), clear overrides
+        if had_env {
+            write_file(".env", backup_content);
+        } else {
+            file_delete(".env");
+        }
+        env_set("SPID3R_DB_DRIVER", "");
+        env_set("SPID3R_MYSQL_HOST", "");
+        env_set("SPID3R_MYSQL_PORT", "");
+        let m2 = new DatabaseManager();
+        ok_fallback = true;
+    } catch (_e) {
+        // Crash path: same restore
+        if had_env {
+            write_file(".env", backup_content);
+        } elif file_exists(".env") {
+            file_delete(".env");
+        }
+        env_set("SPID3R_DB_DRIVER", "");
+        env_set("SPID3R_MYSQL_HOST", "");
+        env_set("SPID3R_MYSQL_PORT", "");
+        throw _e;
+    }
+
+    assert(ok_driver, ".env driver resolved");
+    assert(ok_addr, ".env connection settings resolved");
+    assert(ok_fallback, "state restored after test");
+    println("  [PASS] test_env_file_drives_driver");
+}
+
+// ----------------------------------------------------------------------------
+
+fn main() {
+    println("\n=== Running Database Driver Test Suite ===");
+    test_pg_string_escaping();
+    test_mysql_string_escaping();
+    test_value_rendering();
+    test_injection_resistance();
+    test_interpolation();
+    test_dialect_ddl_sqlite();
+    test_dialect_ddl_postgres();
+    test_dialect_ddl_mysql();
+    test_driver_resolution();
+    test_mariadb_schema_dialect();
+    test_quote_aware_interpolation();
+    test_bytes_rejected();
+    test_identifier_guardrail();
+    test_env_file_loading();
+    test_env_file_drives_driver();
+    DB.close();
+    println("=== All Database Driver Tests Passed! ===\n");
+    return 0;
+}

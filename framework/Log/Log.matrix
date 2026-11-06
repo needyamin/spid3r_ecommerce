@@ -1,0 +1,189 @@
+// framework/Log/Log.matrix
+// Spid3rWeb Logging Subsystem & Facade
+//
+//   Log.debug("cached product", map("id", 42));
+//   Log.error("checkout failed", map("order", 7));
+//   Log.write("warn", "...", ctx, "queue");   // explicit channel
+//
+// Channels live in config/logging.matrix. Drivers:
+//   single — one fixed file (cfg "path")
+//   daily  — per-UTC-day file: <path-without-.log>-YYYY-MM-DD.log
+//
+// Every line: [YYYY-MM-DDTHH:MM:SSZ] LEVEL: message {"ctx":"json"}
+// Minimum level: channel "level" else logging.level, with the real
+// environment variable SPID3R_LOG_LEVEL overriding both. Nothing is ever
+// logged below the effective minimum.
+
+import "framework/Config/Config";
+import "framework/Env";
+
+public class LogManager {
+    public let levels;
+
+    fn new() {
+        self.levels = map("debug", 100, "info", 200, "warn", 300, "error", 400);
+    }
+
+    // ------------------------------------------------------------------
+    // Facade API
+    // ------------------------------------------------------------------
+    public fn debug(self, message: string, context = null) -> bool {
+        return self.write("debug", message, context, "");
+    }
+    public fn info(self, message: string, context = null) -> bool {
+        return self.write("info", message, context, "");
+    }
+    public fn warn(self, message: string, context = null) -> bool {
+        return self.write("warn", message, context, "");
+    }
+    public fn error(self, message: string, context = null) -> bool {
+        return self.write("error", message, context, "");
+    }
+
+    // Core entry. Empty channel = the configured default channel.
+    public fn write(self, level: string, message: string, context = null, channel: string = "") -> bool {
+        let lvl = string(level).lower();
+        if not self.levels.has(lvl) {
+            lvl = "info";
+        }
+
+        let ch = channel;
+        if ch == "" {
+            let def = Config.get("logging.default", "single");
+            ch = string(def);
+        }
+
+        // Minimum level: channel-specific -> global config -> SPID3R_LOG_LEVEL
+        let min_name = Config.get("logging.level_env", "SPID3R_LOG_LEVEL");
+        if env(min_name).is_some() and string(env(min_name).unwrap()) != "" {
+            min_name = string(env(min_name).unwrap());
+        } else {
+            let chan_level = Config.get("logging.channels." + ch + ".level", null);
+            if chan_level != null {
+                min_name = string(chan_level);
+            } else {
+                min_name = string(Config.get("logging.level", "debug"));
+            }
+        }
+        let min = 200;
+        if self.levels.has(min_name) {
+            min = int(self.levels[min_name]);
+        }
+        if int(self.levels[lvl]) < min {
+            return false; // filtered out
+        }
+
+        let cfg = self.channel_cfg(ch);
+        let path = self.file_for(cfg);
+
+        // Log-forging defense: strip CR/LF/NUL so an attacker-controlled
+        // message can never inject fake log lines. Context is already safe
+        // (json_write escapes newlines).
+        let safe_msg = string(message);
+        safe_msg = safe_msg.replace("\r", "\\r").replace("\n", "\\n");
+
+        let line = "[" + self.stamp(int(unix_time())) + "] " + string(lvl).upper() + ": " + safe_msg;
+        if context != null {
+            line = line + " " + json_write(context);
+        }
+        line = line + "\n";
+
+        let res = write_file(path, line);
+        return res.is_ok();
+    }
+
+    // ------------------------------------------------------------------
+    // Internals
+    // ------------------------------------------------------------------
+    fn channel_cfg(self, channel: string) {
+        let cfg = Config.get("logging.channels." + channel, null);
+        if cfg == null or type_of(cfg) != "map" {
+            // Unknown channel — fall back to the single-file channel config
+            cfg = Config.get("logging.channels.single", map("driver", "single", "path", "storage/logs/app.log", "level", "debug"));
+        }
+        return cfg;
+    }
+
+    fn file_for(self, cfg) -> string {
+        let path = "storage/logs/app.log";
+        if cfg.has("path") {
+            path = string(cfg["path"]);
+        }
+        let driver = "single";
+        if cfg.has("driver") {
+            driver = string(cfg["driver"]);
+        }
+        if driver == "daily" {
+            let parts = self.date_parts(int(unix_time()));
+            let base = path;
+            if base.ends_with(".log") {
+                base = base.slice(0, base.len() - 4);
+            }
+            path = base + "-" + string(parts["y"]) + "-" + self.pad2(parts["m"]) + "-" + self.pad2(parts["d"]) + ".log";
+        }
+        self.ensure_dir(path);
+        return path;
+    }
+
+    // Create parent directories for a path like storage/logs/app.log
+    fn ensure_dir(self, path: string) {
+        let parts = string(path).split("/");
+        if parts.len() < 2 {
+            return;
+        }
+        let dir = parts[0];
+        let i = 1;
+        while i < parts.len() - 1 {
+            dir = dir + "/" + parts[i];
+            if not file_exists(dir) {
+                dir_create(dir);
+            }
+            i = i + 1;
+        }
+    }
+
+    // "2026-11-05T02:15:30Z" from a unix timestamp (UTC)
+    fn stamp(self, ts: int) -> string {
+        let p = self.date_parts(ts);
+        let rem = ts - (ts / 86400) * 86400;
+        let hh = rem / 3600;
+        let mm = (rem - hh * 3600) / 60;
+        let ss = rem - hh * 3600 - mm * 60;
+        return string(p["y"]) + "-" + self.pad2(p["m"]) + "-" + self.pad2(p["d"])
+            + "T" + self.pad2(hh) + ":" + self.pad2(mm) + ":" + self.pad2(ss) + "Z";
+    }
+
+    fn pad2(self, n) -> string {
+        let s = string(int(n));
+        if s.len() < 2 {
+            return "0" + s;
+        }
+        return s;
+    }
+
+    // Civil date from days-since-epoch (Howard Hinnant's algorithm).
+    // Safe with plain integer division: z is always positive here.
+    fn date_parts(self, ts: int) {
+        let days = ts / 86400;
+        let z = days + 719468;
+        let era = z / 146097;
+        let doe = z - era * 146097;
+        let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+        let y = yoe + era * 400;
+        let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+        let mp = (5 * doy + 2) / 153;
+        let d = doy - (153 * mp + 2) / 5 + 1;
+        let m = 0;
+        if mp < 10 {
+            m = mp + 3;
+        } else {
+            m = mp - 9;
+        }
+        if m <= 2 {
+            y = y + 1;
+        }
+        return map("y", y, "m", m, "d", d);
+    }
+}
+
+public let Log = new LogManager();

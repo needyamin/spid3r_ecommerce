@@ -1,0 +1,53 @@
+// app/Services/CouponService.matrix
+// Phase 7 — coupon validation. Never trusts a client-supplied discount:
+// the code is looked up server-side and every rule is re-checked here.
+
+import "framework/HttpException";
+import "app/Repositories/CheckoutRepository";
+
+public class CouponService {
+    public let coupons;
+
+    fn new() {
+        self.coupons = new CouponRepository();
+    }
+
+    // Returns map(coupon_id, code, discount_minor) or throws 422.
+    public fn validate(self, code: string, subtotal_minor: int) {
+        let clean = string(code).trim().upper();
+        if clean == "" {
+            return map("coupon_id", null, "code", "", "discount_minor", 0);
+        }
+        let coupon = self.coupons.find_by_code(clean);
+        if coupon == null {
+            throw validation_failed(map("coupon_code", "This coupon code is not valid."));
+        }
+        if int(coupon["is_active"]) != 1 {
+            throw validation_failed(map("coupon_code", "This coupon is no longer active."));
+        }
+        let now = unix_time();
+        if coupon["starts_at"] != null and string(coupon["starts_at"]) != "" and int(coupon["starts_at"]) > now {
+            throw validation_failed(map("coupon_code", "This coupon has not started yet."));
+        }
+        if coupon["ends_at"] != null and string(coupon["ends_at"]) != "" and int(coupon["ends_at"]) < now {
+            throw validation_failed(map("coupon_code", "This coupon has expired."));
+        }
+        let max_uses = int(coupon["max_uses"]);
+        if max_uses > 0 and int(coupon["uses"]) >= max_uses {
+            throw validation_failed(map("coupon_code", "This coupon has reached its usage limit."));
+        }
+        if subtotal_minor < int(coupon["min_order_minor"]) {
+            throw validation_failed(map("coupon_code", "This coupon requires a larger order."));
+        }
+        let discount = 0;
+        if coupon["type"] == "percent" {
+            discount = int(subtotal_minor * int(coupon["value_minor"]) / 10000);
+        } else {
+            discount = int(coupon["value_minor"]);
+        }
+        if discount > subtotal_minor {
+            discount = subtotal_minor;
+        }
+        return map("coupon_id", coupon["id"], "code", clean, "discount_minor", discount);
+    }
+}

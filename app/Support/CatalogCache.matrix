@@ -1,0 +1,26 @@
+// app/Support/CatalogCache.matrix
+// Phase 13 — catalog cache invalidation.
+//
+// GENERATION-BASED INVALIDATION: cached catalog entries are keyed with a
+// version number. Any catalog write bumps the version, which orphans every
+// previous entry at once — no wildcard flush, no per-key bookkeeping, and it
+// behaves identically on every cache driver (memory, file, database).
+//
+// The bump must happen on EVERY write that can change what the storefront
+// shows: product/category/brand writes, image uploads, stock movements
+// (availability badge) and display-currency changes (converted prices).
+
+import "framework/Cache/Cache";
+
+public fn catalog_version() -> int {
+    let v = Cache.sear("store:catalog:version", fn() {
+        return 1;
+    });
+    return int(v);
+}
+
+public fn bump_catalog_version() -> int {
+    let next = catalog_version() + 1;
+    Cache.put("store:catalog:version", next, 0);   // 0 = forever
+    return next;
+}

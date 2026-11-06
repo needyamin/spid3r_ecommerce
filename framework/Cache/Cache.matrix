@@ -1,0 +1,147 @@
+// framework/Cache/Cache.matrix
+// Spid3rWeb Cache Manager & Facade
+//
+// Global `Cache` singleton delegating to a swappable store driver:
+//   memory    — per-process map, fastest (default)
+//   file      — storage/framework/cache/, survives restarts
+//   database  — `cache` table via the DB facade, shared across processes,
+//               works on SQLite / PostgreSQL / MySQL / MariaDB
+//
+// Driver selection: SPID3R_CACHE_DRIVER env var (or .env file) → default memory.
+//
+// API:
+//   Cache.get(key, default)            fetch (expired entries count as miss)
+//   Cache.put(key, value, seconds)     store (0/negative = forever)
+//   Cache.add(key, value, seconds)     store only if absent (returns bool)
+//   Cache.remember(key, seconds, fn)   get-or-compute-and-store
+//   Cache.rememberForever(key, fn)     get-or-compute-and-store forever
+//   Cache.sear(key, fn)                alias of rememberForever
+//   Cache.forget(key)                  remove one key
+//   Cache.flush()                      remove everything
+//   Cache.has(key)                     presence check
+//   Cache.increment(key, by=1)         increment integer value
+//   Cache.decrement(key, by=1)         decrement integer value
+//   Cache.store(name)                  switch driver ("memory"|"file"|"database")
+
+import "framework/Cache/CacheStore";
+import "framework/Env";
+
+public class CacheManager {
+    public let stores;
+    public let default_driver;
+
+    fn new() {
+        self.stores = map();
+        let raw = "";
+        let env_driver = env("SPID3R_CACHE_DRIVER");
+        if env_driver.is_some() {
+            raw = string(env_driver.unwrap()).trim().lower();
+        }
+        if raw == "memory" or raw == "file" or raw == "database" or raw == "db" {
+            if raw == "db" {
+                raw = "database";
+            }
+            self.default_driver = raw;
+        } else {
+            self.default_driver = "memory";
+        }
+    }
+
+    public fn driver_name(self) -> string {
+        return self.default_driver;
+    }
+
+    // Resolve (and lazily create) a named store
+    public fn store(self, name: string = "") {
+        let which = string(name).trim().lower();
+        if which == "" {
+            which = self.default_driver;
+        }
+        if which == "db" {
+            which = "database";
+        }
+        if self.stores.has(which) {
+            return self.stores[which];
+        }
+        let instance = null;
+        if which == "file" {
+            instance = new FileCacheStore();
+        } elif which == "database" {
+            instance = new DatabaseCacheStore();
+        } elif which == "memory" {
+            instance = new MemoryCacheStore();
+        } else {
+            throw "Unknown cache driver: " + which;
+        }
+        self.stores[which] = instance;
+        return instance;
+    }
+
+    // ---------------------------------------------------------------------
+    // Delegating API (default driver)
+    // ---------------------------------------------------------------------
+
+    public fn get(self, key: string, default_val = null) {
+        return self.store().get(key, default_val);
+    }
+
+    public fn put(self, key: string, value, seconds = 3600) {
+        return self.store().put(key, value, seconds);
+    }
+
+    public fn add(self, key: string, value, seconds = 3600) -> bool {
+        let s = self.store();
+        if s.has(key) {
+            return false;
+        }
+        return s.put(key, value, seconds);
+    }
+
+    public fn remember(self, key: string, seconds, callback) {
+        let existing = self.store().get(key, null);
+        if existing != null {
+            return existing;
+        }
+        let fresh = callback();
+        self.store().put(key, fresh, seconds);
+        return fresh;
+    }
+
+    public fn rememberForever(self, key: string, callback) {
+        return self.remember(key, 0, callback);
+    }
+
+    public fn sear(self, key: string, callback) {
+        return self.rememberForever(key, callback);
+    }
+
+    public fn forget(self, key: string) {
+        return self.store().forget(key);
+    }
+
+    public fn flush(self) {
+        return self.store().flush();
+    }
+
+    public fn has(self, key: string) -> bool {
+        return self.store().has(key);
+    }
+
+    public fn missing(self, key: string) -> bool {
+        return not self.has(key);
+    }
+
+    public fn increment(self, key: string, by: int = 1) -> int {
+        let current = self.store().get(key, 0);
+        let next = int(current) + by;
+        self.store().put(key, next, 0);
+        return next;
+    }
+
+    public fn decrement(self, key: string, by: int = 1) -> int {
+        return self.increment(key, 0 - by);
+    }
+}
+
+// Global Cache Facade Singleton
+public let Cache = new CacheManager();

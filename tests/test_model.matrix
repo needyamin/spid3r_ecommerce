@@ -1,0 +1,235 @@
+// tests/test_model.matrix
+// Unit tests for the Spid3rWeb Model layer: lifecycle events, eager
+// loading, transactions, pagination cap.
+//
+// Uses its own mb_* tables (created via the Schema builder) so it never
+// disturbs the shared users/sessions schema.
+
+import "framework/Database/DB";
+import "framework/Database/Schema";
+import "framework/Database/Model";
+import "framework/Events/Event";
+
+class MBPost extends Model {
+    fn new() {
+        super("mb_posts", [], {});
+    }
+}
+
+class MBComment extends Model {
+    fn new() {
+        super("mb_comments", [], {});
+    }
+}
+
+fn setup_tables() {
+    Schema.dropIfExists("mb_comments");
+    Schema.dropIfExists("mb_posts");
+    Schema.create("mb_posts", fn(t) {
+        t.id();
+        t.string("title");
+        t.timestamps();
+    });
+    Schema.create("mb_comments", fn(t) {
+        t.id();
+        t.integer("post_id");
+        t.string("body");
+        t.timestamps();
+    });
+}
+
+fn teardown_tables() {
+    Schema.dropIfExists("mb_comments");
+    Schema.dropIfExists("mb_posts");
+    DB.close();
+}
+
+fn make_post(title: string) {
+    let p = new MBPost();
+    p.set("title", title);
+    let saved = p.save();
+    assert(saved != false, "post save succeeded: " + title);
+    return p;
+}
+
+// ---------------------------------------------------------------------------
+
+fn test_model_created_events_fire_in_order() {
+    Event.flush();
+    let log = list();
+    let sink = log;
+    Event.listen("model.mb_posts.creating", fn(m, name) { sink.push("creating"); return null; });
+    Event.listen("model.mb_posts.created", fn(m, name) { sink.push("created"); return null; });
+
+    let p = make_post("events");
+    assert(log[0] == "creating" and log[1] == "created", "creating fires before created");
+    assert(p.exists, "model exists after save");
+
+    // Update events
+    Event.listen("model.mb_posts.updating", fn(m, name) { sink.push("updating"); return null; });
+    Event.listen("model.mb_posts.updated", fn(m, name) { sink.push("updated"); return null; });
+    p.set("title", "events2");
+    p.save();
+    assert(log[2] == "updating" and log[3] == "updated", "updating fires before updated");
+
+    // Delete events
+    Event.listen("model.mb_posts.deleting", fn(m, name) { sink.push("deleting"); return null; });
+    Event.listen("model.mb_posts.deleted", fn(m, name) { sink.push("deleted"); return null; });
+    let gone = p.delete();
+    assert(gone == true, "delete returns true");
+    assert(log[4] == "deleting" and log[5] == "deleted", "deleting fires before deleted");
+    assert(not p.exists, "model marked deleted");
+    Event.flush();
+    println("  [PASS] test_model_created_events_fire_in_order");
+}
+
+fn test_model_event_vetoes() {
+    Event.flush();
+
+    // Veto the insert: save returns false, nothing lands in the table.
+    Event.listen("model.mb_posts.creating", fn(m, name) { return false; });
+    let blocked = new MBPost();
+    blocked.set("title", "never");
+    assert(blocked.save() == false, "vetoed creating returns false from save");
+    assert(not blocked.exists, "vetoed model does not exist");
+    assert(DB.table("mb_posts").where("title", "=", "never").count() == 0, "vetoed insert wrote nothing");
+    Event.forget("model.mb_posts.creating");
+
+    // Veto the update: attributes changed, database unchanged.
+    let p = make_post("veto-update");
+    Event.listen("model.mb_posts.updating", fn(m, name) { return false; });
+    p.set("title", "veto-update-changed");
+    assert(p.save() == false, "vetoed updating returns false from save");
+    assert(DB.table("mb_posts").where("title", "=", "veto-update-changed").count() == 0, "vetoed update wrote nothing");
+    assert(DB.table("mb_posts").where("title", "=", "veto-update").count() == 1, "original row untouched");
+    Event.forget("model.mb_posts.updating");
+
+    // Veto the delete: row survives.
+    Event.listen("model.mb_posts.deleting", fn(m, name) { return false; });
+    assert(p.delete() == false, "vetoed deleting returns false from delete");
+    assert(DB.table("mb_posts").where("id", "=", p.get("id")).count() == 1, "vetoed delete kept the row");
+    Event.forget("model.mb_posts.deleting");
+    Event.flush();
+    println("  [PASS] test_model_event_vetoes");
+}
+
+fn test_eager_load_has_many() {
+    setup_tables();
+    let p1 = make_post("one");
+    let p2 = make_post("two");
+    make_post("three");
+
+    let c = new MBComment();
+    c.set("post_id", p1.get("id"));
+    c.set("body", "first!");
+    c.save();
+    let c2 = new MBComment();
+    c2.set("post_id", p1.get("id"));
+    c2.set("body", "second!");
+    c2.save();
+    let c3 = new MBComment();
+    c3.set("post_id", p2.get("id"));
+    c3.set("body", "on two");
+    c3.save();
+
+    // Model instances as input.
+    let posts = list();
+    let i = 0;
+    while i < 3 {
+        let m = new MBPost();
+        m.set("id", i + 1);
+        posts.push(m);
+        i += 1;
+    }
+    load_has_many(posts, "mb_comments", "post_id", "comments");
+    assert(posts[0].get("comments").len() == 2, "post 1 eager-loaded 2 comments");
+    assert(posts[1].get("comments").len() == 1, "post 2 eager-loaded 1 comment");
+    assert(posts[2].get("comments").len() == 0, "post 3 eager-loaded an empty list");
+    assert(posts[0].get("comments")[0]["body"] == "first!", "comment rows carry their columns");
+
+    // Plain row maps as input (same loader must work).
+    let rows = DB.table("mb_posts").get();
+    load_has_many(rows, "mb_comments", "post_id", "comments");
+    assert(rows[0]["comments"].len() == 2, "row-map input also hydrates");
+
+    // to_map exposes the relation for JSON responses.
+    let as_map = posts[0].to_map();
+    assert(as_map.has("comments") and as_map["comments"].len() == 2, "to_map includes eager-loaded relations");
+
+    // Empty input list is a no-op, not an error.
+    load_has_many(list(), "mb_comments", "post_id", "comments");
+    println("  [PASS] test_eager_load_has_many");
+}
+
+fn test_eager_load_belongs_to() {
+    let comments = DB.table("mb_comments").get();
+    load_belongs_to(comments, "mb_posts", "post_id", "post");
+    assert(comments[0]["post"]["title"] == "one", "comment 1 resolved its parent post");
+    assert(comments[2]["post"]["title"] == "two", "comment 3 resolved its parent post");
+
+    // A foreign key pointing nowhere resolves to null, not an error.
+    let orphan = new MBComment();
+    orphan.set("post_id", 999999);
+    let wrap = list(orphan);
+    load_belongs_to(wrap, "mb_posts", "post_id", "post");
+    assert(wrap[0].get("post") == null, "missing parent resolves to null");
+    println("  [PASS] test_eager_load_belongs_to");
+}
+
+fn test_transaction_commit_and_rollback() {
+    setup_tables();
+
+    // Commit path: everything inside survives.
+    DB.transaction(fn() {
+        let a = new MBPost();
+        a.set("title", "tx-a");
+        a.save();
+        let b = new MBPost();
+        b.set("title", "tx-b");
+        b.save();
+        return true;
+    });
+    assert(DB.table("mb_posts").count() == 2, "committed transaction persisted both posts");
+
+    // Rollback path: a throw inside reverts everything.
+    let threw = false;
+    try {
+        DB.transaction(fn() {
+            let c = new MBPost();
+            c.set("title", "tx-c-rollback");
+            c.save();
+            throw "simulated failure";
+        });
+    } catch (e) {
+        threw = true;
+    }
+    assert(threw, "transaction re-raises the callback's exception");
+    assert(DB.table("mb_posts").where("title", "=", "tx-c-rollback").count() == 0, "rolled-back insert left no row");
+    assert(DB.table("mb_posts").count() == 2, "earlier rows untouched by the rollback");
+    println("  [PASS] test_transaction_commit_and_rollback");
+}
+
+fn test_pagination_cap() {
+    let res = DB.table("mb_posts").paginate(1, 500);
+    assert(res["per_page"] == 100, "per_page capped at 100");
+    assert(res["total"] == 2, "total reflects the table");
+    let tiny = DB.table("mb_posts").paginate(1, 0);
+    assert(tiny["per_page"] == 1, "per_page floor at 1");
+    let late = DB.table("mb_posts").paginate(99, 15);
+    assert(late["data"].len() == 0, "page beyond the end is empty, not an error");
+    println("  [PASS] test_pagination_cap");
+}
+
+fn main() {
+    println("\n=== Running Model Layer Test Suite ===");
+    setup_tables();
+    test_model_created_events_fire_in_order();
+    test_model_event_vetoes();
+    test_eager_load_has_many();
+    test_eager_load_belongs_to();
+    test_transaction_commit_and_rollback();
+    test_pagination_cap();
+    teardown_tables();
+    println("=== All Model Layer Tests Passed! ===\n");
+    return 0;
+}

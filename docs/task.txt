@@ -1,0 +1,540 @@
+# Spid3r E-commerce — Development Tasks
+
+## Project Objective
+
+Build a complete, secure, scalable, and production-ready e-commerce application using the Spid3r programming language and Spid3r Web framework.
+
+The application must use the actual capabilities and APIs available in both repositories.
+
+**Important rules:**
+- Do not invent Spid3r or Spid3r Web APIs.
+- Inspect the existing source code and documentation before implementation.
+- Reuse existing framework features wherever possible.
+- Extend Spid3r or Spid3r Web only when genuinely necessary.
+- Avoid unnecessary modifications to the language runtime.
+- Write maintainable, modular, tested code.
+- Do not leave placeholder implementations for required production features.
+- Keep both repositories compatible.
+
+# Phase 0 — Repository and Framework Audit
+
+### Spid3r Language Audit
+- Inspect the complete Spid3r repository.
+- Understand its syntax and language features.
+- Understand its compiler and bytecode VM.
+- Inspect standard library capabilities.
+- Inspect module and package systems.
+- Verify file and filesystem operations.
+- Verify networking capabilities.
+- Verify JSON parsing and serialization.
+- Verify error handling.
+- Verify concurrency capabilities.
+- Verify testing infrastructure.
+
+### Spid3r Web Audit
+- Inspect the complete Spid3r Web repository.
+- Understand application initialization.
+- Inspect HTTP server implementation.
+- Inspect routing and route parameters.
+- Inspect middleware architecture.
+- Inspect request and response APIs.
+- Inspect JSON and HTML responses.
+- Inspect template rendering.
+- Inspect cookie and session support.
+- Inspect static file handling.
+- Inspect file upload capabilities.
+- Inspect database integration.
+- Inspect exception handling.
+- Inspect testing utilities.
+
+### Compatibility Assessment
+- Create a framework capability matrix.
+- Identify missing capabilities.
+- Identify required standard-library extensions.
+- Identify framework-level improvements.
+- Document implementation constraints.
+- Verify compatibility between Spid3r and Spid3r Web.
+
+**Deliverable:** Verified technical architecture and compatibility report.
+
+# Phase 1 — Project Initialization
+
+- Create the e-commerce project.
+- Configure project bootstrap.
+- Configure environment variables.
+- Configure application settings.
+- Establish modular application structure.
+- Configure route registration.
+- Configure static assets.
+- Configure centralized error handling.
+- Configure logging.
+- Create development configuration.
+- Create production configuration.
+- Create `.env.example`.
+- Create project README.
+
+**Deliverable:** Running application using Spid3r Web.
+
+# Phase 2 — Database Architecture
+
+**Primary database: PostgreSQL**
+
+- Implement PostgreSQL connectivity.
+- Implement connection management.
+- Implement connection pooling where supported.
+- Implement database query execution.
+- Implement prepared statements.
+- Implement transaction support.
+- Implement migration system if necessary.
+- Implement database seeding.
+- Implement repository pattern.
+- Implement centralized database error handling.
+
+### Database Tables
+
+- users
+- roles
+- permissions
+- user_roles
+- addresses
+- categories
+- brands
+- products
+- product_variants
+- product_images
+- inventory
+- stock_movements
+- carts
+- cart_items
+- wishlists
+- orders
+- order_items
+- payments
+- refunds
+- coupons
+- coupon_usages
+- shipments
+- reviews
+- audit_logs
+- settings
+
+### Database Requirements
+
+- Use foreign keys.
+- Use appropriate database indexes.
+- Use unique constraints.
+- Store monetary values using DECIMAL or an equivalent exact numeric type.
+- Store historical product prices in order items.
+- Use transactions for critical operations.
+- Prevent overselling inventory.
+- Implement database backup procedures.
+
+**Deliverable:** Complete database architecture.
+
+# Phase 3 — Authentication and Authorization
+
+- Customer registration.
+- Customer login.
+- Customer logout.
+- Secure password hashing.
+- Password reset.
+- Email verification.
+- Session management.
+- Secure cookie configuration.
+- Role-based access control.
+- Permission management.
+- Customer authorization.
+- Administrator authorization.
+- Staff authorization.
+- Account status management.
+- Login rate limiting.
+
+**Deliverable:** Secure authentication and authorization system.
+
+# Phase 4 — Product Management
+
+- Product CRUD.
+- Category CRUD.
+- Nested categories.
+- Brand management.
+- Product variants.
+- SKU management.
+- Product image uploads.
+- Product galleries.
+- Product descriptions.
+- Product pricing.
+- Discount pricing.
+- Product availability.
+- Inventory management.
+- Stock movement history.
+- Product publication status.
+- Product SEO metadata.
+
+**Deliverable:** Complete product management system.
+
+# Phase 5 — Storefront
+
+- Homepage.
+- Product listing.
+- Category pages.
+- Brand pages.
+- Product detail pages.
+- Product search.
+- Category filtering.
+- Price filtering.
+- Brand filtering.
+- Sorting.
+- Pagination.
+- Related products.
+- Responsive design.
+- SEO-friendly URLs.
+- Meta titles and descriptions.
+- Sitemap and robots.txt.
+
+**Deliverable:** Customer-facing online store.
+
+# Phase 6 — Shopping Cart
+
+- Guest cart.
+- Authenticated customer cart.
+- Add products to cart.
+- Remove cart items.
+- Update quantities.
+- Validate product availability.
+- Recalculate prices server-side.
+- Persist cart between sessions.
+- Merge guest cart after login.
+- Calculate subtotal.
+- Calculate discounts.
+- Calculate shipping estimates.
+
+**Deliverable:** Complete shopping cart.
+
+# Phase 7 — Checkout and Order Management
+
+- Checkout page.
+- Address selection.
+- Address creation.
+- Shipping method selection.
+- Shipping fee calculation.
+- Coupon validation.
+- Tax calculation.
+- Order summary.
+- Order creation.
+- Inventory reservation or deduction.
+- Order confirmation.
+- Order cancellation.
+- Order history.
+- Order status management.
+- Order details.
+- Invoice generation.
+
+### Order Statuses
+
+- Pending
+- Awaiting Payment
+- Paid
+- Processing
+- Packed
+- Shipped
+- Delivered
+- Cancelled
+- Refunded
+
+**Deliverable:** Complete order processing system.
+
+# Phase 8 — Payment Integration
+
+### Payment Methods
+
+- Cash on Delivery.
+- bKash.
+- Nagad.
+- SSLCommerz.
+- Stripe, if international payments are required.
+
+### Payment Features
+
+- Payment initiation.
+- Payment verification.
+- Transaction tracking.
+- Payment status management.
+- Gateway callback handling.
+- Webhook verification.
+- Duplicate callback protection.
+- Payment failure handling.
+- Refund processing.
+- Payment history.
+- Payment reconciliation.
+
+### Payment Security
+
+- Never trust client-side payment success.
+- Verify transactions server-to-server.
+- Verify webhook signatures.
+- Implement idempotency.
+- Prevent duplicate charges.
+- Never store raw card information.
+
+**Deliverable:** Secure payment processing.
+
+# Phase 9 — Admin Dashboard
+
+- Admin authentication.
+- Dashboard overview.
+- Sales statistics.
+- Revenue reports.
+- Order management.
+- Product management.
+- Category management.
+- Brand management.
+- Inventory management.
+- Customer management.
+- Staff management.
+- Role management.
+- Coupon management.
+- Shipping configuration.
+- Payment configuration.
+- Store settings.
+- Audit logs.
+- Report export.
+
+**Deliverable:** Complete administration panel.
+
+# Phase 10 — Advanced E-commerce Features
+
+- Wishlist.
+- Product reviews.
+- Product ratings.
+- Coupon system.
+- Promotional campaigns.
+- Loyalty points.
+- Referral system.
+- Gift cards.
+- Email notifications.
+- SMS notifications.
+- Order tracking.
+- Product recommendations.
+- Recently viewed products.
+- Customer support.
+- Multi-currency support.
+- Multi-language support.
+
+**Deliverable:** Advanced e-commerce functionality.
+
+# Phase 11 — Shipping and Delivery
+
+- Shipping zones.
+- Shipping methods.
+- Delivery fee configuration.
+- Delivery estimates.
+- Shipment creation.
+- Tracking number management.
+- Shipment status updates.
+- Courier integration architecture.
+- Delivery confirmation.
+- Return and exchange management.
+
+**Deliverable:** Shipping and delivery management.
+
+# Phase 12 — Security
+
+- Input validation.
+- SQL injection protection.
+- XSS protection.
+- CSRF protection.
+- Secure session management.
+- Password hashing.
+- Rate limiting.
+- Authorization checks.
+- Secure HTTP headers.
+- File upload validation.
+- File type and size restrictions.
+- Secret management.
+- Audit logging.
+- Dependency security checks.
+- Error information disclosure prevention.
+
+**Deliverable:** Security-reviewed application.
+
+# Phase 13 — Performance and Scalability
+
+- Database query optimization.
+- Database indexing.
+- Connection pooling.
+- Redis caching where appropriate.
+- Product catalog caching.
+- Image optimization.
+- Static asset optimization.
+- Pagination for large datasets.
+- Background job architecture.
+- Email queue processing.
+- Efficient inventory updates.
+- Load testing.
+- Memory usage profiling.
+- Runtime performance benchmarking.
+
+**Deliverable:** Performance-tested application.
+
+# Phase 14 — Automated Testing
+
+### Unit Tests
+- Authentication tests.
+- Product service tests.
+- Cart service tests.
+- Order service tests.
+- Payment service tests.
+- Inventory service tests.
+- Coupon service tests.
+
+### Integration Tests
+- Database connectivity.
+- Database transactions.
+- Authentication workflow.
+- Product CRUD.
+- Cart operations.
+- Checkout workflow.
+- Payment verification.
+- Admin permissions.
+
+### Security Tests
+- Unauthorized access.
+- SQL injection.
+- XSS.
+- CSRF.
+- Session security.
+- File upload security.
+- Concurrent inventory purchases.
+
+### End-to-End Tests
+- Customer registration.
+- Customer login.
+- Browse products.
+- Add product to cart.
+- Checkout.
+- Complete payment.
+- Verify order.
+- Admin processes order.
+
+**Deliverable:** Automated test suite with reliable passing results.
+
+# Phase 15 — CI/CD and Deployment
+
+- Configure GitHub Actions.
+- Run Spid3r compatibility checks.
+- Run Spid3r Web compatibility checks.
+- Run application tests.
+- Run linting and formatting.
+- Run security checks.
+- Build production application.
+- Configure production environment.
+- Configure HTTPS.
+- Configure reverse proxy.
+- Configure database backups.
+- Configure logging.
+- Configure monitoring.
+- Configure deployment automation.
+- Implement rollback procedures.
+
+**Deliverable:** Automated and repeatable deployment pipeline.
+
+# Phase 16 — Documentation
+
+- Project README.
+- Installation guide.
+- Environment configuration guide.
+- Database documentation.
+- Database schema documentation.
+- API documentation.
+- Authentication documentation.
+- Payment integration guide.
+- Admin user guide.
+- Deployment guide.
+- Troubleshooting guide.
+- Architecture documentation.
+
+**Deliverable:** Complete developer and operational documentation.
+
+---
+
+# Architecture Requirements
+
+Use a modular layered architecture:
+
+1. Routes — HTTP endpoint registration.
+2. Middleware — Request processing and access control.
+3. Controllers — HTTP input and output handling.
+4. Validators — Request validation.
+5. Services — Business logic.
+6. Repositories — Data access.
+7. Models — Domain entities and data structures.
+8. Events — Application events.
+9. Jobs — Background processing.
+10. Policies — Authorization rules.
+
+### Architecture Rules
+
+- Controllers must not contain complex business logic.
+- Services must not depend unnecessarily on HTTP request objects.
+- Database queries should be centralized in repositories.
+- Payment logic must be isolated from order logic.
+- Inventory operations must be transaction-safe.
+- Shared functionality must be reusable.
+- Secrets must never be committed to Git.
+- All critical operations must have automated tests.
+
+# Development Rules for AI Coding Agents
+
+When implementing this project:
+
+1. First inspect both GitHub repositories.
+2. Read their READMEs and relevant source files.
+3. Understand the actual Spid3r syntax.
+4. Understand the actual Spid3r Web APIs.
+5. Never assume another language's syntax works in Spid3r.
+6. Never invent methods, classes, modules or functions.
+7. Never modify working language features without a clear requirement.
+8. If a framework capability is missing, document it before deciding where to implement it.
+9. Prefer extending Spid3r Web over duplicating framework functionality in the application.
+10. Implement one phase at a time.
+11. Test every phase before proceeding.
+12. Fix errors instead of suppressing them.
+13. Maintain compatibility with the existing CI pipeline.
+14. Keep documentation synchronized with implementation.
+15. Never mark a task complete without verifying it.
+16. Do not leave TODOs or fake implementations for required production functionality.
+17. Preserve backward compatibility unless a breaking change is explicitly necessary.
+
+# Definition of Done
+
+A task is complete only when:
+
+- Implementation is functional.
+- Code follows the project's architecture.
+- No unsupported Spid3r APIs are used.
+- Relevant tests pass.
+- Existing tests still pass.
+- Security implications are addressed.
+- Documentation is updated.
+- CI passes.
+- Changes are committed appropriately.
+
+# Final Project Goal
+
+Deliver a complete e-commerce platform powered by:
+
+- Spid3r Programming Language.
+- Spid3r Web Framework.
+- PostgreSQL.
+- Secure payment integrations.
+- Modular application architecture.
+- Automated testing.
+- GitHub Actions CI/CD.
+
+The final application must support the complete shopping lifecycle:
+
+**Browse Products → Search → Add to Cart → Checkout → Payment → Order Processing → Shipping → Delivery → Reviews**
+
+Build a reliable real-world application, not merely a demonstration or prototype.
+
+**Implementation priority:** Start with Phase 0. Do not skip the repository audit or begin implementing application features using assumed framework APIs.

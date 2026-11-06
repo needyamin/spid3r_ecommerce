@@ -1,0 +1,56 @@
+// app/Validators/ShippingValidators.matrix
+// Phase 11 — shipping zones, rates, shipments and returns.
+
+public fn zone_rules() {
+    return map(
+        "name", "required|min:2|max:96",
+        "country", "nullable|max:64",
+        "districts", "nullable|max:2000",
+        "is_active", "nullable|integer|min_value:0|max_value:1"
+    );
+}
+
+public fn rate_rules() {
+    return map(
+        "zone_id", "required|integer|min_value:1",
+        "method", "required|in:standard,express",
+        "fee_minor", "required|integer|min_value:0",
+        "min_order_minor", "nullable|integer|min_value:0",
+        "max_order_minor", "nullable|integer|min_value:0",
+        "estimated_days_min", "nullable|integer|min_value:0|max_value:365",
+        "estimated_days_max", "nullable|integer|min_value:0|max_value:365"
+    );
+}
+
+public fn shipment_rules() {
+    return map(
+        "carrier", "nullable|max:96",
+        "tracking_number", "nullable|max:128",
+        "method", "nullable|in:standard,express",
+        "zone_id", "nullable|integer|min_value:1",
+        "estimated_at", "nullable|max:32",
+        "notes", "nullable|max:2000"
+    );
+}
+
+public fn shipment_status_rules() {
+    return map(
+        "status", "required|in:preparing,shipped,in_transit,delivered,failed"
+    );
+}
+
+public fn return_rules() {
+    return map(
+        "order_item_id", "nullable|integer|min_value:1",
+        "quantity", "required|integer|min_value:1",
+        "kind", "required|in:return,exchange",
+        "reason", "required|min:10|max:2000"
+    );
+}
+
+public fn return_decision_rules() {
+    return map(
+        "status", "required|in:approved,rejected,received,refunded",
+        "refund_minor", "nullable|integer|min_value:0"
+    );
+}

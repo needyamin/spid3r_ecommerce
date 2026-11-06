@@ -1,0 +1,196 @@
+// tests/test_container.matrix
+// Unit tests for the Spid3rWeb dependency injection container.
+
+import "framework/Container/Container";
+
+fn test_bind_fresh_resolution() {
+    let c = new ServiceContainer();
+    let counter = map("n", 0);
+    c.bind("greeting", fn(container) {
+        counter["n"] = counter["n"] + 1;
+        return map("hello", "world", "built_at", counter["n"]);
+    });
+    assert(c.bound("greeting"), "bound() true after bind");
+    assert(not c.resolved("greeting"), "non-shared binding never memoizes");
+
+    let a = c.resolve("greeting");
+    let b = c.resolve("greeting");
+    assert(a["hello"] == "world", "factory result returned");
+    assert(a["built_at"] == 1 and b["built_at"] == 2, "bind resolves fresh each time");
+    assert(a != b, "each resolve produces a distinct value");
+    println("  [PASS] test_bind_fresh_resolution");
+}
+
+fn test_singleton_memoizes() {
+    let c = new ServiceContainer();
+    let builds = map("i", 0);
+    c.singleton("conn", fn(container) {
+        builds["i"] = builds["i"] + 1;
+        return map("build", builds["i"]);
+    });
+    assert(not c.resolved("conn"), "singleton not resolved before first make");
+    let a = c.resolve("conn");
+    assert(c.resolved("conn"), "singleton memoized after first resolve");
+    assert(a["build"] == 1, "factory ran once");
+    let b = c.resolve("conn");
+    assert(a == b and a["build"] == 1, "singleton returns the same instance without re-running the factory");
+
+    // fresh() bypasses the memo but does not replace it
+    let f = c.fresh("conn");
+    assert(f["build"] == 2, "fresh builds a new value");
+    assert(c.resolve("conn")["build"] == 1, "fresh did not disturb the memo");
+    println("  [PASS] test_singleton_memoizes");
+}
+
+fn test_instance_and_make_alias() {
+    let c = new ServiceContainer();
+    let svc = map("kind", "prebuilt");
+    let returned = c.instance("svc", svc);
+    assert(returned == svc, "instance() returns the stored value");
+    assert(c.bound("svc") and c.resolved("svc"), "instance counts as bound+resolved");
+    assert(c.make("svc") == svc, "make() is an alias of resolve()");
+    assert(c.resolve("svc") == svc, "resolve returns the prebuilt instance");
+    println("  [PASS] test_instance_and_make_alias");
+}
+
+fn test_factory_receives_container() {
+    let c = new ServiceContainer();
+    c.singleton("dep", fn(container) { return map("n", 41); });
+    c.bind("composite", fn(container) {
+        let d = container.resolve("dep");
+        return map("total", d["n"] + 1);
+    });
+    assert(c.resolve("composite")["total"] == 42, "factory receives the container for nested resolution");
+    println("  [PASS] test_factory_receives_container");
+}
+
+fn test_unbound_throws() {
+    let c = new ServiceContainer();
+    assert(not c.bound("ghost"), "unbound key reports not bound");
+    let threw = false;
+    try {
+        c.resolve("ghost");
+    } catch (e) {
+        threw = true;
+    }
+    assert(threw, "resolve on unbound key throws");
+    threw = false;
+    try {
+        c.fresh("ghost");
+    } catch (e) {
+        threw = true;
+    }
+    assert(threw, "fresh on unbound key throws");
+    println("  [PASS] test_unbound_throws");
+}
+
+fn test_aliases_chain() {
+    let c = new ServiceContainer();
+    c.singleton("db.connection", fn(container) { return map("engine", "sqlite"); });
+    c.alias("db", "db.connection");
+    c.alias("database", "db");
+    assert(c.bound("database"), "alias resolves through the chain");
+    assert(c.resolve("database")["engine"] == "sqlite", "aliased resolve reaches the target");
+    let a = c.resolve("db");
+    assert(c.resolve("database") == a, "aliases share the memoized singleton");
+
+    // extend through an alias
+    c.extend("database", fn(container, previous) {
+        let inner = previous(container);
+        inner["wrapped"] = true;
+        return inner;
+    });
+    assert(c.resolve("db")["wrapped"] == true, "extend works through an alias");
+    println("  [PASS] test_aliases_chain");
+}
+
+fn test_extend_decorates() {
+    let c = new ServiceContainer();
+    c.bind("logger", fn(container) { return map("lines", list()); });
+    c.extend("logger", fn(container, previous) {
+        let l = previous(container);
+        l["lines"].push("decorated");
+        return l;
+    });
+    let out = c.resolve("logger");
+    assert(out["lines"].len() == 1 and out["lines"][0] == "decorated", "extend wraps the previous factory");
+
+    // extend invalidates a memoized singleton
+    let c2 = new ServiceContainer();
+    c2.singleton("s", fn(container) { return map("v", 1); });
+    let first = c2.resolve("s");
+    c2.extend("s", fn(container, previous) {
+        let inner = previous(container);
+        inner["v"] = inner["v"] + 100;
+        return inner;
+    });
+    let second = c2.resolve("s");
+    assert(second["v"] == 101, "extend rebuilds after memo invalidation");
+    assert(first != second, "extend drops the stale memoized instance");
+    println("  [PASS] test_extend_decorates");
+}
+
+fn test_extend_unbound_throws() {
+    let c = new ServiceContainer();
+    let threw = false;
+    try {
+        c.extend("nope", fn(container, previous) { return previous(container); });
+    } catch (e) {
+        threw = true;
+    }
+    assert(threw, "extend on unbound key throws");
+    println("  [PASS] test_extend_unbound_throws");
+}
+
+fn test_forget_and_flush() {
+    let c = new ServiceContainer();
+    c.singleton("a", fn(container) { return map("v", 1); });
+    c.bind("b", fn(container) { return map("v", 2); });
+    c.instance("c", map("v", 3));
+    c.alias("aa", "a");
+
+    let memo = c.resolve("a");
+    c.forget("a");
+    assert(not c.bound("a"), "forget removes the binding");
+    assert(not c.bound("aa"), "forget the target also empties the alias");
+    assert(not c.resolved("a"), "forget removes the memoized instance");
+
+    c.flush();
+    assert(not c.bound("b") and not c.bound("c"), "flush removes every binding");
+    let threw = false;
+    try {
+        c.resolve("c");
+    } catch (e) {
+        threw = true;
+    }
+    assert(threw, "resolve after flush throws");
+    println("  [PASS] test_forget_and_flush");
+}
+
+fn test_global_facade_isolation() {
+    // The global Container must stay usable and independent of the local
+    // instances exercised above.
+    Container.flush();
+    Container.singleton("global.svc", fn(c) { return map("ok", true); });
+    assert(Container.resolve("global.svc")["ok"] == true, "global facade resolves");
+    assert(Container.bound("global.svc"), "global facade bound");
+    Container.flush();
+    assert(not Container.bound("global.svc"), "global facade flushes");
+    println("  [PASS] test_global_facade_isolation");
+}
+
+fn main() {
+    println("\n=== Running Container Test Suite ===");
+    test_bind_fresh_resolution();
+    test_singleton_memoizes();
+    test_instance_and_make_alias();
+    test_factory_receives_container();
+    test_unbound_throws();
+    test_aliases_chain();
+    test_extend_decorates();
+    test_extend_unbound_throws();
+    test_forget_and_flush();
+    test_global_facade_isolation();
+    println("=== All Container Tests Passed! ===\n");
+    return 0;
+}

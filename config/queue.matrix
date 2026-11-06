@@ -1,0 +1,30 @@
+// config/queue.matrix
+// Spid3rWeb Queue Configuration
+//
+// Consumed by framework/Queue/Queue.matrix and the `magic queue:work`
+// console command (framework/Console/ConsoleKernel.matrix).
+//
+// Drivers:
+//   database — jobs persist in the `jobs` table (see migration
+//              008_create_jobs_table); a worker drains them via
+//              `spid3r magic queue:work`.
+//   sync     — handlers run immediately during push (no worker needed).
+//
+// The queue name can be overridden per-deploy with SPID3R_QUEUE.
+
+public let config_queue = map(
+    "default", "database",
+    "queue_env", "SPID3R_QUEUE",
+    "connections", map(
+        "database", map(
+            "driver", "database",
+            "table", "jobs",
+            "queue", "default",
+            "retry_after", 90,     // seconds before a reserved job is retried
+            "max_attempts", 3      // attempts before a job is discarded
+        ),
+        "sync", map(
+            "driver", "sync"
+        )
+    )
+);

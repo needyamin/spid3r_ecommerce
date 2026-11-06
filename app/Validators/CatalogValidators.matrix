@@ -1,0 +1,39 @@
+// app/Validators/CatalogValidators.matrix
+// Phase 4 — rule maps for catalog admin endpoints.
+
+public fn product_rules() {
+    return map(
+        "name", "required|min:2|max:255",
+        "category_id", "required|integer|min_value:1",
+        "sku", "required|min:2|max:64",
+        "price_minor", "required|integer|min_value:1",
+        "status", "nullable|in:draft,published,archived"
+    );
+}
+
+public fn category_rules() {
+    return map(
+        "name", "required|min:2|max:128",
+        "parent_id", "nullable|integer"
+    );
+}
+
+public fn brand_rules() {
+    return map("name", "required|min:2|max:128");
+}
+
+public fn variant_rules() {
+    return map(
+        "sku", "required|min:2|max:64",
+        "name", "required|min:2|max:128",
+        "price_minor", "required|integer|min_value:1"
+    );
+}
+
+public fn image_rules() {
+    return map("image", "required|min:16");
+}
+
+public fn restock_rules() {
+    return map("quantity", "required|integer|min_value:1|max_value:100000");
+}

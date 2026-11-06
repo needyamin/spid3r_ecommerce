@@ -1,0 +1,100 @@
+// app/Services/CampaignService.matrix
+// Phase 10 — promotional campaigns.
+//
+// A campaign is a time-boxed, optionally capped discount that applies to the
+// whole order (percent in basis points, or a fixed amount in minor units).
+// Campaigns stack AFTER the coupon and BEFORE a gift card, so the most
+// valuable customer incentive is applied last.
+//
+// MONEY RULE: every amount is INTEGER MINOR UNITS.
+
+import "framework/Database/DB";
+import "framework/HttpException";
+
+public class CampaignService {
+    fn new() {}
+
+    // The first campaign that is active, inside its window and under its
+    // usage cap — or null when nothing applies.
+    public fn active(self) {
+        let now = string(unix_time());
+        let rows = DB.table("campaigns").where("is_active", "=", 1).get();
+        let i = 0;
+        while i < rows.len() {
+            let campaign = rows[i];
+            let usable = true;
+            if campaign["starts_at"] != null and string(campaign["starts_at"]) > now {
+                usable = false;
+            }
+            if campaign["ends_at"] != null and string(campaign["ends_at"]) < now {
+                usable = false;
+            }
+            if int(campaign["max_uses"]) > 0 and int(campaign["uses"]) >= int(campaign["max_uses"]) {
+                usable = false;
+            }
+            if usable {
+                return campaign;
+            }
+            i += 1;
+        }
+        return null;
+    }
+
+    // Discount in minor units for the given subtotal (0 when no campaign
+    // applies or the minimum order value is not reached).
+    public fn discount(self, subtotal_minor: int) -> int {
+        let campaign = self.active();
+        if campaign == null {
+            return 0;
+        }
+        let min_order = int(campaign["min_order_minor"]);
+        if min_order > 0 and subtotal_minor < min_order {
+            return 0;
+        }
+        let value = int(campaign["value_minor"]);
+        let discount = 0;
+        if string(campaign["type"]) == "percent" {
+            discount = subtotal_minor * value / 10000;
+        } else {
+            discount = value;
+        }
+        if discount > subtotal_minor {
+            discount = subtotal_minor;
+        }
+        return discount;
+    }
+
+    // Record one use (called when an order is placed).
+    public fn consume(self, campaign_id) -> bool {
+        return DB.table("campaigns").where("id", "=", campaign_id).increment("uses", 1) > 0;
+    }
+
+    public fn list(self) {
+        return DB.table("campaigns").orderBy("id", "DESC").limit(100).get();
+    }
+
+    // Create or update a campaign by code.
+    public fn save(self, code: string, name: string, kind: string, value_minor: int, min_order_minor: int, is_active: int) {
+        let key = string(code).trim().upper();
+        if key == "" {
+            throw validation_failed(map("code", "A campaign code is required."));
+        }
+        if kind != "percent" and kind != "fixed" {
+            throw validation_failed(map("type", "Campaign type must be percent or fixed."));
+        }
+        let existing = DB.table("campaigns").where("code", "=", key).first();
+        let data = map(
+            "code", key,
+            "name", string(name),
+            "type", kind,
+            "value_minor", value_minor,
+            "min_order_minor", min_order_minor,
+            "is_active", is_active
+        );
+        if existing != null {
+            DB.table("campaigns").where("id", "=", existing["id"]).update(data);
+            return existing["id"];
+        }
+        return DB.table("campaigns").insert(data);
+    }
+}

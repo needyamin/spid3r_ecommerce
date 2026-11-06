@@ -1,0 +1,321 @@
+// app/Controllers/ShippingController.matrix
+// Phase 11 — shipping, fulfilment and returns HTTP layer (thin).
+//
+// Admin areas are role/permission gated; customer return flows are
+// ownership-checked in ReturnService; the delivery estimate endpoint is
+// public and read-only.
+
+import "framework/Response";
+import "framework/View/BD";
+import "framework/Container/Container";
+import "framework/Database/DB";
+import "framework/HttpException";
+import "app/Services/ShippingService";
+import "app/Services/FulfillmentService";
+import "app/Services/ReturnService";
+import "app/Support/StoreChrome" as StoreChrome;
+import "app/Validators/ShippingValidators" as ShippingValidators;
+
+public class ShippingController {
+    public let shipping;
+    public let fulfillment;
+    public let returns;
+    public let settings;
+
+    fn new() {
+        self.shipping = new ShippingService();
+        self.fulfillment = new FulfillmentService();
+        self.returns = new ReturnService();
+        self.settings = Container.make("store.settings");
+    }
+
+    fn ctx(self, req, title: string, extra) {
+        let base = map(
+            "store_name", self.settings["name"],
+            "currency", self.settings["currency"],
+            "title", title,
+            "meta_description", "Store administration — " + title,
+            "current_path", string(req.path),
+            "csrf", req.auth.csrf()
+        );
+        let chrome = StoreChrome.build(req, self.settings);
+        for k in chrome.keys() {
+            base[k] = chrome[k];
+        }
+        if extra != null {
+            for k2 in extra.keys() {
+                base[k2] = extra[k2];
+            }
+        }
+        return base;
+    }
+
+    fn admin_nav(self) {
+        return map("page", "shipping");
+    }
+
+    // ---- administration: zones + rates ----
+
+    // Zones with their rate tiers attached (one query each, grouped here so
+    // the view never loops over the full rate table per zone).
+    fn zone_rows(self) {
+        let zones = self.shipping.all_zones();
+        let rates = self.shipping.all_rates();
+        let grouped = map();
+        let i = 0;
+        while i < rates.len() {
+            let zkey = string(rates[i]["zone_id"]);
+            let bucket = [];
+            if grouped.has(zkey) {
+                bucket = grouped[zkey];
+            }
+            bucket.push(rates[i]);
+            grouped[zkey] = bucket;
+            i += 1;
+        }
+        let out = [];
+        i = 0;
+        while i < zones.len() {
+            let zone = zones[i];
+            let zkey = string(zone["id"]);
+            let tiers = [];
+            if grouped.has(zkey) {
+                tiers = grouped[zkey];
+            }
+            zone["rates"] = tiers;
+            zone["has_rates"] = tiers.len() > 0;
+            out.push(zone);
+            i += 1;
+        }
+        return out;
+    }
+
+    public fn admin_page(self, req) {
+        let zones = self.zone_rows();
+        let view_ctx = map(
+            "zones", zones,
+            "has_zones", zones.len() > 0,
+            "flat_standard_minor", self.shipping.flat_fee("standard", 0),
+            "flat_express_minor", self.shipping.flat_fee("express", 0),
+            "csrf", req.auth.csrf()
+        );
+        return view("admin/shipping", self.ctx(req, "Shipping & delivery", view_ctx));
+    }
+
+    public fn api_zones(self, req) {
+        return json(map("data", self.zone_rows()));
+    }
+
+    public fn api_zone_save(self, req) {
+        let v = req.validate(ShippingValidators.zone_rules());
+        if v.fails() {
+            throw validation_failed(v.error_messages());
+        }
+        let id = self.shipping.save_zone(
+            string(req.input("name", "")),
+            string(req.input("country", "")),
+            string(req.input("districts", "")),
+            int(req.input("is_active", 1))
+        );
+        return json(map("data", map("id", id, "saved", true)), 201);
+    }
+
+    public fn api_zone_delete(self, req) {
+        let deactivated = self.shipping.deactivate_zone(req.params["id"]);
+        if not deactivated {
+            throw not_found("Shipping zone not found.");
+        }
+        return json(map("data", map("deactivated", true)));
+    }
+
+    public fn api_rates(self, req) {
+        return json(map("data", self.shipping.all_rates()));
+    }
+
+    public fn api_rate_save(self, req) {
+        let v = req.validate(ShippingValidators.rate_rules());
+        if v.fails() {
+            throw validation_failed(v.error_messages());
+        }
+        let max_raw = req.input("max_order_minor", null);
+        let max_minor = null;
+        if max_raw != null and string(max_raw).trim() != "" {
+            max_minor = int(max_raw);
+        }
+        let id = self.shipping.save_rate(
+            req.input("zone_id", 0),
+            string(req.input("method", "")),
+            int(req.input("fee_minor", 0)),
+            int(req.input("min_order_minor", 0)),
+            max_minor,
+            int(req.input("estimated_days_min", 3)),
+            int(req.input("estimated_days_max", 7)),
+            int(req.input("is_active", 1))
+        );
+        return json(map("data", map("id", id, "created", true)), 201);
+    }
+
+    public fn api_rate_delete(self, req) {
+        let deactivated = self.shipping.deactivate_rate(req.params["id"]);
+        if not deactivated {
+            throw not_found("Shipping rate not found.");
+        }
+        return json(map("data", map("deactivated", true)));
+    }
+
+    // ---- administration: fulfilment ----
+
+    public fn api_shipments(self, req) {
+        let rows = self.fulfillment.shipments_for(req.params["order_id"]);
+        return json(map("data", rows));
+    }
+
+    public fn api_shipment_create(self, req) {
+        let v = req.validate(ShippingValidators.shipment_rules());
+        if v.fails() {
+            throw validation_failed(v.error_messages());
+        }
+        let zone_raw = req.input("zone_id", null);
+        let zone_id = null;
+        if zone_raw != null and string(zone_raw).trim() != "" {
+            zone_id = zone_raw;
+        }
+        let id = self.fulfillment.create_shipment(
+            req.params["order_id"],
+            string(req.input("carrier", "")),
+            string(req.input("tracking_number", "")),
+            string(req.input("method", "")),
+            zone_id,
+            string(req.input("estimated_at", "")),
+            string(req.input("notes", ""))
+        );
+        return json(map("data", map("id", id, "created", true)), 201);
+    }
+
+    public fn api_shipment_status(self, req) {
+        let v = req.validate(ShippingValidators.shipment_status_rules());
+        if v.fails() {
+            throw validation_failed(v.error_messages());
+        }
+        let updated = self.fulfillment.set_status(req.params["id"], string(req.input("status", "")));
+        return json(map("data", updated));
+    }
+
+    public fn api_shipment_deliver(self, req) {
+        let updated = self.fulfillment.confirm_delivery(req.params["id"]);
+        return json(map("data", updated));
+    }
+
+    // ---- administration: returns ----
+
+    public fn returns_page(self, req) {
+        let rows = self.returns.all();
+        let view_ctx = map(
+            "returns", rows,
+            "has_returns", rows.len() > 0,
+            "page", "returns",
+            "csrf", req.auth.csrf()
+        );
+        return view("admin/returns", self.ctx(req, "Returns & exchanges", view_ctx));
+    }
+
+    public fn api_returns(self, req) {
+        return json(map("data", self.returns.all()));
+    }
+
+    public fn api_return_resolve(self, req) {
+        let v = req.validate(ShippingValidators.return_decision_rules());
+        if v.fails() {
+            throw validation_failed(v.error_messages());
+        }
+        let updated = self.returns.resolve(
+            req.params["id"],
+            string(req.input("status", "")),
+            int(req.input("refund_minor", 0))
+        );
+        return json(map("data", updated));
+    }
+
+    // ---- customer ----
+
+    public fn return_page(self, req) {
+        let user_id = req.auth.id();
+        let order = self.returns_orders_for(req, user_id);
+        let items = DB.table("order_items").where("order_id", "=", order["id"]).get();
+        let existing = DB.table("returns").where("order_id", "=", order["id"]).orderBy("id", "DESC").get();
+        let ctx = self.ctx(req, "Return an item", map(
+            "order", order,
+            "order_number", string(order["order_number"]),
+            "items", items,
+            "has_items", items.len() > 0,
+            "requests", existing,
+            "has_requests", existing.len() > 0
+        ));
+        return view("orders/return", ctx);
+    }
+
+    // The order must belong to the signed-in customer.
+    fn returns_orders_for(self, req, user_id) {
+        let order = DB.table("orders").where("order_number", "=", string(req.params["number"])).first();
+        if order == null or order["user_id"] == null or int(order["user_id"]) != int(user_id) {
+            throw not_found("Order not found.");
+        }
+        return order;
+    }
+
+    public fn return_store(self, req) {
+        let v = req.validate(ShippingValidators.return_rules());
+        if v.fails() {
+            throw validation_failed(v.error_messages());
+        }
+        let user_id = req.auth.id();
+        let order = self.returns_orders_for(req, user_id);
+        let item_raw = req.input("order_item_id", null);
+        let item_id = null;
+        if item_raw != null and string(item_raw).trim() != "" {
+            item_id = item_raw;
+        }
+        let id = self.returns.request(
+            string(order["order_number"]),
+            user_id,
+            item_id,
+            int(req.input("quantity", 1)),
+            string(req.input("reason", "")),
+            string(req.input("kind", "return"))
+        );
+        if req.input("format", "") == "json" {
+            return json(map("data", map("id", id, "requested", true)), 201);
+        }
+        return redirect("/orders/" + string(order["order_number"]) + "/return");
+    }
+
+    public fn my_returns(self, req) {
+        let user_id = req.auth.id();
+        let rows = self.returns.for_customer(user_id);
+        let ctx = self.ctx(req, "Your returns", map(
+            "returns", rows,
+            "has_returns", rows.len() > 0
+        ));
+        return view("returns/index", ctx);
+    }
+
+    // ---- public estimate ----
+
+    // Read-only delivery quote for an address (JSON). Helps the storefront
+    // show a delivery estimate before checkout.
+    public fn estimate(self, req) {
+        let method = string(req.input("method", "standard"));
+        let subtotal = int(req.input("order_value_minor", 0));
+        let address = map();
+        let keys = ["country", "district", "city"];
+        let i = 0;
+        while i < keys.len() {
+            if req.input(keys[i], "") != "" {
+                address[keys[i]] = req.input(keys[i], "");
+            }
+            i += 1;
+        }
+        let quote = self.shipping.quote(address, method, subtotal);
+        return json(map("data", quote));
+    }
+}

@@ -1,0 +1,33 @@
+@extends("layouts.store")
+@section('title', title)
+@section('meta_description', meta_description)
+@section("content")
+  <nav class="breadcrumb"><a href="/">Home</a> / <a href="/orders">Orders</a> / <span>{{ order.order_number }}</span></nav>
+  <h1 class="page-title">Order {{ order.order_number }}</h1>
+  <p class="page-description">Status: <strong>{{ status_label }}</strong></p>
+
+  <section class="cart-list">
+@foreach(item in items)
+    <div class="cart-row">
+      <div class="cart-row-main"><strong>{{ item.name_snapshot }}</strong><span class="cart-unit">SKU {{ item.sku_snapshot }} · {{ item.unit_display }} × {{ item.quantity }}</span></div>
+      <div class="cart-line-total">{{ item.line_display }}</div>
+    </div>
+@endforeach
+  </section>
+
+  <section class="cart-totals">
+    <div class="total-line"><span>Subtotal</span><span>{{ subtotal_display }}</span></div>
+    <div class="total-line"><span>Discount</span><span>− {{ discount_display }}</span></div>
+    <div class="total-line"><span>Shipping</span><span>{{ shipping_display }}</span></div>
+    <div class="total-line"><span>Tax</span><span>{{ tax_display }}</span></div>
+    <div class="total-line total-grand"><strong>Total</strong><strong>{{ total_display }}</strong></div>
+  </section>
+
+  <div class="hero-actions">
+    <a class="btn btn-secondary" href="/orders/{{ order.order_number }}/invoice">View invoice</a>
+    <form method="post" action="/orders/{{ order.order_number }}/cancel">
+      <input type="hidden" name="_csrf" value="{{ csrf }}">
+      <button class="btn btn-secondary" type="submit">Cancel order</button>
+    </form>
+  </div>
+@endsection

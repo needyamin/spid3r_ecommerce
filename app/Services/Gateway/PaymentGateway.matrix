@@ -1,0 +1,236 @@
+// app/Services/Gateway/PaymentGateway.matrix
+// Phase 8 — payment gateway adapters.
+//
+// Security contract (never violated):
+//   - Client-side "success" is NEVER trusted; verification is always a
+//     server-to-server call (or an authenticated staff action for COD).
+//   - Webhook bodies are authenticated with HMAC-SHA256 over the RAW body.
+//   - Gateway credentials come from the environment, never from requests.
+//
+// Upstream gateway APIs differ per merchant contract, so the HTTPS adapter
+// is config-driven: {PROVIDER}_INIT_URL / VERIFY_URL / REFUND_URL / API_KEY
+// / WEBHOOK_SECRET. An unconfigured gateway fails fast (400) instead of
+// pretending to process a payment. COD is fully wired out of the box.
+
+import "http";
+import "framework/Database/DB";
+import "framework/HttpException";
+
+fn env_value(key: string, fallback: string) -> string {
+    let v = env(key);
+    if v.is_some() {
+        let s = string(v.unwrap()).trim();
+        if s != "" {
+            return s;
+        }
+    }
+    return fallback;
+}
+
+// Shared setting reader (webhook secret may be seeded for local/dev; env
+// always wins in production).
+fn setting_value(key: string, fallback: string) -> string {
+    let row = DB.table("settings").where("setting_key", "=", key).first();
+    if row != null and string(row["value"]).trim() != "" {
+        return string(row["value"]).trim();
+    }
+    return fallback;
+}
+
+public class CodGateway {
+    public let name;
+
+    fn new() {
+        self.name = "cod";
+    }
+
+    // No external call: the order is marked paid-on-delivery after staff
+    // confirm collection through the authenticated admin verification route.
+    public fn initiate(self, payment, order) {
+        return map(
+            "status", "pending_cod",
+            "redirect_url", "/payment/" + string(order["order_number"]) + "/return",
+            "instructions", "Pay in cash when your order is delivered."
+        );
+    }
+
+    public fn verify(self, payment) {
+        // COD has no external API: verification is the staff action itself.
+        return map(
+            "verified", true,
+            "transaction_id", "COD-" + string(payment["order_id"]),
+            "payload", "{\"method\":\"cash_on_delivery\"}"
+        );
+    }
+
+    public fn refund(self, payment, amount_minor: int) {
+        return map("ok", true, "reference", "COD-REFUND-" + string(payment["id"]));
+    }
+
+    public fn webhook_secret(self) -> string {
+        // Delivery/partner systems may notify cash collection via webhook;
+        // the same shared HMAC secret authenticates those events.
+        let from_env = env_value("COD_WEBHOOK_SECRET", "");
+        if from_env != "" {
+            return from_env;
+        }
+        return setting_value("payments.webhook_secret", "");
+    }
+}
+
+public class HttpsGateway {
+    public let name;
+    public let prefix;
+
+    fn new(name: string) {
+        self.name = name;
+        self.prefix = string(name).upper();
+    }
+
+    fn url_for(self, suffix: string, fallback: string) -> string {
+        return env_value(self.prefix + "_" + suffix + "_URL", fallback);
+    }
+
+    fn api_key(self) -> string {
+        return env_value(self.prefix + "_API_KEY", "");
+    }
+
+    public fn webhook_secret(self) -> string {
+        let from_env = env_value(self.prefix + "_WEBHOOK_SECRET", "");
+        if from_env != "" {
+            return from_env;
+        }
+        return setting_value("payments.webhook_secret", "");
+    }
+
+    fn headers(self) {
+        let key = self.api_key();
+        if key == "" {
+            throw bad_request(self.name + " gateway is not configured (missing API key).");
+        }
+        return map("content-type", "application/json", "authorization", "Bearer " + key);
+    }
+
+    fn post(self, url: string, payload) {
+        if url == "" {
+            throw bad_request(self.name + " gateway is not configured (missing endpoint URL).");
+        }
+        let res = http_fetch("POST", url, self.headers(), json_write(payload));
+        if res.is_err() {
+            throw bad_request(self.name + " gateway request failed: " + string(res.unwrap_err()));
+        }
+        let out = res.unwrap();
+        let status = int(out["status"]);
+        if status < 200 or status >= 300 {
+            throw bad_request(self.name + " gateway returned HTTP " + string(status));
+        }
+        let parsed = null;
+        try {
+            parsed = json_parse(string(out["body"]));
+        } catch (e) {
+            throw bad_request(self.name + " gateway returned an invalid response.");
+        }
+        if type_of(parsed) != "map" {
+            throw bad_request(self.name + " gateway returned an invalid response.");
+        }
+        return parsed;
+    }
+
+    public fn initiate(self, payment, order) {
+        let response = self.post(self.url_for("INIT", ""), map(
+            "order_number", order["order_number"],
+            "amount_minor", int(order["total_minor"]),
+            "currency", order["currency"],
+            "payment_id", payment["id"],
+            "idempotency_key", payment["idempotency_key"],
+            "callback_url", env_value("STORE_URL", "http://localhost:8000") + "/webhooks/payments/" + self.name
+        ));
+        let redirect = "";
+        if response.has("redirect_url") {
+            redirect = string(response["redirect_url"]);
+        }
+        let txn = "";
+        if response.has("transaction_id") {
+            txn = string(response["transaction_id"]);
+        }
+        return map(
+            "status", "pending",
+            "redirect_url", redirect,
+            "gateway_transaction_id", txn,
+            "instructions", "Complete payment with " + self.name + "."
+        );
+    }
+
+    // Server-to-server verification: query the gateway with OUR payment id
+    // and reject anything whose amount or status does not match.
+    public fn verify(self, payment) {
+        let response = self.post(self.url_for("VERIFY", ""), map(
+            "payment_id", payment["id"],
+            "idempotency_key", payment["idempotency_key"],
+            "gateway_transaction_id", payment["gateway_transaction_id"]
+        ));
+        let state = "";
+        if response.has("status") {
+            state = string(response["status"]).lower();
+        }
+        let amount = -1;
+        if response.has("amount_minor") {
+            amount = int(response["amount_minor"]);
+        }
+        let ok = (state == "paid" or state == "success" or state == "completed")
+            and amount == int(payment["amount_minor"]);
+        let txn = "";
+        if response.has("transaction_id") {
+            txn = string(response["transaction_id"]);
+        }
+        return map(
+            "verified", ok,
+            "transaction_id", txn,
+            "payload", json_write(response)
+        );
+    }
+
+    public fn refund(self, payment, amount_minor: int) {
+        let response = self.post(self.url_for("REFUND", ""), map(
+            "payment_id", payment["id"],
+            "amount_minor", amount_minor,
+            "gateway_transaction_id", payment["gateway_transaction_id"]
+        ));
+        let ok = false;
+        if response.has("status") and string(response["status"]).lower() == "ok" {
+            ok = true;
+        }
+        let ref_id = "";
+        if response.has("refund_id") {
+            ref_id = string(response["refund_id"]);
+        }
+        return map("ok", ok, "reference", ref_id);
+    }
+}
+
+public class GatewayRegistry {
+    fn new() {}
+
+    public fn providers(self) {
+        return ["cod", "bkash", "nagad", "sslcommerz", "stripe"];
+    }
+
+    public fn resolve(self, provider: string) {
+        let p = string(provider).trim().lower();
+        let all = self.providers();
+        let i = 0;
+        while i < all.len() {
+            if all[i] == p {
+                break;
+            }
+            i += 1;
+        }
+        if i == all.len() {
+            throw validation_failed(map("provider", "Unknown payment provider."));
+        }
+        if p == "cod" {
+            return new CodGateway();
+        }
+        return new HttpsGateway(p);
+    }
+}

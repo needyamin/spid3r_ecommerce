@@ -1,0 +1,453 @@
+// app/Controllers/AdvancedController.matrix
+// Phase 10 — advanced storefront HTTP layer (thin).
+//
+// Every handler follows the same shape: read + validate the request,
+// delegate to a service, then answer with HTML (progressive enhancement —
+// plain POST forms keep working) or JSON when the client asks for
+// format=json. No business logic lives in this file.
+
+import "framework/Response";
+import "framework/View/BD";
+import "framework/Container/Container";
+import "framework/Database/DB";
+import "framework/HttpException";
+import "app/Services/AdvancedStoreService";
+import "app/Services/StorefrontService";
+import "app/Services/CampaignService";
+import "app/Services/GiftCardService";
+import "app/Services/CurrencyService";
+import "app/Services/LocaleService";
+import "app/Support/CartIdentity" as CartIdentity;
+import "app/Support/StoreChrome" as StoreChrome;
+import "app/Support/CatalogCache" as CatalogCache;
+import "app/Validators/AdvancedValidators" as AdvancedValidators;
+
+public class AdvancedController {
+    public let advanced;
+    public let gift_cards;
+    public let campaigns;
+    public let storefront;
+    public let currencies;
+    public let locales;
+    public let settings;
+
+    fn new() {
+        self.advanced = new AdvancedStoreService();
+        self.gift_cards = new GiftCardService();
+        self.campaigns = new CampaignService();
+        self.storefront = new StorefrontService();
+        self.settings = Container.make("store.settings");
+        self.currencies = new CurrencyService(string(self.settings["currency"]));
+        self.locales = new LocaleService(string(self.settings["locale"]));
+    }
+
+    // ---- shared plumbing ----
+
+    fn ctx(self, req, title: string, extra) {
+        let base = map(
+            "store_name", self.settings["name"],
+            "currency", self.settings["currency"],
+            "title", title,
+            "meta_description", title + " — " + self.settings["name"],
+            "current_path", string(req.path),
+            "csrf", ""
+        );
+        if req.auth != null and req.auth.check() {
+            base["csrf"] = req.auth.csrf();
+        }
+        // Storefront chrome: currency + language switchers.
+        let chrome = StoreChrome.build(req, self.settings);
+        for k in chrome.keys() {
+            base[k] = chrome[k];
+        }
+        if extra != null {
+            for k2 in extra.keys() {
+                base[k2] = extra[k2];
+            }
+        }
+        return base;
+    }
+
+    // JSON when the client asks for it, otherwise redirect back.
+    fn respond(self, req, payload, fallback_path: string) {
+        if req.input("format", "") == "json" {
+            return json(payload);
+        }
+        return redirect(fallback_path);
+    }
+
+    // The signed-in customer id, or 401 when there is no session.
+    fn user_id(self, req) {
+        if req.auth == null or not req.auth.check() {
+            throw unauthorized("Please sign in to continue.");
+        }
+        return req.auth.id();
+    }
+
+    // Read a value from the body first, then from the route parameters.
+    fn param_or_input(self, req, name: string) {
+        let value = req.input(name, null);
+        if value == null {
+            value = req.param(name, null);
+        }
+        return value;
+    }
+
+    // Only same-site relative paths are accepted as a redirect target.
+    fn safe_return(self, req) -> string {
+        let target = string(req.input("return_to", "/")).trim();
+        if target == "" or not target.starts_with("/") or target.starts_with("//") {
+            return "/";
+        }
+        return target;
+    }
+
+    // ---- wishlist ----
+
+    public fn wishlist_page(self, req) {
+        let uid = self.user_id(req);
+        let code = self.currencies.selected(req);
+        let items = self.storefront.decorate(self.advanced.wishlist(uid), code, self.currencies.context());
+        let ctx = self.ctx(req, "Your wishlist", map(
+            "items", items,
+            "has_items", items.len() > 0
+        ));
+        return view("account/wishlist", ctx);
+    }
+
+    public fn wishlist_add(self, req) {
+        let uid = self.user_id(req);
+        let product_id = int(self.param_or_input(req, "product_id"));
+        if product_id <= 0 {
+            throw validation_failed(map("product_id", "Choose a product."));
+        }
+        let added = self.advanced.wishlist_add(uid, product_id);
+        return self.respond(req, map("ok", true, "added", added), "/wishlist");
+    }
+
+    public fn wishlist_remove(self, req) {
+        let uid = self.user_id(req);
+        let product_id = int(self.param_or_input(req, "product_id"));
+        if product_id <= 0 {
+            throw validation_failed(map("product_id", "Choose a product."));
+        }
+        let removed = self.advanced.wishlist_remove(uid, product_id);
+        return self.respond(req, map("ok", true, "removed", removed), "/wishlist");
+    }
+
+    // ---- reviews & ratings ----
+
+    public fn review_store(self, req) {
+        let v = req.validate(AdvancedValidators.review_rules());
+        if v.fails() {
+            throw validation_failed(v.error_messages());
+        }
+        let uid = self.user_id(req);
+        let review = self.advanced.review(
+            uid,
+            int(req.input("product_id", 0)),
+            int(req.input("rating", 0)),
+            string(req.input("title", "")),
+            string(req.input("body", ""))
+        );
+        return self.respond(req, map("ok", true, "review", review), "/account");
+    }
+
+    // Approved reviews + rating summary for a product (public).
+    public fn review_index(self, req) {
+        let product_id = int(req.params["product_id"]);
+        let reviews = self.advanced.approved_reviews(product_id);
+        let summary = self.advanced.rating_summary(product_id);
+        return json(map("data", map("reviews", reviews, "rating", summary)));
+    }
+
+    // ---- recommendations ----
+
+    public fn recommendations(self, req) {
+        let product_id = int(req.params["product_id"]);
+        let items = self.advanced.recommendations(product_id, 4);
+        return json(map("data", items));
+    }
+
+    // ---- recently viewed ----
+
+    public fn recently_viewed(self, req) {
+        let key = CartIdentity.cookie_value(req, "rv");
+        let items = self.advanced.recently_viewed(key);
+        return json(map("data", items));
+    }
+
+    // ---- loyalty & referrals ----
+
+    public fn rewards_page(self, req) {
+        let uid = self.user_id(req);
+        let code = self.advanced.ensure_referral_code(uid);
+        let ctx = self.ctx(req, "Your rewards", map(
+            "points", self.advanced.loyalty_balance(uid),
+            "history", self.advanced.loyalty_history(uid),
+            "referral_code", code,
+            "referral_link", "/register?ref=" + code
+        ));
+        return view("account/rewards", ctx);
+    }
+
+    public fn redeem_points(self, req) {
+        let v = req.validate(AdvancedValidators.loyalty_rules());
+        if v.fails() {
+            throw validation_failed(v.error_messages());
+        }
+        let uid = self.user_id(req);
+        self.advanced.redeem_loyalty(uid, int(req.input("points", 0)), null);
+        return self.respond(req, map("ok", true), "/account/rewards");
+    }
+
+    public fn apply_referral(self, req) {
+        let v = req.validate(AdvancedValidators.referral_rules());
+        if v.fails() {
+            throw validation_failed(v.error_messages());
+        }
+        let uid = self.user_id(req);
+        self.advanced.apply_referral(uid, string(req.input("code", "")));
+        return self.respond(req, map("ok", true), "/account/rewards");
+    }
+
+    // ---- gift cards ----
+
+    // Balance of a gift card code (public: the code itself is the secret).
+    public fn gift_card_balance(self, req) {
+        let v = req.validate(AdvancedValidators.gift_card_rules());
+        if v.fails() {
+            throw validation_failed(v.error_messages());
+        }
+        let code = string(req.input("code", ""));
+        let balance = self.gift_cards.balance(code);
+        return json(map("data", map("balance_minor", balance, "valid", balance > 0)));
+    }
+
+    // ---- customer support ----
+
+    public fn support_page(self, req) {
+        let uid = null;
+        if req.auth != null and req.auth.check() {
+            uid = req.auth.id();
+        }
+        let ctx = self.ctx(req, "Customer support", map(
+            "tickets", self.advanced.support_tickets(uid),
+            "email", ""
+        ));
+        if req.auth != null and req.auth.check() {
+            let user = DB.table("users").where("id", "=", uid).first();
+            if user != null {
+                ctx["email"] = string(user["email"]);
+            }
+        }
+        return view("support/index", ctx);
+    }
+
+    public fn support_store(self, req) {
+        let v = req.validate(AdvancedValidators.support_rules());
+        if v.fails() {
+            throw validation_failed(v.error_messages());
+        }
+        let uid = null;
+        if req.auth != null and req.auth.check() {
+            uid = req.auth.id();
+        }
+        let id = self.advanced.create_support_ticket(
+            uid,
+            string(req.input("email", "")),
+            string(req.input("subject", "")),
+            string(req.input("message", ""))
+        );
+        return self.respond(req, map("ok", true, "ticket_id", id), "/support");
+    }
+
+    // ---- order tracking ----
+
+    public fn track_page(self, req) {
+        let ctx = self.ctx(req, "Track your order", map(
+            "result", null,
+            "has_result", false,
+            "order_number", string(req.query("order_number", ""))
+        ));
+        return view("track/index", ctx);
+    }
+
+    public fn track_lookup(self, req) {
+        let v = req.validate(AdvancedValidators.tracking_rules());
+        if v.fails() {
+            throw validation_failed(v.error_messages());
+        }
+        let uid = null;
+        if req.auth != null and req.auth.check() {
+            uid = req.auth.id();
+        }
+        let result = self.advanced.track_order(
+            string(req.input("order_number", "")),
+            string(req.input("email", "")),
+            string(req.input("phone", "")),
+            uid
+        );
+        if result == null {
+            throw not_found("We could not find that order. Check the order number and the contact details you entered.");
+        }
+        if req.input("format", "") == "json" {
+            return json(map("data", result));
+        }
+        let ctx = self.ctx(req, "Track your order", map(
+            "result", result,
+            "has_result", true,
+            "order_number", string(req.input("order_number", ""))
+        ));
+        return view("track/index", ctx);
+    }
+
+    // ---- currency & language ----
+
+    // Persist the customer's display preferences in cookies.
+    public fn set_locale(self, req) {
+        let currency = string(req.input("currency", "")).trim().upper();
+        if currency != "" {
+            let rates = self.currencies.rates();
+            if not rates.has(currency) {
+                throw validation_failed(map("currency", "That currency is not available."));
+            }
+        }
+        let locale = string(req.input("locale", "")).trim().lower();
+        if locale != "" {
+            let known = self.locales.locales();
+            let found = false;
+            let i = 0;
+            while i < known.len() {
+                if known[i] == locale {
+                    found = true;
+                    break;
+                }
+                i += 1;
+            }
+            if not found {
+                throw validation_failed(map("locale", "That language is not available."));
+            }
+        }
+        let target = self.safe_return(req);
+        let res = redirect(target);
+        if currency != "" {
+            res.cookie("store_currency", currency, "/", 2592000);
+        }
+        if locale != "" {
+            res.cookie("store_locale", locale, "/", 2592000);
+        }
+        return res;
+    }
+
+    // ---- administration (Phase 10 areas) ----
+
+    public fn admin_reviews(self, req) {
+        let reviews = self.advanced.pending_reviews();
+        let ctx = self.ctx(req, "Review moderation", map(
+            "reviews", reviews,
+            "has_reviews", reviews.len() > 0,
+            "page", "reviews"
+        ));
+        return view("admin/reviews", ctx);
+    }
+
+    public fn admin_review_update(self, req) {
+        let status = string(req.input("status", "")).trim().lower();
+        self.advanced.moderate_review(req.params["id"], status);
+        return self.respond(req, map("ok", true), "/admin/reviews");
+    }
+
+    public fn admin_campaigns(self, req) {
+        return json(map("data", self.campaigns.list()));
+    }
+
+    public fn admin_campaign_store(self, req) {
+        let v = req.validate(AdvancedValidators.campaign_rules());
+        if v.fails() {
+            throw validation_failed(v.error_messages());
+        }
+        let id = self.campaigns.save(
+            string(req.input("code", "")),
+            string(req.input("name", "")),
+            string(req.input("type", "percent")),
+            int(req.input("value_minor", 0)),
+            int(req.input("min_order_minor", 0)),
+            int(req.input("is_active", 0))
+        );
+        return json(map("data", map("id", id, "saved", true)), 201);
+    }
+
+    public fn admin_currencies(self, req) {
+        return json(map("data", self.currencies.catalog(self.currencies.selected(req))));
+    }
+
+    public fn admin_currency_store(self, req) {
+        let v = req.validate(AdvancedValidators.currency_rules());
+        if v.fails() {
+            throw validation_failed(v.error_messages());
+        }
+        let code = string(req.input("code", "")).trim().upper();
+        let digits = int(req.input("minor_digits", 2));
+        let existing = DB.table("currencies").where("code", "=", code).first();
+        let data = map(
+            "code", code,
+            "name", string(req.input("name", "")),
+            "symbol", string(req.input("symbol", "")),
+            "minor_digits", digits,
+            "rate_to_base_bps", int(req.input("rate_to_base_bps", 10000)),
+            "is_active", int(req.input("is_active", 1))
+        );
+        if existing != null {
+            DB.table("currencies").where("id", "=", existing["id"]).update(data);
+        } else {
+            DB.table("currencies").insert(data);
+        }
+        CatalogCache.bump_catalog_version();
+        return json(map("data", map("code", code, "saved", true)), 201);
+    }
+
+    public fn admin_translations(self, req) {
+        let locale = string(req.query("locale", self.locales.default_locale)).trim().lower();
+        return json(map("data", self.locales.bundle(locale)));
+    }
+
+    public fn admin_translation_store(self, req) {
+        let v = req.validate(AdvancedValidators.translation_rules());
+        if v.fails() {
+            throw validation_failed(v.error_messages());
+        }
+        self.locales.set(
+            string(req.input("locale", "")),
+            string(req.input("namespace", "")),
+            string(req.input("key", "")),
+            string(req.input("value", ""))
+        );
+        return json(map("data", map("saved", true)));
+    }
+
+    public fn admin_gift_cards(self, req) {
+        return json(map("data", self.gift_cards.list()));
+    }
+
+    public fn admin_gift_card_issue(self, req) {
+        let v = req.validate(AdvancedValidators.gift_card_issue_rules());
+        if v.fails() {
+            throw validation_failed(v.error_messages());
+        }
+        let amount = int(req.input("amount_minor", 0));
+        let code = self.gift_cards.issue(amount, string(self.settings["currency"]), string(req.input("recipient_email", "")));
+        // The raw code is returned ONCE — only its hash is stored.
+        return json(map("data", map("code", code, "amount_minor", amount)), 201);
+    }
+
+    public fn admin_support_tickets(self, req) {
+        return json(map("data", self.advanced.all_support_tickets()));
+    }
+
+    public fn admin_support_ticket_update(self, req) {
+        let status = string(req.input("status", "")).trim().lower();
+        self.advanced.resolve_support_ticket(req.params["id"], status);
+        return json(map("data", map("ok", true)));
+    }
+}

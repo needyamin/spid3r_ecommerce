@@ -1,0 +1,182 @@
+// framework/Auth/Auth.matrix
+// Spid3rWeb Authentication State Manager & Facade
+
+import "framework/Database/DB";
+import "framework/Auth/Hash";
+import "framework/Config/Config";
+
+public class AuthManager {
+    public let current_user;
+    public let current_token;
+    // Per-session CSRF token (stored in the sessions.payload column). Only
+    // meaningful for cookie-based sessions — Bearer-token API clients are
+    // not CSRF-attackable, so they never need it.
+    public let csrf_token;
+
+    fn new() {
+        self.current_user = null;
+        self.current_token = "";
+        self.csrf_token = "";
+    }
+
+    public fn attempt(self, email: string, password: string) -> bool {
+        let clean = string(email).trim().lower();
+        let table = string(Config.get("auth.guards.session.table", "users"));
+        let username_col = string(Config.get("auth.guards.session.username_column", "email"));
+        let users = DB.table(table).where(username_col, "=", clean).limit(1).get();
+        if users.len() == 0 {
+            return false;
+        }
+
+        let user = users[0];
+        let hash_val = string(user["password"]);
+
+        if Hash.check(password, hash_val) {
+            self.login(user);
+            return true;
+        }
+        return false;
+    }
+
+    public fn login(self, user) {
+        // Password hashes must never linger in auth state — views and API
+        // responses render from this map.
+        let safe_user = map();
+        for k in user.keys() {
+            if k != "password" {
+                safe_user[k] = user[k];
+            }
+        }
+        self.current_user = safe_user;
+        // Unpredictable CSPRNG session token (192 bits)
+        self.current_token = "sess_" + hex_encode(random_bytes(24).unwrap());
+        // Unpredictable per-session CSRF token (128 bits)
+        self.csrf_token = "csrf_" + hex_encode(random_bytes(16).unwrap());
+
+        // Store active session in sessions table if exists. The payload
+        // column carries the CSRF token so authenticate_token() can verify
+        // form submissions against it.
+        try {
+            DB.statement("INSERT INTO " + self.sessions_table() + " (token, user_id, payload, last_activity) VALUES (?, ?, ?, ?)",
+                list(self.current_token, user["id"], self.csrf_token, unix_time()));
+        } catch (_e) {
+            // sessions table optional
+        }
+    }
+
+    public fn authenticate_token(self, token: string) -> bool {
+        if token == "" { return false; }
+        try {
+            // Server-side session TTL: session.lifetime seconds of inactivity
+            // expires a session (config/session.matrix).
+            let cutoff = unix_time() - self.session_lifetime();
+            let rows = DB.select("SELECT u.*, s.payload AS session_payload FROM users u JOIN " + self.sessions_table() + " s ON u.id = s.user_id WHERE s.token = ? AND s.last_activity >= ?", list(token, cutoff));
+            if rows.len() > 0 {
+                let user_row = rows[0];
+                let session_payload = "";
+                if user_row.has("session_payload") and user_row["session_payload"] != null {
+                    session_payload = string(user_row["session_payload"]);
+                }
+                // Never expose the password hash through auth state.
+                let safe_row = map();
+                for k in user_row.keys() {
+                    if k != "password" and k != "session_payload" {
+                        safe_row[k] = user_row[k];
+                    }
+                }
+                self.current_user = safe_row;
+                self.current_token = token;
+                if session_payload != "" {
+                    self.csrf_token = session_payload;
+                }
+                // Sliding expiration: touch last_activity on use
+                try {
+                    DB.statement("UPDATE " + self.sessions_table() + " SET last_activity = ? WHERE token = ?", list(unix_time(), token));
+                } catch (_e2) {}
+                return true;
+            }
+            // Expired or unknown token — clean it up so dead sessions
+            // don't accumulate forever.
+            try {
+                DB.statement("DELETE FROM " + self.sessions_table() + " WHERE token = ?", list(token));
+            } catch (_e3) {}
+        } catch (_e) {
+            // fallback
+        }
+        return false;
+    }
+
+    public fn logout(self) {
+        if self.current_token != "" {
+            try {
+                DB.statement("DELETE FROM " + self.sessions_table() + " WHERE token = ?", list(self.current_token));
+            } catch (_e) {}
+        }
+        self.current_user = null;
+        self.current_token = "";
+        self.csrf_token = "";
+    }
+
+    // Config-driven knobs (config/auth.matrix + config/session.matrix)
+    // SQL-identifier safety: config-sourced table names are interpolated
+    // into raw SQL, so they are validated against [A-Za-z0-9_] before use.
+    fn safe_identifier(self, name: string, fallback: string) -> string {
+        let allowed = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_";
+        let s = string(name).trim();
+        if s.len() == 0 {
+            return fallback;
+        }
+        let i = 0;
+        while i < s.len() {
+            if not allowed.contains(s.slice(i, i + 1)) {
+                throw "auth: invalid identifier '" + s + "' (allowed: A-Z a-z 0-9 _)";
+            }
+            i = i + 1;
+        }
+        return s;
+    }
+
+    fn sessions_table(self) -> string {
+        return self.safe_identifier(string(Config.get("session.table", "sessions")), "sessions");
+    }
+
+    fn session_lifetime(self) -> int {
+        return int(Config.get("session.lifetime", 86400));
+    }
+
+    public fn clear(self) {
+        self.current_user = null;
+        self.current_token = "";
+        self.csrf_token = "";
+    }
+
+    public fn check(self) -> bool {
+        return self.current_user != null;
+    }
+
+    public fn guest(self) -> bool {
+        return self.current_user == null;
+    }
+
+    public fn user(self) {
+        return self.current_user;
+    }
+
+    public fn id(self) {
+        if self.current_user != null and self.current_user.has("id") {
+            return self.current_user["id"];
+        }
+        return null;
+    }
+
+    public fn token(self) -> string {
+        return self.current_token;
+    }
+
+    // CSRF token for this session ("" for guests and Bearer sessions)
+    public fn csrf(self) -> string {
+        return self.csrf_token;
+    }
+}
+
+public let Auth = new AuthManager();

@@ -1,0 +1,22 @@
+// routes/payments.matrix
+// Phase 8 — payment endpoints. Webhooks are signature-authenticated and
+// intentionally have NO auth/CSRF middleware (gateways send no cookies).
+
+import "framework/Router";
+import "app/Controllers/PaymentController";
+
+public fn register_payment_routes() {
+    let ctl = new PaymentController();
+
+    Route.get("/payment/:order_number", fn(req) { return ctl.show(req); }).name("payment.page");
+    Route.post("/payment/initiate", fn(req) { return ctl.initiate(req); }).name("payment.initiate");
+    Route.get("/payment/:order_number/return", fn(req) { return ctl.return_page(req); });
+
+    Route.post("/webhooks/payments/:provider", fn(req) { return ctl.webhook(req); });
+
+    Route.get("/orders/:number/payments", fn(req) { return ctl.customer_history(req); }).middleware("auth");
+
+    Route.post("/admin/api/payments/:id/verify", fn(req) { return ctl.admin_verify(req); }).middleware("permission:payments.manage");
+    Route.post("/admin/api/payments/:id/refund", fn(req) { return ctl.admin_refund(req); }).middleware("permission:payments.manage");
+    Route.get("/admin/api/payments/reconciliation", fn(req) { return ctl.admin_reconciliation(req); }).middleware("permission:payments.manage");
+}

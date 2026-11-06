@@ -1,0 +1,31 @@
+// config/filesystems.matrix
+// Spid3rWeb Filesystem / Storage Configuration
+//
+// Consumed by framework/Filesystem/Storage.matrix. Roots are relative to
+// the project root (the working directory of `spid3r magic serve`).
+// The "public" disk is web-servable: files land under public/uploads and
+// are reachable at /uploads/<path>.
+
+public let config_filesystems = map(
+    "default", "local",
+    "disks", map(
+        "local", map(
+            "driver", "local",
+            "root", "storage/app",
+            "visibility", "private",
+            "url", ""
+        ),
+        "public", map(
+            "driver", "local",
+            "root", "public/uploads",
+            "visibility", "public",
+            "url", "/uploads"
+        ),
+        "logs", map(
+            "driver", "local",
+            "root", "storage/logs",
+            "visibility", "private",
+            "url", ""
+        )
+    )
+);

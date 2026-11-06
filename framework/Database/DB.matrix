@@ -1,0 +1,16 @@
+// framework/Database/DB.matrix
+// Spid3rWeb Database Facade — global DB singleton.
+// Implementation lives in DatabaseManager.matrix (connections/transactions)
+// and QueryBuilder.matrix (fluent query building); this shell only wires
+// the shared entry point every consumer imports as "framework/Database/DB".
+
+import "DatabaseManager";
+import "framework/Env";
+
+// Load .env (project root) BEFORE the DB singleton below is constructed, so
+// SPID3R_DB_DRIVER and connection settings can come from the file. Real OS
+// environment variables always take precedence.
+let _env_file_loaded = load_env_file(".env");
+
+// Global DB Facade Singleton
+public let DB = new DatabaseManager();

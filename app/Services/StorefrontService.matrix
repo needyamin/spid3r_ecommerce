@@ -1,0 +1,377 @@
+// app/Services/StorefrontService.matrix
+// Phase 5 — presentation logic for the public storefront.
+// All DB access still flows through repositories / the DB facade; no HTTP
+// objects are passed in (controllers hand over plain query maps + paths).
+
+import "framework/Database/DB";
+import "framework/HttpException";
+import "app/Repositories/ProductRepository";
+import "app/Repositories/CatalogRepository";
+import "app/Support/Money" as Money;
+import "app/Support/Fx" as Fx;
+import "app/Support/CatalogCache" as CatalogCache;
+import "framework/Cache/Cache";
+import "framework/Container/Container";
+
+public class StorefrontService {
+    public let products;
+    public let categories;
+    public let brands;
+
+    fn new() {
+        self.products = new ProductRepository();
+        self.categories = new CategoryRepository();
+        self.brands = new BrandRepository();
+    }
+
+    // Phase 13 — catalog cache TTLs (seconds), configured in the provider.
+    fn home_ttl(self) -> int {
+        let cfg = Container.make("store.cache");
+        return int(cfg["home_ttl"]);
+    }
+
+    fn product_ttl(self) -> int {
+        let cfg = Container.make("store.cache");
+        return int(cfg["product_ttl"]);
+    }
+
+    // Which display path produced a cache entry: base formatting or FX
+    // conversion. A currency write bumps the catalog version, so entries
+    // never outlive their configuration.
+    fn fx_marker(self, fx) -> string {
+        if fx == null {
+            return "base";
+        }
+        return "fx";
+    }
+
+    fn base_url(self) -> string {
+        let u = env("STORE_URL");
+        if u.is_some() {
+            let s = string(u.unwrap()).trim();
+            if s != "" {
+                return s;
+            }
+        }
+        return "http://localhost:8000";
+    }
+
+    // One query for all listing images (never N+1).
+    fn attach_images(self, rows) {
+        let ids = [];
+        let i = 0;
+        while i < rows.len() {
+            ids.push(rows[i]["id"]);
+            i += 1;
+        }
+        let images = [];
+        if ids.len() > 0 {
+            images = DB.table("product_images")
+                .whereIn("product_id", ids)
+                .orderBy("sort_order", "ASC")
+                .get();
+        }
+        let i2 = 0;
+        while i2 < rows.len() {
+            let row = rows[i2];
+            let found = "";
+            let j = 0;
+            while j < images.len() {
+                if images[j]["product_id"] == row["id"] {
+                    found = "/uploads/" + string(images[j]["path"]);
+                    break;
+                }
+                j += 1;
+            }
+            row["image_url"] = found;
+            i2 += 1;
+        }
+        return rows;
+    }
+
+    // Format a BASE-currency amount for display in the selected currency.
+    // `fx` is null when the store runs in a single currency, in which case
+    // the legacy formatting path is used unchanged.
+    fn money(self, minor: int, currency: string, fx) -> string {
+        if fx == null {
+            return Money.format(minor, currency);
+        }
+        let converted = Fx.convert(minor, string(fx["base"]), currency, fx["rates"]);
+        return Fx.format(converted, currency, fx["rates"]);
+    }
+
+    // Convert an amount expressed in the DISPLAY currency into the base
+    // currency the prices are actually stored in (price filters).
+    fn to_base(self, minor: int, currency: string, fx) -> int {
+        if fx == null {
+            return minor;
+        }
+        return Fx.convert(minor, currency, string(fx["base"]), fx["rates"]);
+    }
+
+    public fn decorate(self, rows, currency: string, fx = null) {
+        let out = [];
+        let i = 0;
+        while i < rows.len() {
+            let row = rows[i];
+            row["price_display"] = self.money(int(row["price_minor"]), currency, fx);
+            row["compare_display"] = "";
+            if row["compare_at_minor"] != null and int(row["compare_at_minor"]) > 0 {
+                row["compare_display"] = self.money(int(row["compare_at_minor"]), currency, fx);
+            }
+            row["url"] = "/product/" + string(row["slug"]);
+            row["has_image"] = false;
+            out.push(row);
+            i += 1;
+        }
+        return self.attach_images(out);
+    }
+
+    // Build a query string from a params map, optionally overriding page.
+    fn query_string(self, params, override_page) -> string {
+        let parts = [];
+        for k in params.keys() {
+            if k != "page" {
+                let val = string(params[k]).trim();
+                if val != "" {
+                    parts.push(url_encode(k) + "=" + url_encode(val));
+                }
+            }
+        }
+        let pg = int(override_page);
+        if pg > 0 {
+            parts.push("page=" + string(pg));
+        }
+        if parts.len() == 0 {
+            return "";
+        }
+        return "?" + parts.join("&");
+    }
+
+    // `params`: q, category (slug), brand (slug), min_price, max_price
+    //           (major units), sort, page; `path` is the SEO base URL.
+    public fn catalog_context(self, params, path: string, currency: string, fx = null) {
+        // Only the UNFILTERED browsing path is cached: its key space
+        // (sort x page) is bounded, so it cannot be poisoned into an
+        // unbounded key explosion. Filtered searches always hit the DB.
+        let cacheable = not (params.has("q") and string(params["q"]).trim() != "")
+            and not (params.has("min_price") and string(params["min_price"]).trim() != "")
+            and not (params.has("max_price") and string(params["max_price"]).trim() != "")
+            and not (params.has("category") and string(params["category"]).trim() != "")
+            and not (params.has("brand") and string(params["brand"]).trim() != "");
+        if not cacheable {
+            return self.build_catalog_context(params, path, currency, fx);
+        }
+        let sort = "newest";
+        if params.has("sort") and string(params["sort"]).trim() != "" {
+            sort = string(params["sort"]).trim();
+        }
+        let page = 1;
+        if params.has("page") {
+            page = int(string(params["page"]));
+            if page < 1 {
+                page = 1;
+            }
+        }
+        let key = "store:catalog:v" + string(CatalogCache.catalog_version())
+            + ":list:" + currency + ":" + self.fx_marker(fx) + ":" + sort + ":p" + string(page);
+        return Cache.remember(key, self.product_ttl(), fn() {
+            return self.build_catalog_context(params, path, currency, fx);
+        });
+    }
+
+    fn build_catalog_context(self, params, path: string, currency: string, fx = null) {
+        let filters = map();
+        if params.has("q") and string(params["q"]).trim() != "" {
+            filters["q"] = string(params["q"]).trim();
+        }
+        if params.has("category") and string(params["category"]).trim() != "" {
+            let cat = self.categories.find_by_slug(string(params["category"]).trim());
+            if cat == null {
+                throw not_found("Category not found.");
+            }
+            filters["category_id"] = cat["id"];
+        }
+        if params.has("brand") and string(params["brand"]).trim() != "" {
+            let brand = DB.table("brands").where("slug", "=", string(params["brand"]).trim()).first();
+            if brand == null {
+                throw not_found("Brand not found.");
+            }
+            filters["brand_id"] = brand["id"];
+        }
+        if params.has("min_price") and string(params["min_price"]).trim() != "" {
+            filters["min_price_minor"] = self.to_base(Money.to_minor(params["min_price"]), currency, fx);
+        }
+        if params.has("max_price") and string(params["max_price"]).trim() != "" {
+            filters["max_price_minor"] = self.to_base(Money.to_minor(params["max_price"]), currency, fx);
+        }
+        let sort = "newest";
+        if params.has("sort") and string(params["sort"]).trim() != "" {
+            sort = string(params["sort"]).trim();
+        }
+        filters["sort"] = sort;
+        let page = 1;
+        if params.has("page") {
+            page = int(string(params["page"]));
+            if page < 1 { page = 1; }
+        }
+        filters["page"] = page;
+        filters["per_page"] = 12;
+
+        let result = self.products.published(filters);
+        let rows = self.decorate(result["data"], currency);
+        let i = 0;
+        while i < rows.len() {
+            rows[i]["has_image"] = rows[i]["image_url"] != "";
+            i += 1;
+        }
+        let prev_url = "";
+        let next_url = "";
+        if page > 1 {
+            prev_url = path + self.query_string(params, page - 1);
+        }
+        if result["has_more"] {
+            next_url = path + self.query_string(params, page + 1);
+        }
+        let q_val = "";
+        if filters.has("q") {
+            q_val = string(filters["q"]);
+        }
+        let min_val = "";
+        if params.has("min_price") {
+            min_val = string(params["min_price"]);
+        }
+        let max_val = "";
+        if params.has("max_price") {
+            max_val = string(params["max_price"]);
+        }
+        let cat_val = "";
+        if params.has("category") {
+            cat_val = string(params["category"]);
+        }
+        let brand_val = "";
+        if params.has("brand") {
+            brand_val = string(params["brand"]);
+        }
+        return map(
+            "products", rows,
+            "total", result["total"],
+            "page", page,
+            "per_page", result["per_page"],
+            "last_page", result["last_page"],
+            "from", result["from"],
+            "to", result["to"],
+            "has_prev", page > 1,
+            "has_next", result["has_more"],
+            "prev_url", prev_url,
+            "next_url", next_url,
+            "has_products", rows.len() > 0,
+            "q", q_val,
+            "min_price", min_val,
+            "max_price", max_val,
+            "sort", sort,
+            "category_slug", cat_val,
+            "brand_slug", brand_val
+        );
+    }
+
+    public fn featured(self, currency: string, limit_count: int, fx = null) {
+        let key = "store:catalog:v" + string(CatalogCache.catalog_version())
+            + ":featured:" + string(limit_count) + ":" + currency + ":" + self.fx_marker(fx);
+        return Cache.remember(key, self.home_ttl(), fn() {
+            let rows = DB.table("products")
+                .where("status", "=", "published")
+                .orderBy("id", "DESC")
+                .limit(limit_count)
+                .get();
+            let decorated = self.decorate(rows, currency, fx);
+            let i = 0;
+            while i < decorated.len() {
+                decorated[i]["has_image"] = decorated[i]["image_url"] != "";
+                i += 1;
+            }
+            return decorated;
+        });
+    }
+
+    public fn product_context(self, slug: string, currency: string, fx = null) {
+        let key = "store:catalog:v" + string(CatalogCache.catalog_version())
+            + ":product:" + slug + ":" + currency + ":" + self.fx_marker(fx);
+        return Cache.remember(key, self.product_ttl(), fn() {
+            return self.build_product_context(slug, currency, fx);
+        });
+    }
+
+    fn build_product_context(self, slug: string, currency: string, fx = null) {
+        let product = self.products.find_by_slug(slug);
+        if product == null or product["status"] != "published" {
+            throw not_found("Product not found.");
+        }
+        let decorated = self.decorate([product], currency, fx);
+        let gallery_rows = DB.table("product_images")
+            .where("product_id", "=", product["id"])
+            .orderBy("sort_order", "ASC")
+            .get();
+        let gallery = [];
+        let i = 0;
+        while i < gallery_rows.len() {
+            gallery.push(map(
+                "url", "/uploads/" + string(gallery_rows[i]["path"]),
+                "alt_text", gallery_rows[i]["alt_text"]
+            ));
+            i += 1;
+        }
+        let variants = self.products.variants_for(product["id"]);
+        let related = self.decorate(self.products.related(product, 4), currency, fx);
+        let inv = DB.table("inventory")
+            .where("product_id", "=", product["id"])
+            .whereNull("variant_id")
+            .first();
+        let qty = 0;
+        if inv != null {
+            qty = int(inv["quantity"]);
+        }
+        return map(
+            "product", decorated[0],
+            "gallery", gallery,
+            "has_gallery", gallery.len() > 0,
+            "variants", variants,
+            "has_variants", variants.len() > 0,
+            "related", related,
+            "has_related", related.len() > 0,
+            "in_stock", qty > 0,
+            "meta_description", string(product["meta_description"])
+        );
+    }
+
+    public fn sitemap_xml(self) -> string {
+        let base = self.base_url();
+        let out = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n";
+        out = out + "<urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">\n";
+        out = out + "  <url><loc>" + base + "/</loc></url>\n";
+        out = out + "  <url><loc>" + base + "/catalog</loc></url>\n";
+        let cats = self.categories.all();
+        let i = 0;
+        while i < cats.len() {
+            out = out + "  <url><loc>" + base + "/category/" + string(cats[i]["slug"]) + "</loc></url>\n";
+            i += 1;
+        }
+        let brands = self.brands.all();
+        i = 0;
+        while i < brands.len() {
+            out = out + "  <url><loc>" + base + "/brand/" + string(brands[i]["slug"]) + "</loc></url>\n";
+            i += 1;
+        }
+        let products = DB.table("products").where("status", "=", "published").get();
+        i = 0;
+        while i < products.len() {
+            out = out + "  <url><loc>" + base + "/product/" + string(products[i]["slug"]) + "</loc></url>\n";
+            i += 1;
+        }
+        return out + "</urlset>\n";
+    }
+
+    public fn robots_txt(self) -> string {
+        return "User-agent: *\nAllow: /\nDisallow: /admin/\nDisallow: /account/\nDisallow: /login\nDisallow: /register\nSitemap: " + self.base_url() + "/sitemap.xml\n";
+    }
+}

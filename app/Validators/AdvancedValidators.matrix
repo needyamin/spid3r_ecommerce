@@ -1,0 +1,84 @@
+// app/Validators/AdvancedValidators.matrix
+// Phase 10 — validation rules for the advanced storefront features.
+//
+// Rule semantics (framework/Validator): `min`/`max` are STRING LENGTH,
+// `min_value`/`max_value` are NUMERIC bounds.
+
+public fn review_rules() {
+    return map(
+        "product_id", "required|integer|min_value:1",
+        "rating", "required|integer|min_value:1|max_value:5",
+        "title", "nullable|max:120",
+        "body", "required|min:10|max:4000"
+    );
+}
+
+public fn support_rules() {
+    return map(
+        "email", "required|email|max:255",
+        "subject", "required|min:3|max:160",
+        "message", "required|min:10|max:4000"
+    );
+}
+
+public fn referral_rules() {
+    return map(
+        "code", "required|min:4|max:32"
+    );
+}
+
+public fn gift_card_rules() {
+    return map(
+        "code", "required|min:8|max:64",
+        "amount", "required|numeric|min_value:1"
+    );
+}
+
+// Rules for issuing a gift card (admin): the amount is in minor units.
+public fn gift_card_issue_rules() {
+    return map(
+        "amount_minor", "required|integer|min_value:1",
+        "recipient_email", "nullable|email|max:255"
+    );
+}
+
+public fn loyalty_rules() {
+    return map(
+        "points", "required|integer|min_value:1"
+    );
+}
+
+public fn tracking_rules() {
+    return map(
+        "order_number", "required|min:4|max:32"
+    );
+}
+
+public fn currency_rules() {
+    return map(
+        "code", "required|min:2|max:8",
+        "name", "required|min:2|max:64",
+        "symbol", "nullable|max:8",
+        "rate_to_base_bps", "required|integer|min_value:1|max_value:1000000",
+        "minor_digits", "nullable|integer|min_value:0|max_value:4"
+    );
+}
+
+public fn translation_rules() {
+    return map(
+        "locale", "required|min:2|max:12",
+        "namespace", "required|min:2|max:48",
+        "key", "required|min:1|max:128",
+        "value", "required|max:4000"
+    );
+}
+
+public fn campaign_rules() {
+    return map(
+        "code", "required|min:2|max:48",
+        "name", "required|min:2|max:128",
+        "type", "required|in:percent,fixed",
+        "value_minor", "required|integer|min_value:0",
+        "min_order_minor", "nullable|integer|min_value:0"
+    );
+}

@@ -1,0 +1,34 @@
+// config/auth.matrix
+// Spid3rWeb Authentication Configuration
+//
+// Consumed by framework/Auth/Auth.matrix. The active table/columns are
+// resolved at runtime so a project can point auth at any users table.
+
+public let config_auth = map(
+    // Active guard: "session" (cookie) | "token" (API Bearer)
+    "default", "session",
+    "guards", map(
+        "session", map(
+            "driver", "session",
+            "table", "users",
+            "username_column", "email",
+            "password_column", "password",
+            "provider", "users"
+        ),
+        "token", map(
+            "driver", "token",
+            "table", "users",
+            "provider", "users"
+        )
+    ),
+    "providers", map(
+        "users", map(
+            "driver", "database",
+            "table", "users"
+        )
+    ),
+    "passwords", map(
+        "reset_expire", 3600,     // seconds a reset token stays valid
+        "reset_throttle", 60      // min seconds between reset requests
+    )
+);

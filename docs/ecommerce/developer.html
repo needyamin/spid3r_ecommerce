@@ -1,0 +1,672 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Spid3r Store — Developer Documentation</title>
+<style>
+  :root {
+    --bg: #ffffff;
+    --bg-soft: #f7faf9;
+    --bg-code: #0f1b17;
+    --bg-code-inline: #eef4f1;
+    --border: #dbe5e0;
+    --text: #17242e;
+    --text-soft: #5f7280;
+    --accent: #0e7c4a;
+    --accent-dark: #0a5c37;
+    --accent-soft: #e3f3ea;
+    --amber: #b45309;
+    --amber-soft: #fef3c7;
+    --red: #b91c1c;
+    --red-soft: #fee2e2;
+    --blue: #1d4ed8;
+    --blue-soft: #dbeafe;
+    --purple: #6d28d9;
+    --sidebar-w: 292px;
+    --radius: 10px;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { scroll-behavior: smooth; scroll-padding-top: 80px; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+    background: var(--bg-soft);
+    color: var(--text);
+    line-height: 1.65;
+    font-size: 15px;
+  }
+  .topbar {
+    position: fixed; top: 0; left: 0; right: 0; height: 60px; z-index: 50;
+    background: #ffffffee; backdrop-filter: blur(8px);
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 14px; padding: 0 24px;
+  }
+  .logo { display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: 17px; letter-spacing: -0.3px; }
+  .logo .cart { font-size: 21px; }
+  .logo .brand { color: var(--accent); }
+  .badge { font-size: 11px; font-weight: 700; color: var(--accent-dark); background: var(--accent-soft); padding: 3px 9px; border-radius: 999px; }
+  .topbar .links { margin-left: auto; display: flex; gap: 18px; font-size: 13px; }
+  .topbar .links a { color: var(--text-soft); text-decoration: none; font-weight: 600; }
+  .topbar .links a:hover { color: var(--accent); }
+  .layout { display: flex; padding-top: 60px; max-width: 1420px; margin: 0 auto; }
+  aside.sidebar {
+    width: var(--sidebar-w); flex-shrink: 0;
+    position: sticky; top: 60px; height: calc(100vh - 60px); overflow-y: auto;
+    padding: 24px 14px 40px 20px; border-right: 1px solid var(--border);
+    background: var(--bg); font-size: 13.5px;
+  }
+  .sidebar .group { margin-bottom: 20px; }
+  .sidebar .group-title {
+    font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.8px;
+    color: var(--text-soft); margin-bottom: 6px; padding-left: 10px;
+  }
+  .sidebar a { display: block; padding: 4px 10px; border-radius: 6px; color: var(--text); text-decoration: none; font-weight: 500; border-left: 2px solid transparent; }
+  .sidebar a:hover { background: var(--bg-soft); color: var(--accent); }
+  main { flex: 1; min-width: 0; padding: 36px 52px 110px; background: var(--bg); max-width: 1000px; }
+  h1 { font-size: 30px; letter-spacing: -0.5px; margin-bottom: 6px; }
+  h2 { font-size: 22px; letter-spacing: -0.3px; margin: 44px 0 16px; padding-bottom: 10px; border-bottom: 2px solid var(--border); }
+  h2:first-of-type { margin-top: 20px; }
+  h3 { font-size: 16.5px; margin: 26px 0 10px; color: var(--accent-dark); }
+  h4 { font-size: 14.5px; margin: 18px 0 8px; }
+  p { margin-bottom: 12px; }
+  ul, ol { margin: 0 0 14px 22px; }
+  li { margin-bottom: 6px; }
+  a { color: var(--accent); }
+  strong { font-weight: 700; }
+  code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12.8px; background: var(--bg-code-inline);
+    padding: 1.5px 6px; border-radius: 5px; color: #134e33;
+  }
+  pre {
+    background: var(--bg-code); color: #d7e7df;
+    padding: 16px 18px; border-radius: var(--radius);
+    overflow-x: auto; margin: 14px 0 18px; font-size: 12.6px; line-height: 1.55;
+  }
+  pre code { background: none; padding: 0; color: inherit; }
+  .c { color: #7fa896; }      /* comment */
+  .k { color: #8ad8b0; }      /* keyword */
+  .s { color: #e8c88a; }      /* string */
+  .f { color: #93c5fd; }      /* fn/name */
+  table { width: 100%; border-collapse: collapse; margin: 14px 0 20px; font-size: 13.5px; }
+  th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-soft); }
+  tr:last-child td { border-bottom: none; }
+  .callout { border-radius: var(--radius); padding: 14px 18px; margin: 16px 0 20px; font-size: 14px; }
+  .callout b:first-child { display: inline-block; margin-right: 4px; }
+  .rule { background: var(--accent-soft); border-left: 4px solid var(--accent); }
+  .warn { background: var(--amber-soft); border-left: 4px solid var(--amber); }
+  .stop { background: var(--red-soft); border-left: 4px solid var(--red); }
+  .info { background: var(--blue-soft); border-left: 4px solid var(--blue); }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 14px 0 20px; }
+  .card { border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; background: var(--bg); }
+  .card h4 { margin-top: 0; }
+  .pill { display: inline-block; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px; margin-right: 6px; }
+  .p-green { background: var(--accent-soft); color: var(--accent-dark); }
+  .p-blue { background: var(--blue-soft); color: var(--blue); }
+  .p-amber { background: var(--amber-soft); color: var(--amber); }
+  .diagram { background: var(--bg-soft); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; margin: 14px 0 20px; overflow-x: auto; }
+  .diagram pre { background: none; color: var(--text); margin: 0; padding: 0; font-size: 12.2px; line-height: 1.5; }
+  footer { margin-top: 60px; padding-top: 18px; border-top: 1px solid var(--border); color: var(--text-soft); font-size: 13px; }
+  @media (max-width: 980px) {
+    aside.sidebar { display: none; }
+    main { padding: 28px 22px 80px; }
+    .grid2 { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="logo"><span class="cart">🛒</span> Spid3r <span class="brand">Store</span></div>
+  <span class="badge">Developer Documentation</span>
+  <div class="links">
+    <a href="README.md">Docs index</a>
+    <a href="../../README.md">Project README</a>
+    <a href="API.md">API</a>
+    <a href="https://github.com/needyamin/spid3r_web/blob/main/docs/developer-docs.html" title="Spid3rWeb framework documentation on the main branch">Framework docs</a>
+    <a href="https://github.com/needyamin/spid3r_web/actions/workflows/ci.yml">CI</a>
+  </div>
+</div>
+
+<div class="layout">
+<aside class="sidebar">
+  <div class="group">
+    <div class="group-title">Overview</div>
+    <a href="#what">What is this project?</a>
+    <a href="#stack">The stack</a>
+    <a href="#layout">Project layout</a>
+    <a href="#lifecycle">Request lifecycle</a>
+  </div>
+  <div class="group">
+    <div class="group-title">Getting started</div>
+    <a href="#setup">Environment setup</a>
+    <a href="#firstadmin">First admin &amp; seeding</a>
+    <a href="#config">Configuration reference</a>
+  </div>
+  <div class="group">
+    <div class="group-title">Architecture</div>
+    <a href="#layers">The layered architecture</a>
+    <a href="#routing">Routing</a>
+    <a href="#controllers">Controllers &amp; validation</a>
+    <a href="#services">Services</a>
+    <a href="#repos">Repositories &amp; the QueryBuilder</a>
+    <a href="#views">Views (SpiderBD)</a>
+  </div>
+  <div class="group">
+    <div class="group-title">Database</div>
+    <a href="#schema">Schema overview</a>
+    <a href="#migrations">Migrations &amp; dialects</a>
+    <a href="#money">The money rule</a>
+  </div>
+  <div class="group">
+    <div class="group-title">Domain model</div>
+    <a href="#entitymap">Entity map</a>
+    <a href="#tables">Table reference</a>
+  </div>
+  <div class="group">
+    <div class="group-title">Subsystems in depth</div>
+    <a href="#checkout">The checkout transaction</a>
+    <a href="#payments">Payment adapters</a>
+    <a href="#shipping">Shipping &amp; fulfilment</a>
+    <a href="#returns">Returns engine</a>
+    <a href="#catalogcache">Catalog cache</a>
+    <a href="#authrbac">Auth &amp; RBAC</a>
+    <a href="#currency">Multi-currency &amp; language</a>
+    <a href="#jobs">Queues &amp; notifications</a>
+  </div>
+  <div class="group">
+    <div class="group-title">Security</div>
+    <a href="#secheaders">Security headers</a>
+    <a href="#seccsrf">CSRF: two layers</a>
+    <a href="#secinput">Input &amp; uploads</a>
+  </div>
+  <div class="group">
+    <div class="group-title">Developer guidelines</div>
+    <a href="#standards">Coding standards</a>
+    <a href="#gotchas">Spid3r gotchas</a>
+    <a href="#walkthrough">Walkthrough: adding a feature</a>
+    <a href="#cachebump">Cache invalidation duty</a>
+  </div>
+  <div class="group">
+    <div class="group-title">Testing &amp; CI</div>
+    <a href="#testingbar">The testing bar</a>
+    <a href="#suitemap">Suite map</a>
+    <a href="#fixtures">Fixture &amp; FK rules</a>
+    <a href="#ci">CI pipeline</a>
+  </div>
+  <div class="group">
+    <div class="group-title">Operations</div>
+    <a href="#deployment">Deployment &amp; Docker</a>
+    <a href="#performance">Performance</a>
+    <a href="#envref">Environment reference</a>
+    <a href="#troubleshooting">Troubleshooting</a>
+  </div>
+</aside>
+
+<main>
+
+<h1>Spid3r Store — Developer Documentation</h1>
+<p style="color:var(--text-soft); font-size:16px;">The complete guide for developers working on the store: the stack, the architecture, every subsystem, the coding standards and the testing bar.</p>
+<p>This project is a production-grade e-commerce application built on the <strong>Spid3r language</strong> and the <strong>Spid3rWeb MVC framework</strong>, developed on the <code>eCommerce</code> branch. All 16 build phases are complete; 31 test suites run on SQLite, PostgreSQL and MySQL in CI on every push. Companion documents: <a href="API.md">API.md</a> (endpoint reference), <a href="USER-GUIDE.md">USER-GUIDE.md</a> (behaviour), <a href="README.md">README.md</a> (index), <a href="../../CONTRIBUTING.md">CONTRIBUTING.md</a> (contribution rules).</p>
+
+<!-- ==================== OVERVIEW ==================== -->
+<h2 id="what">What is this project?</h2>
+<p>Spid3r Store is a full online shop: catalog, cart, checkout, payments, fulfilment, returns, marketing (coupons, campaigns, gift cards, loyalty, referrals), customer accounts, an admin panel with RBAC, and the operational scaffolding (migrations, queues, caching, CI, deployment verification). It is deliberately built <em>with</em> the framework rather than around it — when a capability was missing, the decision was documented and the capability added at the right layer.</p>
+
+<div class="callout rule"><b>Design philosophy.</b> Server-rendered HTML first — every flow works without JavaScript (progressive enhancement only). One canonical price list in integer minor units. Security enforced by the framework defaults, verified by an executable suite.</div>
+
+<h2 id="stack">The stack</h2>
+<table>
+  <tr><th>Layer</th><th>Technology</th><th>Notes</th></tr>
+  <tr><td>Language</td><td><strong>Spid3r 1.0</strong> (`.matrix` files)</td><td>Interpreted (tree-walk) or bytecode VM; native bigint-safe integers, bcrypt, WS, MySQL/PG/SQLite clients in the runtime.</td></tr>
+  <tr><td>Framework</td><td><strong>Spid3rWeb</strong> (in-repo `framework/`)</td><td>Router, middleware onion, ORM/QueryBuilder, migrations, validation, sessions, cache, queues, DI container, events, CLI. Zero external dependencies.</td></tr>
+  <tr><td>Templates</td><td><strong>SpiderBD</strong> (`framework/View/BD.matrix`)</td><td>`@if/@else/@foreach`, `{{ var }}` auto-escaped, `@extends/@section/@include`; no raw-output tag is used anywhere in the store.</td></tr>
+  <tr><td>Databases</td><td>SQLite (default) · PostgreSQL 16 · MySQL 8.0 / MariaDB</td><td>Dialect-aware Schema builder and migrations; one codebase, three engines, proven by CI.</td></tr>
+  <tr><td>Cache</td><td>memory · file · database drivers</td><td>Swappable via `SPID3R_CACHE_DRIVER`; generation-based invalidation on top.</td></tr>
+  <tr><td>Jobs</td><td>database queue + `sync` driver</td><td>Email/SMS are queued, never inline; drained by `spid3r magic queue:work`.</td></tr>
+  <tr><td>Front-end</td><td>One hand-written stylesheet (`public/css/store.css`)</td><td>No CSS framework, no build step, no CDN; 44px touch targets; JS is progressive enhancement only (`public/js/print.js`).</td></tr>
+  <tr><td>CI/CD</td><td>GitHub Actions</td><td>shellcheck + actionlint; full suite on 3 engines; bytecode-VM leg; load probe; benchmarks; live-server smoke.</td></tr>
+  <tr><td>Deployment</td><td>Docker (multi-stage image) or native binary</td><td>`deploy/Dockerfile` compiles the toolchain from source; container migrates on boot and `exec`s the server as PID 1.</td></tr>
+</table>
+
+<h2 id="layout">Project layout</h2>
+<pre><code>routes/            Route registration ONLY (no logic)
+  store.matrix         assembles every registrar in order
+  storefront.matrix auth.matrix cart.matrix checkout.matrix payments.matrix
+  admin.matrix advanced.matrix shipping.matrix queue.matrix web.matrix api.matrix
+app/
+  Controllers/      HTTP in/out — validate, delegate, answer
+  Validators/       rule maps per use-case
+  Services/         business logic (the only place it lives)
+  Repositories/     ALL database access
+  Support/          pure helpers: Money, Fx, Slug, CatalogCache, StoreChrome,
+                    CartIdentity
+  Providers/        service wiring (store settings, cache TTLs, gateways)
+  Middleware/       store-specific middleware (StoreMiddleware)
+database/
+  migrations/       001–020, auto-registered, dialect-aware
+  seeders/          settings, roles/permissions, currencies, translations
+resources/views/   SpiderBD templates (store, account, admin, checkout, ...)
+public/            css/, js/, uploads/ (static, traversal-guarded)
+tests/             31 suites + run_all.matrix
+tools/             store_load.matrix (load probe)
+benchmarks/        framework micro-benchmarks + RESULTS.md
+deploy/            Dockerfile, docker-compose.yml, docker-smoke.sh
+docs/ecommerce/    this documentation set
+examples/task-api/ runnable full-stack example</code></pre>
+
+<h2 id="lifecycle">Request lifecycle</h2>
+<div class="diagram"><pre>socket accept (keep-alive loop, graceful Ctrl+C shutdown)
+ └─▶ Request parse (method, path, headers, query, body, cookies)
+      └─▶ Application.handle_request
+           ├─ 0a. Origin check on POST/PUT/PATCH/DELETE  → 403 foreign origin
+           ├─ 0b. CSRF layer 2: session token for cookie-session writes → 419
+           ├─ 1. Static file? → public/ with traversal guard + cache headers
+           ├─ 2. Router match (GET/POST/PUT/PATCH/DELETE, :params, HEAD→GET)
+           │      └─ no match → allowed-methods 405, else 404 page
+           ├─ 3. Middleware onion (auth, guest, throttle:5,60, role:*, permission:*, cors…)
+           ├─ 4. Controller (validate → service → HTML or JSON)
+           └─ 5. Response — security headers are CLASS DEFAULTS
+                 exceptions: typed (HttpException) → status+message page/JSON
+                             anything else → generic 500, never leaks internals</pre></div>
+<p>Every response passes through the framework <code>Response</code> class, whose constructor sets the security header set (CSP, nosniff, frame-options, referrer-policy, COOP, permissions-policy) — controllers cannot forget them, and the three raw-response edge paths were converted to go through it too.</p>
+
+<!-- ==================== GETTING STARTED ==================== -->
+<h2 id="setup">Environment setup</h2>
+<ol>
+  <li>Install the <a href="https://github.com/needyamin/spid3r">Spid3r runtime</a> (≥ 1.0). Verify with <code>spid3r --version</code>.</li>
+  <li>Clone the <code>eCommerce</code> branch: <code>git clone -b eCommerce https://github.com/needyamin/spid3r_web.git</code></li>
+  <li><code>cp .env.example .env</code> and adjust. SQLite works with zero config.</li>
+  <li><code>spid3r magic migrate</code> → <code>spid3r magic db:seed</code> → <code>spid3r magic serve</code>.</li>
+</ol>
+<p>Useful CLI (all under <code>spid3r magic</code>): <code>serve [--port N]</code>, <code>test</code>, <code>route:list</code>, <code>migrate</code>, <code>migrate:rollback</code>, <code>migrate:status</code>, <code>migrate:sync</code>, <code>db:seed</code>, <code>queue:work [--once]</code>, <code>make:controller/make:model/make:migration</code>.</p>
+
+<h2 id="firstadmin">First admin &amp; seeding</h2>
+<p>The seeder is idempotent and ships <strong>no users</strong> (never ship default credentials). It seeds: roles (<code>admin</code>, <code>customer</code>), the full permission catalog, role→permission bindings, store settings (name, currency, tax, shipping fees, free-shipping threshold, return window, cart discount, DEV-ONLY webhook secret), the currency catalog (BDT base + USD/EUR display), and EN/BN navigation translations.</p>
+<p>Register at <code>/register</code>, then promote with SQL:</p>
+<pre><code>INSERT INTO user_roles (user_id, role_id)
+SELECT u.id, r.id FROM users u, roles r
+WHERE u.email = 'you@example.test' AND r.slug = 'admin';</code></pre>
+<div class="callout warn"><b>Note.</b> Staff accounts with narrower permission sets are then managed in the admin panel (`/admin/staff`, `/admin/roles`) — no more SQL needed.</div>
+
+<h2 id="config">Configuration reference</h2>
+<p>Everything is environment-driven (real OS env wins over `.env`). The full list lives in <code>.env.example</code>; the ones you will actually touch:</p>
+<table>
+  <tr><th>Variable</th><th>Effect</th></tr>
+  <tr><td><code>SPID3R_DB_DRIVER</code></td><td><code>sqlite</code> (default) · <code>postgres</code> · <code>mysql</code> · <code>mariadb</code> + the matching <code>SPID3R_PG_* / SPID3R_MYSQL_*</code> connection values.</td></tr>
+  <tr><td><code>SPID3R_CACHE_DRIVER</code></td><td><code>memory</code> (per-process, default) · <code>file</code> · <code>database</code> (shared across processes). A Redis driver is a drop-in CacheStore once the runtime ships the native.</td></tr>
+  <tr><td><code>APP_ENV</code></td><td><code>production</code> → debug off, static assets get 1-hour cache headers, Secure cookies on.</td></tr>
+  <tr><td><code>SPID3R_HSTS</code> / <code>SPID3R_COOKIE_SECURE</code></td><td>Opt-in TLS hardening (HSTS header; Secure cookie flag).</td></tr>
+  <tr><td><code>SMS_DRIVER</code> / <code>SMS_SEND_URL</code> / <code>SMS_API_KEY</code></td><td><code>log</code> writes to the app log (dev); <code>http</code> POSTs to the provider. Unconfigured <code>http</code> fails fast.</td></tr>
+  <tr><td><code>{PROVIDER}_INIT/VERIFY/REFUND_URL</code>, <code>_API_KEY</code>, <code>_WEBHOOK_SECRET</code></td><td>Payment gateway endpoints/credentials (bKash, Nagad, SSLCommerz, Stripe). Unconfigured gateways fail fast with 400; COD needs nothing.</td></tr>
+</table>
+
+<!-- ==================== ARCHITECTURE ==================== -->
+<h2 id="layers">The layered architecture</h2>
+<p>Requests flow strictly one way. Each layer has one job; skipping a layer is the code-review equivalent of a failed test.</p>
+<div class="diagram"><pre>routes/*.matrix ──▶ Controllers ──▶ Validators ──▶ Services ──▶ Repositories ──▶ DB
+ (registration      (HTTP in/out,    (rule maps,     (business       (ALL SQL,
+  only)              no logic)        422 errors)     logic)           transactions)
+
+Views (SpiderBD) ◀── ctx maps from Controllers          Events/Jobs ◀── Services
+Support (Money, Fx, Slug, CatalogCache, StoreChrome) ◀── anyone (pure functions)</pre></div>
+
+<h3 id="routing">Routing</h3>
+<p>Routes are registered in per-domain files and assembled by <code>routes/store.matrix</code> in a fixed order (static paths before <code>:slug</code> captures). Middleware attaches per route:</p>
+<pre><code><span class="k">Route</span>.<span class="f">get</span>(<span class="s">"/wishlist"</span>, <span class="k">fn</span>(req) { <span class="k">return</span> ctl.wishlist_page(req); })
+     .<span class="f">name</span>(<span class="s">"wishlist"</span>)
+     .<span class="f">middleware</span>(<span class="s">"auth"</span>);
+
+<span class="k">Route</span>.<span class="f">post</span>(<span class="s">"/admin/api/orders/:order_id/shipments"</span>, <span class="k">fn</span>(req) { … })
+     .<span class="f">middleware</span>(<span class="s">"permission:orders.manage"</span>);</code></pre>
+<p>Built-in aliases: <code>auth</code> (redirects browsers to <code>/login</code>, 401 JSON for <code>/api/*</code> or <code>Accept: application/json</code>), <code>guest</code>, <code>throttle:N,MIN</code> (cache-backed), plus app-registered <code>role:*</code> and <code>permission:*</code>. <span class="pill p-amber">gotcha</span> closures capture loop variables by reference — admin page routes are registered explicitly, never inside a loop.</p>
+
+<h3 id="controllers">Controllers &amp; validation</h3>
+<p>Controllers do exactly three things: validate, delegate to a service, answer. Validation is a rule map per use-case in <code>app/Validators/</code>, applied with <code>req.validate(rules)</code>; failures throw <code>validation_failed(error_map)</code> → 422 with field messages. Rule semantics to remember: <code>min</code>/<code>max</code> are <strong>string length</strong>, <code>min_value</code>/<code>max_value</code> are <strong>numeric bounds</strong>.</p>
+<p>HTML-first principle: the same handler serves the page <em>and</em> the JSON caller. A shared <code>respond()</code> helper returns JSON when the request carries <code>format=json</code>, otherwise redirects — so plain POST forms and API clients use one code path.</p>
+
+<h3 id="services">Services</h3>
+<p>Services own the domain. They are plain classes wired in constructors, never singletons with request state. The store's services: <code>ProductService</code>, <code>CategoryService</code>, <code>BrandService</code>, <code>InventoryService</code>, <code>CartService</code>, <code>CheckoutService</code>, <code>OrderService</code>, <code>PaymentService</code>, <code>ShippingService</code>, <code>FulfillmentService</code>, <code>ReturnService</code>, <code>CouponService</code>, <code>CampaignService</code>, <code>GiftCardService</code>, <code>AdvancedStoreService</code> (wishlist, reviews, loyalty, referrals, tracking, support), <code>CurrencyService</code>, <code>LocaleService</code>, <code>ImageService</code>, <code>AdminService</code>, <code>AuthService</code>.</p>
+<p>Multi-step writes wrap in <code>DB.transaction(fn() { … })</code>; any throw rolls back everything (see <a href="#checkout">the checkout transaction</a>).</p>
+
+<h3 id="repos">Repositories &amp; the QueryBuilder</h3>
+<p>All SQL lives in repositories/services through the QueryBuilder — parameterised, identifier-checked, dialect-aware. Reference snippets:</p>
+<pre><code><span class="c">// read + paginate</span>
+<span class="k">let</span> rows = DB.<span class="f">table</span>(<span class="s">"products"</span>)
+    .<span class="f">where</span>(<span class="s">"status"</span>, <span class="s">"="</span>, <span class="s">"published"</span>)
+    .<span class="f">whereIn</span>(<span class="s">"id"</span>, ids)
+    .<span class="f">orderBy</span>(<span class="s">"id"</span>, <span class="s">"DESC"</span>)
+    .<span class="f">limit</span>(n).<span class="f">get</span>();
+
+<span class="c">// atomic conditional decrement (the oversell guard)</span>
+<span class="k">let</span> changed = DB.<span class="f">table</span>(<span class="s">"inventory"</span>)
+    .<span class="f">where</span>(<span class="s">"product_id"</span>, <span class="s">"="</span>, pid)
+    .<span class="f">where</span>(<span class="s">"quantity"</span>, <span class="s">"&gt;="</span>, qty)
+    .<span class="f">decrement</span>(<span class="s">"quantity"</span>, qty);
+<span class="k">if</span> changed == 0 { <span class="k">throw</span> <span class="f">validation_failed</span>(…); }
+
+<span class="c">// raw SQL is allowed only with bound params and static text</span>
+DB.<span class="f">statement</span>(<span class="s">"CREATE INDEX idx_x ON t (col)"</span>, []);</code></pre>
+<div class="callout warn"><b>Remember.</b> <code>orderBy</code> <em>replaces</em> (no secondary sort chaining); <code>DB.statement</code> executes <em>stacked</em> statements on SQLite — only ever pass static SQL with <code>?</code> bindings.</div>
+
+<h3 id="views">Views (SpiderBD)</h3>
+<p>Templates are <code>.bd.html</code> with <code>@extends/@section/@yield/@include</code>, <code>@if(...)…@else…@endif</code>, <code>@foreach(x in list)…@endforeach</code>, and <code>{{ expr }}</code> — dot-path aware and <strong>auto-escaped</strong>. The store uses zero raw-output tags. Controllers merge a shared "chrome" (<code>app/Support/StoreChrome.matrix</code>: currency + language switcher data, translated nav labels) into every page context so the layout is consistent store-wide. Undefined variables render as empty strings and are falsy in <code>@if</code> — which is how optional chrome (e.g. switchers) degrades gracefully on pages that do not provide it.</p>
+
+<!-- ==================== DATABASE ==================== -->
+<h2 id="schema">Schema overview</h2>
+<p>Twenty migrations define 35+ tables. Highlights of the shape (full detail in <a href="DATABASE.md">DATABASE.md</a>):</p>
+<table>
+  <tr><th>Domain</th><th>Tables</th></tr>
+  <tr><td>Identity</td><td><code>users</code>, <code>roles</code>, <code>permissions</code>, <code>role_permissions</code>, <code>user_roles</code>, <code>sessions</code>, <code>password_resets</code>, <code>email_verifications</code></td></tr>
+  <tr><td>Catalog</td><td><code>products</code>, <code>categories</code> (nested, self-FK), <code>brands</code>, <code>product_variants</code>, <code>product_images</code></td></tr>
+  <tr><td>Stock</td><td><code>inventory</code> (quantity/reserved/low-stock), <code>stock_movements</code> (append-only ledger)</td></tr>
+  <tr><td>Selling</td><td><code>carts</code>, <code>cart_items</code>, <code>wishlists</code>, <code>coupons</code>, <code>coupon_usages</code>, <code>campaigns</code>, <code>gift_cards</code> (hash-only), <code>gift_card_transactions</code></td></tr>
+  <tr><td>Orders</td><td><code>orders</code>, <code>order_items</code> (immutable price snapshots), <code>addresses</code>, <code>payments</code>, <code>refunds</code>, <code>shipments</code>, <code>returns</code></td></tr>
+  <tr><td>Engagement</td><td><code>reviews</code>, <code>recently_viewed</code>, <code>loyalty_ledger</code>, <code>referrals</code>, <code>support_tickets</code></td></tr>
+  <tr><td>Platform</td><td><code>settings</code>, <code>audit_logs</code>, <code>jobs</code>, <code>cache</code>, <code>currencies</code>, <code>translations</code>, <code>shipping_zones</code>, <code>shipping_rates</code></td></tr>
+</table>
+<p>Design choices worth knowing: <strong>order_items snapshots</strong> name/SKU/price so catalog edits never mutate history; <strong>integer flags</strong> (<code>is_active</code>, <code>is_default</code>) instead of booleans (the runtime binds ints safely on all engines); <strong>composite uniques</strong> where the domain demands them (wishlists, reviews, recently_viewed, referrals).</p>
+
+<h2 id="migrations">Migrations &amp; dialects</h2>
+<pre><code>spid3r magic make:migration create_x_table   <span class="c"># scaffolds + registers</span>
+spid3r magic migrate                          <span class="c"># runs pending (auto-synced)</span>
+spid3r magic migrate:sync                     <span class="c"># rebuild the registry from files</span>
+spid3r magic migrate:rollback / :status</code></pre>
+<p>The Schema builder emits dialect-aware DDL; <code>Schema.table(t, fn)</code> ALTERs columns onto existing tables. Indexes on <em>existing</em> tables are plain <code>DB.statement("CREATE INDEX …")</code> (MySQL has no <code>IF NOT EXISTS</code>; migrations run once). Rollback of index drops is dialect-branched: MySQL needs <code>DROP INDEX name ON table</code>, SQLite/PG do not. PostgreSQL servers must allow md5/trust auth for the app user — the runtime client does not speak SCRAM (see `.env.example`).</p>
+
+<h2 id="money">The money rule</h2>
+<div class="callout rule"><b>Non-negotiable.</b> Every amount is an <strong>integer number of minor units</strong>. <code>5000</code> means 50.00. Floats never touch money: not in storage, not in arithmetic, not in APIs. Display strings are produced only by <code>Money.format</code> / <code>Fx.format</code>.</div>
+<p><code>app/Support/Money.matrix</code>: <code>to_minor("1,234.56") → 123456</code> (grouping accepted; anything unparseable — injection payloads included — yields <code>0</code>, never a crash), <code>to_major</code>, <code>format</code> (symbol + thousands grouping).</p>
+<p><code>app/Support/Fx.matrix</code> converts display currencies in pure integer steps — major units are held on a 10⁴ basis-point scale so every intermediate stays integral, and only the final step rounds:</p>
+<pre><code><span class="c">// 100000 minor BDT (base) at USD rate 12100 bps → 82645 minor USD</span>
+from_major_bp4  = minor * 10000 / 10^digits_from
+base_major_bp4  = from_major_bp4 * rate_from_bps / 10000
+to_major_bp4    = round(base_major_bp4 * 10000 / rate_to_bps)
+to_minor        = round(to_major_bp4 * 10^digits_to / 10000)</code></pre>
+<p>Conversions round-trip (<code>BDT→USD→BDT</code> is lossless at 2 digits) and zero-decimal currencies (JPY) work. Filters entered in a display currency are converted <em>back</em> to base before querying.</p>
+
+<!-- ==================== DOMAIN MODEL ==================== -->
+<h2 id="entitymap">Entity map</h2>
+<div class="diagram"><pre>Category 1──* Product *──1 Brand          Product 1──* Variant / Image
+Product 1──1 Inventory 1──* StockMovement
+User 1──1 Cart 1──* CartItem ─┐
+User 1──* Address             │ merge_on_login
+Guest(cookie) 1──1 Cart ──────┘
+Cart ──checkout──▶ Order 1──* OrderItem (snapshots)   Order *──1 Coupon (usage)
+Order 1──* Payment 1──* Refund        Order 1──* Shipment ──delivered──▶ Order=delivered
+Order 1──* Return ──refunded──▶ restock + Refund (payment ledger)
+User 1──* Review (verified purchase)   User 1──* WishlistItem
+User 1──* LoyaltyLedger   User 1──1 ReferralCode ──* referred User
+GiftCard(hash) 1──* GiftCardTransaction *──1 Order
+Campaign / Currency / Translation / SupportTicket / AuditLog (standalone)</pre></div>
+
+<h2 id="tables">Table reference ( behavioural cheat-sheet )</h2>
+<table>
+  <tr><th>Need</th><th>Where it lives</th><th>Behavioural rule</th></tr>
+  <tr><td>Who may do what</td><td><code>roles, permissions, role_permissions, user_roles</code></td><td>Admin role = every permission; APIs check <code>permission:x</code>, pages check <code>role:admin</code>.</td></tr>
+  <tr><td>Is this product buyable</td><td><code>products.status</code> + <code>inventory.quantity</code></td><td>available = published AND stock on hand; oversell impossible (conditional UPDATE).</td></tr>
+  <tr><td>What did the customer pay</td><td><code>order_items.unit_price_minor</code></td><td>Historical snapshot; catalog price changes never rewrite orders.</td></tr>
+  <tr><td>Has this order been rewarded</td><td><code>loyalty_ledger.order_id</code></td><td>Exactly one award row per order; <code>award_loyalty</code> is idempotent by ledger check.</td></tr>
+  <tr><td>Can I trust this gift card</td><td><code>gift_cards.code_hash</code></td><td>SHA-256 only; atomic <code>balance ≥ amount</code> decrement; raw code shown once.</td></tr>
+  <tr><td>Is this review real</td><td><code>reviews.order_id</code></td><td>Must reference a paid/delivered order of the same user; starts <code>pending</code>.</td></tr>
+  <tr><td>Who changed what</td><td><code>audit_logs</code></td><td>Admin mutations (status, roles, permissions, coupons, settings) are logged.</td></tr>
+</table>
+
+<!-- ==================== SUBSYSTEMS ==================== -->
+<h2 id="checkout">The checkout transaction</h2>
+<p><code>CheckoutService.place_order</code> is the heart of the store. One <code>DB.transaction</code> covers everything; a throw at any step rolls back the whole thing:</p>
+<div class="diagram"><pre>DB.transaction {
+  1. quote()            cart summary (fresh DB prices) → volume discount
+                        + coupon (server-validated)
+                        + campaign (time-boxed, capped)
+                        + gift card (atomic preview, capped at payable)
+                        → tax (bps of discounted value) → shipping (zone rate)
+  2. resolve_address    saved address (ownership-checked) or inline (validated)
+  3. per line: inventory.reserve(product, null, qty, "sale", …)
+                        ATOMIC conditional UPDATE — 0 changes ⇒ 422, rollback
+  4. order + order_items INSERT (name/sku/price snapshots)
+  5. coupon usage recorded + uses incremented
+  6. gift card REDEEMED inside the transaction (atomic decrement);
+     balance mismatch ⇒ throw ⇒ whole order rolls back
+  7. cart emptied       → a repeated submit cannot double-charge
+}</pre></div>
+<p>Discount stacking order: <strong>volume → coupon → campaign → gift card → tax → shipping</strong>. No discount can exceed the subtotal; shipping is computed on the discounted value; free shipping applies above a configured threshold.</p>
+
+<h2 id="payments">Payment adapters</h2>
+<p><code>app/Services/Gateway/PaymentGateway.matrix</code> defines <code>CodGateway</code> (fully wired: staff confirm collection) and <code>HttpsGateway</code> — a config-driven adapter for bKash/Nagad/SSLCommerz/Stripe reading <code>{PROVIDER}_INIT_URL/_VERIFY_URL/_REFUND_URL/_API_KEY/_WEBHOOK_SECRET</code> from the environment. Contract:</p>
+<ul>
+  <li>Unconfigured gateway → <strong>fail fast 400</strong>; it never pretends to process.</li>
+  <li><strong>Verification is server-to-server</strong> — the gateway is queried with OUR payment id and the response must match the amount exactly. Client-side "success" is decorative.</li>
+  <li><strong>Webhooks</strong> authenticate with HMAC-SHA256 over the RAW body; after verifying the signature the payment is verified a second time through the adapter.</li>
+  <li>Settlement is status-guarded and idempotent; refunds write a ledger row and return stock; <code>OrderService.set_status(order, "paid")</code> fires the loyalty/referral rewards exactly once.</li>
+</ul>
+<p>Outbound SMS mirrors the contract (<code>SmsGateway</code>: <code>log</code> dev driver or <code>http</code> provider; fail-fast when unconfigured).</p>
+
+<h2 id="shipping">Shipping &amp; fulfilment</h2>
+<p><code>ShippingService</code> resolves a delivery price for an address:</p>
+<ol>
+  <li>Skip zones whose country is set and differs (case-insensitive).</li>
+  <li>A zone whose district list <em>names</em> the address district wins immediately (most specific).</li>
+  <li>Otherwise the first zone with an <em>empty</em> district list is the country-wide fallback.</li>
+  <li>The rate is the first active tier for (zone, method) whose <code>[min_order_minor, max_order_minor]</code> window contains the order value; it carries the delivery estimate.</li>
+  <li>No match → the flat settings fee (Phase 7 behaviour, unchanged) — zones are opt-in.</li>
+</ol>
+<p><code>FulfillmentService</code> runs the shipment lifecycle <code>preparing → shipped → in_transit → delivered</code> (+ <code>failed → shipped</code> retry). Illegal transitions are refused; <code>shipped_at</code>/<code>delivered_at</code> are stamped once; confirming delivery settles the ORDER as delivered (unless cancelled/refunded/already delivered); closed orders cannot receive shipments. Multiple shipments per order support partial fulfilment, and the shipment row (carrier, tracking number, method, zone) is the integration point a courier API would fill.</p>
+
+<h2 id="returns">Returns engine</h2>
+<p><code>ReturnService</code>: only <strong>delivered</strong> orders of the requesting user, inside the window (default 14 days, measured from the latest shipment's <code>delivered_at</code>), quantity capped at what was bought. Transitions are guarded: <code>requested → approved|rejected → received → refunded</code>. Refunding restocks the items exactly once, records the refund capped at the historical line value, and writes a <code>refunds</code> ledger row when a payment exists (COD orders settle offline).</p>
+
+<h2 id="catalogcache">Catalog cache</h2>
+<p>The storefront's hottest reads are cached through the framework Cache facade with <strong>generation-based invalidation</strong> (<code>app/Support/CatalogCache.matrix</code>):</p>
+<pre><code>key = <span class="s">"store:catalog:v"</span> + version + <span class="s">":featured:8:BDT:base"</span>
+                                                   <span class="c">└ limit, currency, fx marker</span>
+Cache.remember(key, ttl, fn() { …query + decorate… })</code></pre>
+<ul>
+  <li><strong>Bump on every write that changes what shoppers see:</strong> product/category/brand writes, gallery uploads, stock movements (reserve/release — checkout, cancellations, returns), display-currency changes. The bump orphans every old entry at once — no wildcard flush, identical behaviour on every driver.</li>
+  <li><strong>Bounded key space:</strong> only the UNFILTERED listing is cached (sort × page); filtered searches always hit the DB, so request params cannot poison keys.</li>
+  <li><strong>Zero-query hits:</strong> entries store fully decorated rows (price strings, image URLs already resolved).</li>
+  <li>TTLs come from the container (<code>home_ttl</code> 120 s, <code>product_ttl</code> 300 s).</li>
+</ul>
+<div class="callout stop"><b>Duty.</b> If you add a catalog write path and forget the bump, shoppers see stale data for up to 5 minutes. <code>test_catalog_cache</code> verifies the mechanism; the bump list is documented in <code>CatalogCache.matrix</code> — keep both honest.</div>
+
+<h2 id="authrbac">Auth &amp; RBAC</h2>
+<ul>
+  <li>Passwords: bcrypt via the runtime native. Reset/verification tokens: stored hashed, single-use, expiring.</li>
+  <li>Sessions: <code>sess_</code> + 24 random bytes, DB-backed with sliding TTL, revoked on logout, cookie <code>HttpOnly</code> + <code>SameSite=Lax</code> (+ <code>Secure</code> opt-in). A per-session CSRF token is issued at login.</li>
+  <li>Authorization: <code>role:admin</code> middleware for pages, <code>permission:x</code> for APIs (checked via policies against <code>role_permissions</code>). Services re-check ownership (orders, returns, addresses) so a stolen id parameter buys nothing.</li>
+  <li>Throttling: login/register/reset 5/min, support 5/min, gift-card balance 20/min, estimate 30/min — cache-backed, 429 beyond the limit.</li>
+</ul>
+
+<h2 id="currency">Multi-currency &amp; language</h2>
+<p><strong>Currency</strong> is display-only (see <a href="#money">the money rule</a>): the customer's choice lives in the <code>store_currency</code> cookie, is validated against the active catalog (tampered cookie → base currency), and converts at the <em>display edge</em>. Carts, checkout, orders and payments stay in the base currency — the footer states "Prices in X · Billed in Y". <strong>Language</strong> uses the <code>translations</code> table (locale → namespace → key → value) with the fallback chain <em>requested → default locale → supplied fallback → key</em>; the choice lives in <code>store_locale</code> (<code>?lang=</code> also works). Both are set via <code>POST /locale</code> and rendered by <code>StoreChrome</code> on every page.</p>
+
+<h2 id="jobs">Queues &amp; notifications</h2>
+<p>Jobs are registered in <code>routes/queue.matrix</code> and processed by <code>spid3r magic queue:work</code> (database driver) or inline (<code>sync</code>). Store jobs: <code>store.password_reset</code>, <code>store.email_verification</code>, <code>store.order_confirmation</code>, <code>store.support_ticket</code>, <code>store.sms_notification</code>. The request path never depends on SMTP or a carrier round trip; the mail driver is <code>log</code> until the runtime ships outbound TCP.</p>
+
+<!-- ==================== SECURITY ==================== -->
+<h2 id="secheaders">Security headers</h2>
+<p>Set by <code>Response</code> class defaults on <em>every</em> response (HTML, JSON, static, errors):</p>
+<table>
+  <tr><th>Header</th><th>Value</th></tr>
+  <tr><td><code>Content-Security-Policy</code></td><td><code>default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'; object-src 'none'</code></td></tr>
+  <tr><td><code>X-Content-Type-Options</code></td><td><code>nosniff</code></td></tr>
+  <tr><td><code>X-Frame-Options</code></td><td><code>SAMEORIGIN</code></td></tr>
+  <tr><td><code>Referrer-Policy</code></td><td><code>strict-origin-when-cross-origin</code></td></tr>
+  <tr><td><code>Permissions-Policy</code></td><td><code>camera=(), microphone=(), geolocation=()</code></td></tr>
+  <tr><td><code>Cross-Origin-Opener-Policy</code></td><td><code>same-origin</code></td></tr>
+  <tr><td><code>Strict-Transport-Security</code></td><td>opt-in via <code>SPID3R_HSTS=1</code></td></tr>
+</table>
+<p><code>script-src</code> is strict (no inline JS exists — the invoice print button is <code>public/js/print.js</code>); <code>style-src</code> keeps <code>'unsafe-inline'</code> so framework error pages render without static assets.</p>
+
+<h2 id="seccsrf">CSRF: two layers</h2>
+<ol>
+  <li><strong>Origin check</strong> on every state-changing method — a foreign <code>Origin</code> is a flat 403.</li>
+  <li><strong>Session token</strong> for cookie-session writes without an Origin header — missing/invalid → 419. Bearer/JSON API clients are exempt (browsers cannot attach cookies cross-site to them).</li>
+</ol>
+
+<h2 id="secinput">Input &amp; uploads</h2>
+<ul>
+  <li>Every write path validates through rule maps; numeric money parsing treats garbage as 0 (never a 500).</li>
+  <li>All SQL is parameterised; raw statements are static text with bindings only.</li>
+  <li>Uploads: magic-byte inspection (PNG/JPEG/GIF/WEBP), 2 MiB cap, random names, binary-safe write; refused payloads store nothing.</li>
+  <li>500s render a generic message — driver errors can never leak SQL fragments.</li>
+  <li>The full matrix (and the executable checks) is in <a href="SECURITY.md">SECURITY.md</a>.</li>
+</ul>
+
+<!-- ==================== GUIDELINES ==================== -->
+<h2 id="standards">Coding standards</h2>
+<ul>
+  <li><strong>Layer discipline:</strong> SQL only in repositories; logic only in services; controllers only translate HTTP; templates only render.</li>
+  <li><strong>Naming:</strong> services end in <code>Service</code>, repositories in <code>Repository</code>; snake_case functions, snake_case columns; route names dot-notation (<code>account.rewards</code>).</li>
+  <li><strong>Errors:</strong> throw typed helpers (<code>validation_failed</code> → 422, <code>not_found</code> → 404, <code>forbidden</code> → 403, <code>unauthorized</code> → 401) with field-keyed maps; never leak internals.</li>
+  <li><strong>Comments explain why</strong>, and contracts live in the file header (every subsystem file opens with its rules — read those first).</li>
+  <li><strong>No new dependencies</strong> — the framework composes runtime natives.</li>
+</ul>
+
+<h2 id="gotchas">Spid3r gotchas</h2>
+<div class="callout warn"><b>These bite everyone once.</b> The list below is earned experience — check it before writing code.</div>
+<ul>
+  <li><code>public</code> and other keywords cannot be identifiers; there is <strong>no ternary</strong> <code>?:</code>; <code>match</code> is reserved (router method is <code>match_any</code>).</li>
+  <li><code>let i</code> cannot be redeclared in one function scope — reuse or rename (<code>j</code>, <code>k</code>…).</li>
+  <li>Module functions need the import alias: <code>CatalogCache.bump()</code>, not a bare <code>bump()</code>; class symbols are not transitive across imports.</li>
+  <li>String literals interpolate <code>{var}</code> — never write a literal <code>{word}</code> inside a <code>.matrix</code> string.</li>
+  <li><code>for x in list</code> iterates <strong>copies</strong> — mutate via indexed access <code>l[i]</code>.</li>
+  <li><code>class</code> declarations are top-level only; <code>as</code> is a cast keyword (never a param name); <code>none</code> is a reserved builtin.</li>
+  <li>Closures capture outer locals by reference and <em>cannot reassign</em> them; <code>self</code> works inside closures (<code>DB.transaction(fn() { self.helper() })</code>).</li>
+  <li>Order numbers embed <strong>lowercase hex</strong> — never case-fold them for lookups.</li>
+  <li>Map key assignment: write nested maps back explicitly (<code>bucket = m[k]; bucket[x]=v; m[k]=bucket</code>) — do not rely on in-place nested mutation.</li>
+  <li>Maps iterate in unspecified key order — sort deterministically at the source when order matters.</li>
+</ul>
+
+<h2 id="walkthrough">Walkthrough: adding a feature</h2>
+<p>The reviews feature is the reference implementation — copy its shape.</p>
+<ol>
+  <li><strong>Schema</strong> (<code>database/migrations/0XX_….matrix</code>): table + FKs + indexes + composite uniques; add to the registry via <code>spid3r magic migrate:sync</code>.</li>
+  <li><strong>Service</strong> (<code>app/Services/…</code>): the rules live here, e.g. verified purchase =
+    <pre><code><span class="k">let</span> lines = DB.<span class="f">table</span>(<span class="s">"order_items"</span>).<span class="f">where</span>(<span class="s">"product_id"</span>, <span class="s">"="</span>, product_id).<span class="f">get</span>();
+<span class="k">let</span> purchased = <span class="k">false</span>;
+<span class="k">let</span> i = 0;
+<span class="k">while</span> i &lt; lines.len() {
+    <span class="k">let</span> order = DB.<span class="f">table</span>(<span class="s">"orders"</span>)
+        .<span class="f">where</span>(<span class="s">"id"</span>, <span class="s">"="</span>, lines[i][<span class="s">"order_id"</span>])
+        .<span class="f">where</span>(<span class="s">"user_id"</span>, <span class="s">"="</span>, user_id).<span class="f">first</span>();
+    <span class="k">if</span> order != <span class="k">null</span> <span class="k">and</span> (order[<span class="s">"status"</span>] == <span class="s">"delivered"</span> <span class="k">or</span> order[<span class="s">"status"</span>] == <span class="s">"paid"</span>) {
+        purchased = <span class="k">true</span>;
+        <span class="k">break</span>;
+    }
+    i += 1;
+}
+<span class="k">if</span> not purchased { <span class="k">throw</span> <span class="f">forbidden</span>(<span class="s">"Only customers with a completed purchase…"</span>); }</code></pre></li>
+  <li><strong>Validator</strong> (<code>app/Validators/…</code>): rule map for the write path.</li>
+  <li><strong>Controller</strong>: thin handler — validate → service → <code>respond(req, payload, fallback_path)</code>.</li>
+  <li><strong>Routes</strong>: register in the domain file with middleware; descriptive SEO paths (<code>/resource/{slug}</code>); JSON via <code>format=json</code>.</li>
+  <li><strong>View</strong>: template + shared chrome; escaped interpolation only.</li>
+  <li><strong>Admin surface</strong> (if moderation is needed): permission-gated API + queue page.</li>
+  <li><strong>Tests</strong>: register in BOTH runners; cover the happy path, every refusal, and the permission boundary.</li>
+  <li><strong>Docs</strong>: update the matching phase document, <code>API.md</code> and <code>USER-GUIDE.md</code>.</li>
+</ol>
+
+<h2 id="cachebump">Cache invalidation duty</h2>
+<p>Any write that can change what shoppers see must call <code>CatalogCache.bump_catalog_version()</code> <em>after</em> the write commits. Current bump sites: product create/update/publish/delete, category and brand writes, image upload/delete, <code>InventoryRepository.reserve/release</code> (checkout, cancellations, returns, admin adjustments) and display-currency changes. The definitive list is the header of <code>app/Support/CatalogCache.matrix</code>.</p>
+
+<!-- ==================== TESTING ==================== -->
+<h2 id="testingbar">The testing bar</h2>
+<div class="callout rule"><b>Always on a fresh database.</b> Leftovers from other suites mask missing-table and data bugs that CI will catch. This has literally happened twice.</div>
+<pre><code>rm -f database/database.sqlite*
+spid3r magic migrate &amp;&amp; spid3r magic db:seed
+SPID3R_DB_DRIVER=sqlite spid3r magic test</code></pre>
+<p>Also worth running before pushing: the load probe (<code>LOAD_ITERS=50 spid3r run tools/store_load.matrix</code>) and the Docker smoke (<code>./deploy/docker-smoke.sh postgres</code>).</p>
+
+<h2 id="suitemap">Suite map (31 suites)</h2>
+<table>
+  <tr><th>Suite</th><th>Covers</th></tr>
+  <tr><td><code>test_store_unit</code></td><td>Money parse/format, FX conversion, Slug, cache generations (no DB).</td></tr>
+  <tr><td><code>test_store_schema</code></td><td>All tables exist, seeder idempotency, unique constraints, repository behaviour.</td></tr>
+  <tr><td><code>test_store_auth</code></td><td>Registration, login, reset, verification, RBAC, throttle.</td></tr>
+  <tr><td><code>test_store_catalog</code></td><td>Product CRUD, nested categories, brands, variants, gallery uploads, permission gate.</td></tr>
+  <tr><td><code>test_store_storefront</code></td><td>Home, catalog filters, category/brand pages, product detail, SEO endpoints.</td></tr>
+  <tr><td><code>test_store_cart</code></td><td>Guest lifecycle, price recalculation, availability, totals, merge-on-login.</td></tr>
+  <tr><td><code>test_store_checkout</code></td><td>Quote, placement (stock deduction, snapshots, coupon usage), history, admin status.</td></tr>
+  <tr><td><code>test_store_payment</code></td><td>COD initiation + verification, webhooks, refunds, reconciliation.</td></tr>
+  <tr><td><code>test_store_admin</code></td><td>Dashboard, customers, staff/roles, coupons/settings, reports/export.</td></tr>
+  <tr><td><code>test_store_advanced</code></td><td>Wishlist, reviews, recommendations, recently viewed, loyalty, referrals, gift cards (+checkout), campaigns, support, tracking, currency, locale.</td></tr>
+  <tr><td><code>test_store_shipping</code></td><td>Zones/rates matching, checkout fee integration, fulfilment lifecycle, returns engine.</td></tr>
+  <tr><td><code>test_store_security</code></td><td>Headers/CSP, cookie flags, XSS escaping, SQLi payloads, CSRF, authorization probes, throttle 429, upload rejection, error disclosure.</td></tr>
+  <tr><td><code>test_store_performance</code></td><td>Index existence (dialect-aware), cache-serves + invalidation, lazy images.</td></tr>
+  <tr><td><code>test_store_journey</code></td><td>The 35-step end-to-end customer journey.</td></tr>
+  <tr><td>16 framework suites</td><td>Router, container, events, model, resources, exceptions, websocket, throttle, HTTP lifecycle, multi-DB live, systems live…</td></tr>
+</table>
+<p>Registration is <strong>doubled</strong>: <code>tests/run_all.matrix</code> AND <code>framework/Console/TestRunner.matrix</code>, plus the VM list in <code>.github/workflows/ci.yml</code>. New suite = three files.</p>
+
+<h2 id="fixtures">Fixture &amp; FK rules</h2>
+<ul>
+  <li>Tag every fixture with <code>string(unix_time())</code> and clean by that tag (slug/email prefixes) — never by blanket deletes.</li>
+  <li>FK-safe teardown order: <code>refunds</code> (by <code>payment_id</code>) → <code>payments</code> → <code>shipments</code> → <code>coupon_usages</code> → <code>gift_card_transactions</code> → <code>loyalty_ledger</code> → <code>order_items</code> → <code>orders</code>; <code>cart_items</code> before <code>carts</code>; <code>inventory</code>/<code>order_items</code>/<code>cart_items</code> before <code>products</code>; <code>coupon_usages</code> before <code>coupons</code>.</li>
+  <li>Wrap test bodies in <code>try/finally { purge }</code> — but keep the purge itself simple so it cannot throw and mask the real failure.</li>
+  <li>Authenticated flows must log in through the <strong>HTTP</strong> endpoint (the guest-cart merge lives there); constructing session cookies via services skips it.</li>
+  <li><code>ProductService.create</code> needs <code>brand_id</code>/<code>short_description</code> keys and defaults to <code>draft</code> with 0 stock — pass <code>status:"published"</code> and set inventory in fixtures.</li>
+</ul>
+
+<h2 id="ci">CI pipeline</h2>
+<p><code>.github/workflows/ci.yml</code> — least-privilege permissions, pinned actions, concurrency cancellation, fail-fast false:</p>
+<ol>
+  <li><strong>Lint</strong>: shellcheck (<code>install.sh</code>, <code>deploy/docker-smoke.sh</code>) + actionlint (inline <code>run:</code> blocks ARE shellchecked — write them like real scripts).</li>
+  <li><strong>Tests ×3 engines</strong> (throwaway mysql:8 / postgres:16 service containers): migrate → seed → route:list → serve --dry-run → full suite → bytecode-VM engine runs → full-stack example → benchmarks → load probe → <strong>real-server smoke</strong> (boots <code>magic serve</code>, curls liveness/storefront/catalog/sitemap, asserts a 404 and the CSP header over TCP).</li>
+</ol>
+
+<!-- ==================== OPERATIONS ==================== -->
+<h2 id="deployment">Deployment &amp; Docker</h2>
+<p>Two paths, both documented in <a href="DEPLOYMENT.md">DEPLOYMENT.md</a>:</p>
+<div class="grid2">
+  <div class="card">
+    <h4>Fully containerised</h4>
+    <p><code>deploy/Dockerfile</code> multi-stage build compiles the Spid3r toolchain from source; the runtime stage carries the framework. The container <strong>migrates on boot</strong> and <code>exec</code>s the server as PID 1.</p>
+    <pre><code>docker compose -f deploy/docker-compose.yml \
+  up --build -d        <span class="c"># app on :8090 (MySQL)</span></code></pre>
+  </div>
+  <div class="card">
+    <h4>Host process + Docker DBs</h4>
+    <p>The deployment smoke: engine in Docker, real server on the host, ten HTTP checks over TCP, optional full suite, teardown.</p>
+    <pre><code>./deploy/docker-smoke.sh postgres
+SMOKE_ONLY=1 ./deploy/docker-smoke.sh mysql</code></pre>
+  </div>
+</div>
+<p>Rollback: the app is stateless apart from the DB and the upload volume; migrations through 020 are additive, so an older binary keeps working against a newer schema. DB backup/restore is in <a href="BACKUP.md">BACKUP.md</a>.</p>
+
+<h2 id="performance">Performance</h2>
+<p>Load probe (in-process, tree-walk interpreter, SQLite, single run): <code>/health</code> ~3500 req/s · <code>/</code> ~250 · <code>/catalog</code> ~190 · search ~250 · <code>/product/:slug</code> ~110 · <code>/cart</code> ~150. The levers:</p>
+<ul>
+  <li><strong>Indexes</strong> (migration 020): <code>order_items(product_id)</code>, <code>loyalty_ledger(order_id)</code>, <code>coupon_usages(coupon_id)</code>, <code>sessions(last_activity)</code>, <code>jobs(queue, available_at)</code>, <code>products(status, id)</code> — plus the Phase 2 domain indexes.</li>
+  <li><strong>Catalog cache</strong> — see <a href="#catalogcache">above</a>; a hit performs zero queries.</li>
+  <li><strong>Batched reads</strong> — <code>whereIn</code> for images/products; never N+1 in listing paths.</li>
+  <li><strong>Lazy images</strong> (<code>loading="lazy" decoding="async"</code>) and static cache headers.</li>
+</ul>
+<p>Honest limits: one reused DB connection per process (the runtime is single-threaded — pooling is a runtime feature); Redis waits on the runtime's redis native; no memory-profiler hook. Full statement in <a href="PERFORMANCE.md">PERFORMANCE.md</a>.</p>
+
+<h2 id="envref">Environment reference</h2>
+<p>The complete annotated list is <code>.env.example</code>. Groups: application mode (<code>APP_ENV</code>), database driver + per-engine connection vars, cache driver, session cookie, log level, mail driver, queue connection, SMS gateway, store settings, payment gateway endpoints/credentials, <code>STORE_URL</code> (callback base), TLS hardening flags.</p>
+
+<h2 id="troubleshooting">Troubleshooting</h2>
+<table>
+  <tr><th>Symptom</th><th>Cause → fix</th></tr>
+  <tr><td><code>419 Page Expired</code> on POST</td><td>Authenticated session without the <code>_csrf</code> token → include it in the form/JSON body.</td></tr>
+  <tr><td>Postgres <code>expected SASLContinue, got 'E'</code></td><td>Server uses SCRAM; the runtime speaks md5/trust → set <code>password_encryption='md5'</code> or trust auth for the app user.</td></tr>
+  <tr><td><code>no such table</code> in CI but not locally</td><td>A suite assumed another suite's leftover data → run the fresh-DB sequence and fix the fixture.</td></tr>
+  <tr><td>Stale storefront prices/stock</td><td>A catalog write path is missing its <code>CatalogCache.bump_catalog_version()</code>.</td></tr>
+  <tr><td>Gateway "not configured" (400)</td><td>By design — set the provider env vars; COD works without any.</td></tr>
+  <tr><td>Suite passes locally, fails in CI</td><td>Order-number case folding, missing suite registration (BOTH runners), or an unclean fixture purge. Re-run on a fresh DB first.</td></tr>
+  <tr><td>Loyalty points not granted</td><td>Was a Phase 14 bug (no call sites). Awards fire in <code>OrderService.set_status</code> on the <code>→ paid</code> transition — do not bypass it.</td></tr>
+</table>
+
+<footer>
+  Spid3r Store developer documentation · eCommerce branch · generated as part of Phase 16.
+  Companion docs: <a href="API.md">API.md</a> · <a href="USER-GUIDE.md">USER-GUIDE.md</a> · <a href="SECURITY.md">SECURITY.md</a> · <a href="PERFORMANCE.md">PERFORMANCE.md</a> · <a href="DEPLOYMENT.md">DEPLOYMENT.md</a> · <a href="README.md">index</a>.
+  Every claim here is checked by the test suite on every push.
+</footer>
+
+</main>
+</div>
+
+</body>
+</html>

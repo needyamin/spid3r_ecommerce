@@ -1,0 +1,499 @@
+// framework/Application.matrix
+// Spid3rWeb Application Kernel & HTTP Request Coordinator
+
+import "http";
+import "framework/Request";
+import "framework/Response";
+import "framework/Router";
+import "framework/Middleware";
+import "framework/Auth/Auth";
+import "framework/ErrorRenderer";
+import "framework/Container/Container";
+import "framework/Events/Event";
+import "framework/HttpException";
+
+public class Application {
+    public let router;
+    public let global_middleware;
+    public let base_path;
+    public let name;
+    public let env;
+    public let debug;
+    public let middleware_registry;
+    // Service container + provider registry. Providers register bindings at
+    // app.register(provider) time and initialize in app.boot() (run once,
+    // automatically by listen() or lazily by the first handled request).
+    public let container;
+    public let providers;
+    private let booted;
+
+    fn new(base_path: string = ".") {
+        self.base_path = base_path;
+        self.router = Route;
+        self.global_middleware = list(
+            new CorsMiddleware()
+        );
+        self.name = "Spid3rWeb";
+        // Environment/debug: overridable via env so production deployments
+        // can switch off debug output without code changes.
+        self.env = "local";
+        let env_val = env("APP_ENV");
+        if env_val.is_some() and string(env_val.unwrap()).trim() != "" {
+            self.env = string(env_val.unwrap()).trim().lower();
+        }
+        self.debug = self.env != "production";
+        // Service container: the app-wide registry providers bind into.
+        // The application exposes itself and its router through it so
+        // providers and controllers resolve dependencies uniformly.
+        self.container = new ServiceContainer();
+        self.providers = list();
+        self.booted = false;
+        let me = self;
+        self.container.instance("app", me);
+        self.container.singleton("router", fn(_c) { return me.router; });
+        self.container.singleton("events", fn(_c) { return Event; });
+        // Named-middleware registry. Built-ins are registered here; apps add
+        // their own via app.middleware("alias", fn(args) { return new MyMW(); }).
+        self.middleware_registry = map();
+        self.middleware_registry["auth"] = fn(_args) { return new AuthMiddleware(); };
+        self.middleware_registry["guest"] = fn(_args) { return new GuestMiddleware(); };
+        self.middleware_registry["cors"] = fn(_args) { return new CorsMiddleware(); };
+        self.middleware_registry["logger"] = fn(_args) { return new LoggerMiddleware(); };
+        self.middleware_registry["throttle"] = fn(args) {
+            let max_attempts = 60;
+            let decay_seconds = 60;
+            if args.len() > 0 {
+                max_attempts = int(args[0]);
+            }
+            if args.len() > 1 {
+                decay_seconds = int(args[1]);
+            }
+            return new ThrottleMiddleware(max_attempts, decay_seconds);
+        };
+    }
+
+    // Register a named middleware. The factory receives the parsed argument
+    // list from "name:arg1,arg2" route references and returns a middleware
+    // instance with .handle(req).
+    public fn middleware(self, name: string, factory) {
+        self.middleware_registry[string(name).trim().lower()] = factory;
+        return self;
+    }
+
+    // ------------------------------------------------------------------------
+    // Service Provider Lifecycle
+    // ------------------------------------------------------------------------
+    // Register a service provider: its register() runs immediately (bindings
+    // only — keep it free of side effects); its boot() runs once, when boot()
+    // is triggered. Providers must extend framework/Providers/ServiceProvider.
+    public fn register(self, provider) {
+        provider.register(self.container);
+        self.providers.push(provider);
+        return self;
+    }
+
+    // Boot every registered provider exactly once, then announce readiness
+    // on the event bus. listen() calls this automatically; handle_request
+    // lazy-boots so tests and direct invocation never skip the phase.
+    public fn boot(self) {
+        if self.booted {
+            return self;
+        }
+        // NOTE: `for x in list` iterates over COPIES in Spid3r — a method
+        // call on the loop variable would boot a throwaway copy. Indexed
+        // access yields a reference, so boot each provider by index.
+        let i = 0;
+        let count = self.providers.len();
+        while i < count {
+            self.providers[i].boot(self.container);
+            i += 1;
+        }
+        self.booted = true;
+        Event.dispatch("app.booted", self);
+        return self;
+    }
+
+    public fn use(self, mw) {
+        self.global_middleware.push(mw);
+        return self;
+    }
+
+    // ------------------------------------------------------------------------
+    // Static Asset Delivery
+    // ------------------------------------------------------------------------
+    // Reject anything that could escape the public/ directory: parent
+    // segments, backslashes, colons (NTFS alternate data streams, Windows
+    // drive letters), NUL bytes and their percent-encoded forms.
+    fn is_unsafe_path(self, path: string) -> bool {
+        let lower = path.lower();
+        return path.contains("..") or path.contains("\\") or path.contains(chr(0))
+            or path.contains(":")
+            or lower.contains("%2e") or lower.contains("%2f") or lower.contains("%5c")
+            or lower.contains("%00") or lower.contains("%3a");
+    }
+
+    fn content_type_for(self, path: string) -> string {
+        if path.ends_with(".css") { return "text/css; charset=utf-8"; }
+        if path.ends_with(".js") or path.ends_with(".mjs") { return "application/javascript; charset=utf-8"; }
+        if path.ends_with(".html") { return "text/html; charset=utf-8"; }
+        if path.ends_with(".htm") { return "text/html; charset=utf-8"; }
+        if path.ends_with(".json") { return "application/json; charset=utf-8"; }
+        if path.ends_with(".txt") { return "text/plain; charset=utf-8"; }
+        if path.ends_with(".png") { return "image/png"; }
+        if path.ends_with(".jpg") or path.ends_with(".jpeg") { return "image/jpeg"; }
+        if path.ends_with(".gif") { return "image/gif"; }
+        if path.ends_with(".webp") { return "image/webp"; }
+        if path.ends_with(".svg") { return "image/svg+xml"; }
+        if path.ends_with(".ico") { return "image/x-icon"; }
+        if path.ends_with(".woff") { return "font/woff"; }
+        if path.ends_with(".woff2") { return "font/woff2"; }
+        if path.ends_with(".ttf") { return "font/ttf"; }
+        if path.ends_with(".otf") { return "font/otf"; }
+        if path.ends_with(".pdf") { return "application/pdf"; }
+        if path.ends_with(".map") { return "application/json; charset=utf-8"; }
+        if path.ends_with(".xml") { return "application/xml; charset=utf-8"; }
+        if path.ends_with(".webmanifest") { return "application/manifest+json"; }
+        return "application/octet-stream";
+    }
+
+    fn try_serve_static(self, path: string) {
+        if self.is_unsafe_path(path) {
+            return null;
+        }
+        let clean = path;
+        if clean.starts_with("/") {
+            clean = clean.slice(1, clean.len());
+        }
+
+        let candidates = list(
+            "public/" + clean,
+            "examples/spid3r_web/public/" + clean
+        );
+
+        for p in candidates {
+            if file_exists(p) {
+                let res = read_file(p);
+                if res.is_ok() {
+                    let resp = response(res.unwrap(), 200);
+                    resp.header("content-type", self.content_type_for(p));
+                    // Dev (debug): always revalidate so edits show up
+                    // immediately. Production: allow an hour of caching.
+                    if self.debug {
+                        resp.header("cache-control", "no-cache");
+                    } else {
+                        resp.header("cache-control", "public, max-age=3600");
+                    }
+                    return resp;
+                }
+            }
+        }
+        return null;
+    }
+
+    // URL prefixes served as static assets from public/
+    fn is_static_prefix(self, path: string) -> bool {
+        let prefixes = list("/css/", "/js/", "/assets/", "/images/", "/fonts/", "/vendor/");
+        for p in prefixes {
+            if path.starts_with(p) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // ------------------------------------------------------------------------
+    // HTTP Request Handler
+    // ------------------------------------------------------------------------
+    public fn handle_request(self, raw_req) {
+        // Providers must be booted before the first request touches them.
+        self.boot();
+        let req = new Request(raw_req);
+        // Expose the application to handlers: req.app.container.resolve(...),
+        // req.app.router, etc. — route closures stay framework-aware without
+        // importing globals everywhere.
+        req.app = self;
+
+        // Per-request auth state. The global Auth facade is NOT touched
+        // during the request lifecycle: with a concurrent server, mutating
+        // shared auth state per request would leak identity across
+        // connections. Everything request-scoped reads req.auth.
+        let auth = new AuthManager();
+        req.auth = auth;
+        if req.session_id != "" {
+            auth.authenticate_token(req.session_id);
+        }
+
+        // 0a. CSRF defense-in-depth layer 1: state-changing requests must
+        //     originate from this site. Browsers always send Origin on
+        //     cross-site POSTs; combined with SameSite=Lax cookies this
+        //     blocks cross-site form attacks. Requests without Origin
+        //     (curl, some old browsers) fall through to the token check.
+        if req.method == "POST" or req.method == "PUT" or req.method == "PATCH" or req.method == "DELETE" {
+            let origin = req.header("origin", "");
+            if origin != "" and not self.is_same_origin(req, origin) {
+                let plain = response("403 Forbidden — cross-origin request rejected", 403);
+                plain.header("content-type", "text/plain");
+                return plain.to_http();
+            }
+            // 0b. CSRF layer 2: session-token verification for cookie
+            //     sessions without an Origin header (see csrf_valid).
+            if not self.csrf_valid(req) {
+                return ErrorRenderer.csrf_timeout(req);
+            }
+        }
+
+        // 1. Static file check (e.g. /css/welcome.css) — HEAD falls back
+        //     to the same handler as GET (body handling is the server's
+        //     concern); matches the Router's HEAD→GET route fallback.
+        if (req.method == "GET" or req.method == "HEAD") and self.is_static_prefix(req.path) {
+            let static_res = self.try_serve_static(req.path);
+            if static_res != null {
+                return static_res.to_http();
+            }
+            if self.is_unsafe_path(req.path) {
+                return ErrorRenderer.not_found(req);
+            }
+        }
+
+        // 2. Global Pipeline (CORS, Logging). App middleware may throw
+        //     typed HTTP exceptions — honor their status instead of a 500.
+        let pipeline = new Pipeline();
+        let early = null;
+        try {
+            early = pipeline.send(req).through(self.global_middleware).then(fn(_r) { return null; });
+        } catch (e) {
+            if is_http_exception(e) {
+                return ErrorRenderer.http_error(req, e);
+            }
+            throw e;
+        }
+        if early != null {
+            return early.to_http();
+        }
+
+        let match_result = self.router.match_route(req.method, req.path);
+
+        if match_result == null {
+            // Check if static root (e.g. /favicon.ico)
+            if req.path == "/favicon.ico" {
+                let icon = response("", 204);
+                icon.header("content-type", "image/x-icon");
+                return icon.to_http();
+            }
+            let allowed = self.router.allowed_methods(req.path);
+            if allowed.len() > 0 {
+                return text_405(allowed.join(", ")).to_http();
+            }
+            // App-defined fallback route (Router.fallback)
+            if self.router.fallback_handler != null {
+                let fb_res = self.router.fallback_handler(req);
+                return self.normalize_response(fb_res);
+            }
+            return ErrorRenderer.not_found(req);
+        }
+
+        let route_entry = match_result["route"];
+        req.params = match_result["params"];
+
+        // 3. Route-specific Middleware Pipeline. Alias resolution failures
+        //     and middleware bodies can raise typed HTTP exceptions too.
+        let route_pipeline = new Pipeline();
+        let mw_instances = null;
+        try {
+            mw_instances = self.resolve_middleware(route_entry.middleware_list);
+        } catch (e) {
+            if is_http_exception(e) {
+                return ErrorRenderer.http_error(req, e);
+            }
+            throw e;
+        }
+        // Middleware bodies run OUTSIDE the destination closure, so their
+        // typed exceptions (401/403/429/...) need their own catch here —
+        // otherwise a guard's `throw unauthorized(...)` escapes the kernel
+        // instead of producing an HTTP response.
+        let final_response = null;
+        try {
+            route_pipeline.send(req).through(mw_instances);
+            final_response = route_pipeline.then(fn(r) {
+                try {
+                    return self.router.dispatch(route_entry.handler, r);
+                } catch (e) {
+                    if is_http_exception(e) {
+                        return ErrorRenderer.http_error(r, e);
+                    }
+                    return ErrorRenderer.server_error(r, e);
+                }
+            });
+        } catch (e) {
+            if is_http_exception(e) {
+                return ErrorRenderer.http_error(req, e);
+            }
+            return ErrorRenderer.server_error(req, e);
+        }
+
+        if final_response == null {
+            let empty = response("", 200);
+            empty.header("content-type", "text/plain");
+            return empty.to_http();
+        }
+
+        return self.normalize_response(final_response);
+    }
+
+    // Convert handler output (Response object or raw http_response map) into
+    // the raw HTTP map the server expects, applying route-level additions
+    // such as CORS headers on API responses.
+    fn normalize_response(self, res) {
+        let out = null;
+        if type_of(res) == "map" and res.has("status") and res.has("headers") {
+            out = res;
+        } else {
+            out = res.to_http();
+        }
+        // API responses get CORS headers (same as the previous global
+        // default, but scoped so cookie-authenticated HTML pages never
+        // broadcast access-control-allow-origin: *).
+        if out.has("headers") and type_of(out["headers"]) == "map" and not out["headers"].has("access-control-allow-origin") {
+            let ct = "";
+            if out["headers"].has("content-type") {
+                ct = string(out["headers"]["content-type"]);
+            }
+            if ct.contains("application/json") {
+                out["headers"]["access-control-allow-origin"] = "*";
+                out["headers"]["access-control-allow-methods"] = "GET, POST, PUT, DELETE, PATCH, OPTIONS";
+                out["headers"]["access-control-allow-headers"] = "content-type, authorization, x-requested-with";
+            }
+        }
+        return out;
+    }
+
+    // Compare an Origin header against the request Host, normalizing scheme
+    // and default ports. Returns false for anything malformed or foreign.
+    fn is_same_origin(self, req, origin) -> bool {
+        let o = string(origin).trim().lower();
+        let default_port = "";
+        if o.starts_with("https://") {
+            default_port = ":443";
+            o = o.slice(8, o.len());
+        } elif o.starts_with("http://") {
+            default_port = ":80";
+            o = o.slice(7, o.len());
+        } else {
+            return false;
+        }
+        if o.contains("/") {
+            o = o.split("/")[0];
+        }
+        if default_port != "" and o.ends_with(default_port) {
+            o = o.slice(0, o.len() - default_port.len());
+        }
+        let host = string(req.header("host", "")).trim().lower();
+        if host == "" {
+            return false;
+        }
+        if default_port != "" and host.ends_with(default_port) {
+            host = host.slice(0, host.len() - default_port.len());
+        }
+        return host == o;
+    }
+
+    fn resolve_middleware(self, mw_names) {
+        let resolved = list();
+        for name in mw_names {
+            let raw = string(name).trim().lower();
+            if raw == "" {
+                continue;
+            }
+            // "throttle:60,60" style references carry arguments
+            let base = raw;
+            let args = list();
+            let colon = raw.index_of(":");
+            if colon > 0 {
+                base = raw.slice(0, colon).trim();
+                let arg_str = raw.slice(colon + 1, raw.len()).trim();
+                if arg_str != "" {
+                    for a in arg_str.split(",") {
+                        args.push(a.trim());
+                    }
+                }
+            }
+            if self.middleware_registry.has(base) {
+                let factory = self.middleware_registry[base];
+                resolved.push(factory(args));
+            } else {
+                // Fail loudly: a typo'd middleware alias must never silently
+                // run unprotected.
+                throw "Unknown middleware alias '" + raw + "'. Register it via app.middleware(\"" + base + "\", factory).";
+            }
+        }
+        return resolved;
+    }
+
+    // ------------------------------------------------------------------
+    // CSRF defense-in-depth (token-based layer)
+    // ------------------------------------------------------------------
+    // Layer 1 (below): Origin/Host comparison blocks cross-site browser
+    // requests that present an Origin header.
+    // Layer 2 (this): cookie-authenticated form submissions without an
+    // Origin header must present the per-session CSRF token issued at
+    // login. Bearer-token API calls are not CSRF-able (browsers never
+    // attach the header cross-site) and are exempt, as are API paths,
+    // logout (nuisance-only risk), and legacy sessions created before
+    // tokens existed.
+    fn csrf_valid(self, req) -> bool {
+        let m = req.method;
+        if m != "POST" and m != "PUT" and m != "PATCH" and m != "DELETE" {
+            return true;
+        }
+        if req.header("origin", "") != "" {
+            return true; // covered by the Origin check
+        }
+        if req.session_source != "cookie" {
+            return true; // Bearer or anonymous: no ambient credential to abuse
+        }
+        if req.path == "/logout" or req.path.starts_with("/api/") {
+            return true;
+        }
+        if req.auth == null {
+            return true;
+        }
+        let expected = req.auth.csrf();
+        if expected == "" {
+            return true; // legacy session without a stored token
+        }
+        let provided = req.input("_csrf", "");
+        return string(provided) == expected;
+    }
+
+    public fn listen(self, port: int = 8000, host: string = "") {
+        // Bind address: explicit argument wins, then SPID3R_HOST env.
+        // Default stays loopback (safe for local dev); production behind a
+        // reverse proxy or in a container sets SPID3R_HOST=0.0.0.0.
+        let bind_host = string(host).trim();
+        if bind_host == "" {
+            let env_host = env("SPID3R_HOST");
+            if env_host.is_some() and string(env_host.unwrap()).trim() != "" {
+                bind_host = string(env_host.unwrap()).trim();
+            } else {
+                bind_host = "127.0.0.1";
+            }
+        }
+        // Boot service providers before the first connection arrives.
+        self.boot();
+        let r = tcp_listen(bind_host + ":" + string(port));
+        if r.is_err() {
+            throw r.unwrap_err();
+        }
+        let listener = r.unwrap();
+        let real_addr = tcp_local_addr(listener).unwrap();
+        let app = self;
+        let opts = map("access_log", false);
+        println("[Spid3rWeb] Development server running on http://" + real_addr);
+        println("[Spid3rWeb] Press Ctrl+C to stop the server\n");
+
+        let _count = serve_listener(listener, fn(raw_req) {
+            return app.handle_request(raw_req);
+        }, opts, -1);
+    }
+}
+

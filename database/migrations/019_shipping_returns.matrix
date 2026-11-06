@@ -1,0 +1,91 @@
+// database/migrations/019_shipping_returns.matrix
+// Phase 11 — shipping zones, per-zone delivery rates, shipment fulfilment
+// metadata and the returns/exchanges ledger.
+//
+// The `shipments` table (Phase 2) is EXTENDED, not replaced: an order may
+// already have shipment rows, and every existing column keeps its meaning.
+
+import "framework/Database/Schema";
+import "framework/Database/Migration";
+import "framework/Database/DB";
+
+public class ShippingReturnTables extends Migration {
+    fn new(name: string = "019_shipping_returns") {
+        super(name);
+    }
+
+    public fn up(self) {
+        // Delivery zones: a named region matched by country and (optionally)
+        // a district list. The first matching zone wins; an unlisted
+        // district falls back to the flat settings-based fee.
+        Schema.create("shipping_zones", table => {
+            table.id();
+            table.string("name", 96).unique();
+            table.string("country", 64).default("Bangladesh");
+            // Comma-separated district names; empty means "anywhere in the
+            // country that no more specific zone covers".
+            table.text("districts").nullable();
+            table.integer("is_active").default(1);
+            table.timestamps();
+            table.index("idx_zones_country", ["country", "is_active"]);
+        });
+
+        // Per-zone, per-method delivery rates. A rate applies when the
+        // order value sits inside its [min_order_minor, max_order_minor]
+        // window (max null = unbounded). Several tiers per method are
+        // allowed so heavier/cheaper carts can be priced differently.
+        Schema.create("shipping_rates", table => {
+            table.id();
+            table.integer("zone_id");
+            table.string("method", 48);                    // standard | express | pickup
+            table.bigint("min_order_minor").default(0);
+            table.bigint("max_order_minor").nullable();
+            table.bigint("fee_minor");
+            table.integer("estimated_days_min").default(3);
+            table.integer("estimated_days_max").default(7);
+            table.integer("is_active").default(1);
+            table.timestamps();
+            table.foreign("zone_id", "shipping_zones", "id", "CASCADE", "CASCADE");
+            table.index("idx_rates_zone", ["zone_id", "method", "is_active"]);
+        });
+
+        // Fulfilment metadata on existing shipments.
+        Schema.table("shipments", table => {
+            table.string("method", 48).nullable();
+            table.integer("zone_id").nullable();
+            table.string("estimated_at", 32).nullable();
+            table.text("notes").nullable();
+        });
+        DB.statement("CREATE INDEX idx_shipments_status ON shipments (status, id)", []);
+
+        // Returns and exchanges. One row per requested item; the ledger is
+        // append-only until an administrator resolves the request.
+        Schema.create("returns", table => {
+            table.id();
+            table.integer("order_id");
+            table.integer("user_id").nullable();
+            table.integer("order_item_id").nullable();
+            table.integer("quantity").default(1);
+            table.string("kind", 24).default("return");    // return | exchange
+            table.text("reason");
+            table.string("status", 24).default("requested"); // requested | approved | rejected | received | refunded
+            table.bigint("refund_minor").default(0);
+            table.string("resolved_at", 32).nullable();
+            table.timestamps();
+            table.foreign("order_id", "orders", "id", "CASCADE", "CASCADE");
+            table.foreign("user_id", "users", "id", "SET NULL", "CASCADE");
+            table.foreign("order_item_id", "order_items", "id", "SET NULL", "CASCADE");
+            table.index("idx_returns_order", ["order_id", "status"]);
+            table.index("idx_returns_status", ["status", "id"]);
+        });
+    }
+
+    public fn down(self) {
+        Schema.dropIfExists("returns");
+        Schema.dropIfExists("shipping_rates");
+        Schema.dropIfExists("shipping_zones");
+        // The shipments index is deliberately left in place: DROP INDEX has
+        // no portable IF EXISTS form across the three dialects, and an
+        // unused index on a live table is harmless.
+    }
+}

@@ -1,0 +1,249 @@
+// tests/test_store_admin.matrix
+// Phase 9 — admin dashboard & management integration tests.
+
+import "framework/Application";
+import "framework/Router";
+import "framework/Database/DB";
+import "routes/web";
+import "routes/queue";
+import "app/Middleware/StoreMiddleware";
+import "app/Services/AuthService";
+import "database/seeders/DatabaseSeeder";
+
+fn call(app, method: string, path: string, data, cookie: string) {
+    let headers = map();
+    if cookie != "" {
+        headers["cookie"] = cookie;
+    }
+    let payload = map();
+    if data != null {
+        for k in data.keys() {
+            payload[k] = data[k];
+        }
+    }
+    return app.handle_request(map(
+        "method", method, "path", path,
+        "headers", headers, "data", payload
+    ));
+}
+
+fn body(res) {
+    return json_parse(string(res["body"]));
+}
+
+fn admin_session(app, tag: string) {
+    let svc = new AuthService();
+    let email = "panel-admin-" + tag + "@example.test";
+    let user = svc.register("Panel Admin", email, "panel-admin-pass");
+    let role = DB.table("roles").where("slug", "=", "admin").first();
+    DB.table("user_roles").insert(map("user_id", user["id"], "role_id", role["id"]));
+    let token = svc.login(email, "panel-admin-pass");
+    let rows = DB.select("SELECT payload FROM sessions WHERE token = ?", [token]);
+    return map(
+        "cookie", "spid3r_session=" + token,
+        "csrf", string(rows[0]["payload"]),
+        "email", email, "id", user["id"]
+    );
+}
+
+fn setup(tag: string) {
+    let cat = DB.table("categories").insert(map(
+        "name", "Admin Category " + tag, "slug", "admin-cat-" + tag
+    ));
+    let product = DB.table("products").insert(map(
+        "category_id", cat, "name", "Admin Widget " + tag,
+        "slug", "admin-widget-" + tag, "sku", "ADM-" + tag,
+        "price_minor", 25000, "status", "published", "currency", "BDT"
+    ));
+    DB.table("inventory").insert(map(
+        "product_id", product, "variant_id", null,
+        "quantity", 20, "reserved", 0, "low_stock_threshold", 2
+    ));
+    let order_id = DB.table("orders").insert(map(
+        "order_number", "ADM-ORDER-" + tag,
+        "user_id", null, "status", "paid",
+        "subtotal_minor", 25000, "discount_minor", 0,
+        "shipping_minor", 0, "tax_minor", 0, "total_minor", 25000,
+        "currency", "BDT", "shipping_address_json", "{}",
+        "billing_address_json", "{}", "placed_at", string(unix_time())
+    ));
+    let customer_email = "panel-customer-" + tag + "@example.test";
+    let svc = new AuthService();
+    let customer = svc.register("Panel Customer", customer_email, "panel-cust-pass");
+    return map(
+        "cat", cat, "product", product, "order", order_id,
+        "customer_id", customer["id"], "customer_email", customer_email
+    );
+}
+
+fn test_dashboard_pages(app, ids, adm) {
+    let d = call(app, "GET", "/admin/dashboard", null, adm["cookie"]);
+    assert(d["status"] == 200, "admin dashboard renders");
+    assert(string(d["body"]).contains("Revenue"), "dashboard shows revenue");
+    assert(string(d["body"]).contains("ADM-ORDER-" + string(ids["tag"])), "dashboard lists recent order");
+
+    let pages = ["/admin/orders", "/admin/products", "/admin/categories", "/admin/brands",
+                 "/admin/inventory", "/admin/customers", "/admin/staff", "/admin/roles",
+                 "/admin/coupons", "/admin/settings", "/admin/shipping", "/admin/payments",
+                 "/admin/audit", "/admin/reports"];
+    let i = 0;
+    while i < pages.len() {
+        let res = call(app, "GET", pages[i], null, adm["cookie"]);
+        assert(res["status"] == 200, "admin page renders: " + pages[i]);
+        i += 1;
+    }
+    assert(call(app, "GET", "/admin/dashboard", null, "")["status"] == 401, "anonymous admin blocked");
+    println("  [PASS] test_dashboard_pages");
+}
+
+fn test_customer_management(app, ids, adm) {
+    let list = call(app, "GET", "/admin/api/customers", null, adm["cookie"]);
+    assert(list["status"] == 200, "customers API renders");
+    assert(string(list["body"]).contains(ids["customer_email"]), "customer listed");
+
+    let path = "/admin/api/customers/" + string(ids["customer_id"]) + "/status";
+    let ok = call(app, "POST", path, map(
+        "status", "suspended", "format", "json", "_csrf", adm["csrf"]
+    ), adm["cookie"]);
+    assert(ok["status"] == 200, "customer suspended via API");
+    assert(DB.table("users").where("id", "=", ids["customer_id"]).first()["status"] == "suspended", "status persisted");
+
+    let bad = call(app, "POST", path, map(
+        "status", "bogus", "format", "json", "_csrf", adm["csrf"]
+    ), adm["cookie"]);
+    assert(bad["status"] == 422, "invalid status rejected");
+
+    let audit = call(app, "GET", "/admin/api/audit", null, adm["cookie"]);
+    assert(string(audit["body"]).contains("customer.status"), "status change audited");
+    println("  [PASS] test_customer_management");
+}
+
+fn test_staff_roles(app, ids, adm) {
+    let assign = call(app, "POST", "/admin/api/staff/role", map(
+        "user_id", ids["customer_id"], "role", "staff",
+        "format", "json", "_csrf", adm["csrf"]
+    ), adm["cookie"]);
+    assert(assign["status"] == 200 and body(assign)["data"]["assigned"] == true, "staff role assigned");
+    let staff = call(app, "GET", "/admin/api/staff", null, adm["cookie"]);
+    assert(string(staff["body"]).contains(ids["customer_email"]), "staff list includes promoted user");
+
+    let roles = body(call(app, "GET", "/admin/api/roles", null, adm["cookie"]))["data"];
+    assert(roles["roles"].len() >= 3, "roles listed");
+    assert(roles["permissions"].len() >= 6, "permissions listed");
+    let customer_role = DB.table("roles").where("slug", "=", "customer").first();
+    let toggle = "/admin/api/roles/" + string(customer_role["id"]) + "/permissions";
+    let on = call(app, "POST", toggle, map(
+        "permission", "reports.view", "enabled", 1,
+        "format", "json", "_csrf", adm["csrf"]
+    ), adm["cookie"]);
+    assert(on["status"] == 200, "permission toggled on");
+    let off = call(app, "POST", toggle, map(
+        "permission", "reports.view", "enabled", 0,
+        "format", "json", "_csrf", adm["csrf"]
+    ), adm["cookie"]);
+    assert(off["status"] == 200, "permission toggled off");
+    println("  [PASS] test_staff_roles");
+}
+
+fn test_coupons_and_settings(app, adm, tag: string) {
+    let code = "PANEL-" + tag;
+    let create = call(app, "POST", "/admin/api/coupons", map(
+        "code", code, "type", "fixed", "value_minor", 1000,
+        "min_order_minor", 0, "max_uses", 5,
+        "format", "json", "_csrf", adm["csrf"]
+    ), adm["cookie"]);
+    assert(create["status"] == 201, "coupon created");
+    let coupon_id = body(create)["data"]["id"];
+    let dup = call(app, "POST", "/admin/api/coupons", map(
+        "code", code, "type", "fixed", "value_minor", 1000,
+        "min_order_minor", 0, "max_uses", 5,
+        "format", "json", "_csrf", adm["csrf"]
+    ), adm["cookie"]);
+    assert(dup["status"] == 422, "duplicate coupon code rejected");
+
+    let update = call(app, "PUT", "/admin/api/coupons/" + string(coupon_id), map(
+        "code", code, "type", "percent", "value_minor", 500,
+        "min_order_minor", 0, "max_uses", 10,
+        "format", "json", "_csrf", adm["csrf"]
+    ), adm["cookie"]);
+    assert(update["status"] == 200, "coupon updated");
+
+    let del = call(app, "DELETE", "/admin/api/coupons/" + string(coupon_id), map(
+        "format", "json", "_csrf", adm["csrf"]
+    ), adm["cookie"]);
+    assert(del["status"] == 200, "coupon deleted");
+
+    let setting = call(app, "PUT", "/admin/api/settings", map(
+        "setting_key", "panel.test." + tag, "value", "42", "group", "general",
+        "format", "json", "_csrf", adm["csrf"]
+    ), adm["cookie"]);
+    assert(setting["status"] == 200 and body(setting)["data"]["updated"] == true, "setting updated");
+    let settings = call(app, "GET", "/admin/api/settings?group=general", null, adm["cookie"]);
+    assert(string(settings["body"]).contains("panel.test." + tag), "setting listed");
+    println("  [PASS] test_coupons_and_settings");
+}
+
+fn test_reports_export(app, ids, adm) {
+    let csv = call(app, "GET", "/admin/reports/export?format=csv", null, adm["cookie"]);
+    assert(csv["status"] == 200, "CSV export renders");
+    assert(string(csv["headers"]["content-type"]).contains("text/csv"), "CSV content-type");
+    assert(string(csv["body"]).contains("order_number,status,total_minor,placed_at"), "CSV header");
+    assert(string(csv["body"]).contains("ADM-ORDER-" + string(ids["tag"])), "CSV contains settled order");
+
+    let json_res = call(app, "GET", "/admin/reports/export?format=json", null, adm["cookie"]);
+    assert(json_res["status"] == 200, "JSON export renders");
+    assert(body(json_res)["data"].len() >= 1, "JSON export has rows");
+    println("  [PASS] test_reports_export");
+}
+
+fn cleanup(ids, adm, tag: string) {
+    try {
+        DB.table("orders").where("order_number", "=", "ADM-ORDER-" + tag).delete();
+        DB.table("inventory").where("product_id", "=", ids["product"]).delete();
+        DB.table("products").where("id", "=", ids["product"]).delete();
+        DB.table("categories").where("id", "=", ids["cat"]).delete();
+        DB.table("coupons").where("code", "=", "PANEL-" + tag).delete();
+        DB.table("settings").where("setting_key", "=", "panel.test." + tag).delete();
+        DB.table("audit_logs").where("entity_id", "LIKE", "%" + tag + "%").delete();
+        let emails = [adm["email"], ids["customer_email"]];
+        let i = 0;
+        while i < emails.len() {
+            let user = DB.table("users").where("email", "=", emails[i]).first();
+            if user != null {
+                DB.table("user_roles").where("user_id", "=", user["id"]).delete();
+                DB.table("sessions").where("user_id", "=", user["id"]).delete();
+                DB.table("email_verifications").where("user_id", "=", user["id"]).delete();
+                DB.table("users").where("id", "=", user["id"]).delete();
+            }
+            i += 1;
+        }
+    } catch (e) {
+        println("[cleanup] best-effort: " + string(e));
+    }
+}
+
+fn main() {
+    println("\n=== Running Store Admin Test Suite ===");
+    let app = new Application();
+    register_store_middleware(app);
+    register_web_routes();
+    register_queue_jobs();
+    run_database_seeder();
+    let tag = string(unix_time());
+    let ids = setup(tag);
+    ids["tag"] = tag;
+    let adm = admin_session(app, tag);
+
+    try {
+        test_dashboard_pages(app, ids, adm);
+        test_customer_management(app, ids, adm);
+        test_staff_roles(app, ids, adm);
+        test_coupons_and_settings(app, adm, tag);
+        test_reports_export(app, ids, adm);
+    } finally {
+        cleanup(ids, adm, tag);
+    }
+    DB.close();
+    println("=== All Store Admin Tests Passed! ===\n");
+    return 0;
+}

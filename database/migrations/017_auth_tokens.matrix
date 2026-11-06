@@ -1,0 +1,44 @@
+// database/migrations/017_auth_tokens.matrix
+// Phase 3 — password-reset & email-verification tokens.
+// Tokens are stored ONLY as bcrypt hashes (Hash.make/check): a database
+// leak never exposes usable reset links. Expiry is unix seconds (TEXT,
+// matching the framework's timestamp convention).
+
+import "framework/Database/Schema";
+import "framework/Database/Migration";
+import "framework/Database/DB";
+
+public class AuthTokenTables extends Migration {
+    fn new(name: string = "017_auth_tokens") {
+        super(name);
+    }
+
+    public fn up(self) {
+        Schema.create("password_resets", table => {
+            table.id();
+            table.integer("user_id");
+            table.string("token_hash", 255).unique();
+            table.string("expires_at", 32);
+            table.string("used_at", 32).nullable();
+            table.timestamps();
+            table.foreign("user_id", "users", "id", "CASCADE", "CASCADE");
+            table.index("idx_password_resets_user", ["user_id"]);
+        });
+
+        Schema.create("email_verifications", table => {
+            table.id();
+            table.integer("user_id");
+            table.string("token_hash", 255).unique();
+            table.string("expires_at", 32);
+            table.string("verified_at", 32).nullable();
+            table.timestamps();
+            table.foreign("user_id", "users", "id", "CASCADE", "CASCADE");
+            table.index("idx_email_verifications_user", ["user_id"]);
+        });
+    }
+
+    public fn down(self) {
+        Schema.dropIfExists("email_verifications");
+        Schema.dropIfExists("password_resets");
+    }
+}

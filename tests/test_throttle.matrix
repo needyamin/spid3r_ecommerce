@@ -1,0 +1,150 @@
+// tests/test_throttle.matrix
+// Unit + behavior tests for ThrottleMiddleware (Cache-backed rate limiting):
+// fixed-window counting, 429 responses (HTML + JSON), per-path/method and
+// per-identity keying, session-identity preference, and window reset.
+
+import "framework/Middleware";
+import "framework/Request";
+import "framework/Cache/Cache";
+
+// Build a minimal in-process Request.
+fn make_req(method: string, path: string, session: string, ip: string) {
+    let headers = map();
+    if ip != "" {
+        // ThrottleMiddleware trusts client_ip() only via session here; the
+        // IP path is exercised through the proxy header in test_ip_keying.
+        headers["x-forwarded-for"] = ip;
+    }
+    let req = new Request(map(
+        "method", method,
+        "path", path,
+        "headers", headers,
+        "body", ""
+    ));
+    if session != "" {
+        req.session_id = session;
+        req.session_source = "cookie";
+    }
+    return req;
+}
+
+fn hits_left(mw, req, n) -> int {
+    // Send n requests, count how many were allowed (null = proceed).
+    let allowed = 0;
+    let i = 0;
+    while i < n {
+        if mw.handle(req) == null {
+            allowed = allowed + 1;
+        }
+        i = i + 1;
+    }
+    return allowed;
+}
+
+// 1. Under the limit every request passes.
+fn test_under_limit_passes() {
+    let mw = new ThrottleMiddleware(3, 60);
+    let req = make_req("GET", "/t1/under", "sess-under-1", "");
+    assert(hits_left(mw, req, 3) == 3, "all requests under the limit pass");
+    println("  [PASS] Under-limit requests proceed");
+}
+
+// 2. Exceeding the limit returns 429 HTML with retry-after.
+fn test_over_limit_429_html() {
+    let mw = new ThrottleMiddleware(2, 60);
+    let req = make_req("GET", "/t2/over", "sess-over-2", "");
+    assert(mw.handle(req) == null, "hit 1 passes");
+    assert(mw.handle(req) == null, "hit 2 passes");
+    let res = mw.handle(req);
+    assert(res != null, "hit 3 is blocked");
+    assert(int(res.status_code) == 429, "blocked response is 429");
+    assert(res.headers.has("retry-after"), "429 carries retry-after header");
+    assert(string(res.body).contains("Too Many Requests"), "HTML 429 body present");
+    println("  [PASS] Over-limit returns 429 HTML with retry-after");
+}
+
+// 3. /api/* paths get a JSON 429 instead of HTML.
+fn test_api_429_json() {
+    let mw = new ThrottleMiddleware(1, 60);
+    let req = make_req("GET", "/api/v1/throttled", "sess-api-3", "");
+    assert(mw.handle(req) == null, "first API hit passes");
+    let res = mw.handle(req);
+    assert(res != null, "second API hit is blocked");
+    assert(int(res.status_code) == 429, "API 429 status");
+    assert(string(res.body).contains("Rate limit exceeded"), "API 429 is JSON body");
+    println("  [PASS] API paths receive JSON 429");
+}
+
+// 4. Counters are per path.
+fn test_per_path_keying() {
+    let mw = new ThrottleMiddleware(1, 60);
+    let req_a = make_req("GET", "/t4/alpha", "sess-path-4", "");
+    let req_b = make_req("GET", "/t4/beta", "sess-path-4", "");
+    assert(mw.handle(req_a) == null, "path A hit 1 passes");
+    assert(mw.handle(req_a) != null, "path A hit 2 blocked");
+    assert(mw.handle(req_b) == null, "path B has its own counter");
+    println("  [PASS] Counters keyed per path");
+}
+
+// 5. Counters are per method.
+fn test_per_method_keying() {
+    let mw = new ThrottleMiddleware(1, 60);
+    let get_req = make_req("GET", "/t5/mixed", "sess-meth-5", "");
+    let post_req = make_req("POST", "/t5/mixed", "sess-meth-5", "");
+    assert(mw.handle(get_req) == null, "GET hit 1 passes");
+    assert(mw.handle(get_req) != null, "GET hit 2 blocked");
+    assert(mw.handle(post_req) == null, "POST same path has its own counter");
+    println("  [PASS] Counters keyed per method");
+}
+
+// 6. Session token is the preferred identity — two clients behind one IP
+//    do not share a counter when they carry different sessions.
+fn test_session_identity_preferred() {
+    env_set("SPID3R_TRUST_PROXY", "1");
+    let mw = new ThrottleMiddleware(1, 60);
+    let a = make_req("GET", "/t6/who", "sess-user-A", "203.0.113.9");
+    let b = make_req("GET", "/t6/who", "sess-user-B", "203.0.113.9");
+    assert(mw.handle(a) == null, "client A passes");
+    assert(mw.handle(a) != null, "client A second hit blocked");
+    assert(mw.handle(b) == null, "client B (same IP, own session) passes");
+    env_set("SPID3R_TRUST_PROXY", "0");
+    println("  [PASS] Session identity preferred over IP");
+}
+
+// 7. IP keying applies when there is no session (anonymous clients).
+fn test_ip_keying() {
+    env_set("SPID3R_TRUST_PROXY", "1");
+    let mw = new ThrottleMiddleware(1, 60);
+    let a = make_req("GET", "/t7/anon", "", "198.51.100.7");
+    let b = make_req("GET", "/t7/anon", "", "198.51.100.8");
+    assert(mw.handle(a) == null, "IP .7 hit 1 passes");
+    assert(mw.handle(a) != null, "IP .7 hit 2 blocked");
+    assert(mw.handle(b) == null, "different IP passes");
+    env_set("SPID3R_TRUST_PROXY", "0");
+    println("  [PASS] Anonymous clients keyed by IP");
+}
+
+// 8. Forgetting the cache key resets the window.
+fn test_window_reset() {
+    let mw = new ThrottleMiddleware(1, 60);
+    let req = make_req("GET", "/t8/reset", "sess-reset-8", "");
+    assert(mw.handle(req) == null, "first hit passes");
+    assert(mw.handle(req) != null, "second hit blocked");
+    let key = "throttle:sess-reset-8:GET:/t8/reset";
+    Cache.forget(key);
+    assert(mw.handle(req) == null, "after key forget the window is fresh");
+    println("  [PASS] Window resets when the counter expires");
+}
+
+fn main() {
+    println("=== Running Throttle / Rate Limit Test Suite ===");
+    test_under_limit_passes();
+    test_over_limit_429_html();
+    test_api_429_json();
+    test_per_path_keying();
+    test_per_method_keying();
+    test_session_identity_preferred();
+    test_ip_keying();
+    test_window_reset();
+    println("=== All Throttle Tests Passed! ===");
+}

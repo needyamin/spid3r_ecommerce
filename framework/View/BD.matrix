@@ -1,0 +1,625 @@
+// framework/View/BD.matrix
+// SpiderBD Template Engine: Layouts, Sections, Yielding, Partials, and Directives (.bd.html)
+
+import "framework/Response";
+
+public fn html_escape(value) -> string {
+    if value == null {
+        return "";
+    }
+    return string(value)
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace("\"", "&quot;")
+        .replace("'", "&#039;");
+}
+
+public class BD {
+    public let views_path;
+    // Compiled-template content cache (opt-in via SPID3R_VIEW_CACHE=1).
+    // Caches raw file contents by resolved path — evaluation still happens
+    // per request. Disable during development so edits show immediately.
+    public let template_cache;
+
+    fn new(views_path: string = "resources/views") {
+        self.views_path = views_path;
+        self.template_cache = map();
+    }
+
+    fn load_template(self, file_path: string) {
+        let use_cache = false;
+        let cache_env = env("SPID3R_VIEW_CACHE");
+        if cache_env.is_some() and string(cache_env.unwrap()).trim() == "1" {
+            use_cache = true;
+        }
+        if use_cache and self.template_cache.has(file_path) {
+            return self.template_cache[file_path];
+        }
+        let res = read_file(file_path);
+        if res.is_err() {
+            return null;
+        }
+        let content = res.unwrap();
+        if use_cache {
+            self.template_cache[file_path] = content;
+        }
+        return content;
+    }
+
+    public fn render(self, view_name: string, data = null) -> string {
+        if data == null {
+            data = map();
+        }
+        let file_path = self.resolve_view_path(view_name);
+        let template = self.load_template(file_path);
+        if template == null {
+            return "<!-- BD Error: View '" + view_name + "' not found at '" + file_path + "' -->";
+        }
+
+        // 1. Check for layout extension (@extends('...'))
+        let layout_name = "";
+        let trimmed_first_lines = template.split("\n");
+        for line in trimmed_first_lines {
+            let s = line.trim();
+            if s.starts_with("@extends(") and s.ends_with(")") {
+                layout_name = self.extract_quoted_arg(s, "@extends(");
+                break;
+            }
+        }
+
+        // 2. Parse sections from the view
+        let sections = self.parse_sections(template);
+
+        // 3. If view extends a layout, load the layout template
+        let output = "";
+        if layout_name != "" {
+            let layout_file = self.resolve_view_path(layout_name);
+            let layout_res = self.load_template(layout_file);
+            if layout_res != null {
+                output = layout_res;
+                // Replace @yield('section_name') with section content
+                output = self.apply_yields(output, sections);
+            } else {
+                output = template; // fallback
+            }
+        } else {
+            output = template;
+        }
+
+        // 4. Handle @include('...') partials (nested, depth-capped)
+        output = self.apply_includes(output, 0);
+
+        // 5. Evaluate Directives: @if/@else/@endif, @foreach, then variables
+        output = self.evaluate_directives(output, data);
+        output = self.evaluate_variables(output, data);
+
+        return output;
+    }
+
+    fn resolve_view_path(self, view_name: string) -> string {
+        let clean = view_name.replace(".", "/");
+        let candidates = list(
+            self.views_path + "/" + clean + ".bd.html",
+            self.views_path + "/" + clean + ".html",
+            "resources/views/" + clean + ".bd.html",
+            "resources/views/" + clean + ".html",
+            "examples/spid3r_web/resources/views/" + clean + ".bd.html",
+            "examples/spid3r_web/resources/views/" + clean + ".html"
+        );
+        for p in candidates {
+            if file_exists(p) {
+                return p;
+            }
+        }
+        return self.views_path + "/" + clean + ".bd.html";
+    }
+
+    fn extract_quoted_arg(self, line: string, prefix: string) -> string {
+        let inner = line.replace(prefix, "");
+        if inner.ends_with(")") {
+            inner = inner.slice(0, inner.len() - 1);
+        }
+        inner = inner.trim();
+        if (inner.starts_with("'") and inner.ends_with("'")) or (inner.starts_with("\"") and inner.ends_with("\"")) {
+            return inner.slice(1, inner.len() - 1);
+        }
+        return inner;
+    }
+
+    fn parse_sections(self, template: string) {
+        let sections = map();
+        let lines = template.split("\n");
+        let current_section = "";
+        let current_content = list();
+        let in_section = false;
+
+        for raw_line in lines {
+            let line = raw_line.trim();
+
+            // Simple 1-line section: @section('title', 'My Page') or @section('title', product.name)
+            if line.starts_with("@section(") and line.contains(",") and line.ends_with(")") {
+                let inner = line.slice(9, line.len() - 1).trim();
+                let comma_idx = inner.index_of(",");
+                if comma_idx > 0 {
+                    let sec_name = inner.slice(0, comma_idx).trim().replace("'", "").replace("\"", "");
+                    let raw_val = inner.slice(comma_idx + 1, inner.len()).trim();
+                    let sec_val = raw_val;
+                    if (raw_val.starts_with("'") and raw_val.ends_with("'")) or (raw_val.starts_with("\"") and raw_val.ends_with("\"")) {
+                        sec_val = raw_val.slice(1, raw_val.len() - 1);
+                    } else {
+                        // Unquoted expression (e.g. product.name): wrap in {{ ... }} so layout @yield renders the evaluated title
+                        sec_val = "{{" + raw_val + "}}";
+                    }
+                    sections[sec_name] = sec_val;
+                }
+                continue;
+            }
+
+            // Block section: @section('content')
+            if line.starts_with("@section(") and line.ends_with(")") {
+                current_section = self.extract_quoted_arg(line, "@section(");
+                current_content = list();
+                in_section = true;
+                continue;
+            }
+
+            if in_section and (line == "@endsection" or line == "@stop") {
+                sections[current_section] = current_content.join("\n");
+                in_section = false;
+                current_section = "";
+                continue;
+            }
+
+            if in_section {
+                current_content.push(raw_line);
+            }
+        }
+
+        return sections;
+    }
+
+    fn apply_yields(self, layout: string, sections) -> string {
+        let out_lines = list();
+        let lines = layout.split("\n");
+
+        for raw_line in lines {
+            let line = raw_line;
+            while line.contains("@yield(") {
+                let start_idx = line.index_of("@yield(");
+                let end_idx = line.index_of(")");
+                if start_idx >= 0 and end_idx > start_idx {
+                    let yield_call = line.slice(start_idx, end_idx + 1);
+                    let inner = yield_call.replace("@yield(", "");
+                    if inner.ends_with(")") {
+                        inner = inner.slice(0, inner.len() - 1);
+                    }
+                    inner = inner.trim();
+                    let replacement = "";
+                    let comma_idx = inner.index_of(",");
+                    if comma_idx > 0 {
+                        let sec_name = inner.slice(0, comma_idx).trim().replace("'", "").replace("\"", "");
+                        let def_raw = inner.slice(comma_idx + 1, inner.len()).trim();
+                        let def_val = def_raw;
+                        if (def_raw.starts_with("'") and def_raw.ends_with("'")) or (def_raw.starts_with("\"") and def_raw.ends_with("\"")) {
+                            def_val = def_raw.slice(1, def_raw.len() - 1);
+                        }
+                        if sections.has(sec_name) {
+                            replacement = sections[sec_name];
+                        } else {
+                            replacement = def_val;
+                        }
+                    } else {
+                        let sec_name = inner.trim().replace("'", "").replace("\"", "");
+                        if sections.has(sec_name) {
+                            replacement = sections[sec_name];
+                        }
+                    }
+                    line = line.replace(yield_call, replacement);
+                } else {
+                    break;
+                }
+            }
+            out_lines.push(line);
+        }
+
+        return out_lines.join("\n");
+    }
+
+    // Resolve @include directives. Partials may themselves contain
+    // @include lines, so resolution recurses with a depth cap to survive
+    // accidental include cycles.
+    fn apply_includes(self, template: string, depth: int) -> string {
+        if depth > 5 {
+            return template;
+        }
+        let out_lines = list();
+        let lines = template.split("\n");
+
+        for raw_line in lines {
+            let line = raw_line.trim();
+            if line.starts_with("@include(") and line.ends_with(")") {
+                let partial_name = self.extract_quoted_arg(line, "@include(");
+                let p_file = self.resolve_view_path(partial_name);
+                let p_content = self.load_template(p_file);
+                if p_content != null {
+                    out_lines.push(self.apply_includes(p_content, depth + 1));
+                } else {
+                    out_lines.push("<!-- BD Include Error: " + partial_name + " -->");
+                }
+            } else {
+                out_lines.push(raw_line);
+            }
+        }
+
+        return out_lines.join("\n");
+    }
+
+    fn evaluate_directives(self, template: string, data) -> string {
+        // Unified nesting-aware directive pass: @if/@else/@endif and
+        // @foreach/@endforeach are processed together by a recursive-descent
+        // walker, so conditionals and loops nest freely and loop bodies get
+        // a per-iteration scope (conditions on loop variables work).
+        let lines = template.split("\n");
+        let out_lines = list();
+        self.eval_lines(lines, data, out_lines);
+        return out_lines.join("\n");
+    }
+
+    // Recursive walker: emits lines into out, expanding @if/@else/@endif
+    // and @foreach/@endforeach blocks. Stray closing directives (no open
+    // block) are dropped instead of leaking into the rendered page.
+    fn eval_lines(self, lines, data, out) {
+        let i = 0;
+        while i < lines.len() {
+            let raw = lines[i];
+            let line = raw.trim();
+
+            // ---- Conditional block ----
+            if line.starts_with("@if(") and line.ends_with(")") {
+                let cond_expr = self.extract_quoted_arg(line, "@if(");
+                let is_true = self.evaluate_truthiness(cond_expr, data);
+
+                i = i + 1;
+                let if_lines = list();
+                let else_lines = list();
+                let branch = if_lines;
+                let depth = 0;
+                while i < lines.len() {
+                    let l2 = lines[i].trim();
+                    if l2.starts_with("@if(") and l2.ends_with(")") {
+                        depth = depth + 1;
+                        branch.push(lines[i]);
+                    } elif l2 == "@endif" {
+                        if depth == 0 {
+                            break;
+                        }
+                        depth = depth - 1;
+                        branch.push(lines[i]);
+                    } elif l2 == "@else" and depth == 0 {
+                        branch = else_lines;
+                    } else {
+                        branch.push(lines[i]);
+                    }
+                    i = i + 1;
+                }
+                // i sits on @endif (or end of input) - step past it
+                i = i + 1;
+
+                if is_true {
+                    self.eval_lines(if_lines, data, out);
+                } else {
+                    self.eval_lines(else_lines, data, out);
+                }
+                continue;
+            }
+
+            // ---- Loop block ----
+            if line.starts_with("@foreach(") and line.ends_with(")") {
+                let expr = line.replace("@foreach(", "");
+                expr = expr.slice(0, expr.len() - 1).trim();
+                let loop_list_name = "";
+                let loop_item_name = "";
+                // Documented syntax: @foreach(item in items)
+                if expr.contains(" in ") {
+                    let in_parts = expr.split(" in ");
+                    if in_parts.len() == 2 {
+                        loop_list_name = in_parts[1].trim();
+                        loop_item_name = in_parts[0].trim();
+                    }
+                } else {
+                    // Legacy syntax: @foreach($items as $item)
+                    let parts = expr.split(" as ");
+                    if parts.len() == 2 {
+                        loop_list_name = parts[0].trim();
+                        loop_item_name = parts[1].trim();
+                    }
+                }
+                if loop_item_name.starts_with("$") {
+                    loop_item_name = loop_item_name.slice(1, loop_item_name.len()).trim();
+                }
+                if loop_list_name.starts_with("$") {
+                    loop_list_name = loop_list_name.slice(1, loop_list_name.len()).trim();
+                }
+
+                i = i + 1;
+                let body_lines = list();
+                let depth = 0;
+                while i < lines.len() {
+                    let l2 = lines[i].trim();
+                    if l2.starts_with("@foreach(") and l2.ends_with(")") {
+                        depth = depth + 1;
+                        body_lines.push(lines[i]);
+                    } elif l2 == "@endforeach" {
+                        if depth == 0 {
+                            break;
+                        }
+                        depth = depth - 1;
+                        body_lines.push(lines[i]);
+                    } else {
+                        body_lines.push(lines[i]);
+                    }
+                    i = i + 1;
+                }
+                i = i + 1; // step past @endforeach
+
+                let items = self.resolve_expression(loop_list_name, data);
+                if items != null and type_of(items) == "list" {
+                    for item in items {
+                        let item_data = map();
+                        // copy parent scope, then bind the loop variable
+                        for k in data.keys() {
+                            item_data[k] = data[k];
+                        }
+                        item_data[loop_item_name] = item;
+                        // Interpolate variables HERE, while the iteration
+                        // scope (loop var + parent data) is alive — the
+                        // top-level variable pass cannot see loop scopes.
+                        let body_out_lines = list();
+                        self.eval_lines(body_lines, item_data, body_out_lines);
+                        out.push(self.evaluate_variables(body_out_lines.join("\n"), item_data));
+                    }
+                }
+                continue;
+            }
+
+            // ---- Stray closing directives: never leak into output ----
+            if line == "@else" or line == "@endif" or line == "@endforeach" {
+                i = i + 1;
+                continue;
+            }
+
+            out.push(raw);
+            i = i + 1;
+        }
+    }
+
+    // Truthiness for a BD condition expression (dot-path aware):
+    // bool true / non-empty string (not "0"/"false") / int > 0 / float > 0 /
+    // non-empty list / non-empty map. Supports leading `not` / `!`.
+    fn evaluate_truthiness(self, cond_expr: string, data) -> bool {
+        let effective = string(cond_expr).trim();
+        if effective.starts_with("not ") {
+            let inner = self.evaluate_truthiness(effective.slice(4, effective.len()).trim(), data);
+            return not inner;
+        }
+        if effective.starts_with("!") {
+            let inner = self.evaluate_truthiness(effective.slice(1, effective.len()).trim(), data);
+            return not inner;
+        }
+        if effective == "" {
+            return false;
+        }
+        let val = self.resolve_dot_path(effective, data);
+        if val == null {
+            return false;
+        }
+        let t = type_of(val);
+        if t == "bool" and val == true {
+            return true;
+        }
+        if t == "string" and val != "" and val != "0" and val != "false" {
+            return true;
+        }
+        if t == "int" and val > 0 {
+            return true;
+        }
+        if t == "float" and val > 0.0 {
+            return true;
+        }
+        if t == "list" and val.len() > 0 {
+            return true;
+        }
+        if t == "map" and val.len() > 0 {
+            return true;
+        }
+        return false;
+    }
+
+    // Render one loop iteration: the body may itself contain nested
+    // conditionals and loops, so re-run the directive walker on the body
+    // with the iteration scope merged over the parent data.
+    fn render_loop_iteration(self, body_lines, data, item_var_name: string) -> string {
+        let out_lines = list();
+        self.eval_lines(body_lines, data, out_lines);
+        let out = out_lines.join("\n");
+        return self.evaluate_variables(out, data);
+    }
+
+    fn resolve_expression(self, raw_expr: string, data) {
+        let expr = raw_expr.trim();
+        if expr.starts_with("$") {
+            expr = expr.slice(1, expr.len()).trim();
+        }
+        if expr == "" {
+            return null;
+        }
+        return self.resolve_dot_path(expr, data);
+    }
+
+    fn resolve_dot_path(self, path: string, data) {
+        if path == "" or data == null {
+            return null;
+        }
+
+        // Fast-path: if type_of(data) == "map" and data.has(path), return data[path]
+        if type_of(data) == "map" and data.has(path) {
+            return data[path];
+        }
+
+        let parts = path.split(".");
+        let first = parts[0].trim();
+        if type_of(data) != "map" or not data.has(first) {
+            return null;
+        }
+
+        let curr = data[first];
+        let i = 1;
+        while i < parts.len() {
+            let seg = parts[i].trim();
+            if curr == null {
+                return null;
+            }
+            curr = self.resolve_property(curr, seg);
+            i = i + 1;
+        }
+
+        return curr;
+    }
+
+    fn resolve_property(self, obj, prop: string) {
+        if obj == null {
+            return null;
+        }
+
+        let t = type_of(obj);
+
+        // 1. Spid3r Map
+        if t == "map" {
+            if obj.has(prop) {
+                return obj[prop];
+            }
+            return null;
+        }
+
+        // 2. Class Instance (Active Record Model or Domain Object)
+        if t == "instance" {
+            // Check Active Record Model attributes map
+            try {
+                let attrs = obj.attributes;
+                if attrs != null and type_of(attrs) == "map" {
+                    if attrs.has(prop) {
+                        return attrs[prop];
+                    }
+                }
+            } catch (_e1) {}
+
+            // Check obj.get(prop) method on Model
+            try {
+                let val = obj.get(prop);
+                if val != null {
+                    return val;
+                }
+            } catch (_e2) {}
+
+            return null;
+        }
+
+        // 3. List (numeric indexing: items.0.title)
+        if t == "list" {
+            try {
+                let idx = int(prop);
+                if idx >= 0 and idx < obj.len() {
+                    return obj[idx];
+                }
+            } catch (_e5) {}
+            return null;
+        }
+
+        return null;
+    }
+
+    fn evaluate_variables(self, text: string, data) -> string {
+        let result = "";
+        let remaining = text;
+
+        while true {
+            let raw_idx = remaining.index_of("{!!");
+            let esc_idx = remaining.index_of("{{");
+
+            // No more tags to process
+            if raw_idx < 0 and esc_idx < 0 {
+                result = result + remaining;
+                break;
+            }
+
+            // Determine which tag delimiter appears first
+            let is_raw = false;
+            let start_idx = -1;
+            let open_len = 0;
+            let close_tag = "";
+
+            if raw_idx >= 0 and (esc_idx < 0 or raw_idx < esc_idx) {
+                is_raw = true;
+                start_idx = raw_idx;
+                open_len = 3; // "{!!".len()
+                close_tag = "!!}";
+            } else {
+                is_raw = false;
+                start_idx = esc_idx;
+                open_len = 2; // "{{".len()
+                close_tag = "}}";
+            }
+
+            // Emit plain template text preceding the tag
+            result = result + remaining.slice(0, start_idx);
+            let after_open = remaining.slice(start_idx + open_len, remaining.len());
+
+            let end_idx = after_open.index_of(close_tag);
+            if end_idx < 0 {
+                // Malformed tag without closing delimiter: emit verbatim and terminate
+                let open_str = "{{";
+                if is_raw {
+                    open_str = "{!!";
+                }
+                result = result + open_str + after_open;
+                break;
+            }
+
+            // Extract expression and trim surrounding whitespace (guarantees whitespace tolerance)
+            let expr = after_open.slice(0, end_idx).trim();
+            remaining = after_open.slice(end_idx + close_tag.len(), after_open.len());
+
+            let val = self.resolve_expression(expr, data);
+            let s_val = "";
+            if val != null {
+                s_val = string(val);
+            }
+
+            if is_raw {
+                result = result + s_val;
+            } else {
+                result = result + html_escape(s_val);
+            }
+        }
+
+        return result;
+    }
+}
+
+// Global Singleton View Renderer
+public let global_bd = new BD();
+
+public fn view(view_name: string, data = null) {
+    if data == null {
+        data = map();
+    }
+    let rendered = global_bd.render(view_name, data);
+    let res = response(rendered, 200);
+    res.header("content-type", "text/html; charset=utf-8");
+    return res;
+}
+
+public fn bd_view(view_name: string, data = null) {
+    return view(view_name, data);
+}

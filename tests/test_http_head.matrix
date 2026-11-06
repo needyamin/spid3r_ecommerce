@@ -1,0 +1,72 @@
+// tests/test_http_head.matrix
+// In-process HTTP lifecycle tests for the fresh-install surface:
+// route dispatch, HEAD→GET fallback, static file serving (incl. HEAD),
+// 404/405 semantics and static path-traversal rejection.
+// Boots a real Application and drives handle_request() directly.
+
+import "framework/Application";
+import "framework/Router";
+import "routes/web";
+
+let passed = 0;
+let failed = 0;
+
+fn check(name: string, cond) {
+    if cond {
+        passed = passed + 1;
+        println("  [PASS] " + name);
+    } else {
+        failed = failed + 1;
+        println("  [FAIL] " + name);
+    }
+}
+
+fn status_of(app, method: string, path: string) -> int {
+    let res = app.handle_request(map(
+        "method", method,
+        "path", path,
+        "headers", map(),
+        "body", ""
+    ));
+    // handle_request returns a map: { status, headers, body }
+    return int(res["status"]);
+}
+
+fn main() {
+    println("=== Running HTTP Lifecycle (fresh install) Test Suite ===");
+
+    let app = new Application();
+    register_web_routes();
+
+    // --- Core dispatch ---
+    check("GET / serves the welcome page (200)", status_of(app, "GET", "/") == 200);
+    check("GET /missing is a 404", status_of(app, "GET", "/missing") == 404);
+    check("POST / is a 405 (route is GET-only)", status_of(app, "POST", "/") == 405);
+    check("DELETE / is a 405", status_of(app, "DELETE", "/") == 405);
+
+    // --- HEAD→GET fallback (Router.match_route) ---
+    check("HEAD / is served by the GET handler (200)", status_of(app, "HEAD", "/") == 200);
+    check("HEAD /missing is a 404", status_of(app, "HEAD", "/missing") == 404);
+
+    // --- Static files ---
+    check("GET /css/welcome.css is served (200)", status_of(app, "GET", "/css/welcome.css") == 200);
+    check("HEAD /css/welcome.css is served (200)", status_of(app, "HEAD", "/css/welcome.css") == 200);
+
+    // --- Static path traversal must never serve files outside public/ ---
+    check("GET /css/../.env is rejected (404)", status_of(app, "GET", "/css/../.env") == 404);
+    check("GET /css/..%5c..%5c.env is rejected (404)", status_of(app, "GET", "/css/..%5c..%5c.env") == 404);
+    check("GET /%2e%2e/.env is rejected (404)", status_of(app, "GET", "/%2e%2e/.env") == 404);
+    check("GET /css/welcome.css%00 is rejected (404)", status_of(app, "GET", "/css/welcome.css%00") == 404);
+    check("GET /C:/Users/x/.env is rejected (404)", status_of(app, "GET", "/C:/Users/x/.env") == 404);
+
+    // --- Trailing slash + double slash normalization ---
+    check("GET // normalizes to / (200)", status_of(app, "GET", "//") == 200);
+
+    println("------------------------------------------------------------------");
+    println("HTTP Lifecycle Suite: " + string(passed) + " passed, " + string(failed) + " failed");
+    if failed > 0 {
+        println("[SUITE FAILED]");
+    } else {
+        println("=== All HTTP Lifecycle Tests Passed! ===");
+    }
+}

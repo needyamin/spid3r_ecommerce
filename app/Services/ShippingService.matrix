@@ -1,0 +1,274 @@
+// app/Services/ShippingService.matrix
+// Phase 11 — shipping zones, per-zone delivery rates and estimates.
+//
+// DESIGN: the store always has a shippable price. A zone/rate match wins;
+// otherwise the Phase 7 flat settings-based fee applies unchanged, so an
+// unconfigured store behaves exactly as it did before this phase.
+//
+// MONEY RULE: every fee is an INTEGER MINOR UNIT.
+
+import "framework/Database/DB";
+import "framework/HttpException";
+
+public class ShippingService {
+    public let methods;
+
+    fn new() {
+        self.methods = ["standard", "express"];
+    }
+
+    public fn is_method(self, method: string) -> bool {
+        let want = string(method).trim();
+        let i = 0;
+        while i < self.methods.len() {
+            if self.methods[i] == want {
+                return true;
+            }
+            i += 1;
+        }
+        return false;
+    }
+
+    fn setting(self, key: string, fallback: int) -> int {
+        let row = DB.table("settings").where("setting_key", "=", key).first();
+        if row == null {
+            return fallback;
+        }
+        return int(row["value"]);
+    }
+
+    // ---- zones ----
+
+    public fn zones(self) {
+        return DB.table("shipping_zones").where("is_active", "=", 1).orderBy("id", "ASC").get();
+    }
+
+    public fn all_zones(self) {
+        return DB.table("shipping_zones").orderBy("id", "ASC").get();
+    }
+
+    public fn zone(self, zone_id) {
+        return DB.table("shipping_zones").where("id", "=", zone_id).first();
+    }
+
+    // Does a comma-separated district list name this district?
+    fn list_has(self, raw: string, needle: string) -> bool {
+        let parts = string(raw).split(",");
+        let i = 0;
+        while i < parts.len() {
+            if parts[i].trim().lower() == needle {
+                return true;
+            }
+            i += 1;
+        }
+        return false;
+    }
+
+    // The zone an address belongs to. A zone matches when its country is
+    // equal (case-insensitive; an empty zone country matches any) AND either
+    // its district list is empty (country-wide fallback) or it names the
+    // address district. The MOST SPECIFIC match wins: a named district beats
+    // the country-wide fallback, and is returned immediately.
+    public fn zone_for_address(self, address) {
+        if address == null or type_of(address) != "map" {
+            return null;
+        }
+        let country = "";
+        if address.has("country") {
+            country = string(address["country"]).trim().lower();
+        }
+        let district = "";
+        if address.has("district") {
+            district = string(address["district"]).trim().lower();
+        }
+        if district == "" and address.has("city") {
+            district = string(address["city"]).trim().lower();
+        }
+        let zones = self.zones();
+        let fallback = null;
+        let i = 0;
+        while i < zones.len() {
+            let zone = zones[i];
+            let zone_country = string(zone["country"]).trim().lower();
+            if country != "" and zone_country != "" and zone_country != country {
+                i += 1;
+                continue;
+            }
+            let raw = "";
+            if zone["districts"] != null {
+                raw = string(zone["districts"]);
+            }
+            if string(raw).trim() == "" {
+                if fallback == null {
+                    fallback = zone;
+                }
+            } elif district != "" and self.list_has(raw, district) {
+                return zone;
+            }
+            i += 1;
+        }
+        return fallback;
+    }
+
+    // ---- rates ----
+
+    public fn rates_for_zone(self, zone_id) {
+        return DB.table("shipping_rates")
+            .where("zone_id", "=", zone_id)
+            .where("is_active", "=", 1)
+            .orderBy("min_order_minor", "ASC")
+            .get();
+    }
+
+    public fn all_rates(self) {
+        return DB.table("shipping_rates").orderBy("zone_id", "ASC").orderBy("min_order_minor", "ASC").get();
+    }
+
+    public fn rate(self, rate_id) {
+        return DB.table("shipping_rates").where("id", "=", rate_id).first();
+    }
+
+    // The active rate for a zone/method at a given order value: the first
+    // tier whose [min_order_minor, max_order_minor] window contains it.
+    public fn rate_for(self, zone_id, method: string, order_value_minor: int) {
+        let rows = self.rates_for_zone(zone_id);
+        let want = string(method).trim();
+        let i = 0;
+        while i < rows.len() {
+            let rate = rows[i];
+            if string(rate["method"]).trim() != want {
+                i += 1;
+                continue;
+            }
+            if order_value_minor < int(rate["min_order_minor"]) {
+                i += 1;
+                continue;
+            }
+            if rate["max_order_minor"] != null and order_value_minor > int(rate["max_order_minor"]) {
+                i += 1;
+                continue;
+            }
+            return rate;
+        }
+        return null;
+    }
+
+    // ---- fees ----
+
+    // The Phase 7 flat fee (settings-driven). Behaviour is unchanged.
+    public fn flat_fee(self, method: string, after_discount: int) -> int {
+        if string(method).trim() == "express" {
+            return self.setting("shipping.express_minor", 12000);
+        }
+        if not self.is_method(method) {
+            throw validation_failed(map("shipping_method", "Choose a valid shipping method."));
+        }
+        let free_threshold = self.setting("shipping.free_threshold_minor", 200000);
+        if after_discount >= free_threshold {
+            return 0;
+        }
+        return self.setting("shipping.flat_minor", 6000);
+    }
+
+    // Quote a delivery for an address: the matching zone rate when one
+    // applies, otherwise the flat settings fee. Always returns a usable fee
+    // plus a delivery estimate.
+    public fn quote(self, address, method: string, order_value_minor: int) {
+        if not self.is_method(method) {
+            throw validation_failed(map("shipping_method", "Choose a valid shipping method."));
+        }
+        let zone = self.zone_for_address(address);
+        if zone != null {
+            let rate = self.rate_for(zone["id"], method, order_value_minor);
+            if rate != null {
+                return map(
+                    "fee_minor", int(rate["fee_minor"]),
+                    "method", method,
+                    "zone_id", zone["id"],
+                    "zone_name", string(zone["name"]),
+                    "estimated_days_min", int(rate["estimated_days_min"]),
+                    "estimated_days_max", int(rate["estimated_days_max"]),
+                    "source", "zone_rate"
+                );
+            }
+        }
+        let zone_id = null;
+        let zone_name = "";
+        if zone != null {
+            zone_id = zone["id"];
+            zone_name = string(zone["name"]);
+        }
+        let days_min = 3;
+        let days_max = 7;
+        if string(method).trim() == "express" {
+            days_min = 1;
+            days_max = 2;
+        }
+        return map(
+            "fee_minor", self.flat_fee(method, order_value_minor),
+            "method", method,
+            "zone_id", zone_id,
+            "zone_name", zone_name,
+            "estimated_days_min", days_min,
+            "estimated_days_max", days_max,
+            "source", "flat"
+        );
+    }
+
+    // ---- administration ----
+
+    // Create or update a zone by name.
+    public fn save_zone(self, name: string, country: string, districts: string, is_active: int) {
+        let key = string(name).trim();
+        if key == "" {
+            throw validation_failed(map("name", "A zone name is required."));
+        }
+        let data = map(
+            "name", key,
+            "country", string(country).trim(),
+            "districts", string(districts).trim(),
+            "is_active", is_active
+        );
+        let existing = DB.table("shipping_zones").where("name", "=", key).first();
+        if existing != null {
+            DB.table("shipping_zones").where("id", "=", existing["id"]).update(data);
+            return existing["id"];
+        }
+        return DB.table("shipping_zones").insert(data);
+    }
+
+    // Create or update a rate for a zone/method/value tier.
+    public fn save_rate(self, zone_id, method: string, fee_minor: int, min_order_minor: int, max_order_minor, days_min: int, days_max: int, is_active: int) {
+        let zone = self.zone(zone_id);
+        if zone == null {
+            throw not_found("Shipping zone not found.");
+        }
+        if not self.is_method(method) {
+            throw validation_failed(map("method", "Unknown shipping method."));
+        }
+        if fee_minor < 0 {
+            throw validation_failed(map("fee_minor", "The fee cannot be negative."));
+        }
+        if days_min < 0 or days_max < days_min {
+            throw validation_failed(map("estimated_days", "The estimate window is invalid."));
+        }
+        return DB.table("shipping_rates").insert(map(
+            "zone_id", zone["id"],
+            "method", string(method).trim(),
+            "min_order_minor", min_order_minor,
+            "max_order_minor", max_order_minor,
+            "fee_minor", fee_minor,
+            "estimated_days_min", days_min,
+            "estimated_days_max", days_max,
+            "is_active", is_active
+        ));
+    }
+
+    public fn deactivate_rate(self, rate_id) -> bool {
+        return DB.table("shipping_rates").where("id", "=", rate_id).update(map("is_active", 0)) > 0;
+    }
+
+    public fn deactivate_zone(self, zone_id) -> bool {
+        return DB.table("shipping_zones").where("id", "=", zone_id).update(map("is_active", 0)) > 0;
+    }
+}

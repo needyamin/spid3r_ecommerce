@@ -1,0 +1,107 @@
+// app/Controllers/OrderController.matrix
+// Phase 7 — customer order pages + admin status management.
+
+import "framework/Response";
+import "framework/View/BD";
+import "framework/Container/Container";
+import "framework/HttpException";
+import "framework/Resource";
+import "app/Support/Money" as Money;
+import "app/Services/OrderService";
+import "app/Support/StoreChrome" as StoreChrome;
+import "app/Repositories/OrderRepository";
+
+let identity = fn(row) { return row; };
+
+public class OrderController {
+    public let service;
+    public let orders;
+    public let settings;
+
+    fn new() {
+        self.service = new OrderService();
+        self.orders = new OrderRepository();
+        self.settings = Container.make("store.settings");
+    }
+
+    fn ctx(self, req, title: string, extra) {
+        let base = map(
+            "store_name", self.settings["name"],
+            "currency", self.settings["currency"],
+            "title", title,
+            "meta_description", title + " — " + self.settings["name"],
+            "csrf", ""
+        );
+        let chrome = StoreChrome.build(req, self.settings);
+        for ck in chrome.keys() {
+            base[ck] = chrome[ck];
+        }
+        if extra != null {
+            for k in extra.keys() {
+                base[k] = extra[k];
+            }
+        }
+        return base;
+    }
+
+    public fn index(self, req) {
+        let page = 1;
+        if req.query_params.has("page") {
+            page = int(req.query_params["page"]);
+        }
+        let result = self.orders.for_user(req.auth.id(), page, 15);
+        let rows = [];
+        let i = 0;
+        while i < result["data"].len() {
+            let row = result["data"][i];
+            row["total_display"] = Money.format(int(row["total_minor"]), "BDT");
+            rows.push(row);
+            i += 1;
+        }
+        result["data"] = rows;
+        return view("orders/index", self.ctx(req, "Order history", map(
+            "orders", rows,
+            "has_orders", rows.len() > 0,
+            "has_prev", page > 1,
+            "has_next", result["has_more"],
+            "prev_url", "/orders?page=" + string(page - 1),
+            "next_url", "/orders?page=" + string(page + 1),
+            "csrf", req.auth.csrf()
+        )));
+    }
+
+    public fn show(self, req) {
+        let order = self.service.for_customer(string(req.params["number"]), req.auth.id());
+        let ctx = self.ctx(req, "Order " + string(order["order_number"]), self.service.decorate(order));
+        ctx["csrf"] = req.auth.csrf();
+        return view("orders/show", ctx);
+    }
+
+    public fn invoice(self, req) {
+        let order = self.service.for_customer(string(req.params["number"]), req.auth.id());
+        return view("orders/invoice", self.ctx(req, "Invoice " + string(order["order_number"]), self.service.decorate(order)));
+    }
+
+    public fn cancel(self, req) {
+        self.service.cancel(string(req.params["number"]), req.auth.id());
+        return redirect("/orders");
+    }
+
+    // ---- admin API (permission-gated in routes) ----
+    public fn admin_index(self, req) {
+        let page = 1;
+        if req.query_params.has("page") {
+            page = int(req.query_params["page"]);
+        }
+        return json(resource_paginated(self.orders.admin_list(page, 20), identity));
+    }
+
+    public fn admin_status(self, req) {
+        let status = string(req.input("status", "")).trim();
+        if status == "" {
+            throw validation_failed(map("status", "A status is required."));
+        }
+        let order = self.service.set_status(req.params["id"], status);
+        return json(resource_item(order, identity));
+    }
+}

@@ -1,0 +1,49 @@
+// routes/admin.matrix
+// Phase 9 — administration panel. All pages require role:admin; APIs are
+// additionally permission-gated. State-changing calls include _csrf.
+
+import "framework/Router";
+import "app/Controllers/AdminController";
+
+public fn register_admin_routes() {
+    let ctl = new AdminController();
+
+    // Dashboard + management pages.
+    Route.get("/admin/dashboard", fn(req) { return ctl.dashboard(req); }).middleware("role:admin");
+    Route.get("/admin/reports", fn(req) { return ctl.reports(req); }).middleware("role:admin");
+    Route.get("/admin/reports/export", fn(req) { return ctl.export(req); }).middleware("permission:reports.view");
+
+    // Explicit registrations: closures capture loop variables by reference,
+    // so generating these in a loop would bind every page to the last name.
+    Route.get("/admin/products", fn(req) { return ctl.page(req, "products"); }).middleware("role:admin");
+    Route.get("/admin/categories", fn(req) { return ctl.page(req, "categories"); }).middleware("role:admin");
+    Route.get("/admin/brands", fn(req) { return ctl.page(req, "brands"); }).middleware("role:admin");
+    Route.get("/admin/inventory", fn(req) { return ctl.page(req, "inventory"); }).middleware("role:admin");
+    Route.get("/admin/orders", fn(req) { return ctl.page(req, "orders"); }).middleware("role:admin");
+    Route.get("/admin/customers", fn(req) { return ctl.page(req, "customers"); }).middleware("role:admin");
+    Route.get("/admin/staff", fn(req) { return ctl.page(req, "staff"); }).middleware("role:admin");
+    Route.get("/admin/roles", fn(req) { return ctl.page(req, "roles"); }).middleware("role:admin");
+    Route.get("/admin/coupons", fn(req) { return ctl.page(req, "coupons"); }).middleware("role:admin");
+    Route.get("/admin/settings", fn(req) { return ctl.page(req, "settings"); }).middleware("role:admin");
+    Route.get("/admin/shipping", fn(req) { return ctl.page(req, "shipping"); }).middleware("role:admin");
+    Route.get("/admin/payments", fn(req) { return ctl.page(req, "payments"); }).middleware("role:admin");
+    Route.get("/admin/audit", fn(req) { return ctl.page(req, "audit"); }).middleware("role:admin");
+
+    // Management APIs.
+    Route.get("/admin/api/customers", fn(req) { return ctl.api_customers(req); }).middleware("permission:customers.manage");
+    Route.post("/admin/api/customers/:id/status", fn(req) { return ctl.api_customer_status(req); }).middleware("permission:customers.manage");
+    Route.get("/admin/api/staff", fn(req) { return ctl.api_staff(req); }).middleware("permission:customers.manage");
+    Route.post("/admin/api/staff/role", fn(req) { return ctl.api_assign_role(req); }).middleware("permission:customers.manage");
+    Route.get("/admin/api/roles", fn(req) { return ctl.api_roles(req); }).middleware("permission:settings.manage");
+    Route.post("/admin/api/roles/:id/permissions", fn(req) { return ctl.api_toggle_permission(req); }).middleware("permission:settings.manage");
+
+    Route.get("/admin/api/coupons", fn(req) { return ctl.api_coupons(req); }).middleware("permission:catalog.manage");
+    Route.post("/admin/api/coupons", fn(req) { return ctl.api_coupon_save(req); }).middleware("permission:catalog.manage");
+    Route.put("/admin/api/coupons/:id", fn(req) { return ctl.api_coupon_update(req); }).middleware("permission:catalog.manage");
+    Route.delete("/admin/api/coupons/:id", fn(req) { return ctl.api_coupon_delete(req); }).middleware("permission:catalog.manage");
+
+    Route.get("/admin/api/settings", fn(req) { return ctl.api_settings(req); }).middleware("permission:settings.manage");
+    Route.put("/admin/api/settings", fn(req) { return ctl.api_setting_update(req); }).middleware("permission:settings.manage");
+    Route.post("/admin/api/settings", fn(req) { return ctl.api_setting_update(req); }).middleware("permission:settings.manage");
+    Route.get("/admin/api/audit", fn(req) { return ctl.api_audit(req); }).middleware("permission:reports.view");
+}

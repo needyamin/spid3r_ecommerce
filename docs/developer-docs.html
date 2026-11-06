@@ -1,0 +1,1105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Spid3rWeb — Full-Stack Developer Documentation</title>
+<style>
+  :root {
+    --bg: #ffffff;
+    --bg-soft: #f8fafc;
+    --bg-code: #0f172a;
+    --bg-code-inline: #f1f5f9;
+    --border: #e2e8f0;
+    --text: #1e293b;
+    --text-soft: #64748b;
+    --accent: #2563eb;
+    --accent-soft: #dbeafe;
+    --green: #16a34a;
+    --amber: #d97706;
+    --red: #dc2626;
+    --purple: #7c3aed;
+    --sidebar-w: 280px;
+    --radius: 10px;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { scroll-behavior: smooth; scroll-padding-top: 80px; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+    background: var(--bg-soft);
+    color: var(--text);
+    line-height: 1.65;
+    font-size: 15px;
+  }
+
+  /* ---------- Top bar ---------- */
+  .topbar {
+    position: fixed; top: 0; left: 0; right: 0; height: 60px; z-index: 50;
+    background: #ffffffee; backdrop-filter: blur(8px);
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 14px; padding: 0 24px;
+  }
+  .logo { display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: 17px; letter-spacing: -0.3px; }
+  .logo .spider { font-size: 22px; }
+  .logo .web { color: var(--accent); }
+  .version-badge {
+    font-size: 11px; font-weight: 700; color: var(--accent);
+    background: var(--accent-soft); padding: 3px 9px; border-radius: 999px;
+  }
+  .topbar .links { margin-left: auto; display: flex; gap: 18px; font-size: 13px; }
+  .topbar .links a { color: var(--text-soft); text-decoration: none; font-weight: 600; }
+  .topbar .links a:hover { color: var(--accent); }
+
+  /* ---------- Layout ---------- */
+  .layout { display: flex; padding-top: 60px; max-width: 1400px; margin: 0 auto; }
+  aside.sidebar {
+    width: var(--sidebar-w); flex-shrink: 0;
+    position: sticky; top: 60px; height: calc(100vh - 60px); overflow-y: auto;
+    padding: 24px 16px 40px 24px; border-right: 1px solid var(--border);
+    background: var(--bg); font-size: 13.5px;
+  }
+  .sidebar .group { margin-bottom: 22px; }
+  .sidebar .group-title {
+    font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.8px;
+    color: var(--text-soft); margin-bottom: 8px; padding-left: 10px;
+  }
+  .sidebar a {
+    display: block; padding: 5px 10px; border-radius: 6px;
+    color: var(--text); text-decoration: none; font-weight: 500;
+    border-left: 2px solid transparent;
+  }
+  .sidebar a:hover { background: var(--bg-soft); color: var(--accent); }
+  .sidebar a.active { background: var(--accent-soft); color: var(--accent); font-weight: 700; }
+  main { flex: 1; min-width: 0; padding: 36px 48px 100px; background: var(--bg); }
+
+  /* ---------- Typography ---------- */
+  h1 { font-size: 30px; letter-spacing: -0.5px; margin-bottom: 8px; }
+  h2 {
+    font-size: 22px; letter-spacing: -0.3px; margin: 0 0 18px;
+    padding-bottom: 10px; border-bottom: 2px solid var(--border);
+  }
+  h3 { font-size: 17px; margin: 30px 0 10px; }
+  h4 { font-size: 14.5px; margin: 20px 0 8px; }
+  p { margin-bottom: 12px; color: #334155; }
+  ul, ol { margin: 0 0 14px 22px; color: #334155; }
+  li { margin-bottom: 5px; }
+  strong { color: var(--text); }
+  section { margin-bottom: 64px; }
+  .lead { font-size: 16px; color: var(--text-soft); margin-bottom: 24px; }
+  a.inline { color: var(--accent); text-decoration: none; font-weight: 600; }
+  a.inline:hover { text-decoration: underline; }
+
+  code {
+    font-family: "Cascadia Code", "Fira Code", Consolas, monospace;
+    font-size: 13px; background: var(--bg-code-inline);
+    padding: 2px 6px; border-radius: 5px; color: #be185d;
+  }
+  pre {
+    background: var(--bg-code); color: #e2e8f0; border-radius: var(--radius);
+    padding: 16px 18px; overflow-x: auto; margin: 14px 0 20px;
+    font-size: 13px; line-height: 1.6;
+    border: 1px solid #1e293b;
+  }
+  pre code { background: transparent; color: inherit; padding: 0; font-size: 13px; }
+  .cmt { color: #64748b; font-style: italic; }
+  .kw { color: #7dd3fc; }
+  .str { color: #86efac; }
+  .fn { color: #fcd34d; }
+  .tag { color: #f0abfc; }
+
+  /* ---------- Components ---------- */
+  table { width: 100%; border-collapse: collapse; margin: 14px 0 22px; font-size: 13.5px; background: var(--bg); }
+  th { text-align: left; background: var(--bg-soft); font-weight: 700; }
+  th, td { border: 1px solid var(--border); padding: 9px 12px; vertical-align: top; }
+  td code { white-space: nowrap; }
+  tr:nth-child(even) td { background: #fbfdff; }
+
+  .callout {
+    border-radius: var(--radius); padding: 14px 16px; margin: 16px 0;
+    border: 1px solid; font-size: 14px;
+  }
+  .callout .co-title { font-weight: 800; margin-bottom: 4px; display: flex; align-items: center; gap: 8px; }
+  .callout.info { background: #eff6ff; border-color: #bfdbfe; color: #1e40af; }
+  .callout.warn { background: #fffbeb; border-color: #fde68a; color: #92400e; }
+  .callout.danger { background: #fef2f2; border-color: #fecaca; color: #991b1b; }
+  .callout.tip { background: #f0fdf4; border-color: #bbf7d0; color: #166534; }
+  .callout p { color: inherit; margin-bottom: 0; }
+
+  .badge {
+    display: inline-block; font-size: 11px; font-weight: 700;
+    padding: 2px 9px; border-radius: 999px; vertical-align: middle;
+  }
+  .b-blue { background: var(--accent-soft); color: var(--accent); }
+  .b-green { background: #dcfce7; color: var(--green); }
+  .b-amber { background: #fef3c7; color: var(--amber); }
+  .b-purple { background: #ede9fe; color: var(--purple); }
+  .b-red { background: #fee2e2; color: var(--red); }
+
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; margin: 18px 0; }
+  .card {
+    background: var(--bg-soft); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 16px 18px;
+  }
+  .card .c-icon { font-size: 20px; }
+  .card h4 { margin: 8px 0 6px; }
+  .card p { font-size: 13px; color: var(--text-soft); margin: 0; }
+
+  .layers { display: flex; flex-direction: column; gap: 0; margin: 20px 0; max-width: 720px; }
+  .layer {
+    display: flex; align-items: center; gap: 14px;
+    border: 1px solid var(--border); background: var(--bg);
+    padding: 13px 18px; border-radius: 10px; margin-bottom: -1px;
+  }
+  .layer:nth-child(odd) { background: #fbfdff; }
+  .layer .num {
+    width: 30px; height: 30px; border-radius: 8px; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 800; font-size: 13px; color: #fff;
+  }
+  .layer b { font-size: 14px; }
+  .layer .desc { font-size: 12.5px; color: var(--text-soft); }
+  .layer .file { margin-left: auto; font-size: 12px; color: var(--text-soft); font-family: monospace; }
+
+  .tree {
+    background: var(--bg-code); color: #cbd5e1; border-radius: var(--radius);
+    padding: 18px 20px; font-family: Consolas, monospace; font-size: 12.5px;
+    line-height: 1.7; overflow-x: auto; white-space: pre; margin: 14px 0 22px;
+  }
+  .tree .d { color: #7dd3fc; font-weight: 700; }
+  .tree .f { color: #e2e8f0; }
+  .tree .n { color: #64748b; }
+
+  .flow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 16px 0 22px; }
+  .flow .step {
+    background: var(--bg); border: 1.5px solid var(--accent); color: var(--accent);
+    font-weight: 700; font-size: 12.5px; padding: 7px 13px; border-radius: 8px;
+  }
+  .flow .arrow { color: var(--text-soft); font-weight: 700; }
+
+  .sig {
+    background: var(--bg-soft); border: 1px solid var(--border); border-left: 4px solid var(--accent);
+    border-radius: 8px; padding: 10px 14px; margin: 12px 0;
+    font-family: Consolas, monospace; font-size: 13px; overflow-x: auto; white-space: pre;
+  }
+
+  hr.sep { border: none; border-top: 1px dashed var(--border); margin: 26px 0; }
+
+  @media (max-width: 900px) {
+    aside.sidebar { display: none; }
+    main { padding: 24px 20px 80px; }
+  }
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="logo"><span class="spider">🕷️</span> Spid3r<span class="web">Web</span></div>
+  <span class="version-badge">v1.0.0</span>
+  <nav class="links">
+    <a href="#getting-started">Getting Started</a>
+    <a href="#api-reference">API Reference</a>
+    <a href="#testing">Testing</a>
+  </nav>
+</header>
+
+<div class="layout">
+
+<!-- ============================ SIDEBAR ============================ -->
+<aside class="sidebar" id="toc">
+  <div class="group">
+    <div class="group-title">Introduction</div>
+    <a href="#overview">Overview &amp; Features</a>
+    <a href="#stack">Tech Stack</a>
+    <a href="#structure">Project Structure</a>
+  </div>
+  <div class="group">
+    <div class="group-title">Getting Started</div>
+    <a href="#getting-started">Installation &amp; Setup</a>
+    <a href="#lifecycle">Request Lifecycle</a>
+    <a href="#config">Configuration</a>
+  </div>
+  <div class="group">
+    <div class="group-title">Core Concepts</div>
+    <a href="#cli">Magic CLI</a>
+    <a href="#toolchain">VM &amp; Benchmarks</a>
+    <a href="#routing">Routing</a>
+    <a href="#controllers">Controllers</a>
+    <a href="#requests">Requests &amp; Validation</a>
+    <a href="#responses">Responses</a>
+    <a href="#middleware">Middleware</a>
+  </div>
+  <div class="group">
+    <div class="group-title">Architecture</div>
+    <a href="#container">DI Container</a>
+    <a href="#providers">Service Providers</a>
+    <a href="#events">Events</a>
+  </div>
+  <div class="group">
+    <div class="group-title">Database</div>
+    <a href="#database">Query Builder (DB)</a>
+    <a href="#models">Active Record Models</a>
+    <a href="#schema">Schema Builder</a>
+    <a href="#migrations">Migrations &amp; Seeders</a>
+  </div>
+  <div class="group">
+    <div class="group-title">API Layer</div>
+    <a href="#resources">REST Resources</a>
+    <a href="#exceptions">HTTP Exceptions</a>
+  </div>
+  <div class="group">
+    <div class="group-title">Frontend</div>
+    <a href="#views">SpiderBD Templates</a>
+    <a href="#frontend-ui">Frontend Assets</a>
+  </div>
+  <div class="group">
+    <div class="group-title">Auth &amp; Security</div>
+    <a href="#auth">Authentication &amp; Hashing</a>
+    <a href="#security">Security Hardening</a>
+  </div>
+  <div class="group">
+    <div class="group-title">Systems</div>
+    <a href="#cache">Caching</a>
+    <a href="#systems">Log · Storage · Mail · Queue</a>
+    <a href="#websocket">WebSocket</a>
+  </div>
+  <div class="group">
+    <div class="group-title">Quality</div>
+    <a href="#testing">Testing</a>
+    <a href="#deployment">Deployment</a>
+    <a href="#recipes">Common Recipes</a>
+    <a href="#api-reference">API Cheat Sheet</a>
+  </div>
+</aside>
+
+<main>
+
+<!-- ============ OVERVIEW ============ -->
+<section id="overview">
+  <h1>🕷️ Spid3rWeb Developer Documentation</h1>
+  <p class="lead">Spid3rWeb is an expressive, full-stack MVC framework for the <strong>Spid3r programming language</strong> — routing, ORM, migrations, auth, queues, a DI container, an event bus, REST resources, typed exceptions and a WebSocket server, with <strong>zero external dependencies</strong>, running natively on Spid3r's interpreter and bytecode VM.</p>
+
+  <div class="grid">
+    <div class="card"><div class="c-icon">🧱</div><h4>Service Providers &amp; DI</h4><p>Register bindings in a <code>ServiceProvider</code> (<code>register</code>/<code>boot</code> phases), resolve through the <code>Container</code> facade — bind, singleton, alias, extend.</p></div>
+    <div class="card"><div class="c-icon">📡</div><h4>Event Bus</h4><p>Decouple side effects: exact and <code>prefix.*</code> wildcard listeners, <code>once</code>, class subscribers, and model lifecycle events with veto power.</p></div>
+    <div class="card"><div class="c-icon">🗂️</div><h4>Active Record ORM</h4><p>Fluent QueryBuilder, relationships, <strong>batched eager loading</strong> (one query, never N+1), transactions, model events, pagination with a hard <code>per_page</code> cap.</p></div>
+    <div class="card"><div class="c-icon">🎯</div><h4>Typed HTTP Exceptions</h4><p><code>not_found()</code>, <code>validation_failed(errors)</code>, <code>unauthorized()</code>… thrown anywhere in a handler, rendered centrally — JSON for API clients, HTML cards for browsers.</p></div>
+    <div class="card"><div class="c-icon">📦</div><h4>REST Resources</h4><p>Consistent JSON envelopes (<code>resource_item</code> / <code>resource_collection</code> / <code>resource_paginated</code>) — transformers receive plain maps, so sensitive columns never leak.</p></div>
+    <div class="card"><div class="c-icon">🔌</div><h4>WebSocket Server</h4><p>A real RFC 6455 server beside your HTTP app: per-connection protocols <em>and</em> cross-connection <code>broadcast()</code>, with an independent writer half in the runtime.</p></div>
+    <div class="card"><div class="c-icon">🛣️</div><h4>Expressive Router</h4><p>Static &amp; parameterized routes (<code>:id</code>), groups with prefix + middleware inheritance, named middleware aliases (<code>auth</code>, <code>guest</code>, <code>throttle:60,60</code>), 405 detection, fallbacks.</p></div>
+    <div class="card"><div class="c-icon">🔐</div><h4>Built-in Auth</h4><p>bcrypt hashing, CSPRNG session tokens, per-session CSRF tokens, DB-backed sessions with sliding expiry, cookie or Bearer authentication.</p></div>
+    <div class="card"><div class="c-icon">🗄️</div><h4>Multi-Engine Database</h4><p><strong>SQLite</strong>, <strong>PostgreSQL</strong>, <strong>MySQL</strong>, <strong>MariaDB</strong> behind one API — selected via <code>SPID3R_DB_DRIVER</code>, prepared statements throughout.</p></div>
+    <div class="card"><div class="c-icon">🧩</div><h4>SpiderBD Templates</h4><p><code>.bd.html</code> templates with layouts, sections, nesting-aware conditionals &amp; loops, escaped <code>{{ var }}</code> and raw <code>{!! var !!}</code> interpolation.</p></div>
+    <div class="card"><div class="c-icon">🪄</div><h4>Magic CLI</h4><p><code>spid3r magic serve / test / migrate / queue:work / route:list / make:*</code> — scaffolding, migrations, route inspection, 16-suite test runner.</p></div>
+    <div class="card"><div class="c-icon">⚡</div><h4>Measured Performance</h4><p>The bytecode VM is 1.4–2.1× faster than the interpreter on framework work (routing +62%, query compilation +89%, template rendering +114%) — see <code>benchmarks/RESULTS.md</code>.</p></div>
+  </div>
+</section>
+
+<!-- ============ TECH STACK ============ -->
+<section id="stack">
+  <h2>Tech Stack</h2>
+  <p>Spid3rWeb runs entirely on the Spid3r language and its standard library — <strong>zero external dependencies</strong>.</p>
+  <table>
+    <tr><th>Layer</th><th>Provides</th></tr>
+    <tr><td>Spid3r runtime (Rust)</td><td>TCP sockets, HTTP/1.1 framing, WebSocket (RFC 6455), SQLite / MySQL / PostgreSQL / Redis clients, bcrypt, SHA-256/HMAC, compression, regex</td></tr>
+    <tr><td>Spid3r stdlib</td><td><code>http</code> server loop (keep-alive, graceful shutdown), <code>web</code> (cookies, JWT, static files), <code>middleware</code> (CORS, CSRF, gzip, rate-limit, security headers), <code>session</code>, <code>multipart</code>, <code>uuid</code>, <code>toml</code>, <code>testkit</code></td></tr>
+    <tr><td>Spid3rWeb framework</td><td>MVC lifecycle, Router, middleware pipeline, ORM, migrations, validation, auth, cache, queues, DI container, events, REST resources, exceptions, WebSocket server, CLI, test runner</td></tr>
+  </table>
+</section>
+
+<!-- ============ STRUCTURE ============ -->
+<section id="structure">
+  <h2>Project Structure</h2>
+  <pre><code>app/            Your code — Controllers, Models, Middleware (empty on fresh install)
+benchmarks/     Micro-benchmarks + recorded results (RESULTS.md)
+config/         app, auth, session, cache, database, filesystems, logging, mail, queue, services
+database/       migrations/ (auto-discovered) + seeders/
+deploy/         Dockerfile + docker-compose.yml
+docs/           ARCHITECTURE.md (component status + roadmap), developer-docs.html, history/
+examples/       task-api/ — a runnable full-stack example
+framework/      The framework core (do not edit while learning)
+public/         Static assets — /css/, /js/, /images/, /fonts/
+resources/      SpiderBD templates (.bd.html)
+routes/         web.matrix (pages) · api.matrix (APIs) · queue.matrix (job handlers)
+storage/        Runtime artifacts: logs, cache — git-ignored
+tests/          16 test suites — run with `spid3r magic test`
+tools/          Maintenance scripts (resync.matrix rebuilds the migration registry)
+
+install.sh      One-line project + toolchain setup
+magic           CLI entrypoint — `spid3r magic serve | test | migrate | ...`
+server.matrix   Production server entrypoint
+spider.toml     Package manifest</code></pre>
+</section>
+
+<!-- ============ GETTING STARTED ============ -->
+<section id="getting-started">
+  <h2>Installation &amp; Setup</h2>
+  <p>One command (Linux / macOS / Windows Git Bash) installs the Spid3r language if missing, then prepares the project:</p>
+  <pre><code>sh install.sh            <span class="cmt"># set up the project</span>
+sh install.sh --serve    <span class="cmt"># ...and start the dev server immediately</span></code></pre>
+  <p>If Spid3r is already installed:</p>
+  <pre><code>spid3r magic migrate     <span class="cmt"># create the schema (users, sessions, jobs)</span>
+spid3r magic db:seed     <span class="cmt"># optional — no-op until you add seeders</span>
+spid3r magic serve       <span class="cmt"># http://localhost:8000</span></code></pre>
+  <p>A fresh install serves a single welcome page at <code>/</code>. From there, build your app:</p>
+  <pre><code>spid3r magic make:controller PostController
+spid3r magic make:model Post -m        <span class="cmt"># model + migration</span>
+spid3r magic migrate</code></pre>
+  <div class="tip">See <code>examples/task-api/main.matrix</code> for a complete, runnable example — provider, model events, validation, typed exceptions, resources, pagination — exercised end to end.</div>
+</section>
+
+<!-- ============ LIFECYCLE ============ -->
+<section id="lifecycle">
+  <h2>Request Lifecycle</h2>
+  <p>Every request flows through <code>Application.handle_request</code>:</p>
+  <pre><code>1. Boot service providers      <span class="cmt"># once, lazily before the first request</span>
+2. Wrap raw request            <span class="cmt"># Request object; req.app = application</span>
+3. Per-request auth            <span class="cmt"># req.auth resolved from session/Bearer token</span>
+4. CSRF layer 1                <span class="cmt"># Origin vs Host on state-changing verbs</span>
+5. CSRF layer 2                <span class="cmt"># per-session _csrf token when no Origin</span>
+6. Static assets               <span class="cmt"># /css/ /js/ /images/ ... traversal-guarded</span>
+7. Global middleware pipeline  <span class="cmt"># CORS (+ your app.use() additions)</span>
+8. Route matching              <span class="cmt"># 404 / 405 / fallback resolution</span>
+9. Route middleware            <span class="cmt"># named aliases resolved &amp; executed</span>
+10. Handler + typed exceptions <span class="cmt"># HttpExceptions render by status &amp; format</span></code></pre>
+  <p>Handlers receive a <code>Request</code> and may return a <code>Response</code> helper result, a raw <code>http_response</code> map — or <strong>throw</strong> a typed exception.</p>
+</section>
+
+<!-- ============ CONFIG ============ -->
+<section id="config">
+  <h2>Configuration</h2>
+  <p>All runtime configuration lives in <code>config/*.matrix</code>, read through one dot-notation repository. Values can come from environment variables and a root <code>.env</code> file (copy <code>.env.example</code>); real OS environment variables always win.</p>
+  <pre><code>import "framework/Config/Config";
+
+Config.get("session.lifetime");        <span class="cmt"># 86400</span>
+Config.get("mail.from.address");
+Config.has("queue.default");
+Config.set("app.name", "My App");</code></pre>
+  <table>
+    <tr><th>File</th><th>Controls</th></tr>
+    <tr><td>config/app.matrix</td><td>application name, timezone, locale</td></tr>
+    <tr><td>config/database.matrix</td><td>default driver, per-driver connection settings</td></tr>
+    <tr><td>config/auth.matrix</td><td>guard table + username column</td></tr>
+    <tr><td>config/session.matrix</td><td>cookie name, lifetime, table</td></tr>
+    <tr><td>config/cache.matrix</td><td>default store: memory | file | database</td></tr>
+    <tr><td>config/logging.matrix</td><td>channels, level (<code>SPID3R_LOG_LEVEL</code>)</td></tr>
+    <tr><td>config/mail.matrix</td><td>from address, driver (log | smtp)</td></tr>
+    <tr><td>config/queue.matrix</td><td>default queue + connection</td></tr>
+    <tr><td>config/filesystems.matrix</td><td>local / public disks</td></tr>
+    <tr><td>config/services.matrix</td><td>SMS, payments, OAuth credentials (env-based)</td></tr>
+  </table>
+</section>
+
+<!-- ============ CLI ============ -->
+<section id="cli">
+  <h2>Magic CLI</h2>
+  <pre><code>spid3r magic serve                    <span class="cmt"># dev server (--port N, --dry-run to check boot)</span>
+spid3r magic test                     <span class="cmt"># run all test suites (exit 0/1)</span>
+spid3r magic route:list               <span class="cmt"># every registered route</span>
+spid3r magic migrate                  <span class="cmt"># run pending migrations</span>
+spid3r magic migrate:rollback         <span class="cmt"># roll back the last batch</span>
+spid3r magic migrate:status           <span class="cmt"># migration status table</span>
+spid3r magic db:seed                  <span class="cmt"># run seeders</span>
+spid3r magic queue:work               <span class="cmt"># drain queued jobs (--once = a single job)</span>
+spid3r magic make:controller &lt;Name&gt;   <span class="cmt"># scaffold a controller into app/</span>
+spid3r magic make:model &lt;Name&gt; [-m]   <span class="cmt"># scaffold a model (+ migration)</span>
+spid3r magic make:migration &lt;name&gt;    <span class="cmt"># scaffold + auto-register a migration</span></code></pre>
+  <div class="warn">Deleted a migration file by hand? <code>spid3r magic</code> cannot boot until the registry matches disk. Run <code>SPID3R_PATH=. spid3r run tools/resync.matrix</code> to rebuild it.</div>
+</section>
+
+<!-- ============ TOOLCHAIN ============ -->
+<section id="toolchain">
+  <h2>VM &amp; Benchmarks</h2>
+  <p>Spid3r runs the same code on a tree-walk interpreter (default, best debugging) and a bytecode VM (faster). Measure, then deploy on the faster engine:</p>
+  <pre><code>SPID3R_DB_DRIVER=sqlite spid3r run benchmarks/bench.matrix
+SPID3R_DB_DRIVER=sqlite spid3r run --engine vm benchmarks/bench.matrix</code></pre>
+  <p>Recorded results (2026-11, <code>benchmarks/RESULTS.md</code>):</p>
+  <table>
+    <tr><th>Benchmark</th><th>tree-walk</th><th>bytecode VM</th><th>VM gain</th></tr>
+    <tr><td>Route matching (200 routes)</td><td>539 ops/s</td><td>871 ops/s</td><td>+62%</td></tr>
+    <tr><td>Query compilation</td><td>11,111 ops/s</td><td>20,979 ops/s</td><td>+89%</td></tr>
+    <tr><td>BD template render</td><td>3,508 ops/s</td><td>7,518 ops/s</td><td>+114%</td></tr>
+    <tr><td>JSON write+parse</td><td>200k ops/s</td><td>286k ops/s</td><td>+43%</td></tr>
+  </table>
+  <p>Production serves under the VM:</p>
+  <pre><code>spid3r run --engine vm server.matrix</code></pre>
+</section>
+
+<!-- ============ ROUTING ============ -->
+<section id="routing">
+  <h2>Routing</h2>
+  <p>Routes live in <code>routes/web.matrix</code> (pages) and <code>routes/api.matrix</code> (APIs). Register them on the global <code>Route</code> facade:</p>
+  <pre><code>import "framework/Router";
+
+Route.get("/", fn(req) {
+    return view("welcome");
+});
+
+Route.get("/posts/:id", fn(req) {
+    <span class="cmt"># req.params["id"] is captured from the path</span>
+    return json(map("id", req.params["id"]));
+});
+
+Route.post("/posts", fn(req) { return create_post(req); });
+Route.put("/posts/:id", fn(req) { return update_post(req); });
+Route.delete("/posts/:id", fn(req) { return delete_post(req); });
+Route.match_any(["GET", "POST"], "/contact", contact_handler);</code></pre>
+  <h3>Groups — shared prefix and middleware</h3>
+  <pre><code>Route.group(map("prefix", "/admin", "middleware", "auth"), fn() {
+    Route.get("/dashboard", fn(req) { ... });      <span class="cmt"># /admin/dashboard</span>
+    Route.get("/users", fn(req) { ... });          <span class="cmt"># /admin/users</span>
+});</code></pre>
+  <h3>Middleware references, fallbacks, 405s</h3>
+  <pre><code>Route.get("/api/feed", handler).middleware("auth");
+Route.get("/api/feed", handler).middleware("throttle:30,60");   <span class="cmt"># 30 req / 60 s</span>
+
+Route.fallback(fn(req) {
+    return html("&lt;h1&gt;Custom 404&lt;/h1&gt;", 404);
+});</code></pre>
+  <p>A path that matches another verb returns <strong>405 Method Not Allowed</strong> with an <code>Allow</code> header. Inspect everything with <code>spid3r magic route:list</code>.</p>
+</section>
+
+<!-- ============ CONTROLLERS ============ -->
+<section id="controllers">
+  <h2>Controllers</h2>
+  <p>Scaffold with <code>spid3r magic make:controller TaskController</code> into <code>app/</code>. A controller is a plain class; route closures delegate to its methods:</p>
+  <pre><code>import "framework/Response";
+import "framework/HttpException";
+
+class TaskController {
+    public fn index(self, req) {
+        return json(map("tasks", DB.table("tasks").get()));
+    }
+
+    public fn show(self, req) {
+        let task = DB.table("tasks").find(req.params["id"]);
+        if task == null {
+            throw not_found("No task with that id.");
+        }
+        return json(task);
+    }
+}
+
+<span class="cmt"># routes:</span>
+let ctl = new TaskController();
+Route.get("/tasks", fn(req) { return ctl.index(req); });
+Route.get("/tasks/:id", fn(req) { return ctl.show(req); });</code></pre>
+</section>
+
+<!-- ============ REQUESTS ============ -->
+<section id="requests">
+  <h2>Requests &amp; Validation</h2>
+  <pre><code>req.method              <span class="cmt"># "GET" | "POST" | ...</span>
+req.path                <span class="cmt"># "/tasks/7"</span>
+req.params["id"]        <span class="cmt"># route captures</span>
+req.query_params["page"]
+req.header("content-type", "")
+req.input("title", "")  <span class="cmt"># body → query → params, first hit wins</span>
+req.body                <span class="cmt"># raw body string (json_parse it yourself)</span>
+req.session_id          <span class="cmt"># session token when present</span>
+req.auth                <span class="cmt"># per-request AuthManager (check()/user()/id())</span>
+req.app                 <span class="cmt"># the Application (req.app.container ...)</span></code></pre>
+  <h3>Validation</h3>
+  <p><code>req.validate(rules)</code> runs the rule engine over the request input and returns a validator. On failure, throw the errors as a 422:</p>
+  <pre><code>let v = req.validate(map(
+    "title",    "required|min:3|max:200",
+    "priority", "nullable|integer|min_value:1|max_value:9",
+    "email",    "required|email",
+    "password", "required|min:8|confirmed"
+));
+if v.fails() {
+    throw validation_failed(v.error_messages());   <span class="cmt"># 422 + field errors</span>
+}</code></pre>
+  <table>
+    <tr><th>Rule</th><th>Meaning</th></tr>
+    <tr><td>required</td><td>present and non-empty</td></tr>
+    <tr><td>min:N / max:N</td><td>string length bounds</td></tr>
+    <tr><td>min_value:N / max_value:N</td><td>numeric bounds</td></tr>
+    <tr><td>numeric · integer · boolean</td><td>type checks</td></tr>
+    <tr><td>email</td><td>RFC-style address check</td></tr>
+    <tr><td>in:a,b,c</td><td>value in a list</td></tr>
+    <tr><td>confirmed</td><td>must match the <code>&lt;field&gt;_confirmation</code> input</td></tr>
+    <tr><td>same:other</td><td>must match another field</td></tr>
+    <tr><td>alpha · alpha_num</td><td>character-set checks</td></tr>
+    <tr><td>nullable</td><td>empty values skip the remaining rules</td></tr>
+  </table>
+</section>
+
+<!-- ============ RESPONSES ============ -->
+<section id="responses">
+  <h2>Responses</h2>
+  <pre><code>import "framework/Response";
+
+return json(map("ok", true));              <span class="cmt"># 200 application/json</span>
+return json(map("error", "nope"), 400);
+return html("&lt;h1&gt;Hi&lt;/h1&gt;");
+return text("plain");
+return view("welcome");                    <span class="cmt"># rendered SpiderBD template</span>
+return redirect("/login");                 <span class="cmt"># 302</span>
+return redirect("/login", 303);
+
+let res = response("built", 201);
+res.header("cache-control", "no-cache");
+return res;</code></pre>
+  <p>Cookies are secure by default (<code>HttpOnly</code>, <code>SameSite=Lax</code>, <code>Secure</code> in production):</p>
+  <pre><code>res.cookie("theme", "dark", map("max_age", 86400));</code></pre>
+</section>
+
+<!-- ============ MIDDLEWARE ============ -->
+<section id="middleware">
+  <h2>Middleware</h2>
+  <p>Middleware runs before the handler. Return <code>null</code> to pass, or a response to short-circuit. Built-in aliases:</p>
+  <table>
+    <tr><th>Alias</th><th>Behavior</th></tr>
+    <tr><td>auth</td><td>401 JSON for <code>/api/*</code> &amp; JSON clients, <code>/login</code> redirect otherwise</td></tr>
+    <tr><td>guest</td><td>inverse — redirects logged-in users away (login/register pages)</td></tr>
+    <tr><td>cors</td><td>answers <code>OPTIONS</code> preflights (also global by default)</td></tr>
+    <tr><td>logger</td><td>prints method + path</td></tr>
+    <tr><td>throttle:N,M</td><td>cache-backed rate limit: N requests per M seconds per client, 429 beyond</td></tr>
+  </table>
+  <pre><code><span class="cmt"># Per-route:</span>
+Route.get("/admin/stats", handler).middleware("auth");
+
+<span class="cmt"># Custom middleware: any class with handle(req):</span>
+class RequireAdmin {
+    public fn handle(self, req) {
+        if req.auth.user()["role"] != "admin" {
+            throw forbidden("Admins only.");
+        }
+        return null;
+    }
+}
+app.middleware("admin", fn(args) { return new RequireAdmin(); });
+Route.get("/admin", handler).middleware("admin");
+
+<span class="cmt"># Global:</span>
+app.use(new MyGlobalMiddleware());</code></pre>
+</section>
+
+<!-- ============ CONTAINER ============ -->
+<section id="container">
+  <h2>DI Container</h2>
+  <p>The container is the application-wide service registry. Providers bind into it; handlers reach it via <code>req.app.container</code> (or the global <code>Container</code> facade).</p>
+  <pre><code>import "framework/Container/Container";
+
+Container.bind("greeter", fn(c) {
+    return map("greeting", "hello");       <span class="cmt"># fresh instance per resolve</span>
+});
+Container.singleton("db.pool", fn(c) {
+    return new ConnectionPool();           <span class="cmt"># resolved once, memoized</span>
+});
+Container.instance("config", myConfig);    <span class="cmt"># pre-built value</span>
+Container.alias("db", "db.pool");          <span class="cmt"># resolve("db") → db.pool</span>
+
+let svc = Container.make("db.pool");       <span class="cmt"># resolve()</span>
+Container.fresh("db.pool");                <span class="cmt"># bypass the memo (still keeps it)</span>
+Container.extend("db.pool", fn(c, prev) { <span class="cmt"># decorate a binding</span>
+    return new InstrumentedPool(prev(c));
+});</code></pre>
+  <p>The Application pre-registers <code>app</code>, <code>router</code> and <code>events</code> — everything is resolvable from one place.</p>
+</section>
+
+<!-- ============ PROVIDERS ============ -->
+<section id="providers">
+  <h2>Service Providers</h2>
+  <p>Providers are the organized bootstrap points. Extend <code>ServiceProvider</code> and register with the application:</p>
+  <pre><code>import "framework/Providers/ServiceProvider";
+import "framework/Events/Event";
+
+class MailServiceProvider extends ServiceProvider {
+    <span class="cmt"># register: bindings only — no I/O, no DB. Runs at register() time.</span>
+    public fn register(self, container) {
+        container.singleton("mailer", fn(c) {
+            return new Mailer(Config.get("mail.driver", "log"));
+        });
+    }
+
+    <span class="cmt"># boot: runs ONCE after all providers registered — safe to use
+    # the DB, cache, events, routes. Triggered by listen() and lazily
+    # by the first handled request; idempotent.</span>
+    public fn boot(self, container) {
+        let mailer = container.make("mailer");
+        Event.listen("user.registered", fn(payload, name) {
+            mailer.welcome(payload["email"]);
+            return null;
+        });
+    }
+}
+
+let app = new Application();
+app.register(new MailServiceProvider());
+app.listen(8000);                          <span class="cmt"># boots providers, then serves</span></code></pre>
+  <p>After boot, the application dispatches <code>app.booted</code> on the event bus.</p>
+</section>
+
+<!-- ============ EVENTS ============ -->
+<section id="events">
+  <h2>Events</h2>
+  <p>A synchronous in-process pub/sub bus — controllers announce <em>what happened</em>; listeners decide <em>what it means</em>.</p>
+  <pre><code>import "framework/Events/Event";
+
+Event.listen("user.registered", fn(payload, name) {
+    Log.info("new user", payload);
+    return null;
+});
+
+Event.once("app.booted", fn(app, name) { ... });
+
+Event.listen("order.*", fn(payload, name) { ... });   <span class="cmt"># wildcard prefix</span>
+
+let results = Event.dispatch("user.registered", map("email", "ada@example.com"));</code></pre>
+  <p>Handlers receive <code>(payload, event_name)</code> and run in registration order — exact listeners before wildcards. A throwing listener stops the chain (deliberate: no silent failures) — wrap <code>dispatch</code> in <code>try/catch</code> for fire-and-forget semantics. <code>Event.forget(name)</code> and <code>Event.flush()</code> unregister; <code>Event.subscribe(obj)</code> lets a class register its own listeners via its <code>subscribe(dispatcher)</code> method.</p>
+  <h3>Model lifecycle events</h3>
+  <p>Every model save/delete dispatches <code>model.&lt;table&gt;.creating / .created / .updating / .updated / .deleting / .deleted</code>. A listener returning <code>false</code> vetoes the operation (see <a href="#models">Models</a>).</p>
+</section>
+
+<!-- ============ DATABASE ============ -->
+<section id="database">
+  <h2>Query Builder (DB)</h2>
+  <p>The <code>DB</code> facade gives every driver the same fluent API — prepared statements throughout:</p>
+  <pre><code>import "framework/Database/DB";
+
+<span class="cmt"># SELECT</span>
+let rows = DB.table("posts")
+    .where("status", "=", "published")
+    .where("views", "&gt;", 100)
+    .whereIn("kind", ["news", "essay"])
+    .orderBy("created_at", "DESC")
+    .limit(20)
+    .get();
+
+let post   = DB.table("posts").find(42);          <span class="cmt"># row map or null</span>
+let first  = DB.table("posts").where("id", "=", 1).first();
+let total  = DB.table("posts").count();
+let has    = DB.table("posts").where("id", "=", 1).exists();
+let emails = DB.table("users").pluck("email");
+
+<span class="cmt"># Writes — all parameterized</span>
+let id  = DB.table("posts").insert(map("title", "Hello"));
+let n   = DB.table("posts").where("id", "=", id).update(map("title", "Hi"));
+let del = DB.table("posts").where("id", "=", id).delete();
+DB.table("stats").where("id", "=", 1).increment("views", 1);
+
+<span class="cmt"># Joins</span>
+DB.table("posts")
+  .join("users", "posts.user_id", "=", "users.id")
+  .select(["posts.*", "users.name"])
+  .get();
+
+<span class="cmt"># Raw — for trusted SQL only</span>
+DB.select("SELECT count(*) AS c FROM posts", []);
+DB.statement("UPDATE posts SET views = 0 WHERE id = ?", [7]);</code></pre>
+  <h3>Transactions</h3>
+  <pre><code>DB.transaction(fn() {
+    DB.table("accounts").where("id", "=", 1).decrement("balance", 100);
+    DB.table("accounts").where("id", "=", 2).increment("balance", 100);
+    return true;      <span class="cmt"># throw anywhere inside → full rollback</span>
+});</code></pre>
+  <h3>Pagination</h3>
+  <pre><code>let page = DB.table("posts").paginate(2, 15);
+<span class="cmt"># → map("data", rows, "total", n, "page", 2, "per_page", 15,
+#        "last_page", m, "from", a, "to", b, "has_more", true)
+# per_page is capped at 100 — a public API must not dump a table</span></code></pre>
+</section>
+
+<!-- ============ MODELS ============ -->
+<section id="models">
+  <h2>Active Record Models</h2>
+  <pre><code>import "framework/Database/Model";
+
+class Post extends Model {
+    fn new() {
+        super("posts", ["title", "body", "status"], {});   <span class="cmt"># table, fillable</span>
+    }
+}
+
+let post = new Post();
+post.set("title", "Hello");
+post.set("body", "First!");
+post.save();                     <span class="cmt"># INSERT (created_at/updated_at managed)</span>
+post.set("title", "Hello!");
+post.save();                     <span class="cmt"># UPDATE</span>
+post.reload();                   <span class="cmt"># re-read from the DB</span>
+post.touch();                    <span class="cmt"># bump updated_at only</span>
+post.to_map();                   <span class="cmt"># plain map (JSON-ready)</span>
+post.delete();
+
+<span class="cmt"># Query through the model</span>
+let recent = post.query().where("status", "=", "published").limit(10).get();</code></pre>
+  <h3>Relationships</h3>
+  <pre><code><span class="cmt"># Lazy: returns a QueryBuilder you can keep constraining</span>
+let comments = post.hasMany("comments", "post_id").limit(5).get();
+let author   = post.belongsTo("users", "user_id");          <span class="cmt"># row map or null</span>
+
+<span class="cmt"># Eager: hydrate a WHOLE list with ONE extra query (never N+1).
+# Works on model instances or plain row maps.</span>
+import "framework/Database/Model";
+
+let posts = DB.table("posts").limit(20).get();
+load_has_many(posts, "comments", "post_id", "comments");
+load_belongs_to(posts, "users", "user_id", "author");
+posts[0]["comments"]      <span class="cmt"># list of comment rows</span>
+posts[0]["author"]        <span class="cmt"># user row or null</span></code></pre>
+  <h3>Model events (with veto)</h3>
+  <pre><code>Event.listen("model.posts.creating", fn(post, name) {
+    if post.get("title") == "" {
+        return false;                    <span class="cmt"># vetoes the INSERT — save() returns false</span>
+    }
+    post.set("slug", slugify(post.get("title")));
+    return null;
+});</code></pre>
+  <table>
+    <tr><th>Event</th><th>Fires</th></tr>
+    <tr><td>model.&lt;table&gt;.creating / .created</td><td>around INSERT</td></tr>
+    <tr><td>model.&lt;table&gt;.updating / .updated</td><td>around UPDATE</td></tr>
+    <tr><td>model.&lt;table&gt;.deleting / .deleted</td><td>around DELETE</td></tr>
+  </table>
+  <p>Handlers receive the model and may mutate it (slugs, normalization). Return <code>false</code> to cancel — nothing is written.</p>
+</section>
+
+<!-- ============ SCHEMA ============ -->
+<section id="schema">
+  <h2>Schema Builder</h2>
+  <pre><code>import "framework/Database/Schema";
+
+Schema.create("tasks", fn(t) {
+    t.id();                          <span class="cmt"># auto-increment primary key</span>
+    t.string("title", 255);
+    t.text("body");
+    t.integer("priority");
+    t.float("score");
+    t.boolean("done");
+    t.timestamps();                  <span class="cmt"># created_at + updated_at</span>
+});
+
+Schema.table("tasks", fn(t) {
+    t.string("category");            <span class="cmt"># ALTER TABLE ... ADD COLUMN (idempotent)</span>
+});
+
+Schema.dropIfExists("tasks");</code></pre>
+  <p>Column modifiers chain: <code>t.string("email").unique()</code>, <code>t.integer("parent").nullable()</code>, <code>t.string("role").default("member")</code>. DDL is dialect-aware — the same code runs on SQLite, MySQL, MariaDB and PostgreSQL.</p>
+</section>
+
+<!-- ============ MIGRATIONS ============ -->
+<section id="migrations">
+  <h2>Migrations &amp; Seeders</h2>
+  <pre><code>spid3r magic make:migration create_posts_table   <span class="cmt"># scaffold + register</span>
+spid3r magic migrate                             <span class="cmt"># run pending (tracked in batches)</span>
+spid3r magic migrate:rollback                    <span class="cmt"># undo the last batch</span>
+spid3r magic migrate:status                      <span class="cmt"># what ran, what's pending</span>
+spid3r magic db:seed                             <span class="cmt"># run database/seeders/</span></code></pre>
+  <p>Migrations use the Schema builder — never raw DDL — so the same migration runs on every engine. Files in <code>database/migrations/</code> are auto-discovered and tracked in batches. Seeders live in <code>database/seeders/</code> behind <code>db:seed</code>.</p>
+</section>
+
+<!-- ============ RESOURCES ============ -->
+<section id="resources">
+  <h2>REST Resources</h2>
+  <p>Consistent JSON envelopes keep API structure decoupled from database columns. Transformers always receive a <strong>plain map</strong> — model instances are unwrapped automatically, so sensitive fields (password hashes) stay out by construction:</p>
+  <pre><code>import "framework/Resource";
+
+let task_transformer = fn(t) {
+    return map(
+        "id", t["id"],
+        "title", t["title"],
+        "done", t["done"] == 1,
+        "priority", t["priority"]
+    );
+};
+
+return json(resource_item(task, task_transformer));
+<span class="cmt"># {"data": {"id": 1, "title": "...", "done": false, "priority": 5}}</span>
+
+return json(resource_collection(tasks, task_transformer));
+<span class="cmt"># {"data": [...], "meta": {"count": n}}</span>
+
+return json(resource_paginated(page, task_transformer));
+<span class="cmt"># {"data": [...], "meta": {"count", "total", "page", "per_page",
+#   "last_page", "from", "to", "has_more"}}</span></code></pre>
+  <p><code>resource_item(null, t)</code> yields <code>{"data": null}</code> — the natural shape for miss-or-404 flows.</p>
+</section>
+
+<!-- ============ EXCEPTIONS ============ -->
+<section id="exceptions">
+  <h2>HTTP Exceptions</h2>
+  <p>Abort request processing with a meaningful status from <em>anywhere</em> in a handler or middleware — the kernel catches and renders centrally:</p>
+  <pre><code>import "framework/HttpException";
+
+throw not_found("No post with that id.");                       <span class="cmt"># 404</span>
+throw unauthorized("Sign in first.");                            <span class="cmt"># 401</span>
+throw forbidden("Admins only.");                                 <span class="cmt"># 403</span>
+throw bad_request("Missing cursor.");                            <span class="cmt"># 400</span>
+throw too_many_requests("Slow down.");                           <span class="cmt"># 429</span>
+throw validation_failed(map("email", "Already taken."));         <span class="cmt"># 422 + errors</span></code></pre>
+  <p>Rendering is format-aware: <code>/api/*</code> paths and <code>Accept: application/json</code> clients get JSON (<code>{"error", "status", "errors"}</code>); browsers get a styled HTML error card. Anything thrown that is <em>not</em> an HTTP exception becomes a generic 500 — internal details never reach the client.</p>
+</section>
+
+<!-- ============ VIEWS ============ -->
+<section id="views">
+  <h2>SpiderBD Templates</h2>
+  <p>Templates live in <code>resources/views/*.bd.html</code>. Render with <code>view(name, data)</code>:</p>
+  <pre><code>return view("tasks.index", map("tasks", tasks, "title", "All tasks"));</code></pre>
+  <pre><code><span class="cmt">&lt;!-- resources/views/tasks/index.bd.html --&gt;</span>
+@extends("layouts.app")
+
+@section("content")
+  &lt;h1&gt;{{ title }}&lt;/h1&gt;
+
+  @if (empty)
+    &lt;p&gt;No tasks yet.&lt;/p&gt;
+  @else
+    &lt;ul&gt;
+      @foreach (task in tasks)
+        &lt;li&gt;{{ task.title }} — priority {{ task.priority }}&lt;/li&gt;
+      @endforeach
+    &lt;/ul&gt;
+  @endif
+@endsection</code></pre>
+  <table>
+    <tr><th>Syntax</th><th>Behavior</th></tr>
+    <tr><td><code>{{ user.name }}</code></td><td>dot-path lookup, <strong>HTML-escaped</strong></td></tr>
+    <tr><td><code>{!! user.bio !!}</code></td><td>raw output — only for trusted HTML</td></tr>
+    <tr><td><code>@if / @elif / @else / @endif</code></td><td>truthiness checks (precompute comparisons controller-side)</td></tr>
+    <tr><td><code>@foreach (x in items) ... @endforeach</code></td><td>loops, nestable</td></tr>
+    <tr><td><code>@extends("layouts.app")</code> + <code>@section / @yield</code></td><td>layout inheritance</td></tr>
+  </table>
+</section>
+
+<!-- ============ FRONTEND ============ -->
+<section id="frontend-ui">
+  <h2>Frontend Assets</h2>
+  <p>Static files live in <code>public/</code> and are served for prefixes <code>/css/</code>, <code>/js/</code>, <code>/images/</code>, <code>/fonts/</code>, <code>/assets/</code>, <code>/vendor/</code> — content-typed, traversal-proofed, and cached (<code>max-age=3600</code> in production, revalidated in debug).</p>
+  <p>The framework ships <strong>no CSS framework and no build step</strong>: one self-contained stylesheet, plain semantic classes, mobile-first, 44px touch targets. JavaScript is progressive enhancement — plain POST forms must keep working.</p>
+</section>
+
+<!-- ============ AUTH ============ -->
+<section id="auth">
+  <h2>Authentication &amp; Hashing</h2>
+  <pre><code>import "framework/Auth/Auth";
+import "framework/Auth/Hash";
+
+<span class="cmt"># Login (bcrypt verify + session issue)</span>
+if Auth.attempt(email, password) {
+    <span class="cmt"># cookie: spid3r_session=&lt;token&gt; (HttpOnly, SameSite=Lax)
+    # or send the token as "Authorization: Bearer &lt;token&gt;" for APIs</span>
+    return redirect("/dashboard");
+}
+
+Auth.check()          <span class="cmt"># authenticated?</span>
+Auth.user()           <span class="cmt"># safe user map (password hash stripped)</span>
+Auth.id()             <span class="cmt"># user id or null</span>
+Auth.guest()
+Auth.csrf()           <span class="cmt"># per-session CSRF token for form posts</span>
+Auth.logout();
+
+<span class="cmt"># Hashing (bcrypt, per-password salt)</span>
+let hash = Hash.make("correct horse battery staple");
+Hash.check("guess", hash);          <span class="cmt"># false</span></code></pre>
+  <p>Inside the request lifecycle prefer <code>req.auth</code> — it is request-scoped, so concurrent connections never share state. The users table and login column are configurable in <code>config/auth.matrix</code>.</p>
+</section>
+
+<!-- ============ SECURITY ============ -->
+<section id="security">
+  <h2>Security Hardening</h2>
+  <table>
+    <tr><th>Threat</th><th>Defense</th></tr>
+    <tr><td>SQL injection</td><td>parameterized statements throughout the QueryBuilder; identifier guards on schema DDL</td></tr>
+    <tr><td>XSS</td><td><code>{{ }}</code> auto-escapes in templates; escape explicitly with <code>html_escape()</code></td></tr>
+    <tr><td>CSRF</td><td>two layers: Origin/Host comparison on state-changing verbs, then per-session <code>_csrf</code> token (value of <code>Auth.csrf()</code>) for cookie sessions without Origin</td></tr>
+    <tr><td>Session attacks</td><td>CSPRNG 192-bit tokens, server-side store with sliding TTL, dead-session cleanup</td></tr>
+    <tr><td>Path traversal</td><td>static handler rejects <code>..</code>, backslashes, encoded variants, NUL and NTFS stream syntax</td></tr>
+    <tr><td>Abuse</td><td><code>throttle:N,M</code> cache-backed rate limiting; pagination hard-capped at 100 rows</td></tr>
+    <tr><td>Information leaks</td><td>uncaught exceptions render a generic 500 — internals stay in the server log</td></tr>
+    <tr><td>Insecure cookies</td><td><code>HttpOnly</code> + <code>SameSite=Lax</code> + <code>Secure</code> in production</td></tr>
+  </table>
+</section>
+
+<!-- ============ CACHE ============ -->
+<section id="cache">
+  <h2>Caching</h2>
+  <pre><code>import "framework/Cache/Cache";
+
+Cache.put("feed:home", payload, 300);        <span class="cmt"># TTL seconds (0 = forever)</span>
+Cache.get("feed:home", default_value);
+Cache.has("feed:home");
+Cache.remember("report", 600, fn() {
+    return expensive_computation();           <span class="cmt"># get-or-compute-and-store</span>
+});
+Cache.increment("votes:7");                  <span class="cmt"># counters</span>
+Cache.forget("feed:home");
+Cache.flush();
+
+Cache.store("file").put("k", "v", 60);       <span class="cmt"># driver: memory | file | database</span></code></pre>
+  <p>Driver selection: <code>SPID3R_CACHE_DRIVER</code> (memory default; <code>database</code> shares cache across processes via the <code>cache</code> table). The throttle middleware runs on the same stores.</p>
+</section>
+
+<!-- ============ SYSTEMS ============ -->
+<section id="systems">
+  <h2>Log · Storage · Mail · Queue</h2>
+  <pre><code>import "framework/Log/Log";
+Log.info("payment captured", map("order", 42));    <span class="cmt"># debug/info/warn/error → storage/logs/</span>
+
+import "framework/Filesystem/Storage";
+Storage.disk("local").put("reports/q4.txt", text);
+Storage.get("reports/q4.txt");
+Storage.exists("reports/q4.txt");
+Storage.delete("reports/q4.txt");
+
+import "framework/Mail/Mail";
+Mail.send(map("to", "ada@example.com", "subject", "Welcome", "body", "Hi!"));
+<span class="cmt"># log driver writes storage/logs/mail.log-*; SMTP activates when the
+# runtime exposes outbound TCP</span></code></pre>
+  <h3>Queues</h3>
+  <pre><code><span class="cmt"># 1. Register a handler in routes/queue.matrix:</span>
+Queue.job("mail.welcome", fn(data) {
+    Mail.send(map("to", data["to"], "subject", "Welcome!", "body", "Hi"));
+    return true;
+});
+
+<span class="cmt"># 2. Push a job from anywhere (database driver survives restarts):</span>
+Queue.push("mail.welcome", map("to", "ada@example.com"));
+
+<span class="cmt"># 3. Drain — a worker process or a cron/supervisor loop:</span>
+spid3r magic queue:work            <span class="cmt"># until empty</span>
+spid3r magic queue:work --once     <span class="cmt"># one job</span></code></pre>
+</section>
+
+<!-- ============ WEBSOCKET ============ -->
+<section id="websocket">
+  <h2>WebSocket</h2>
+  <p><code>WsServer</code> is a real RFC 6455 server that runs beside your HTTP app (its own port — the HTTP server owns its connections' framing). Per-connection protocols <em>and</em> cross-connection <code>broadcast()</code> are supported.</p>
+  <pre><code>import "framework/WebSocket/WsServer";
+
+let ws = new WsServer();
+ws.on_connection(fn(h) {
+    <span class="cmt"># first-message auth: require a ticket before anything else</span>
+    let auth = ws_recv(h);                    <span class="cmt"># validate, else ws_close(h)</span>
+    while true {
+        let r = ws_recv(h);
+        if r.is_err() { break; }              <span class="cmt"># timeout / protocol error</span>
+        let msg = r.unwrap();
+        if msg == null { break; }             <span class="cmt"># peer closed</span>
+        ws_send(h, "echo: " + msg);           <span class="cmt"># text frame</span>
+        ws_send_bytes(h, bytes([1, 2, 3]));   <span class="cmt"># binary frame</span>
+    }
+});
+
+<span class="cmt"># alongside the HTTP app:</span>
+spawn fn() { ws.listen("127.0.0.1:9001"); return 0; };
+
+ws.broadcast("server restarting in 5 minutes");   <span class="cmt"># every connected client</span>
+ws.client_count();                                 <span class="cmt"># liveness</span></code></pre>
+  <div class="warn">Requires a Spid3r runtime built after 2026-11-06 (reader/writer socket split + unmasked server frames — RFC 6455 §5.1 compliance). Older runtimes deadlock on cross-connection sends and fail in browsers.</div>
+  <p>Auth pattern: hand out a short-lived ticket over HTTP, require it as the client's first frame, close on anything else. <code>opts.timeout_ms</code> reaps silent connections.</p>
+</section>
+
+<!-- ============ TESTING ============ -->
+<section id="testing">
+  <h2>Testing</h2>
+  <pre><code>spid3r magic test          <span class="cmt"># 16 suites; exit code 0 = all green</span></code></pre>
+  <p>Suites live in <code>tests/</code> — router, query builder, models, resources, container, events, providers, cache, throttle, core systems, HTTP lifecycle, drivers, websocket, live DB integration. Register new suites in <strong>both</strong> <code>tests/run_all.matrix</code> and <code>framework/Console/TestRunner.matrix</code>.</p>
+  <pre><code><span class="cmt"># A test file: plain asserts + a main that runs them</span>
+import "framework/Container/Container";
+
+fn test_singleton() {
+    let c = new ServiceContainer();
+    c.singleton("svc", fn(container) { return map("n", 1); });
+    assert(c.resolve("svc") == c.resolve("svc"), "memoized");
+    println("  [PASS] test_singleton");
+}
+
+fn main() {
+    test_singleton();
+    return 0;
+}</code></pre>
+  <p>Live server suites (MySQL / PostgreSQL) activate automatically when <code>SPID3R_DB_DRIVER</code> points at a running server. The bytecode VM runs the same suites: <code>spid3r run --engine vm tests/run_all.matrix</code> (set <code>SPID3R_PATH=.</code> when invoking suites directly).</p>
+  <div class="tip">Unit-test handlers without sockets: build an <code>Application</code>, register routes, and call <code>app.handle_request(map("method", "GET", "path", "/x", "headers", map()))</code> — exactly how the framework's own suites and the example app verify behavior.</div>
+</section>
+
+<!-- ============ DEPLOYMENT ============ -->
+<section id="deployment">
+  <h2>Deployment</h2>
+  <h3>Serve under the bytecode VM</h3>
+  <pre><code>SPID3R_HOST=0.0.0.0 spid3r run --engine vm server.matrix</code></pre>
+  <h3>Docker</h3>
+  <pre><code>docker compose -f deploy/docker-compose.yml up --build -d
+<span class="cmt"># multi-stage image: toolchain compiled from source, slim runtime,
+# MySQL 8.0 (or PostgreSQL 16) service containers</span></code></pre>
+  <h3>CI</h3>
+  <p><code>.github/workflows/ci.yml</code> lints (shellcheck + actionlint) and runs the full suite matrix on SQLite, MySQL 8.0 and PostgreSQL 16 service containers, plus bytecode-VM runs of the key suites and the example app — no secrets required.</p>
+  <h3>Production checklist</h3>
+  <pre><code>APP_ENV=production                 <span class="cmt"># in .env — disables debug output</span>
+SPID3R_HOST=0.0.0.0                <span class="cmt"># bind publicly (reverse proxy in front)</span>
+spid3r magic migrate               <span class="cmt"># apply schema</span>
+spid3r run --engine vm server.matrix   <span class="cmt"># serve (systemd / supervisor / docker)</span></code></pre>
+</section>
+
+<!-- ============ RECIPES ============ -->
+<section id="recipes">
+  <h2>Common Recipes</h2>
+  <h3>JSON API endpoint with validation, resources and pagination</h3>
+  <pre><code>Route.get("/api/tasks", fn(req) {
+    let page = DB.table("tasks").orderBy("priority", "DESC").paginate(1, 20);
+    return json(resource_paginated(page, task_transformer));
+});
+
+Route.post("/api/tasks", fn(req) {
+    let v = req.validate(map("title", "required|min:3"));
+    if v.fails() { throw validation_failed(v.error_messages()); }
+    let task = new Task();
+    task.set("title", req.input("title", ""));
+    task.save();
+    return json(resource_item(task, task_transformer), 201);
+});</code></pre>
+  <h3>Guarded admin area</h3>
+  <pre><code>Route.group(map("prefix", "/admin", "middleware", "auth"), fn() {
+    Route.get("/dashboard", fn(req) {
+        return view("admin/dashboard", map("user", req.auth.user()));
+    });
+});</code></pre>
+  <h3>Welcome emails without slowing the response</h3>
+  <pre><code><span class="cmt"># controller:</span>
+Event.dispatch("user.registered", user);
+<span class="cmt"># provider boot():</span>
+Event.listen("user.registered", fn(u, n) {
+    Queue.push("mail.welcome", map("to", u["email"]));
+    return null;
+});</code></pre>
+  <h3>SEO-friendly public pages</h3>
+  <pre><code>Route.get("/blog/:slug", fn(req) {
+    let post = DB.table("posts").where("slug", "=", req.params["slug"]).first();
+    if post == null { throw not_found("No such post."); }
+    return view("blog/post", map("post", post));
+});
+<span class="cmt"># conventions: /resource/&lt;slug&gt; URLs, /sitemap.xml, /robots.txt,
+# &lt;meta name="description"&gt; on every page</span></code></pre>
+</section>
+
+<!-- ============ CHEAT SHEET ============ -->
+<section id="api-reference">
+  <h2>API Cheat Sheet</h2>
+  <table>
+    <tr><th>Facade</th><th>Essentials</th></tr>
+    <tr><td>Route</td><td><code>get post put patch delete match_any group middleware name fallback</code></td></tr>
+    <tr><td>Request (req)</td><td><code>method path params query_params header input body validate auth app</code></td></tr>
+    <tr><td>Response fns</td><td><code>json html text response redirect view</code></td></tr>
+    <tr><td>Container</td><td><code>bind singleton instance make resolve fresh extend alias bound forget flush</code></td></tr>
+    <tr><td>Event</td><td><code>listen once dispatch has_listeners count_listeners forget subscribe flush</code></td></tr>
+    <tr><td>DB</td><td><code>table select statement transaction</code> + QB: <code>where whereIn orWhere joins orderBy limit offset get first find count exists value pluck increment decrement paginate insert update delete</code></td></tr>
+    <tr><td>Model helpers</td><td><code>load_has_many(models, table, fk, as_key) load_belongs_to(models, table, fk, as_key)</code></td></tr>
+    <tr><td>Schema</td><td><code>create table dropIfExists</code>; columns <code>id string text integer float boolean timestamps</code></td></tr>
+    <tr><td>Resources</td><td><code>resource_item resource_collection resource_paginated</code></td></tr>
+    <tr><td>Exceptions</td><td><code>bad_request unauthorized forbidden not_found validation_failed too_many_requests</code></td></tr>
+    <tr><td>Auth / Hash</td><td><code>attempt login logout check user id guest csrf</code> / <code>make check</code></td></tr>
+    <tr><td>Cache</td><td><code>get put add remember rememberForever sear forget flush has increment decrement store</code></td></tr>
+    <tr><td>Queue</td><td><code>job push size pop run_next work</code></td></tr>
+    <tr><td>Config / Log / Storage</td><td><code>get set has load</code> / <code>debug info warn error write</code> / <code>disk put get append exists delete path url</code></td></tr>
+    <tr><td>WsServer</td><td><code>on_connection bind serve listen close client_count broadcast</code> + <code>ws_send ws_send_bytes ws_recv ws_close</code></td></tr>
+    <tr><td>Validator rules</td><td><code>required min max min_value max_value numeric integer email in confirmed same boolean alpha alpha_num nullable</code></td></tr>
+  </table>
+  <p class="lead">Deep dives live next door: <code>docs/ARCHITECTURE.md</code> (component status + roadmap) and <code>benchmarks/RESULTS.md</code> (measured numbers).</p>
+</section>
+
+</main>
+
+</div>
+</body>
+</html>

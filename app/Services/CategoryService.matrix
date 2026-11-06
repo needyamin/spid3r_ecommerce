@@ -1,0 +1,138 @@
+// app/Services/CategoryService.matrix
+// Phase 4 — nested (self-referencing) category management.
+
+import "framework/Database/DB";
+import "app/Support/CatalogCache" as CatalogCache;
+import "framework/HttpException";
+import "app/Repositories/CatalogRepository";
+import "app/Support/Slug" as Slug;
+
+public class CategoryService {
+    public let categories;
+
+    fn new() {
+        self.categories = new CategoryRepository();
+    }
+
+    fn slug_taken(self, slug: string) -> bool {
+        return DB.table("categories").where("slug", "=", slug).count() > 0;
+    }
+
+    public fn create(self, data) {
+        let name = string(data["name"]).trim();
+        let parent = data["parent_id"];
+        if parent != null {
+            if self.categories.find(parent) == null {
+                throw validation_failed(map("parent_id", "Parent category does not exist."));
+            }
+        }
+        let svc = self;
+        let slug = Slug.unique(name, fn(s) { return svc.slug_taken(s); });
+        let id = self.categories.create(map(
+            "parent_id", parent,
+            "name", name,
+            "slug", slug,
+            "description", string(data["description"]),
+            "sort_order", int(data["sort_order"]),
+            "is_active", 1,
+            "meta_title", string(data["meta_title"]),
+            "meta_description", string(data["meta_description"])
+        ));
+        CatalogCache.bump_catalog_version();
+        return self.categories.find(id);
+    }
+
+    public fn update(self, id, data) {
+        let row = self.categories.find(id);
+        if row == null {
+            throw not_found("Category not found.");
+        }
+        let changes = map();
+        let keys = ["name", "description", "sort_order", "is_active", "meta_title", "meta_description"];
+        let i = 0;
+        while i < keys.len() {
+            if data.has(keys[i]) {
+                changes[keys[i]] = data[keys[i]];
+            }
+            i += 1;
+        }
+        if data.has("parent_id") {
+            let parent = data["parent_id"];
+            if parent != null {
+                if int(parent) == int(id) or self.is_descendant(id, parent) {
+                    throw validation_failed(map("parent_id", "A category cannot be its own ancestor."));
+                }
+                if self.categories.find(parent) == null {
+                    throw validation_failed(map("parent_id", "Parent category does not exist."));
+                }
+            }
+            changes["parent_id"] = parent;
+        }
+        if changes.has("is_active") {
+            let v = changes["is_active"];
+            let flag = 0;
+            if v == 1 or v == true or v == "1" { flag = 1; }
+            changes["is_active"] = flag;
+        }
+        if changes.len() > 0 {
+            self.categories.update(id, changes);
+            CatalogCache.bump_catalog_version();
+        }
+        return self.categories.find(id);
+    }
+
+    // Walk up from `candidate` looking for `root_id` (cycle guard).
+    public fn is_descendant(self, root_id, candidate_id) -> bool {
+        let cursor = candidate_id;
+        let hops = 0;
+        while cursor != null and hops < 64 {
+            if int(cursor) == int(root_id) {
+                return true;
+            }
+            let row = self.categories.find(cursor);
+            if row == null {
+                return false;
+            }
+            cursor = row["parent_id"];
+            hops += 1;
+        }
+        return false;
+    }
+
+    public fn delete(self, id) -> bool {
+        let row = self.categories.find(id);
+        if row == null {
+            throw not_found("Category not found.");
+        }
+        if self.categories.children(id).len() > 0 {
+            throw validation_failed(map("id", "Remove or move child categories first."));
+        }
+        if self.categories.product_count(id) > 0 {
+            throw validation_failed(map("id", "Category still has products."));
+        }
+        let removed = self.categories.delete(id);
+        CatalogCache.bump_catalog_version();
+        return removed;
+    }
+
+    // Full nested tree, rooted at parent_id IS NULL.
+    public fn tree(self) {
+        return self.subtree(null);
+    }
+
+    fn subtree(self, parent_id) {
+        let rows = self.categories.children(parent_id);
+        let out = [];
+        let i = 0;
+        while i < rows.len() {
+            out.push(map(
+                "id", rows[i]["id"],
+                "name", rows[i]["name"],
+                "slug", rows[i]["slug"],
+                "children", self.subtree(rows[i]["id"])
+            ));
+            i += 1;
+        }
+        return out;
+    }
+}

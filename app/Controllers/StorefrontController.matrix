@@ -1,0 +1,202 @@
+// app/Controllers/StorefrontController.matrix
+// Phase 5 — public storefront HTTP layer (thin).
+// Phase 10 — display currency, language, reviews, recommendations,
+//            recently viewed and the wishlist toggle.
+
+import "framework/Response";
+import "framework/View/BD";
+import "framework/Container/Container";
+import "framework/Database/DB";
+import "framework/HttpException";
+import "app/Services/StorefrontService";
+import "app/Services/AdvancedStoreService";
+import "app/Services/CurrencyService";
+import "app/Repositories/CatalogRepository";
+import "app/Support/CartIdentity" as CartIdentity;
+import "app/Support/StoreChrome" as StoreChrome;
+
+public class StorefrontController {
+    public let service;
+    public let settings;
+    public let categories;
+    public let brands;
+    public let advanced;
+    public let currencies;
+
+    fn new() {
+        self.service = new StorefrontService();
+        self.settings = Container.make("store.settings");
+        self.categories = new CategoryRepository();
+        self.brands = new BrandRepository();
+        self.advanced = new AdvancedStoreService();
+        self.currencies = new CurrencyService(string(self.settings["currency"]));
+    }
+
+    // The customer's display currency and the conversion context.
+    fn display_currency(self, req) -> string {
+        return self.currencies.selected(req);
+    }
+
+    fn fx_context(self) {
+        return self.currencies.context();
+    }
+
+    // Storefront chrome shared by every public page.
+    fn chrome(self, req) {
+        return StoreChrome.build(req, self.settings);
+    }
+
+    fn render(self, req, view_name: string, title: string, extra) {
+        let code = self.display_currency(req);
+        let ctx = map(
+            "store_name", self.settings["name"],
+            "currency", code,
+            "title", title,
+            "meta_description", title + " — " + self.settings["name"],
+            "current_path", string(req.path),
+            "csrf", ""
+        );
+        if req.auth != null and req.auth.check() {
+            ctx["csrf"] = req.auth.csrf();
+        }
+        let chrome = self.chrome(req);
+        for k in chrome.keys() {
+            ctx[k] = chrome[k];
+        }
+        if extra != null {
+            for k2 in extra.keys() {
+                ctx[k2] = extra[k2];
+            }
+        }
+        return view(view_name, ctx);
+    }
+
+    public fn home(self, req) {
+        let code = self.display_currency(req);
+        let featured = self.service.featured(code, 8, self.fx_context());
+        let ctx = map(
+            "products", featured,
+            "has_products", featured.len() > 0,
+            "meta_description", "Shop " + self.settings["name"] + " — quality products, honest prices, fast delivery."
+        );
+        return self.render(req, "store/home", self.settings["name"], ctx);
+    }
+
+    public fn catalog(self, req) {
+        let code = self.display_currency(req);
+        let ctx = self.service.catalog_context(req.query_params, "/catalog", code, self.fx_context());
+        ctx["heading"] = "All products";
+        ctx["description"] = "";
+        ctx["meta_description"] = "Browse all products at " + self.settings["name"] + " — filter by category, brand and price.";
+        return self.render(req, "store/catalog", "Catalog", ctx);
+    }
+
+    public fn search(self, req) {
+        return self.catalog(req);
+    }
+
+    public fn category(self, req) {
+        let slug = string(req.params["slug"]);
+        let cat = self.categories.find_by_slug(slug);
+        if cat == null {
+            throw not_found("Category not found.");
+        }
+        let params = map("category", slug, "path", req.path);
+        for k in req.query_params.keys() {
+            if k != "category" {
+                params[k] = req.query_params[k];
+            }
+        }
+        let code = self.display_currency(req);
+        let ctx = self.service.catalog_context(params, "/category/" + slug, code, self.fx_context());
+        ctx["heading"] = string(cat["name"]);
+        ctx["description"] = string(cat["description"]);
+        ctx["meta_description"] = string(cat["meta_description"]);
+        return self.render(req, "store/catalog", string(cat["name"]), ctx);
+    }
+
+    public fn brand(self, req) {
+        let slug = string(req.params["slug"]);
+        let brand = DB.table("brands").where("slug", "=", slug).first();
+        if brand == null {
+            throw not_found("Brand not found.");
+        }
+        let params = map("brand", slug);
+        for k in req.query_params.keys() {
+            if k != "brand" {
+                params[k] = req.query_params[k];
+            }
+        }
+        let code = self.display_currency(req);
+        let ctx = self.service.catalog_context(params, "/brand/" + slug, code, self.fx_context());
+        ctx["heading"] = string(brand["name"]);
+        ctx["description"] = string(brand["description"]);
+        ctx["meta_description"] = "Shop " + string(brand["name"]) + " products at " + self.settings["name"] + ".";
+        return self.render(req, "store/catalog", string(brand["name"]), ctx);
+    }
+
+    public fn product(self, req) {
+        let code = self.display_currency(req);
+        let fx = self.fx_context();
+        let ctx = self.service.product_context(string(req.params["slug"]), code, fx);
+        let title = string(ctx["product"]["name"]);
+        if ctx["meta_description"] == "" {
+            ctx["meta_description"] = title + " — available at " + self.settings["name"] + ".";
+        }
+        let product_id = int(ctx["product"]["id"]);
+
+        // Phase 10 — reviews & ratings.
+        let reviews = self.advanced.approved_reviews(product_id);
+        ctx["reviews"] = reviews;
+        ctx["has_reviews"] = reviews.len() > 0;
+        ctx["rating"] = self.advanced.rating_summary(product_id);
+
+        // Phase 10 — recommendations from the same category.
+        let recommendations = self.service.decorate(self.advanced.recommendations(product_id, 4), code, fx);
+        ctx["recommendations"] = recommendations;
+        ctx["has_recommendations"] = recommendations.len() > 0;
+
+        // Phase 10 — recently viewed (tracked server-side, no JavaScript).
+        let rv_key = CartIdentity.cookie_value(req, "rv");
+        if rv_key == "" {
+            rv_key = "rv-" + hex_encode(random_bytes(16).unwrap());
+        }
+        self.advanced.track_view(rv_key, product_id);
+        let seen = self.advanced.recently_viewed(rv_key);
+        let others = [];
+        let i = 0;
+        while i < seen.len() {
+            if int(seen[i]["id"]) != product_id {
+                others.push(seen[i]);
+            }
+            i += 1;
+        }
+        let recent = self.service.decorate(others, code, fx);
+        ctx["recently_viewed"] = recent;
+        ctx["has_recently_viewed"] = recent.len() > 0;
+
+        // Phase 10 — wishlist toggle state.
+        let uid = null;
+        if req.auth != null and req.auth.check() {
+            uid = req.auth.id();
+        }
+        ctx["in_wishlist"] = self.advanced.in_wishlist(uid, product_id);
+        ctx["signed_in"] = uid != null;
+
+        let res = self.render(req, "store/product", title, ctx);
+        res.cookie("rv", rv_key, "/", 2592000);
+        return res;
+    }
+
+    public fn sitemap(self, req) {
+        let res = response(self.service.sitemap_xml(), 200);
+        res.header("content-type", "application/xml; charset=utf-8");
+        return res;
+    }
+
+    public fn robots(self, req) {
+        let res = response(self.service.robots_txt(), 200);
+        res.header("content-type", "text/plain; charset=utf-8");
+        return res;
+    }
+}

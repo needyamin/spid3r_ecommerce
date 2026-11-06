@@ -1,0 +1,163 @@
+// framework/Container/Container.matrix
+// Spid3rWeb Dependency Injection Container
+//
+// A lightweight service container: named bindings resolved lazily through a
+// factory, optionally memoized as singletons. This is the backbone the rest
+// of the framework wires long-lived services through (cache, db, mail, ...).
+//
+// API:
+//   Container.bind(key, factory)        factory(container) -> value, fresh every resolve
+//   Container.singleton(key, factory)   factory(container) -> value, resolved once
+//   Container.instance(key, value)      store a pre-built value (implicitly singleton)
+//   Container.resolve(key) / .make(key) resolve a binding (throws when unbound)
+//   Container.fresh(key)                re-run the factory, bypassing the singleton memo
+//   Container.bound(key)                does this key have a binding or instance?
+//   Container.resolved(key)             is a singleton already memoized?
+//   Container.alias(alias, key)         alias resolves through to key (chains allowed)
+//   Container.extend(key, wrapper)      wrapper(container, previous_factory) -> value
+//   Container.forget(key)               drop the binding and any memoized instance
+//   Container.flush()                   drop everything
+//
+// Factories receive the container itself, so nested dependencies resolve
+// inside the factory:
+//   Container.singleton("db", fn(c) { return new DatabaseManager(); });
+//
+// Design notes:
+//   - Keys are plain strings; there is no class reflection in Spid3r, so the
+//     container is a named-service registry rather than an auto-wirer.
+//   - Alias chains are followed up to 32 hops; a cyclic alias configuration
+//     surfaces as "nothing is bound" instead of hanging.
+//   - `extend` wraps the previous factory, preserving the shared flag; it
+//     invalidates any memoized singleton for that key.
+
+public class ServiceContainer {
+    private let bindings;   // key -> map("factory", fn, "shared", bool)
+    private let instances;  // key -> memoized singleton value
+    private let aliases;    // alias -> target key
+
+    fn new() {
+        self.bindings = map();
+        self.instances = map();
+        self.aliases = map();
+    }
+
+    // Follow an alias chain to its final key. A cycle is cut off after 32
+    // hops; resolve() then reports the key as unbound, which is the honest
+    // answer for a misconfigured alias loop.
+    fn alias_for(self, key: string) -> string {
+        let current = key;
+        let steps = 0;
+        while self.aliases.has(current) and steps < 32 {
+            current = self.aliases[current];
+            steps += 1;
+        }
+        return current;
+    }
+
+    public fn bind(self, key: string, factory) {
+        self.bindings[key] = map("factory", factory, "shared", false);
+        return self;
+    }
+
+    public fn singleton(self, key: string, factory) {
+        self.bindings[key] = map("factory", factory, "shared", true);
+        return self;
+    }
+
+    // Store a pre-built value. Returns the value for ergonomic chaining:
+    //   let store = Container.instance("store", new MemoryCacheStore());
+    public fn instance(self, key: string, value) {
+        self.instances[key] = value;
+        return value;
+    }
+
+    public fn alias(self, alias: string, key: string) {
+        self.aliases[alias] = key;
+        return self;
+    }
+
+    public fn bound(self, key: string) -> bool {
+        let k = self.alias_for(key);
+        return self.bindings.has(k) or self.instances.has(k);
+    }
+
+    public fn resolved(self, key: string) -> bool {
+        let k = self.alias_for(key);
+        return self.instances.has(k);
+    }
+
+    public fn resolve(self, key: string) {
+        let k = self.alias_for(key);
+        if self.instances.has(k) {
+            return self.instances[k];
+        }
+        if not self.bindings.has(k) {
+            throw "Container: nothing is bound for '" + k + "'";
+        }
+        let b = self.bindings[k];
+        let f = b["factory"];
+        let obj = f(self);
+        if b["shared"] {
+            self.instances[k] = obj;
+        }
+        return obj;
+    }
+
+    // Laravel-style alias for resolve().
+    public fn make(self, key: string) {
+        return self.resolve(key);
+    }
+
+    // Re-run the factory without touching the singleton memo.
+    public fn fresh(self, key: string) {
+        let k = self.alias_for(key);
+        if not self.bindings.has(k) {
+            throw "Container: nothing is bound for '" + k + "'";
+        }
+        let b = self.bindings[k];
+        let f = b["factory"];
+        return f(self);
+    }
+
+    // Decorate an existing binding. The wrapper receives the container and
+    // the previous factory; whatever it returns becomes the new factory.
+    public fn extend(self, key: string, wrapper) {
+        let k = self.alias_for(key);
+        if not self.bindings.has(k) {
+            throw "Container: cannot extend an unbound key '" + k + "'";
+        }
+        let b = self.bindings[k];
+        let previous = b["factory"];
+        b["factory"] = fn(c) {
+            return wrapper(c, previous);
+        };
+        // A changed factory invalidates any memoized singleton.
+        if self.instances.has(k) {
+            self.instances.remove(k);
+        }
+        return self;
+    }
+
+    public fn forget(self, key: string) {
+        let k = self.alias_for(key);
+        if self.bindings.has(k) {
+            self.bindings.remove(k);
+        }
+        if self.instances.has(k) {
+            self.instances.remove(k);
+        }
+        return self;
+    }
+
+    public fn flush(self) {
+        self.bindings = map();
+        self.instances = map();
+        self.aliases = map();
+        return self;
+    }
+}
+
+// Global container facade singleton — the application-wide service registry.
+// Import this module and use `Container.xxx(...)` directly; tests and tools
+// that need isolation can `new ServiceContainer()` instead.
+public let Container = new ServiceContainer();

@@ -1,0 +1,225 @@
+// framework/WebSocket/WsServer.matrix
+// Spid3rWeb WebSocket Server
+//
+// Live, bidirectional WebSocket connections: per-connection protocols AND
+// cross-connection fan-out (broadcast, chat relays, notifications) — the
+// runtime's independent write half makes concurrent send-while-reading
+// safe (requires a runtime from 2026-11-06 or later; see ARCHITECTURE
+// NOTES).
+//
+//   import "framework/WebSocket/WsServer";
+//
+//   let ws = new WsServer();
+//   ws.on_connection(fn(h) {
+//       // h is a WebSocket handle: ws_send / ws_recv / ws_close
+//       while true {
+//           let r = ws_recv(h);
+//           if r.is_err() { break; }        // timeout / protocol error
+//           let msg = r.unwrap();
+//           if msg == null { break; }       // peer closed cleanly
+//           ws_send(h, "echo: " + msg);
+//       }
+//   });
+//   ws.listen("127.0.0.1:9001");
+//
+// Run it alongside the HTTP app (a second process or a spawned task):
+//   spawn fn() { ws.listen("127.0.0.1:9001"); return 0; };
+//
+// ---------------------------------------------------------------------
+// ARCHITECTURE NOTES (read before extending)
+// ---------------------------------------------------------------------
+// - Handshake: the runtime native ws_accept() consumes the client's HTTP
+//   Upgrade request and performs the RFC 6455 handshake itself (the runtime
+//   has no SHA-1 native, so the framework cannot compute the accept key).
+//   Consequence: the request path/headers are NOT visible to framework
+//   code. One WsServer per port; route by port, not by path.
+// - Cross-connection messaging (broadcast, chat relays, fan-out) works:
+//   the runtime gives every plain TCP connection an independent write
+//   half, so ws_send/ws_close never block behind another task's ws_recv,
+//   and all frame writers serialize on the write-half mutex (frames never
+//   interleave). Requires a runtime built AFTER the reader/writer split
+//   (spid3r net.rs, 2026-11-06); on older runtimes broadcast will hang.
+// - Authentication: use the first-message pattern — require the client to
+//   send a credential (session token / signed ticket from the HTTP app)
+//   as its first frame and close on anything else. `opts.timeout_ms`
+//   bounds how long a silent connection may linger (enforced by the
+//   underlying socket timeout, so a client that never authenticates is
+//   reaped, not leaked).
+// - Frames: text frames arrive as strings via ws_recv (binary as bytes,
+//   pings auto-answered, fragments reassembled — all native-side). The
+//   runtime caps a single frame at 8 MiB.
+// - Concurrency: every connection runs in its own spawned task, exactly
+//   like the HTTP server. The client registry is mutex-guarded and only
+//   tracks liveness — broadcast() is safe from any task.
+
+public class WsServer {
+    // opts.timeout_ms     — per-connection socket timeout in ms (idle cap
+    //                       for unauthenticated or dead connections)
+    // opts.watch_signals  — process-global Ctrl+C/SIGTERM stops the accept
+    //                       loop (true by default; disable when embedding
+    //                       multiple servers in one process)
+    public let opts;
+    private let handler;
+    private let listener;
+    private let clients;   // mutex(map: handle-id -> handle)
+
+    fn new() {
+        self.opts = map("timeout_ms", 300000, "watch_signals", true);
+        self.handler = null;
+        self.listener = -1;
+        self.clients = mutex(map());
+    }
+
+    // Register the per-connection handler: fn(handle). The handler owns the
+    // connection loop; when it returns, the framework closes the socket.
+    public fn on_connection(self, handler) {
+        self.handler = handler;
+        return self;
+    }
+
+    // Bind without serving. Returns the real address — matters when `addr`
+    // uses port 0 ("127.0.0.1:0" picks a free port; tests rely on this).
+    public fn bind(self, addr) {
+        let r = tcp_listen(addr);
+        if r.is_err() {
+            throw r.unwrap_err();
+        }
+        self.listener = r.unwrap();
+        return tcp_local_addr(self.listener).unwrap();
+    }
+
+    // Accept loop. `max_connections < 0` serves forever; otherwise returns
+    // after accepting that many connections (tests use this).
+    public fn serve(self, max_connections) {
+        if self.handler == null {
+            throw "WsServer: register a handler with on_connection() first";
+        }
+        if self.listener < 0 {
+            throw "WsServer: call bind() first";
+        }
+        let timeout_ms = int(self.opts["timeout_ms"]);
+        let watch = true;
+        if self.opts.has("watch_signals") {
+            watch = self.opts["watch_signals"];
+        }
+        let srv = self;
+        let accepted = 0;
+        while max_connections < 0 or accepted < max_connections {
+            if watch and shutdown_requested() {
+                tcp_close(self.listener);
+                break;
+            }
+            // Bounded accept so shutdown stays deterministic on every
+            // platform (same pattern as the stdlib HTTP server loop).
+            let c = tcp_accept_timeout(self.listener, 50);
+            if c == null {
+                continue;
+            }
+            if c.is_err() {
+                break;
+            }
+            let conn = c.unwrap();
+            accepted += 1;
+            spawn fn() {
+                srv.handle_conn(conn, timeout_ms);
+                return 0;
+            };
+        }
+        if watch and shutdown_requested() {
+            tcp_close(self.listener);
+        }
+        return accepted;
+    }
+
+    // Handshake + handler lifecycle for one connection.
+    fn handle_conn(self, conn, timeout_ms) {
+        // The socket timeout bounds the handshake AND any silent idle
+        // period: a client that connects and never speaks is reaped here.
+        tcp_set_timeout(conn, timeout_ms);
+        let up = ws_accept(conn);
+        if up.is_err() {
+            // Not a WebSocket handshake (plain HTTP, garbage, probe) —
+            // drop the connection without invoking the handler.
+            tcp_close(conn);
+            return false;
+        }
+        let h = up.unwrap();
+        self.track(h, true);
+        try {
+            let f = self.handler;
+            f(h);
+        } finally {
+            self.track(h, false);
+            ws_close(h);
+        }
+        return true;
+    }
+
+    fn track(self, h, add: bool) {
+        let m = self.clients.lock();
+        if add {
+            m[string(h)] = h;
+        } elif m.has(string(h)) {
+            m.remove(string(h));
+        }
+        self.clients.unlock();
+    }
+
+    // How many clients are currently connected (handshake completed,
+    // handler still running). Liveness bookkeeping only.
+    public fn client_count(self) -> int {
+        let m = self.clients.lock();
+        let n = m.keys().len();
+        self.clients.unlock();
+        return n;
+    }
+
+    // Send `text` to every connected client. Requires a runtime with the
+    // reader/writer socket split (2026-11-06 or later) — on older builds
+    // this blocks on the first client parked in ws_recv. Returns how many
+    // clients received the frame; dead sockets are pruned on failure.
+    public fn broadcast(self, text: string) -> int {
+        let m = self.clients.lock();
+        let ids = list();
+        for k in m.keys() {
+            ids.push(k);
+        }
+        self.clients.unlock();
+
+        let sent = 0;
+        let i = 0;
+        while i < len(ids) {
+            let h = null;
+            let m2 = self.clients.lock();
+            if m2.has(ids[i]) {
+                h = m2[ids[i]];
+            }
+            self.clients.unlock();
+            if h != null {
+                let r = ws_send(h, text);
+                if r.is_err() {
+                    self.track(h, false);
+                } else {
+                    sent += 1;
+                }
+            }
+            i += 1;
+        }
+        return sent;
+    }
+
+    // Bind + serve forever (blocking — run it in a spawned task next to a
+    // running HTTP app).
+    public fn listen(self, addr) {
+        let real = self.bind(addr);
+        println("[Spid3rWeb WS] WebSocket server listening on ws://" + real);
+        return self.serve(-1);
+    }
+
+    public fn close(self) {
+        if self.listener >= 0 {
+            tcp_close(self.listener);
+        }
+        return true;
+    }
+}

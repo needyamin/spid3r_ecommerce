@@ -1,0 +1,21 @@
+@extends("layouts.store")
+@section('title', title)
+@section('meta_description', meta_description)
+@section("content")
+  <section class="auth-card">
+    <h1>Choose payment method</h1>
+    <p>Order <strong>{{ order.order_number }}</strong> · Total <strong>{{ total_display }}</strong></p>
+    <form method="post" action="/payment/initiate">
+      <input type="hidden" name="_csrf" value="{{ csrf }}">
+      <input type="hidden" name="order_number" value="{{ order.order_number }}">
+      <label for="provider">Payment method</label>
+      <select id="provider" name="provider">
+@foreach(provider in providers)
+        <option value="{{ provider }}">{{ provider }}</option>
+@endforeach
+      </select>
+      <button class="btn btn-primary" type="submit">Continue to payment</button>
+    </form>
+    <p class="auth-links">Payments are verified server-side. Do not close this page until confirmation.</p>
+  </section>
+@endsection

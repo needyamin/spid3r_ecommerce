@@ -1,0 +1,50 @@
+@extends("layouts.store")
+@section('title', title)
+@section('meta_description', meta_description)
+@section("content")
+  <nav class="breadcrumb"><a href="/">Home</a> / <a href="/account">Account</a> / <span>Rewards</span></nav>
+  <h1 class="page-title">Your rewards</h1>
+
+  <section class="rewards-panel">
+    <div class="points-balance">
+      <span class="points-value">{{ points }}</span>
+      <span class="points-label">loyalty points</span>
+    </div>
+    <p class="rewards-hint">You earn 1 point for every 100 of spend once an order is paid.</p>
+    <form method="post" action="/account/rewards/redeem" class="inline-form">
+      <input type="hidden" name="_csrf" value="{{ csrf }}">
+      <label>Redeem points <input type="number" name="points" min="1" max="{{ points }}" value="1"></label>
+      <button class="btn btn-primary" type="submit">Redeem</button>
+    </form>
+  </section>
+
+  <section class="referral-panel">
+    <h2>Refer a friend</h2>
+    <p>Share your code. You both get <strong>500 points</strong> when their first order is paid.</p>
+    <p class="referral-code">{{ referral_code }}</p>
+    <p><a href="{{ referral_link }}">Your referral link</a></p>
+    <form method="post" action="/account/referral" class="inline-form">
+      <input type="hidden" name="_csrf" value="{{ csrf }}">
+      <label>Use a referral code <input type="text" name="code" maxlength="32" placeholder="REF-XXXXXX"></label>
+      <button class="btn btn-secondary" type="submit">Apply</button>
+    </form>
+  </section>
+
+@if(history)
+  <section class="loyalty-history">
+    <h2>Points history</h2>
+    <table class="data-table">
+      <thead><tr><th>When</th><th>Reason</th><th>Points</th></tr></thead>
+      <tbody>
+@foreach(entry in history)
+        <tr>
+          <td>{{ entry.created_at }}</td>
+          <td>{{ entry.reason }}</td>
+          <td>{{ entry.points }}</td>
+        </tr>
+@endforeach
+      </tbody>
+    </table>
+  </section>
+@endif
+@endsection

@@ -1,0 +1,93 @@
+// app/Controllers/CartController.matrix
+// Phase 6 — cart HTTP layer. Extracts guest/auth identity from cookies,
+// delegates all logic to CartService, and returns HTML or JSON.
+
+import "framework/Response";
+import "framework/View/BD";
+import "framework/Container/Container";
+import "framework/HttpException";
+import "app/Services/CartService";
+import "app/Support/CartIdentity" as CartIdentity;
+import "app/Support/StoreChrome" as StoreChrome;
+
+public class CartController {
+    public let cart;
+    public let settings;
+
+    fn new() {
+        self.cart = new CartService();
+        self.settings = Container.make("store.settings");
+    }
+
+    fn with_cart_cookie(self, res, ident) {
+        res.cookie("cart", ident["key"], "/", 2592000);   // 30 days
+        return res;
+    }
+
+    fn json_or_redirect(self, req, payload, ident) {
+        if req.input("format", "") == "json" {
+            let res = json(payload);
+            return self.with_cart_cookie(res, ident);
+        }
+        let res = redirect("/cart");
+        return self.with_cart_cookie(res, ident);
+    }
+
+    public fn show(self, req) {
+        let ident = CartIdentity.cart_identity(req);
+        let summary = self.cart.summary(ident);
+        let ctx = map(
+            "store_name", self.settings["name"],
+            "currency", self.settings["currency"],
+            "title", "Your cart",
+            "meta_description", "Review your cart at " + self.settings["name"] + ".",
+            "csrf", ""
+        );
+        if req.auth != null and req.auth.check() {
+            ctx["csrf"] = req.auth.csrf();
+        }
+        let chrome = StoreChrome.build(req, self.settings);
+        for k in chrome.keys() {
+            ctx[k] = chrome[k];
+        }
+        for k in summary.keys() {
+            ctx[k] = summary[k];
+        }
+        let res = view("cart/index", ctx);
+        return self.with_cart_cookie(res, ident);
+    }
+
+    public fn add(self, req) {
+        let ident = CartIdentity.cart_identity(req);
+        let product_id = req.input("product_id", null);
+        if product_id == null {
+            throw validation_failed(map("product_id", "Choose a product."));
+        }
+        let variant = req.input("variant_id", null);
+        if variant == "" { variant = null; }
+        let qty = int(req.input("quantity", 1));
+        self.cart.add(ident, product_id, variant, qty);
+        return self.json_or_redirect(req, map("ok", true), ident);
+    }
+
+    public fn update(self, req) {
+        let ident = CartIdentity.cart_identity(req);
+        let qty = int(req.input("quantity", 0));
+        self.cart.update(ident, req.params["id"], qty);
+        return self.json_or_redirect(req, map("ok", true), ident);
+    }
+
+    public fn remove(self, req) {
+        let ident = CartIdentity.cart_identity(req);
+        self.cart.remove(ident, req.params["id"]);
+        return self.json_or_redirect(req, map("ok", true), ident);
+    }
+
+    // JSON snapshot for AJAX clients / checkout (Phase 7).
+    public fn summary_json(self, req) {
+        let ident = CartIdentity.cart_identity(req);
+        let summary = self.cart.summary(ident);
+        let res = json(map("data", summary));
+        return self.with_cart_cookie(res, ident);
+    }
+}

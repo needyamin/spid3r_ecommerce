@@ -1,0 +1,169 @@
+// framework/Middleware.matrix
+// Spid3rWeb Middleware Pipeline & Built-in Guards
+
+import "framework/Response";
+import "framework/Auth/Auth";
+import "framework/Cache/Cache";
+
+public class Pipeline {
+    public let passable;
+    public let pipes;
+
+    fn new() {
+        self.passable = null;
+        self.pipes = list();
+    }
+
+    public fn send(self, passable) {
+        self.passable = passable;
+        return self;
+    }
+
+    public fn through(self, pipes_list) {
+        self.pipes = pipes_list;
+        return self;
+    }
+
+    public fn then(self, destination) {
+        let req = self.passable;
+        let index = 0;
+
+        // Recursive or iterative pipeline execution
+        for pipe in self.pipes {
+            let res = pipe.handle(req);
+            // If middleware returns a response (short-circuit), stop pipeline
+            if res != null {
+                return res;
+            }
+        }
+
+        return destination(req);
+    }
+}
+
+// ----------------------------------------------------------------------------
+// Built-in Framework Middleware
+// ----------------------------------------------------------------------------
+
+public class CorsMiddleware {
+    fn new() {}
+
+    public fn handle(self, req) {
+        if req.method == "OPTIONS" {
+            let res = response("", 204);
+            res.header("access-control-allow-origin", "*");
+            res.header("access-control-allow-methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS");
+            res.header("access-control-allow-headers", "content-type, authorization, x-requested-with");
+            return res;
+        }
+        return null; // proceed
+    }
+}
+
+public class LoggerMiddleware {
+    fn new() {}
+
+    public fn handle(self, req) {
+        println("[Spid3rWeb] " + req.method + " " + req.path);
+        return null;
+    }
+}
+
+public class AuthMiddleware {
+    fn new() {}
+
+    public fn handle(self, req) {
+        // Prefer the request-scoped auth state (set by Application); fall
+        // back to the global facade for direct/legacy invocation.
+        let auth = null;
+        if req.auth != null {
+            auth = req.auth;
+        } else {
+            auth = Auth;
+        }
+
+        // Authenticate session if token present
+        if req.session_id != "" and not auth.check() {
+            auth.authenticate_token(req.session_id);
+        }
+
+        if not auth.check() {
+            if req.path.starts_with("/api/") or req.header("accept", "").contains("application/json") {
+                return json(map("error", "Unauthorized", "message", "Authentication required."), 401);
+            }
+            return redirect("/login");
+        }
+        return null;
+    }
+}
+
+// GuestMiddleware — the inverse of AuthMiddleware: for routes that only make
+// sense while logged out (login/register pages). An authenticated visitor is
+// redirected away instead of seeing the form again. Alias: "guest".
+public class GuestMiddleware {
+    public let redirect_to;
+
+    fn new(redirect_to: string = "/") {
+        self.redirect_to = redirect_to;
+    }
+
+    public fn handle(self, req) {
+        let auth = null;
+        if req.auth != null {
+            auth = req.auth;
+        } else {
+            auth = Auth;
+        }
+        if auth.check() {
+            return redirect(self.redirect_to);
+        }
+        return null;
+    }
+}
+
+// ----------------------------------------------------------------------------
+// ThrottleMiddleware — Cache-backed per-client rate limiting
+// ----------------------------------------------------------------------------
+// Usage: Route.get("/x", h).middleware("throttle:5,60")
+//   → at most 5 requests per 60 seconds per client (IP or session token).
+// Exceeding the limit returns 429 (JSON for API clients). The counter lives
+// in the configured Cache store; the memory driver resets on process restart.
+public class ThrottleMiddleware {
+    public let max_attempts;
+    public let decay_seconds;
+
+    fn new(max_attempts: int = 60, decay_seconds: int = 60) {
+        self.max_attempts = max_attempts;
+        self.decay_seconds = decay_seconds;
+    }
+
+    public fn handle(self, req) {
+        // Key by session token when present (stable per client), else by IP.
+        let identity = req.client_ip();
+        if req.session_id != "" {
+            identity = req.session_id;
+        }
+        let key = "throttle:" + identity + ":" + req.method + ":" + req.path;
+
+        // Fixed-window counter: add() seeds the TTL on the first hit so the
+        // window always starts at the first request.
+        if Cache.missing(key) {
+            Cache.add(key, 0, self.decay_seconds);
+        }
+        let hits = Cache.increment(key);
+
+        if hits > self.max_attempts {
+            let retry = self.decay_seconds;
+            if req.path.starts_with("/api/") or req.header("accept", "").contains("application/json") {
+                return json(map(
+                    "error", "Too Many Requests",
+                    "message", "Rate limit exceeded. Try again in " + string(retry) + " seconds."
+                ), 429);
+            }
+            let res = response("<!DOCTYPE html><html lang='en'><head><meta charset='utf-8'><title>429 Too Many Requests - Spid3rWeb</title></head><body><h1>429 — Too Many Requests</h1><p>Rate limit exceeded. Please try again in a few moments.</p></body></html>", 429);
+            res.header("retry-after", string(retry));
+            return res;
+        }
+        return null;
+    }
+}

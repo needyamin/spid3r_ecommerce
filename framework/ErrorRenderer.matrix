@@ -1,0 +1,130 @@
+// framework/ErrorRenderer.matrix
+// Spid3rWeb HTTP Error Pages — JSON-aware 404/500 rendering.
+// Extracted from Application.matrix so the kernel stays focused on
+// request coordination; output is byte-identical to the original.
+
+import "framework/Response";
+import "framework/View/BD";
+import "framework/HttpException";
+
+public class ErrorRenderer {
+    // Typed HTTP exceptions (HttpException.matrix): correct status, JSON
+    // for API clients, a status-aware HTML card otherwise. The client never
+    // sees stack traces; only the message and optional field errors.
+    public static fn http_error(req, e) {
+        let _ = self;
+        let status = int(e["status"]);
+        let message = string(e["message"]);
+        if req.path.starts_with("/api/") or req.header("accept", "").contains("application/json") {
+            let body = map("error", message, "status", status);
+            if e.has("errors") and e["errors"] != null {
+                body["errors"] = e["errors"];
+            }
+            return json(body, status).to_http();
+        }
+        let errors_html = "";
+        if e.has("errors") and e["errors"] != null {
+            errors_html = errors_html + "<ul class='errors'>";
+            if type_of(e["errors"]) == "map" {
+                for field in e["errors"].keys() {
+                    errors_html = errors_html + "<li><strong>" + html_escape(field) + "</strong>: "
+                        + html_escape(string(e["errors"][field])) + "</li>";
+                }
+            } else {
+                errors_html = errors_html + "<li>" + html_escape(string(e["errors"])) + "</li>";
+            }
+            errors_html = errors_html + "</ul>";
+        }
+        let html_content = "<!DOCTYPE html>
+<html lang='en'>
+<head><meta charset='utf-8'><title>" + string(status) + " - Spid3rWeb</title>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0f172a; color: #f8fafc; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }
+  .card { background: #1e293b; padding: 2.5rem 3rem; border-radius: 1rem; border: 1px solid #334155; text-align: center; max-width: 500px; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.5); }
+  h1 { font-size: 4rem; margin: 0; color: #38bdf8; font-weight: 800; }
+  p { color: #94a3b8; font-size: 1.1rem; margin: 1rem 0 2rem; }
+  a { background: #38bdf8; color: #0f172a; text-decoration: none; padding: 0.75rem 1.5rem; border-radius: 0.5rem; font-weight: 600; }
+  .errors { text-align: left; color: #fca5a5; margin: 0 0 1.5rem; padding-left: 1.25rem; }
+</style>
+</head>
+<body>
+  <div class='card'>
+    <h1>" + string(status) + "</h1>
+    <p>" + html_escape(message) + "</p>
+    " + errors_html + "
+    <a href='/'>Return to Home</a>
+  </div>
+</body>
+</html>";
+        return html(html_content, status).to_http();
+    }
+
+    // 404: JSON payload for /api/* paths, dark-theme card page otherwise.
+    public static fn not_found(req) {
+        let _ = self;
+        if req.path.starts_with("/api/") {
+            return json(map("error", "Not Found", "message", "The requested endpoint was not found."), 404).to_http();
+        }
+        let html_content = "<!DOCTYPE html>
+<html lang='en'>
+<head><meta charset='utf-8'><title>404 Not Found - Spid3rWeb</title>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0f172a; color: #f8fafc; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }
+  .card { background: #1e293b; padding: 2.5rem 3rem; border-radius: 1rem; border: 1px solid #334155; text-align: center; max-width: 500px; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.5); }
+  h1 { font-size: 4rem; margin: 0; color: #38bdf8; font-weight: 800; }
+  p { color: #94a3b8; font-size: 1.1rem; margin: 1rem 0 2rem; }
+  a { background: #38bdf8; color: #0f172a; text-decoration: none; padding: 0.75rem 1.5rem; border-radius: 0.5rem; font-weight: 600; }
+</style>
+</head>
+<body>
+  <div class='card'>
+    <h1>404</h1>
+    <h2>Route Not Found</h2>
+    <p>No route defined matching <code>" + html_escape(req.method) + " " + html_escape(req.path) + "</code></p>
+    <a href='/'>Return to Home</a>
+  </div>
+</body>
+</html>";
+        return html(html_content, 404).to_http();
+    }
+
+    // 419: CSRF token missing/invalid on a cookie-session form post.
+    public static fn csrf_timeout(req) {
+        let _ = self;
+        if req.path.starts_with("/api/") {
+            return json(map("error", "CSRF Token Mismatch", "message", "Missing or invalid CSRF token."), 419).to_http();
+        }
+        return html("<!DOCTYPE html><html lang='en'><head><meta charset='utf-8'><title>419 Page Expired - Spid3rWeb</title></head><body><h1>419 — Page Expired</h1><p>Your form session token was missing or invalid. Please go back, refresh the page, and try again.</p></body></html>", 419).to_http();
+    }
+
+    // 500: full exception detail stays server-side (println log); clients
+    // get a generic message so driver errors can never leak SQL fragments
+    // or schema details.
+    public static fn server_error(req, exception) {
+        let _ = self;
+        println("[Spid3rWeb] 500 error on " + req.method + " " + req.path + ": " + string(exception));
+        if req.path.starts_with("/api/") {
+            return json(map("error", "Internal Server Error", "message", "An unexpected error occurred."), 500).to_http();
+        }
+        let html_content = "<!DOCTYPE html>
+<html lang='en'>
+<head><meta charset='utf-8'><title>500 Error - Spid3rWeb</title>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0b0f17; color: #f1f5f9; padding: 3rem; }
+  .box { background: #1e293b; border-left: 6px solid #ef4444; border-radius: 8px; padding: 2rem; }
+  h1 { color: #ef4444; font-size: 1.8rem; margin: 0 0 1rem; }
+  p { color: #94a3b8; }
+</style>
+</head>
+<body>
+  <div class='box'>
+    <h1>Spid3rWeb Internal Server Error</h1>
+    <p><strong>Route:</strong> <code>" + html_escape(req.method) + " " + html_escape(req.path) + "</code></p>
+    <p>Something went wrong while processing your request. Check the server logs for details.</p>
+    <a href='/' style='color:#38bdf8;'>Return to Home</a>
+  </div>
+</body>
+</html>";
+        return html(html_content, 500).to_http();
+    }
+}

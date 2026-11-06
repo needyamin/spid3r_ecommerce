@@ -1,0 +1,74 @@
+// app/Services/BrandService.matrix
+// Phase 4 — brand management.
+
+import "framework/Database/DB";
+import "app/Support/CatalogCache" as CatalogCache;
+import "framework/HttpException";
+import "app/Repositories/CatalogRepository";
+import "app/Support/Slug" as Slug;
+
+public class BrandService {
+    public let brands;
+
+    fn new() {
+        self.brands = new BrandRepository();
+    }
+
+    fn slug_taken(self, slug: string) -> bool {
+        return DB.table("brands").where("slug", "=", slug).count() > 0;
+    }
+
+    public fn create(self, data) {
+        let name = string(data["name"]).trim();
+        if DB.table("brands").where("name", "=", name).count() > 0 {
+            throw validation_failed(map("name", "Brand already exists."));
+        }
+        let svc = self;
+        let slug = Slug.unique(name, fn(s) { return svc.slug_taken(s); });
+        let id = self.brands.create(map(
+            "name", name,
+            "slug", slug,
+            "description", string(data["description"]),
+            "logo", null,
+            "is_active", 1
+        ));
+        CatalogCache.bump_catalog_version();
+        return self.brands.find(id);
+    }
+
+    public fn update(self, id, data) {
+        if self.brands.find(id) == null {
+            throw not_found("Brand not found.");
+        }
+        let changes = map();
+        let keys = ["name", "description", "is_active"];
+        let i = 0;
+        while i < keys.len() {
+            if data.has(keys[i]) {
+                changes[keys[i]] = data[keys[i]];
+            }
+            i += 1;
+        }
+        if changes.has("is_active") {
+            let v = changes["is_active"];
+            let flag = 0;
+            if v == 1 or v == true or v == "1" { flag = 1; }
+            changes["is_active"] = flag;
+        }
+        if changes.len() > 0 {
+            self.brands.update(id, changes);
+            CatalogCache.bump_catalog_version();
+        }
+        return self.brands.find(id);
+    }
+
+    public fn delete(self, id) -> bool {
+        if self.brands.find(id) == null {
+            throw not_found("Brand not found.");
+        }
+        if DB.table("products").where("brand_id", "=", id).count() > 0 {
+            throw validation_failed(map("id", "Brand still has products."));
+        }
+        return self.brands.delete(id);
+    }
+}

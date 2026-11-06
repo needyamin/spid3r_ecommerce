@@ -1,0 +1,31 @@
+// app/Support/CartIdentity.matrix
+// Phase 7 — shared HTTP→cart identity extraction.
+// Controllers own cookie parsing; services receive a plain map.
+
+public fn cookie_value(req, name: string) -> string {
+    if not req.headers.has("cookie") {
+        return "";
+    }
+    let parts = string(req.headers["cookie"]).split(";");
+    let i = 0;
+    while i < parts.len() {
+        let pair = parts[i].trim().split("=");
+        if pair.len() > 1 and pair[0] == name {
+            return pair[1];
+        }
+        i += 1;
+    }
+    return "";
+}
+
+public fn cart_identity(req) {
+    let key = cookie_value(req, "cart");
+    if key == "" {
+        key = "cart-" + hex_encode(random_bytes(16).unwrap());
+    }
+    let uid = null;
+    if req.auth != null and req.auth.check() {
+        uid = req.auth.id();
+    }
+    return map("user_id", uid, "key", key);
+}

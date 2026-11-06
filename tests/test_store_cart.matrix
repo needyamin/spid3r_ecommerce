@@ -1,0 +1,256 @@
+// tests/test_store_cart.matrix
+// Phase 6 — shopping cart integration tests (HTTP level).
+
+import "framework/Application";
+import "framework/Router";
+import "framework/Database/DB";
+import "routes/web";
+import "routes/queue";
+import "app/Middleware/StoreMiddleware";
+import "app/Services/AuthService";
+import "database/seeders/DatabaseSeeder";
+
+fn req(app, method: string, path: string, data, cookie: string) {
+    let headers = map();
+    if cookie != "" {
+        headers["cookie"] = cookie;
+    }
+    return app.handle_request(map(
+        "method", method, "path", path,
+        "headers", headers, "data", data
+    ));
+}
+
+fn cookie_of(res, name: string) -> string {
+    let raw = string(res["headers"]["set-cookie"]);
+    let parts = raw.split(";");
+    let i = 0;
+    while i < parts.len() {
+        let pair = parts[i].trim().split("=");
+        if pair.len() > 1 and pair[0] == name {
+            return pair[1];
+        }
+        i += 1;
+    }
+    return "";
+}
+
+fn summary(app, cookie: string) {
+    return json_parse(string(req(app, "GET", "/cart/summary", null, cookie)["body"]))["data"];
+}
+
+fn setup(tag: string) {
+    let cat = DB.table("categories").insert(map(
+        "name", "Cart Category " + tag, "slug", "cart-cat-" + tag
+    ));
+    let product = DB.table("products").insert(map(
+        "category_id", cat, "name", "Cart Widget " + tag,
+        "slug", "cart-widget-" + tag, "sku", "CART-" + tag,
+        "price_minor", 25000, "status", "published", "currency", "BDT"
+    ));
+    DB.table("inventory").insert(map(
+        "product_id", product, "variant_id", null,
+        "quantity", 20, "reserved", 0, "low_stock_threshold", 2
+    ));
+    let expensive = DB.table("products").insert(map(
+        "category_id", cat, "name", "Cart Premium " + tag,
+        "slug", "cart-premium-" + tag, "sku", "PREM-" + tag,
+        "price_minor", 300000, "status", "published", "currency", "BDT"
+    ));
+    DB.table("inventory").insert(map(
+        "product_id", expensive, "variant_id", null,
+        "quantity", 20, "reserved", 0, "low_stock_threshold", 2
+    ));
+    return map("cat", cat, "product", product, "expensive", expensive);
+}
+
+fn purge_stale() {
+    let rows = DB.table("products").where("slug", "LIKE", "cart-%").get();
+    let i = 0;
+    while i < rows.len() {
+        let pid = rows[i]["id"];
+        DB.table("cart_items").where("product_id", "=", pid).delete();
+        DB.table("inventory").where("product_id", "=", pid).delete();
+        i += 1;
+    }
+    DB.table("products").where("slug", "LIKE", "cart-%").delete();
+    DB.table("categories").where("slug", "LIKE", "cart-cat-%").delete();
+    DB.table("carts").where("session_key", "LIKE", "cart-%").delete();
+}
+
+fn cleanup(tag: string) {
+    let rows = DB.table("products").where("slug", "LIKE", "%" + tag + "%").get();
+    let i = 0;
+    while i < rows.len() {
+        let pid = rows[i]["id"];
+        DB.table("cart_items").where("product_id", "=", pid).delete();
+        DB.table("inventory").where("product_id", "=", pid).delete();
+        i += 1;
+    }
+    DB.table("products").where("slug", "LIKE", "%" + tag + "%").delete();
+    DB.table("categories").where("slug", "LIKE", "%" + tag + "%").delete();
+    let carts = DB.table("carts").where("session_key", "LIKE", "%" + tag + "%").get();
+    i = 0;
+    while i < carts.len() {
+        DB.table("cart_items").where("cart_id", "=", carts[i]["id"]).delete();
+        DB.table("carts").where("id", "=", carts[i]["id"]).delete();
+        i += 1;
+    }
+    let user = DB.table("users").where("email", "=", "cart-" + tag + "@example.test").first();
+    if user != null {
+        DB.table("user_roles").where("user_id", "=", user["id"]).delete();
+        DB.table("sessions").where("user_id", "=", user["id"]).delete();
+        DB.table("email_verifications").where("user_id", "=", user["id"]).delete();
+        DB.table("users").where("id", "=", user["id"]).delete();
+    }
+}
+
+fn test_guest_cart(app, ids, tag: string) {
+    let first = req(app, "GET", "/cart", null, "");
+    assert(first["status"] == 200, "guest cart page renders");
+    let key = cookie_of(first, "cart");
+    assert(key.starts_with("cart-"), "guest cart cookie issued");
+    let cookie = "cart=" + key;
+
+    let add = req(app, "POST", "/cart/items", map(
+        "product_id", ids["product"], "quantity", 2, "format", "json"
+    ), cookie);
+    assert(add["status"] == 200, "add to guest cart succeeds");
+    let s = summary(app, cookie);
+    assert(s["count"] == 1, "one distinct cart line");
+    assert(int(s["subtotal_minor"]) == 50000, "subtotal = 2 × 250.00");
+    assert(int(s["items"][0]["quantity"]) == 2, "quantity stored");
+
+    let item_id = s["items"][0]["id"];
+    let up = req(app, "PUT", "/cart/items/" + string(item_id), map(
+        "quantity", 3, "format", "json"
+    ), cookie);
+    assert(up["status"] == 200, "quantity update succeeds");
+    assert(int(summary(app, cookie)["subtotal_minor"]) == 75000, "subtotal recalculated after quantity change");
+
+    let del = req(app, "DELETE", "/cart/items/" + string(item_id), map("format", "json"), cookie);
+    assert(del["status"] == 200, "remove succeeds");
+    assert(summary(app, cookie)["count"] == 0, "cart empty after removal");
+    println("  [PASS] test_guest_cart");
+    return cookie;
+}
+
+fn test_price_recalculation(app, ids, cookie: string) {
+    req(app, "POST", "/cart/items", map(
+        "product_id", ids["product"], "quantity", 2, "format", "json"
+    ), cookie);
+    // Change the catalog price AFTER the item was added; the stored
+    // unit_price_minor must NOT be trusted for totals.
+    DB.table("products").where("id", "=", ids["product"]).update(map("price_minor", 33000));
+    let s = summary(app, cookie);
+    assert(int(s["subtotal_minor"]) == 66000, "totals use fresh DB prices");
+    assert(int(s["items"][0]["unit_price_minor"]) == 33000, "line price recalculated");
+    println("  [PASS] test_price_recalculation");
+}
+
+fn test_availability(app, ids, cookie: string) {
+    DB.table("inventory").where("product_id", "=", ids["product"]).update(map("quantity", 0));
+    let s = summary(app, cookie);
+    assert(s["has_warnings"] == true, "out-of-stock items flagged in summary");
+    let add = req(app, "POST", "/cart/items", map(
+        "product_id", ids["product"], "quantity", 1, "format", "json"
+    ), cookie);
+    assert(add["status"] == 422, "adding unavailable product rejected");
+    DB.table("inventory").where("product_id", "=", ids["product"]).update(map("quantity", 20));
+    let over = req(app, "POST", "/cart/items", map(
+        "product_id", ids["product"], "quantity", 999, "format", "json"
+    ), cookie);
+    assert(over["status"] == 422, "oversized quantity rejected");
+    println("  [PASS] test_availability");
+}
+
+fn test_totals_and_persistence(app, ids, cookie: string) {
+    // Cart persists across requests with the same guest cookie.
+    let carts = DB.table("carts").where("session_key", "=", cookie.slice(5, len(cookie))).get();
+    assert(carts.len() == 1, "one persistent cart row per guest key");
+
+    // Clear and add one expensive item: 3000.00 → 5% discount = 150.00,
+    // total after discount 2850.00 ≥ free-shipping threshold → shipping 0.
+    let s0 = summary(app, cookie);
+    let i = 0;
+    while i < s0["items"].len() {
+        req(app, "DELETE", "/cart/items/" + string(s0["items"][i]["id"]), map("format", "json"), cookie);
+        i += 1;
+    }
+    req(app, "POST", "/cart/items", map(
+        "product_id", ids["expensive"], "quantity", 1, "format", "json"
+    ), cookie);
+    let s = summary(app, cookie);
+    assert(int(s["subtotal_minor"]) == 300000, "premium subtotal");
+    assert(int(s["discount_minor"]) == 15000, "5% volume discount applied");
+    assert(int(s["shipping_minor"]) == 0, "free shipping above threshold");
+    assert(s["free_shipping"] == true, "free shipping flagged");
+    assert(int(s["total_minor"]) == 285000, "total = subtotal − discount + shipping");
+    assert(string(s["total_display"]).contains("2,850.00"), "total formatted with currency symbol");
+    println("  [PASS] test_totals_and_persistence");
+}
+
+fn test_merge_on_login(app, ids, tag: string) {
+    // Fresh guest cart with two items.
+    let first = req(app, "GET", "/cart", null, "");
+    let key = cookie_of(first, "cart");
+    let guest_cookie = "cart=" + key;
+    req(app, "POST", "/cart/items", map(
+        "product_id", ids["product"], "quantity", 2, "format", "json"
+    ), guest_cookie);
+    req(app, "POST", "/cart/items", map(
+        "product_id", ids["expensive"], "quantity", 1, "format", "json"
+    ), guest_cookie);
+    assert(summary(app, guest_cookie)["count"] == 2, "guest cart has two lines");
+
+    let svc = new AuthService();
+    let email = "cart-" + tag + "@example.test";
+    let user = svc.register("Cart Customer", email, "cart-pass");
+    let login = req(app, "POST", "/login", map(
+        "email", email, "password", "cart-pass"
+    ), guest_cookie);
+    assert(login["status"] == 302, "login succeeds with guest cart cookie");
+    let token = cookie_of(login, "spid3r_session");
+    assert(token.starts_with("sess_"), "session issued");
+
+    let authed_cookie = "spid3r_session=" + token + "; cart=" + key;
+    let s = summary(app, authed_cookie);
+    assert(s["count"] == 2, "guest cart merged into user cart");
+    assert(DB.table("carts").where("session_key", "=", key).whereNull("user_id").count() == 0, "guest cart removed after merge");
+
+    // Authenticated mutations require CSRF.
+    let item_id = s["items"][0]["id"];
+    let no_csrf = req(app, "DELETE", "/cart/items/" + string(item_id), map("format", "json"), authed_cookie);
+    assert(no_csrf["status"] == 419, "authenticated mutation without CSRF rejected");
+    let rows = DB.select("SELECT payload FROM sessions WHERE token = ?", [token]);
+    let ok = req(app, "DELETE", "/cart/items/" + string(item_id), map(
+        "format", "json", "_csrf", string(rows[0]["payload"])
+    ), authed_cookie);
+    assert(ok["status"] == 200, "authenticated mutation with valid CSRF succeeds");
+    println("  [PASS] test_merge_on_login");
+}
+
+fn main() {
+    println("\n=== Running Store Cart Test Suite ===");
+    let app = new Application();
+    register_store_middleware(app);
+    register_web_routes();
+    register_queue_jobs();
+    run_database_seeder();
+    purge_stale();
+    let tag = string(unix_time());
+    let ids = setup(tag);
+
+    try {
+        let cookie = test_guest_cart(app, ids, tag);
+        test_price_recalculation(app, ids, cookie);
+        test_availability(app, ids, cookie);
+        test_totals_and_persistence(app, ids, cookie);
+        test_merge_on_login(app, ids, tag);
+    } finally {
+        cleanup(tag);
+    }
+    DB.close();
+    println("=== All Store Cart Tests Passed! ===\n");
+    return 0;
+}

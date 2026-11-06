@@ -1,0 +1,87 @@
+@extends("layouts.store")
+@section('title', title)
+@section('meta_description', meta_description)
+@section("content")
+  <nav class="admin-nav">
+    <a href="/admin/dashboard">Overview</a>
+    <a href="/admin/orders">Orders</a>
+    <a href="/admin/returns">Returns</a>
+    <a href="/admin/shipping">Shipping</a>
+    <a href="/admin/products">Products</a>
+    <a href="/admin/inventory">Inventory</a>
+    <a href="/admin/customers">Customers</a>
+    <a href="/admin/settings">Settings</a>
+    <a href="/admin/audit">Audit</a>
+    <a href="/admin/reports">Reports</a>
+  </nav>
+
+  <h1 class="page-title">Shipping &amp; delivery</h1>
+  <p class="rewards-hint">
+    Zones match a customer's address (country + district list); the matching
+    zone's rate sets the delivery fee and the estimate. With no matching zone
+    the flat fee applies: standard {{ flat_standard_minor }} · express {{ flat_express_minor }} minor units.
+  </p>
+
+  <section class="rewards-panel">
+    <h2>Delivery zones</h2>
+@if(has_zones)
+    <table class="data-table">
+      <thead><tr><th>Zone</th><th>Country</th><th>Districts</th><th>Active</th><th>Rate tiers</th></tr></thead>
+      <tbody>
+@foreach(zone in zones)
+        <tr>
+          <td>{{ zone.name }}</td>
+          <td>{{ zone.country }}</td>
+          <td>{{ zone.districts }}</td>
+          <td>{{ zone.is_active }}</td>
+          <td>
+@if(zone.has_rates)
+            <ul class="rate-list">
+@foreach(rate in zone.rates)
+              <li>{{ rate.method }} — {{ rate.fee_minor }} minor · {{ rate.estimated_days_min }}–{{ rate.estimated_days_max }} days · from {{ rate.min_order_minor }}</li>
+@endforeach
+            </ul>
+@else
+            <span class="rewards-hint">flat fee</span>
+@endif
+          </td>
+        </tr>
+@endforeach
+      </tbody>
+    </table>
+@else
+    <p class="empty-note">No zones yet — every address uses the flat fee.</p>
+@endif
+
+    <h3>Add or update a zone</h3>
+    <form method="post" action="/admin/api/shipping/zones" class="review-form">
+      <input type="hidden" name="_csrf" value="{{ csrf }}">
+      <label>Name <input type="text" name="name" maxlength="96" required></label>
+      <label>Country <input type="text" name="country" maxlength="64" value="Bangladesh"></label>
+      <label>Districts (comma separated, empty = whole country) <input type="text" name="districts" maxlength="2000"></label>
+      <input type="hidden" name="is_active" value="1">
+      <button class="btn btn-primary" type="submit">Save zone</button>
+    </form>
+  </section>
+
+  <section class="rewards-panel">
+    <h2>Add a delivery rate</h2>
+    <form method="post" action="/admin/api/shipping/rates" class="review-form">
+      <input type="hidden" name="_csrf" value="{{ csrf }}">
+      <label>Zone ID <input type="number" name="zone_id" min="1" required></label>
+      <label>Method
+        <select name="method">
+          <option value="standard">standard</option>
+          <option value="express">express</option>
+        </select>
+      </label>
+      <label>Fee (minor units) <input type="number" name="fee_minor" min="0" required></label>
+      <label>Minimum order (minor units) <input type="number" name="min_order_minor" min="0" value="0"></label>
+      <label>Maximum order (minor units, empty = no limit) <input type="number" name="max_order_minor" min="0"></label>
+      <label>Estimated days (min) <input type="number" name="estimated_days_min" min="0" value="3"></label>
+      <label>Estimated days (max) <input type="number" name="estimated_days_max" min="0" value="7"></label>
+      <input type="hidden" name="is_active" value="1">
+      <button class="btn btn-primary" type="submit">Save rate</button>
+    </form>
+  </section>
+@endsection

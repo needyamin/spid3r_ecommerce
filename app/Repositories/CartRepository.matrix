@@ -1,0 +1,112 @@
+// app/Repositories/CartRepository.matrix
+// Phase 2 — guest + authenticated carts, merge-on-login.
+// Prices are ALWAYS recalculated server-side at checkout; the stored
+// unit_price_minor is only the last displayed price.
+
+import "framework/Database/DB";
+
+public class CartRepository {
+    fn new() {}
+
+    public fn cart_for(self, user_id, session_key: string) {
+        let q = DB.table("carts").where("status", "=", "active");
+        if user_id == null {
+            // A guest cart must never resolve to a user's cart that
+            // happens to carry the same session key after a merge.
+            q.where("session_key", "=", session_key).whereNull("user_id");
+        } else {
+            q.where("user_id", "=", user_id);
+        }
+        let cart = q.first();
+        if cart != null {
+            return cart;
+        }
+        let id = DB.table("carts").insert(map(
+            "user_id", user_id,
+            "session_key", session_key,
+            "status", "active",
+            "currency", "BDT"
+        ));
+        return DB.table("carts").where("id", "=", id).first();
+    }
+
+    public fn items(self, cart_id) {
+        return DB.table("cart_items")
+            .where("cart_id", "=", cart_id)
+            .orderBy("id", "ASC")
+            .get();
+    }
+
+    // Upsert an item (same product+variant increases quantity).
+    public fn add_item(self, cart_id, product_id, variant_id, qty, unit_price_minor) -> bool {
+        if qty <= 0 {
+            return false;
+        }
+        let q = DB.table("cart_items")
+            .where("cart_id", "=", cart_id)
+            .where("product_id", "=", product_id);
+        if variant_id == null {
+            q.whereNull("variant_id");
+        } else {
+            q.where("variant_id", "=", variant_id);
+        }
+        let existing = q.first();
+        if existing != null {
+            let changes = DB.table("cart_items")
+                .where("id", "=", existing["id"])
+                .increment("quantity", qty);
+            return changes > 0;
+        }
+        let id = DB.table("cart_items").insert(map(
+            "cart_id", cart_id,
+            "product_id", product_id,
+            "variant_id", variant_id,
+            "quantity", qty,
+            "unit_price_minor", unit_price_minor
+        ));
+        return int(id) > 0;
+    }
+
+    public fn set_quantity(self, item_id, qty) -> bool {
+        if qty <= 0 {
+            return self.remove_item(item_id);
+        }
+        return DB.table("cart_items").where("id", "=", item_id).update(map("quantity", qty)) > 0;
+    }
+
+    public fn remove_item(self, item_id) -> bool {
+        return DB.table("cart_items").where("id", "=", item_id).delete() > 0;
+    }
+
+    // Merge a guest cart into the user's cart in ONE transaction; the
+    // guest cart is deleted afterwards. Idempotent: no guest cart → false.
+    public fn merge_guest_into_user(self, session_key: string, user_id) -> bool {
+        return DB.transaction(fn() {
+            let guest = DB.table("carts")
+                .where("session_key", "=", session_key)
+                .where("status", "=", "active")
+                .whereNull("user_id")
+                .first();
+            if guest == null {
+                return false;
+            }
+            let user_cart = self.cart_for(user_id, session_key);
+            let guest_items = self.items(guest["id"]);
+            let i = 0;
+            while i < guest_items.len() {
+                let item = guest_items[i];
+                self.add_item(
+                    user_cart["id"],
+                    item["product_id"],
+                    item["variant_id"],
+                    int(item["quantity"]),
+                    int(item["unit_price_minor"])
+                );
+                i += 1;
+            }
+            DB.table("cart_items").where("cart_id", "=", guest["id"]).delete();
+            DB.table("carts").where("id", "=", guest["id"]).delete();
+            return true;
+        });
+    }
+}

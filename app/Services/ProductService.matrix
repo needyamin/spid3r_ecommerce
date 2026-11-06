@@ -1,0 +1,192 @@
+// app/Services/ProductService.matrix
+// Phase 4 — product business logic. Controllers never touch queries.
+
+import "framework/Database/DB";
+import "app/Support/CatalogCache" as CatalogCache;
+import "framework/HttpException";
+import "app/Repositories/ProductRepository";
+import "app/Repositories/InventoryRepository";
+import "app/Support/Slug" as Slug;
+
+public class ProductService {
+    public let products;
+    public let inventory;
+
+    fn new() {
+        self.products = new ProductRepository();
+        self.inventory = new InventoryRepository();
+    }
+
+    fn slug_taken(self, slug: string) -> bool {
+        return DB.table("products").where("slug", "=", slug).count() > 0;
+    }
+
+    fn sku_taken(self, sku: string, except_id) -> bool {
+        let q = DB.table("products").where("sku", "=", sku);
+        if except_id != null {
+            q.where("id", "!=", except_id);
+        }
+        if q.count() > 0 {
+            return true;
+        }
+        return DB.table("product_variants").where("sku", "=", sku).count() > 0;
+    }
+
+    // `data`: name, category_id, brand_id(nullable), sku, price_minor,
+    // compare_at_minor(nullable), short_description, description,
+    // weight_grams, tax_rate_bps, meta_title, meta_description, status.
+    // All money is integer minor units.
+    public fn create(self, data) {
+        let name = string(data["name"]).trim();
+        let sku = string(data["sku"]).trim().upper();
+        if int(data["price_minor"]) <= 0 {
+            throw validation_failed(map("price_minor", "Price must be a positive amount."));
+        }
+        if self.sku_taken(sku, null) {
+            throw validation_failed(map("sku", "That SKU is already in use."));
+        }
+        let category = DB.table("categories").where("id", "=", data["category_id"]).first();
+        if category == null {
+            throw validation_failed(map("category_id", "Unknown category."));
+        }
+        let svc = self;
+        let slug = Slug.unique(name, fn(s) { return svc.slug_taken(s); });
+        let compare = null;
+        if data.has("compare_at_minor") and data["compare_at_minor"] != null {
+            compare = int(data["compare_at_minor"]);
+            if compare <= int(data["price_minor"]) {
+                throw validation_failed(map("compare_at_minor", "Discount price must be higher than the sale price."));
+            }
+        }
+        let status = "draft";
+        if data.has("status") and data["status"] != "" {
+            status = string(data["status"]);
+        }
+        if status != "draft" and status != "published" and status != "archived" {
+            throw validation_failed(map("status", "Invalid publication status."));
+        }
+        return DB.transaction(fn() {
+            let id = DB.table("products").insert(map(
+                "category_id", int(data["category_id"]),
+                "brand_id", data["brand_id"],
+                "name", name,
+                "slug", slug,
+                "sku", sku,
+                "short_description", string(data["short_description"]),
+                "description", string(data["description"]),
+                "price_minor", int(data["price_minor"]),
+                "compare_at_minor", compare,
+                "currency", "BDT",
+                "tax_rate_bps", int(data["tax_rate_bps"]),
+                "status", status,
+                "is_featured", 0,
+                "weight_grams", int(data["weight_grams"]),
+                "meta_title", string(data["meta_title"]),
+                "meta_description", string(data["meta_description"])
+            ));
+            // Inventory row exists for every product (available-to-promise).
+            DB.table("inventory").insert(map(
+                "product_id", id,
+                "variant_id", null,
+                "quantity", 0,
+                "reserved", 0,
+                "low_stock_threshold", 5
+            ));
+            CatalogCache.bump_catalog_version();
+            return DB.table("products").where("id", "=", id).first();
+        });
+    }
+
+    public fn update(self, id, data) {
+        let product = self.products.find(id);
+        if product == null {
+            throw not_found("Product not found.");
+        }
+        let allowed = ["name", "category_id", "brand_id", "short_description", "description",
+                       "price_minor", "compare_at_minor", "tax_rate_bps", "weight_grams",
+                       "meta_title", "meta_description", "status", "is_featured"];
+        let changes = map();
+        let i = 0;
+        while i < allowed.len() {
+            let key = allowed[i];
+            if data.has(key) {
+                if key == "sku" or key == "slug" {
+                    // identity columns are immutable — prevents broken links
+                    i += 1;
+                    continue;
+                }
+                if key == "price_minor" and int(data[key]) <= 0 {
+                    throw validation_failed(map("price_minor", "Price must be positive."));
+                }
+                if key == "status" {
+                    let st = string(data[key]);
+                    if st != "draft" and st != "published" and st != "archived" {
+                        throw validation_failed(map("status", "Invalid publication status."));
+                    }
+                }
+                changes[key] = data[key];
+            }
+            i += 1;
+        }
+        if changes.has("is_featured") {
+            let v = changes["is_featured"];
+            let flag = 0;
+            if v == 1 or v == true or v == "1" { flag = 1; }
+            changes["is_featured"] = flag;
+        }
+        if changes.len() > 0 {
+            DB.table("products").where("id", "=", id).update(changes);
+            CatalogCache.bump_catalog_version();
+        }
+        return self.products.find(id);
+    }
+
+    public fn publish(self, id, publish: bool) {
+        let product = self.products.find(id);
+        if product == null {
+            throw not_found("Product not found.");
+        }
+        let status = "draft";
+        if publish {
+            status = "published";
+        }
+        DB.table("products").where("id", "=", id).update(map("status", status));
+        CatalogCache.bump_catalog_version();
+        return self.products.find(id);
+    }
+
+    // Available = published + stock on hand.
+    public fn availability(self, id) {
+        let product = self.products.find(id);
+        if product == null {
+            throw not_found("Product not found.");
+        }
+        let inv = DB.table("inventory").where("product_id", "=", id).whereNull("variant_id").first();
+        let qty = 0;
+        if inv != null {
+            qty = int(inv["quantity"]);
+        }
+        return map(
+            "product_id", id,
+            "status", product["status"],
+            "quantity", qty,
+            "available", product["status"] == "published" and qty > 0
+        );
+    }
+
+    public fn delete(self, id) -> bool {
+        let product = self.products.find(id);
+        if product == null {
+            throw not_found("Product not found.");
+        }
+        return DB.transaction(fn() {
+            DB.table("product_images").where("product_id", "=", id).delete();
+            DB.table("product_variants").where("product_id", "=", id).delete();
+            DB.table("inventory").where("product_id", "=", id).delete();
+            DB.table("stock_movements").where("product_id", "=", id).delete();
+            let removed = DB.table("products").where("id", "=", id).delete() > 0;
+            CatalogCache.bump_catalog_version();
+            return removed;
+        });
+    }
+}

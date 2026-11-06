@@ -1,0 +1,178 @@
+// tests/test_events.matrix
+// Unit tests for the Spid3rWeb event dispatcher.
+
+import "framework/Events/Event";
+
+fn test_listen_and_dispatch() {
+    let d = new EventDispatcher();
+    let sink = list();
+    d.listen("user.created", fn(payload, name) {
+        sink.push(payload);
+        return "ok";
+    });
+    assert(d.has_listeners("user.created"), "has_listeners after listen");
+    assert(d.count_listeners("user.created") == 1, "one listener registered");
+
+    let results = d.dispatch("user.created", map("id", 7));
+    assert(results.len() == 1 and results[0] == "ok", "dispatch collects handler results");
+    assert(sink.len() == 1 and sink[0]["id"] == 7, "handler received the payload");
+    assert(not d.has_listeners("user.deleted"), "unrelated event has no listeners");
+    println("  [PASS] test_listen_and_dispatch");
+}
+
+fn test_handler_receives_event_name() {
+    let d = new EventDispatcher();
+    let seen = list();
+    d.listen("a.b", fn(payload, name) {
+        seen.push(name);
+        return null;
+    });
+    d.dispatch("a.b", null);
+    assert(seen[0] == "a.b", "handler receives the event name as second argument");
+    println("  [PASS] test_handler_receives_event_name");
+}
+
+fn test_dispatch_order_and_payload_default() {
+    let d = new EventDispatcher();
+    let order = list();
+    d.listen("evt", fn(p, n) { order.push("first"); return 1; });
+    d.listen("evt", fn(p, n) { order.push("second"); return 2; });
+    let results = d.dispatch("evt");
+    assert(order[0] == "first" and order[1] == "second", "listeners fire in registration order");
+    assert(results.len() == 2 and results[0] == 1 and results[1] == 2, "results in firing order");
+    // dispatch without a payload defaults to null and still fires
+    let got = list();
+    d.listen("evt2", fn(p, n) { got.push(p); return null; });
+    d.dispatch("evt2");
+    assert(got.len() == 1 and got[0] == null, "default payload is null");
+    println("  [PASS] test_dispatch_order_and_payload_default");
+}
+
+fn test_wildcards() {
+    let d = new EventDispatcher();
+    let hits = list();
+    d.listen("user.*", fn(p, n) { hits.push("wild:" + n); return "w"; });
+    d.listen("user.created", fn(p, n) { hits.push("exact"); return "e"; });
+
+    assert(d.has_listeners("user.created"), "wildcard counts as listener for matching event");
+    assert(not d.has_listeners("userx.created"), "prefix must end on a segment boundary");
+    assert(not d.has_listeners("order.created"), "unrelated event does not match");
+    assert(d.count_listeners("user.created") == 2, "exact + wildcard both counted");
+
+    let results = d.dispatch("user.created", null);
+    assert(results.len() == 2, "both listeners fired");
+    assert(hits[0] == "exact" and hits[1] == "wild:user.created", "exact fires before wildcard; name passed through");
+
+    d.dispatch("user.deleted", null);
+    assert(hits.len() == 3 and hits[2] == "wild:user.deleted", "wildcard fires for every matching event");
+
+    d.forget("user.*");
+    assert(d.count_listeners("user.created") == 1, "forget removes the wildcard, exact listener remains");
+    d.forget("user.created");
+    assert(not d.has_listeners("user.created"), "forget on the exact name removes the last listener");
+    println("  [PASS] test_wildcards");
+}
+
+fn test_once_fires_single_time() {
+    let d = new EventDispatcher();
+    let calls = list();
+    d.once("boot", fn(p, n) { calls.push(p); return "once"; });
+    assert(d.count_listeners("boot") == 1, "once registers one listener");
+    let r1 = d.dispatch("boot", "x");
+    assert(r1.len() == 1 and r1[0] == "once", "once listener fires the first time");
+    assert(d.count_listeners("boot") == 0, "once listener unregisters after firing");
+    let r2 = d.dispatch("boot", "y");
+    assert(r2.len() == 0, "second dispatch has no listeners");
+    assert(calls.len() == 1, "handler body ran exactly once");
+
+    // once + wildcard
+    let seen = list();
+    d.once("job.*", fn(p, n) { seen.push(n); return null; });
+    d.dispatch("job.process", null);
+    d.dispatch("job.finish", null);
+    assert(seen.len() == 1 and seen[0] == "job.process", "wildcard once fires a single time overall");
+    println("  [PASS] test_once_fires_single_time");
+}
+
+fn test_forget_and_flush() {
+    let d = new EventDispatcher();
+    d.listen("x", fn(p, n) { return 1; });
+    d.listen("x", fn(p, n) { return 2; });
+    d.listen("y", fn(p, n) { return 3; });
+    assert(d.count_listeners("x") == 2, "two listeners on x");
+    d.forget("x");
+    assert(not d.has_listeners("x"), "forget removes all listeners for the event");
+    assert(d.has_listeners("y"), "forget leaves other events alone");
+    d.flush();
+    assert(not d.has_listeners("y"), "flush removes everything");
+    assert(d.count_listeners("anything") == 0, "count is zero after flush");
+    println("  [PASS] test_forget_and_flush");
+}
+
+// Class declarations are top-level in Spid3r; this subscriber backs the
+// test_subscriber case below.
+class OrderSubscriber {
+    public let log;
+    fn new() {
+        self.log = list();
+    }
+    public fn subscribe(self, events) {
+        let sink = self.log;
+        events.listen("order.placed", fn(p, n) {
+            sink.push(p);
+            return "sub";
+        });
+    }
+}
+
+fn test_subscriber() {
+    let d = new EventDispatcher();
+    let sub = new OrderSubscriber();
+    d.subscribe(sub);
+    let results = d.dispatch("order.placed", map("total", 42));
+    assert(results.len() == 1 and results[0] == "sub", "subscriber-registered listener fires");
+    assert(sub.log.len() == 1 and sub.log[0]["total"] == 42, "subscriber sink received payload");
+    println("  [PASS] test_subscriber");
+}
+
+fn test_listener_error_propagates_and_stops() {
+    let d = new EventDispatcher();
+    let after = list();
+    d.listen("boom", fn(p, n) { throw "listener exploded"; });
+    d.listen("boom", fn(p, n) { after.push("reached"); return null; });
+    let threw = false;
+    try {
+        d.dispatch("boom", null);
+    } catch (e) {
+        threw = true;
+    }
+    assert(threw, "a throwing listener propagates to the dispatch caller");
+    assert(after.len() == 0, "a throwing listener stops later listeners");
+    println("  [PASS] test_listener_error_propagates_and_stops");
+}
+
+fn test_global_facade() {
+    Event.flush();
+    let seen = list();
+    Event.listen("facade.ping", fn(p, n) { seen.push(p); return "pong"; });
+    let r = Event.dispatch("facade.ping", "ping");
+    assert(r[0] == "pong" and seen[0] == "ping", "global facade dispatches");
+    Event.flush();
+    assert(not Event.has_listeners("facade.ping"), "global facade flushes");
+    println("  [PASS] test_global_facade");
+}
+
+fn main() {
+    println("\n=== Running Events Test Suite ===");
+    test_listen_and_dispatch();
+    test_handler_receives_event_name();
+    test_dispatch_order_and_payload_default();
+    test_wildcards();
+    test_once_fires_single_time();
+    test_forget_and_flush();
+    test_subscriber();
+    test_listener_error_propagates_and_stops();
+    test_global_facade();
+    println("=== All Events Tests Passed! ===\n");
+    return 0;
+}

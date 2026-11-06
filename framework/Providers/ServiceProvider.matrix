@@ -1,0 +1,52 @@
+// framework/Providers/ServiceProvider.matrix
+// Spid3rWeb Service Provider Base Class
+//
+// Service providers are the framework's organized bootstrap points. Each
+// provider has two phases, run once per process:
+//
+//   register(container) — bind services into the DI Container. MUST be
+//     side-effect free: no database, no cache, no I/O. Only factories.
+//     This phase runs at Application.register(provider) time.
+//
+//   boot(container) — initialize the provider after ALL providers have
+//     registered. Safe to touch the database, config, cache, routes, and
+//     the Event bus. Runs at Application.boot() (called automatically by
+//     Application.listen(), and lazily on the first handled request).
+//
+// Every provider MUST extend this class — Application calls both methods
+// directly, and this base guarantees they exist:
+//
+//   import "framework/Providers/ServiceProvider";
+//   import "framework/Container/Container";
+//
+//   class MailServiceProvider extends ServiceProvider {
+//       public fn register(self, container) {
+//           container.singleton("mailer", fn(c) {
+//               return new Mailer(Config.get("mail.driver", "log"));
+//           });
+//       }
+//       public fn boot(self, container) {
+//           Event.listen("user.registered", fn(payload, name) {
+//               container.make("mailer").send(...);
+//           });
+//       }
+//   }
+//
+//   let app = new Application();
+//   app.register(new MailServiceProvider());
+//   app.listen();   // boots all registered providers, then serves
+
+import "framework/Container/Container";
+
+public class ServiceProvider {
+    // Bind services into the container. Override to add bindings.
+    public fn register(self, container) {
+        return null;
+    }
+
+    // Post-registration initialization. Override for event listeners,
+    // route registration, or anything needing other services.
+    public fn boot(self, container) {
+        return null;
+    }
+}

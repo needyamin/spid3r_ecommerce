@@ -1,0 +1,110 @@
+// app/Support/Fx.matrix
+// Spid3r Store — foreign-exchange conversion helpers.
+//
+// RULE: prices are stored in the store's BASE currency as INTEGER MINOR
+// UNITS. Alternate display currencies are derived from configured rates.
+// Float arithmetic is never used: every step is integer maths.
+//
+//   rates : map of currency code -> map("digits", int, "rate_bps", int,
+//                                      "symbol", string, "name", string)
+//   rate_bps : basis points of BASE currency per one MAJOR unit of that
+//              currency. The base currency itself is always 10000.
+//
+//   Fx.convert(100000, "BDT", "USD", rates)
+//     100000 minor BDT = 1000.00 BDT, USD rate 12100 bps (1 USD = 1.21 BDT)
+//     -> 82645 minor USD = 826.45 USD
+
+public fn power10(n: int) -> int {
+    let r = 1;
+    let i = 0;
+    while i < n {
+        r = r * 10;
+        i += 1;
+    }
+    return r;
+}
+
+// Integer division rounded to nearest (half away from zero).
+public fn round_div(a: int, b: int) -> int {
+    if b <= 0 {
+        return 0;
+    }
+    if a >= 0 {
+        return (a + b / 2) / b;
+    }
+    return 0 - ((0 - a + b / 2) / b);
+}
+
+// Metadata for a currency, with a safe fallback for unknown codes.
+public fn meta(rates, code: string) {
+    let key = string(code).trim().upper();
+    if rates != null and rates.has(key) {
+        return rates[key];
+    }
+    return map("digits", 2, "rate_bps", 10000, "symbol", "", "name", key);
+}
+
+// Convert an amount in minor units of `from_code` into minor units of
+// `to_code`. Returns the input untouched when no rates are configured.
+public fn convert(minor: int, from_code: string, to_code: string, rates) -> int {
+    let from = string(from_code).trim().upper();
+    let to = string(to_code).trim().upper();
+    if from == to {
+        return minor;
+    }
+    if rates == null {
+        return minor;
+    }
+    let fm = meta(rates, from);
+    let tm = meta(rates, to);
+    let from_rate = int(fm["rate_bps"]);
+    let to_rate = int(tm["rate_bps"]);
+    if from_rate <= 0 or to_rate <= 0 {
+        return minor;
+    }
+    // Major units scaled by 10^4 (basis-point scale) keeps every step integral.
+    let from_major_bp4 = minor * 10000 / power10(int(fm["digits"]));
+    let base_major_bp4 = from_major_bp4 * from_rate / 10000;
+    let to_major_bp4 = round_div(base_major_bp4 * 10000, to_rate);
+    return round_div(to_major_bp4 * power10(int(tm["digits"])), 10000);
+}
+
+// Thousands-grouped, symbol-prefixed display string for a currency that may
+// have a different number of minor digits than the base currency.
+public fn format(minor: int, code: string, rates) -> string {
+    let m = meta(rates, code);
+    let digits = int(m["digits"]);
+    let symbol = string(m["symbol"]);
+    let v = int(minor);
+    let neg = "";
+    if v < 0 {
+        neg = "-";
+        v = 0 - v;
+    }
+    let scale = power10(digits);
+    let major = v / scale;
+    let frac = v - major * scale;
+
+    let major_str = string(major);
+    let grouped = "";
+    let i = 0;
+    let n = len(major_str);
+    while i < n {
+        grouped = grouped + major_str.slice(i, i + 1);
+        let pos_from_right = n - i - 1;
+        if pos_from_right > 0 and pos_from_right % 3 == 0 {
+            grouped = grouped + ",";
+        }
+        i += 1;
+    }
+
+    let frac_str = string(frac);
+    while len(frac_str) < digits {
+        frac_str = "0" + frac_str;
+    }
+    if digits <= 0 {
+        frac_str = "";
+        return neg + symbol + grouped;
+    }
+    return neg + symbol + grouped + "." + frac_str;
+}

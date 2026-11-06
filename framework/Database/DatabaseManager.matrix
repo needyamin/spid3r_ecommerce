@@ -1,0 +1,232 @@
+// framework/Database/DatabaseManager.matrix
+// Spid3rWeb Connection & Driver Manager — resolves driver/config from env,
+// lazily opens connections, and hands out QueryBuilder instances.
+
+import "Connection";
+import "QueryBuilder";
+import "framework/Env";
+
+public class DatabaseManager {
+    public let db_handle;
+    public let db_path;
+    public let driver;
+    public let conn_config;
+    public let tx_depth;
+
+    fn new() {
+        // Re-load .env here (idempotent: OS env wins) so every manager
+        // instance — including the global singleton at import time — sees
+        // the file's values for driver/connection resolution.
+        let _env_reload = load_env_file(".env");
+        self.driver = self.resolve_driver();
+        self.db_path = "";
+        self.conn_config = map();
+        if self.driver == "sqlite" {
+            self.db_path = self.resolve_database_path();
+        } else {
+            self.conn_config = self.resolve_server_config();
+        }
+        self.db_handle = null;
+        self.tx_depth = 0;
+    }
+
+    // Driver selection: SPID3R_DB_DRIVER env var (sqlite|postgres|mysql|mariadb).
+    // "postgresql" normalizes to "postgres"; "mariadb" keeps its own name but
+    // rides the MySQL wire protocol.
+    fn resolve_driver(self) -> string {
+        let raw = "";
+        let env_driver = env("SPID3R_DB_DRIVER");
+        if env_driver.is_some() {
+            raw = string(env_driver.unwrap()).trim().lower();
+        }
+        if raw == "postgres" or raw == "postgresql" or raw == "pg" {
+            return "postgres";
+        }
+        if raw == "mysql" {
+            return "mysql";
+        }
+        if raw == "mariadb" {
+            return "mariadb";
+        }
+        return "sqlite";
+    }
+
+    fn env_var_or(self, key: string, fallback: string) -> string {
+        let v = env(key);
+        if v.is_some() {
+            let val = string(v.unwrap());
+            if val != "" {
+                return val;
+            }
+        }
+        return fallback;
+    }
+
+    // Server connection settings from SPID3R_PG_* / SPID3R_MYSQL_* env vars.
+    fn resolve_server_config(self) {
+        let prefix = "SPID3R_PG";
+        let default_port = "5432";
+        if self.driver == "mysql" or self.driver == "mariadb" {
+            prefix = "SPID3R_MYSQL";
+            default_port = "3306";
+        }
+        let host = self.env_var_or(prefix + "_HOST", "127.0.0.1");
+        let port = self.env_var_or(prefix + "_PORT", default_port);
+        return map(
+            "host", host,
+            "port", port,
+            "addr", host + ":" + port,
+            "user", self.env_var_or(prefix + "_USER", "spid3r"),
+            "password", self.env_var_or(prefix + "_PASSWORD", ""),
+            "database", self.env_var_or(prefix + "_DATABASE", "spid3r")
+        );
+    }
+
+    fn resolve_database_path(self) -> string {
+        let env_path = env("SPID3R_DB_PATH");
+        if env_path.is_some() {
+            let val = env_path.unwrap();
+            if string(val) != "" {
+                return string(val);
+            }
+        }
+        let candidates = [
+            "database/database.sqlite",
+            "examples/spid3r_web/database/database.sqlite"
+        ];
+        for p in candidates {
+            if file_exists(p) {
+                return p;
+            }
+        }
+        for p in candidates {
+            if p == "database/database.sqlite" and file_exists("database") {
+                return p;
+            }
+            if p == "examples/spid3r_web/database/database.sqlite" and file_exists("examples/spid3r_web/database") {
+                return p;
+            }
+        }
+        return "database/database.sqlite";
+    }
+
+    public fn driver_name(self) -> string {
+        return self.driver;
+    }
+
+    // Lazily open the connection for the active driver. Every driver wrapper
+    // exposes the same contract, so QueryBuilder/Auth code is driver-agnostic.
+    public fn connection(self) {
+        if self.db_handle == null {
+            if self.driver == "postgres" {
+                self.db_handle = new PgConnection(
+                    self.conn_config["addr"],
+                    self.conn_config["user"],
+                    self.conn_config["password"],
+                    self.conn_config["database"]
+                );
+            } elif self.driver == "mysql" or self.driver == "mariadb" {
+                self.db_handle = new MySqlConnection(
+                    self.conn_config["addr"],
+                    self.conn_config["user"],
+                    self.conn_config["password"],
+                    self.conn_config["database"]
+                );
+            } else {
+                self.db_handle = new SqliteConnection(self.db_path);
+            }
+        }
+        return self.db_handle;
+    }
+
+    public fn select(self, sql: string, params = null) {
+        if params == null {
+            params = [];
+        }
+        let conn = self.connection();
+        return conn.query(sql, params);
+    }
+
+    public fn statement(self, sql: string, params = null) {
+        if params == null {
+            params = [];
+        }
+        let conn = self.connection();
+        return conn.statement(sql, params);
+    }
+
+    public fn table(self, table_name: string) {
+        return new QueryBuilder(table_name, self);
+    }
+
+    // Run callback() inside a transaction. Nested calls execute inline
+    // (they run in the scope of the outer transaction — no savepoints).
+    // On error the transaction is rolled back and the original exception
+    // is re-thrown; a failed ROLLBACK never masks that original error.
+    public fn transaction(self, callback) {
+        if self.tx_depth > 0 {
+            return callback();
+        }
+        self.tx_depth = 1;
+        let conn = self.connection();
+        if self.driver == "sqlite" {
+            conn.exec("BEGIN IMMEDIATE");
+        } else {
+            conn.exec("BEGIN");
+        }
+        try {
+            let result = callback();
+            conn.exec("COMMIT");
+            self.tx_depth = 0;
+            return result;
+        } catch (e) {
+            try {
+                conn.exec("ROLLBACK");
+            } catch (_rb_err) {
+                // Rollback failure must not mask the original error.
+            }
+            self.tx_depth = 0;
+            throw e;
+        }
+    }
+
+    public fn checkpoint(self) {
+        if self.db_handle != null and self.driver == "sqlite" {
+            self.db_handle.exec("PRAGMA wal_checkpoint(TRUNCATE);");
+        }
+    }
+
+    public fn cleanup_artifacts(self) {
+        if self.driver != "sqlite" {
+            return;
+        }
+        let candidates = [
+            self.db_path,
+            "database/database.sqlite",
+            "examples/spid3r_web/database/database.sqlite"
+        ];
+        for p in candidates {
+            let shm_path = p + "-shm";
+            let wal_path = p + "-wal";
+            if file_exists(shm_path) {
+                file_delete(shm_path);
+            }
+            if file_exists(wal_path) {
+                file_delete(wal_path);
+            }
+        }
+    }
+
+    public fn close(self) {
+        if self.db_handle != null {
+            if self.driver == "sqlite" {
+                self.db_handle.exec("PRAGMA wal_checkpoint(TRUNCATE);");
+                self.db_handle.handle.close();
+            } else {
+                self.db_handle.close();
+            }
+            self.db_handle = null;
+        }
+        self.cleanup_artifacts();
+    }
+}

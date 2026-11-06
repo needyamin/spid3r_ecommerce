@@ -1,0 +1,25 @@
+// database/migrations/008_create_jobs_table.matrix
+import "framework/Database/Schema";
+import "framework/Database/Migration";
+
+public class CreateJobsTable extends Migration {
+    fn new(name: string = "008_create_jobs_table") {
+        super(name);
+    }
+
+    public fn up(self) {
+        Schema.create("jobs", table => {
+            table.id();
+            table.string("queue");           // queue name (default)
+            table.text("payload");           // JSON: {"job": handler, "data": ...}
+            table.integer("attempts");       // run count (for max_attempts)
+            table.integer("reserved_at");    // 0 = not reserved; else unix ts
+            table.integer("available_at");   // earliest run time
+            table.integer("created_at");
+        });
+    }
+
+    public fn down(self) {
+        Schema.dropIfExists("jobs");
+    }
+}

@@ -1,0 +1,64 @@
+// config/database.matrix
+// Spid3rWeb Database Configuration
+//
+// The active driver is selected at runtime via the SPID3R_DB_DRIVER
+// environment variable. All settings can also come from env vars so the
+// same codebase runs against any engine without code changes:
+//
+//   SPID3R_DB_DRIVER=sqlite | postgres | mysql | mariadb   (default: sqlite)
+//
+// PostgreSQL:
+//   SPID3R_PG_HOST=127.0.0.1      SPID3R_PG_PORT=5432
+//   SPID3R_PG_USER=spid3r         SPID3R_PG_PASSWORD=secret
+//   SPID3R_PG_DATABASE=spid3r
+//   NOTE: the runtime PG client supports md5/trust auth (not SCRAM-SHA-256):
+//     SET password_encryption = 'md5'; ALTER USER app WITH PASSWORD '...';
+//
+// MySQL / MariaDB:
+//   SPID3R_MYSQL_HOST=127.0.0.1   SPID3R_MYSQL_PORT=3306
+//   SPID3R_MYSQL_USER=spid3r      SPID3R_MYSQL_PASSWORD=secret
+//   SPID3R_MYSQL_DATABASE=spid3r
+//   NOTE: MySQL 8 users must use mysql_native_password
+//   (MariaDB defaults to it, so MariaDB works out of the box):
+//     ALTER USER 'app'@'%' IDENTIFIED WITH mysql_native_password BY '...';
+
+public let config_database = map(
+    "default", "sqlite",
+    "driver_env", "SPID3R_DB_DRIVER",
+    "connections", map(
+        "sqlite", map(
+            "driver", "sqlite",
+            "database", "database/database.sqlite",
+            "foreign_key_constraints", true,
+            "journal_mode", "WAL",
+            "busy_timeout_ms", 5000
+        ),
+        "postgres", map(
+            "driver", "postgres",
+            "host_env", "SPID3R_PG_HOST", "port_env", "SPID3R_PG_PORT",
+            "user_env", "SPID3R_PG_USER", "password_env", "SPID3R_PG_PASSWORD",
+            "database_env", "SPID3R_PG_DATABASE",
+            "default_port", 5432,
+            "auth", "md5 | trust (SCRAM-SHA-256 not supported by runtime client)",
+            "last_insert_id", "INSERT ... RETURNING id"
+        ),
+        "mysql", map(
+            "driver", "mysql",
+            "host_env", "SPID3R_MYSQL_HOST", "port_env", "SPID3R_MYSQL_PORT",
+            "user_env", "SPID3R_MYSQL_USER", "password_env", "SPID3R_MYSQL_PASSWORD",
+            "database_env", "SPID3R_MYSQL_DATABASE",
+            "default_port", 3306,
+            "auth", "mysql_native_password required (MySQL 8 default is caching_sha2_password)",
+            "last_insert_id", "SELECT LAST_INSERT_ID()"
+        ),
+        "mariadb", map(
+            "driver", "mariadb",
+            "wire_protocol", "mysql (MariaDB ships mysql_native_password by default)",
+            "host_env", "SPID3R_MYSQL_HOST", "port_env", "SPID3R_MYSQL_PORT",
+            "user_env", "SPID3R_MYSQL_USER", "password_env", "SPID3R_MYSQL_PASSWORD",
+            "database_env", "SPID3R_MYSQL_DATABASE",
+            "default_port", 3306,
+            "last_insert_id", "SELECT LAST_INSERT_ID()"
+        )
+    )
+);

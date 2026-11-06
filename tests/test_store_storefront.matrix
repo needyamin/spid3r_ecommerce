@@ -1,0 +1,238 @@
+// tests/test_store_storefront.matrix
+// Phase 5 — public storefront integration tests (HTTP level).
+
+import "framework/Application";
+import "framework/Router";
+import "framework/Database/DB";
+import "routes/web";
+import "routes/queue";
+import "app/Middleware/StoreMiddleware";
+import "database/seeders/DatabaseSeeder";
+
+fn get(app, path: string) {
+    return app.handle_request(map("method", "GET", "path", path, "headers", map()));
+}
+
+fn text(res) -> string {
+    return string(res["body"]);
+}
+
+fn setup_catalog(tag: string) {
+    let cat_a = DB.table("categories").insert(map(
+        "name", "Category A " + tag, "slug", "cat-a-" + tag,
+        "description", "First category", "meta_description", "Category A SEO"
+    ));
+    let cat_b = DB.table("categories").insert(map(
+        "name", "Category B " + tag, "slug", "cat-b-" + tag
+    ));
+    let brand = DB.table("brands").insert(map(
+        "name", "Brand " + tag, "slug", "brand-" + tag,
+        "description", "Test brand description"
+    ));
+
+    let ids = [];
+    let i = 0;
+    while i < 13 {
+        let price = 10000 + i * 5000;
+        let slug = "store-widget-" + tag + "-" + string(i);
+        let pid = DB.table("products").insert(map(
+            "category_id", cat_a,
+            "brand_id", brand,
+            "name", "Store Widget " + tag + " " + string(i),
+            "slug", slug,
+            "sku", "SW-" + tag + "-" + string(i),
+            "short_description", "Great widget",
+            "description", "A full description for widget " + string(i),
+            "price_minor", price,
+            "compare_at_minor", price + 5000,
+            "currency", "BDT",
+            "status", "published",
+            "meta_title", "Widget " + string(i) + " SEO",
+            "meta_description", "Buy widget " + string(i) + " at the store"
+        ));
+        DB.table("inventory").insert(map(
+            "product_id", pid, "variant_id", null,
+            "quantity", 10, "reserved", 0, "low_stock_threshold", 2
+        ));
+        ids.push(pid);
+        i += 1;
+    }
+
+    // A second published product in category B, for related/filter checks.
+    let other = DB.table("products").insert(map(
+        "category_id", cat_b, "brand_id", brand,
+        "name", "Other Widget " + tag, "slug", "other-widget-" + tag,
+        "sku", "OTH-" + tag, "price_minor", 5000,
+        "status", "published", "currency", "BDT"
+    ));
+    DB.table("inventory").insert(map(
+        "product_id", other, "variant_id", null, "quantity", 3, "reserved", 0, "low_stock_threshold", 2
+    ));
+
+    // Draft product must never leak to the storefront / sitemap.
+    let draft = DB.table("products").insert(map(
+        "category_id", cat_a, "brand_id", brand,
+        "name", "Draft Widget " + tag, "slug", "draft-widget-" + tag,
+        "sku", "DRAFT-" + tag, "price_minor", 1000,
+        "status", "draft", "currency", "BDT"
+    ));
+
+    // One product image (gallery).
+    DB.table("product_images").insert(map(
+        "product_id", ids[0], "path", "products/test/" + tag + ".png",
+        "alt_text", "Widget 0", "sort_order", 0, "is_primary", 1
+    ));
+
+    return map(
+        "cat_a", cat_a, "cat_b", cat_b, "brand", brand,
+        "ids", ids, "other", other, "draft", draft
+    );
+}
+
+fn test_home(app, tag: string) {
+    let res = get(app, "/");
+    assert(res["status"] == 200, "home renders 200");
+    let body = text(res);
+    assert(body.contains("Featured Products"), "home has featured section");
+    assert(body.contains("Store Widget " + tag), "home shows real products");
+    assert(body.contains("meta name=\"description\""), "home has a meta description");
+    assert(body.contains("/product/store-widget-" + tag), "home links use SEO URLs");
+    println("  [PASS] test_home");
+}
+
+fn test_catalog_filters(app, tag: string) {
+    let res = get(app, "/catalog");
+    assert(res["status"] == 200, "catalog renders 200");
+    let body = text(res);
+    assert(body.contains("Store Widget " + tag), "catalog lists products");
+    assert(body.contains("Apply filters"), "catalog has filter form");
+    let priced = get(app, "/catalog?sort=price_asc");
+    assert(text(priced).contains("/uploads/products/test/" + tag + ".png"), "listing shows the gallery image");
+    assert(not body.contains("Draft Widget " + tag), "draft product hidden from catalog");
+
+    let q = get(app, "/catalog?q=Store%20Widget%20" + tag + "%200");
+    assert(text(q).contains("Store Widget " + tag + " 0"), "search matches product name");
+
+    let cheap = get(app, "/catalog?min_price=500.00");
+    assert(text(cheap).contains("14 product(s)") == false, "price filter narrows results");
+    assert(not text(cheap).contains("Other Widget"), "price filter excludes cheaper item");
+
+    let sorted = text(get(app, "/catalog?sort=price_asc"));
+    let low = sorted.index_of("Store Widget " + tag + " 0");
+    let high = sorted.index_of("Store Widget " + tag + " 5");
+    assert(low >= 0 and high > low, "price_asc sorts cheap products first");
+
+    let page2 = get(app, "/catalog?page=2");
+    assert(page2["status"] == 200, "page 2 renders 200");
+    assert(text(page2).contains("Previous"), "page 2 has previous link");
+    println("  [PASS] test_catalog_filters");
+}
+
+fn test_category_brand_pages(app, tag: string) {
+    let cat = get(app, "/category/cat-a-" + tag);
+    assert(cat["status"] == 200, "category page renders 200");
+    assert(text(cat).contains("Category A " + tag), "category heading");
+    assert(text(cat).contains("Category A SEO"), "category meta description used");
+    assert(not text(cat).contains("Other Widget " + tag), "category filter excludes other category");
+
+    let cat_b = get(app, "/category/cat-b-" + tag);
+    assert(text(cat_b).contains("Other Widget " + tag), "category B shows its product");
+
+    let brand = get(app, "/brand/brand-" + tag);
+    assert(brand["status"] == 200, "brand page renders 200");
+    assert(text(brand).contains("Brand " + tag), "brand heading");
+
+    assert(get(app, "/category/no-such-" + tag)["status"] == 404, "unknown category → 404");
+    assert(get(app, "/brand/no-such-" + tag)["status"] == 404, "unknown brand → 404");
+    println("  [PASS] test_category_brand_pages");
+}
+
+fn test_product_detail(app, tag: string) {
+    let slug = "store-widget-" + tag + "-0";
+    let res = get(app, "/product/" + slug);
+    assert(res["status"] == 200, "product detail renders 200");
+    let body = text(res);
+    assert(body.contains("Store Widget " + tag + " 0"), "product name");
+    assert(body.contains("Buy widget 0 at the store"), "product meta description");
+    assert(body.contains("SK"), "SKU displayed");
+    assert(body.contains("In stock"), "availability shown");
+    assert(body.contains("A full description for widget 0"), "description rendered");
+    assert(body.contains("Related products"), "related products section");
+    assert(body.contains("/uploads/products/test/" + tag + ".png"), "gallery image rendered");
+
+    assert(get(app, "/product/draft-widget-" + tag)["status"] == 404, "draft product → 404");
+    assert(get(app, "/product/no-such-" + tag)["status"] == 404, "unknown product → 404");
+    println("  [PASS] test_product_detail");
+}
+
+fn test_seo_endpoints(app, tag: string) {
+    let sitemap = get(app, "/sitemap.xml");
+    assert(sitemap["status"] == 200, "sitemap renders 200");
+    assert(string(sitemap["headers"]["content-type"]).contains("application/xml"), "sitemap content-type");
+    let xml = text(sitemap);
+    assert(xml.contains("/product/store-widget-" + tag + "-0"), "sitemap lists published product");
+    assert(xml.contains("/category/cat-a-" + tag), "sitemap lists category");
+    assert(xml.contains("/brand/brand-" + tag), "sitemap lists brand");
+    assert(not xml.contains("draft-widget-" + tag), "sitemap excludes drafts");
+
+    let robots = get(app, "/robots.txt");
+    assert(robots["status"] == 200, "robots renders 200");
+    assert(text(robots).contains("Disallow: /admin/"), "robots blocks admin");
+    assert(text(robots).contains("Sitemap:"), "robots points to sitemap");
+    println("  [PASS] test_seo_endpoints");
+}
+
+// Remove products (and their dependent rows) matching a slug fragment.
+fn drop_products(slug_fragment: string) {
+    let rows = DB.table("products").where("slug", "LIKE", "%" + slug_fragment + "%").get();
+    let i = 0;
+    while i < rows.len() {
+        let pid = rows[i]["id"];
+        DB.table("product_images").where("product_id", "=", pid).delete();
+        DB.table("inventory").where("product_id", "=", pid).delete();
+        DB.table("stock_movements").where("product_id", "=", pid).delete();
+        i += 1;
+    }
+    DB.table("products").where("slug", "LIKE", "%" + slug_fragment + "%").delete();
+}
+
+// Remove leftovers from earlier (possibly aborted) runs of this suite.
+fn purge_stale() {
+    drop_products("store-widget-");
+    drop_products("other-widget-");
+    drop_products("draft-widget-");
+    DB.table("categories").where("slug", "LIKE", "cat-a-%").delete();
+    DB.table("categories").where("slug", "LIKE", "cat-b-%").delete();
+    DB.table("brands").where("slug", "LIKE", "brand-%").delete();
+}
+
+fn cleanup(tag: string) {
+    drop_products(tag);
+    DB.table("categories").where("slug", "LIKE", "%" + tag + "%").delete();
+    DB.table("brands").where("slug", "LIKE", "%" + tag + "%").delete();
+}
+
+fn main() {
+    println("\n=== Running Store Storefront Test Suite ===");
+    let app = new Application();
+    register_store_middleware(app);
+    register_web_routes();
+    register_queue_jobs();
+    run_database_seeder();
+    purge_stale();
+    let tag = string(unix_time());
+    setup_catalog(tag);
+
+    try {
+        test_home(app, tag);
+        test_catalog_filters(app, tag);
+        test_category_brand_pages(app, tag);
+        test_product_detail(app, tag);
+        test_seo_endpoints(app, tag);
+    } finally {
+        cleanup(tag);
+    }
+    DB.close();
+    println("=== All Store Storefront Tests Passed! ===\n");
+    return 0;
+}

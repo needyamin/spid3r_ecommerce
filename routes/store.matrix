@@ -1,0 +1,81 @@
+// routes/store.matrix
+// Spid3r Store — storefront route registration & bootstrap (Phase 1).
+//
+// The store bootstraps through the framework's GLOBAL facades (Container,
+// Event), so the same boot path works whether the app runs via
+// server.matrix, `spid3r magic serve`, or tests that call
+// register_web_routes() directly. Boot is guarded: registering routes
+// twice must not double-register listeners or bindings.
+
+import "framework/Router";
+import "framework/Response";
+import "framework/View/BD";
+import "framework/Container/Container";
+import "framework/Events/Event";
+import "app/Providers/StoreServiceProvider";
+import "app/Controllers/StorefrontController";
+import "routes/auth";
+import "routes/catalog";
+import "routes/storefront";
+import "routes/cart";
+import "routes/checkout";
+import "routes/payments";
+import "routes/admin";
+import "routes/advanced";
+import "routes/shipping";
+
+// Module-level boot guard (closures cannot reassign outer locals, so the
+// flag lives in a map).
+let _store_boot = map("done", false);
+
+// Wire the store into the global Container/Event facades exactly once.
+fn bootstrap_store() {
+    if _store_boot["done"] {
+        return false;
+    }
+    let provider = new StoreServiceProvider();
+    provider.register(Container);
+    provider.boot(Container);
+    _store_boot["done"] = true;
+    return true;
+}
+
+public fn register_store_routes() {
+    bootstrap_store();
+
+    // Phase 5 — homepage renders real featured products from the catalog.
+    let storefront = new StorefrontController();
+    Route.get("/", fn(req) { return storefront.home(req); }).name("home");
+
+    // Liveness/health endpoint for load balancers and CI smoke checks.
+    Route.get("/health", fn(req) {
+        let settings = Container.make("store.settings");
+        return json(map(
+            "status", "ok",
+            "store", settings["name"],
+            "framework", "Spid3rWeb"
+        ));
+    }).name("health");
+
+    // Phase 3 — account, password reset, verification, admin area.
+    register_auth_routes();
+    // Phase 4 — product management API (admin/permission-gated).
+    register_catalog_routes();
+    // Phase 5 — public storefront (catalog, category/brand/product pages,
+    // search/filters, sitemap.xml + robots.txt).
+    register_storefront_routes();
+    // Phase 6 — shopping cart (guest + authenticated, merge on login).
+    register_cart_routes();
+    // Phase 7 — checkout, orders, invoices, admin order management.
+    register_checkout_routes();
+    // Phase 8 — payments, webhooks, refunds, reconciliation.
+    register_payment_routes();
+    // Phase 9 — admin dashboard, management pages/APIs, reports.
+    register_admin_routes();
+    // Phase 10 — wishlist, reviews, recommendations, recently viewed,
+    // loyalty, referrals, gift cards, campaigns, support, tracking,
+    // multi-currency and multi-language.
+    register_advanced_routes();
+    // Phase 11 — shipping zones/rates, fulfilment and returns.
+    register_shipping_routes();
+}

@@ -1,0 +1,40 @@
+// app/Policies/AccessPolicy.matrix
+// Phase 3 — authorization rules. Consulted by middleware & controllers.
+
+import "framework/HttpException";
+import "app/Repositories/UserRepository";
+
+public class AccessPolicy {
+    public let users;
+
+    fn new() {
+        self.users = new UserRepository();
+    }
+
+    public fn is_customer(self, user_id) -> bool {
+        return self.users.has_role(user_id, "customer") or self.is_admin(user_id);
+    }
+
+    public fn is_staff(self, user_id) -> bool {
+        return self.users.has_role(user_id, "staff") or self.is_admin(user_id);
+    }
+
+    public fn is_admin(self, user_id) -> bool {
+        return self.users.has_role(user_id, "admin");
+    }
+
+    public fn can(self, user_id, permission_slug: string) -> bool {
+        if self.is_admin(user_id) {
+            return true;   // seed grants admin every permission anyway
+        }
+        return self.users.has_permission(user_id, permission_slug);
+    }
+
+    // Throws a typed 403 — never returns a silent false to a handler.
+    public fn authorize(self, user_id, permission_slug: string) -> bool {
+        if not self.can(user_id, permission_slug) {
+            throw forbidden("You do not have permission to perform this action.");
+        }
+        return true;
+    }
+}

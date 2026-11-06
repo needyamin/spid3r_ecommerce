@@ -1,0 +1,180 @@
+// framework/Events/Event.matrix
+// Spid3rWeb Event Dispatcher
+//
+// A synchronous, in-process publish/subscribe bus. Decouples side effects
+// from core actions — a controller dispatches "user.registered" and never
+// needs to know that a welcome-mailer or an analytics sink is listening.
+//
+// API (via the global `Event` facade, or `new EventDispatcher()` in tests):
+//   Event.listen(name, handler)         handler(payload, event_name) -> any
+//   Event.once(name, handler)           fires a single time, then unregisters
+//   Event.dispatch(name, payload)       fire all matching listeners; returns
+//                                       a list of their return values
+//   Event.has_listeners(name)           exact or wildcard match
+//   Event.count_listeners(name)         how many listeners would fire
+//   Event.forget(name)                  remove all listeners for that exact
+//                                       name or wildcard pattern
+//   Event.subscribe(subscriber)         class-based grouping: the subscriber
+//                                       must expose subscribe(dispatcher)
+//   Event.flush()                       remove everything
+//
+// Wildcards: a pattern ending in "*" matches any event with that prefix —
+//   Event.listen("user.*", handler) fires for "user.created", "user.deleted".
+// Only trailing "*" is supported; mid-pattern globs are intentionally not.
+//
+// Semantics:
+//   - Handlers receive exactly two arguments: (payload, event_name).
+//   - Exact listeners fire first (registration order), then wildcard
+//     listeners (pattern registration order, then their registration order).
+//   - Listeners run synchronously on the dispatching task. Errors propagate
+//     to the caller — wrap dispatch in try/catch when fire-and-forget is
+//     wanted. A throwing listener stops later listeners: this is deliberate,
+//     silent failure is a bug factory.
+//   - Dispatch is safe from any task; there is no shared mutable state
+//     beyond the listener registry itself.
+
+public class EventDispatcher {
+    private let listeners;  // name-or-pattern -> list of map("id", int, "handler", fn, "once", bool)
+    private let next_id;    // monotonically increasing registration id
+
+    fn new() {
+        self.listeners = map();
+        self.next_id = 1;
+    }
+
+    public fn listen(self, name: string, handler) {
+        self.register(name, handler, false);
+        return self;
+    }
+
+    public fn once(self, name: string, handler) {
+        self.register(name, handler, true);
+        return self;
+    }
+
+    fn register(self, name: string, handler, once_flag: bool) {
+        if not self.listeners.has(name) {
+            self.listeners[name] = list();
+        }
+        self.listeners[name].push(
+            map("id", self.next_id, "handler", handler, "once", once_flag)
+        );
+        self.next_id += 1;
+    }
+
+    // Does a registered pattern cover this event name? Exact keys match
+    // trivially; patterns must end in "*".
+    fn pattern_matches(self, pattern: string, name: string) -> bool {
+        if pattern == name {
+            return true;
+        }
+        let n = len(pattern);
+        if n > 0 and pattern.slice(n - 1, n) == "*" {
+            return name.starts_with(pattern.slice(0, n - 1));
+        }
+        return false;
+    }
+
+    // Collect the listeners that would fire, in firing order.
+    fn matching(self, name: string) {
+        let matched = list();
+        if self.listeners.has(name) {
+            for h in self.listeners[name] {
+                matched.push(h);
+            }
+        }
+        for pattern in self.listeners.keys() {
+            if pattern != name and self.pattern_matches(pattern, name) {
+                for h in self.listeners[pattern] {
+                    matched.push(h);
+                }
+            }
+        }
+        return matched;
+    }
+
+    // Fire all matching listeners. Returns a list with one entry per
+    // listener: its return value (null when the handler returns nothing).
+    public fn dispatch(self, name: string, payload = null) {
+        let matched = self.matching(name);
+        let results = list();
+        let spent = list();  // ids of once-listeners that fired
+        for h in matched {
+            let f = h["handler"];
+            results.push(f(payload, name));
+            if h["once"] {
+                spent.push(h["id"]);
+            }
+        }
+        for id in spent {
+            self.remove_id(id);
+        }
+        return results;
+    }
+
+    fn remove_id(self, id: int) {
+        for key in self.listeners.keys() {
+            let kept = list();
+            for h in self.listeners[key] {
+                if h["id"] != id {
+                    kept.push(h);
+                }
+            }
+            if kept.len() == 0 {
+                self.listeners.remove(key);
+            } else {
+                self.listeners[key] = kept;
+            }
+        }
+    }
+
+    public fn has_listeners(self, name: string) -> bool {
+        if self.listeners.has(name) {
+            return true;
+        }
+        for pattern in self.listeners.keys() {
+            if pattern != name and self.pattern_matches(pattern, name) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public fn count_listeners(self, name: string) -> int {
+        return self.matching(name).len();
+    }
+
+    // Remove every listener registered under exactly this name or pattern.
+    public fn forget(self, name: string) {
+        if self.listeners.has(name) {
+            self.listeners.remove(name);
+        }
+        return self;
+    }
+
+    // Class-based listener grouping. The subscriber object must expose a
+    // `subscribe(dispatcher)` method that registers its own listeners.
+    // Bind the sink object to a local before closing over it:
+    //   class UserSubscriber {
+    //       public let log;
+    //       fn new() { self.log = list(); }
+    //       public fn subscribe(self, events) {
+    //           let sink = self.log;
+    //           events.listen("user.created", fn(p, n) { sink.push(p); return null; });
+    //       }
+    //   }
+    //   Event.subscribe(new UserSubscriber());
+    public fn subscribe(self, subscriber) {
+        subscriber.subscribe(self);
+        return self;
+    }
+
+    public fn flush(self) {
+        self.listeners = map();
+        self.next_id = 1;
+        return self;
+    }
+}
+
+// Global event facade singleton.
+public let Event = new EventDispatcher();

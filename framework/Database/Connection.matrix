@@ -1,0 +1,416 @@
+// framework/Database/Connection.matrix
+// Spid3rWeb Multi-Driver Database Connection Abstraction
+//
+// Supported drivers (resolved by DatabaseManager in DB.matrix):
+//   sqlite    -> db_open(path)                     native `?` binding
+//   postgres  -> pg_connect(addr,user,pass,db)     manual value escaping, RETURNING id
+//   mysql     -> mysql_connect(addr,user,pass,db)  manual value escaping, LAST_INSERT_ID()
+//   mariadb   -> mysql wire protocol (mysql_*)     alias of mysql
+//
+// All connection wrappers expose the same contract used by QueryBuilder:
+//   .query(sql, params) -> list of row maps
+//   .run(sql, params)   -> map { "last_id": int, "changes": int }
+//   .exec(sql)          -> driver result (DDL / unparameterized DML)
+//   .statement(sql, params) -> driver result (DML with parameters)
+//   .close()            -> release the connection
+//   .driver_name()      -> "sqlite" | "postgres" | "mysql" | "mariadb"
+//
+// SECURITY CONTRACT: .exec() / raw SQL paths are for FRAMEWORK-INTERNAL,
+// CONSTANT SQL ONLY (DDL, PRAGMAs, session setup). Any SQL containing data
+// that originates from user input MUST go through query()/run()/statement()
+// with `?` placeholders so values pass the escaping layer.
+
+// ----------------------------------------------------------------------------
+// Identifier guardrail
+// ----------------------------------------------------------------------------
+// Table/column identifiers are interpolated into SQL unquoted. They must only
+// ever come from code constants — this guard makes a mistake loud instead of
+// injectable. Allows letters, digits, underscore and dot (qualified names).
+
+public fn sql_check_identifier(name: string) -> string {
+    let s = string(name).trim();
+    if s.len() == 0 {
+        throw "SQL identifier must not be empty";
+    }
+    // Space-separated tokens are allowed only for "col AS alias" chains;
+    // every token must be identifier-shaped (or the keyword AS).
+    let allowed = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_.";
+    for tok in s.split(" ") {
+        let t = tok.trim();
+        if t.len() == 0 {
+            throw "SQL identifier contains illegal whitespace: " + s;
+        }
+        if t.lower() == "as" {
+            continue;
+        }
+        for ch in t.split("") {
+            if not allowed.contains(ch) {
+                throw "SQL identifier contains illegal character: " + s;
+            }
+        }
+    }
+    return s;
+}
+
+// ----------------------------------------------------------------------------
+// Shared value escaping (security-critical)
+// ----------------------------------------------------------------------------
+// pg_connect / mysql_query accept raw SQL strings only — there is NO server-side
+// parameter binding in the Spid3r runtime. Every value flowing into a query
+// MUST pass through sql_quote_value() so user input can never terminate the
+// literal and inject SQL.
+
+// Escape a raw string for the given driver (caller wraps in quotes).
+// MySQL/MariaDB note: quotes are doubled ('') which is correct under BOTH the
+// default sql_mode and NO_BACKSLASH_ESCAPES. Backslash escapes (\\, \n, \0, \Z)
+// require the default mode, which MySqlConnection enforces at connect time.
+public fn sql_escape_string(value: string, driver: string) -> string {
+    let s = string(value);
+    if driver == "postgres" {
+        // PostgreSQL with standard_conforming_strings=on (enforced at connect):
+        // backslash is a literal character; only the single quote is special.
+        return s.replace("'", "''");
+    }
+    // MySQL / MariaDB: backslash-first ordering is mandatory, otherwise the
+    // backslash we insert for escaping would itself get doubled.
+    let out = s.replace("\\", "\\\\");
+    out = out.replace("'", "''");
+    out = out.replace("\n", "\\n");
+    out = out.replace("\r", "\\r");
+    out = out.replace(chr(0), "\\0");
+    out = out.replace(chr(26), "\\Z");
+    return out;
+}
+
+// Render any Spid3r value as a safe SQL literal for the given driver.
+public fn sql_quote_value(value, driver: string) -> string {
+    if value == null {
+        return "NULL";
+    }
+    let t = type_of(value);
+    if t == "int" {
+        return string(value);
+    }
+    if t == "float" {
+        return string(value);
+    }
+    if t == "bool" {
+        if driver == "postgres" {
+            if value { return "TRUE"; }
+            return "FALSE";
+        }
+        if value { return "1"; }
+        return "0";
+    }
+    if t == "bytes" {
+        // Byte blobs have no safe literal representation in this driver layer
+        // (no hex/binary literal support) — fail loudly instead of corrupting.
+        throw "bytes values are not supported by the SQL driver escaping layer";
+    }
+    // Everything else is escaped as a string literal
+    return "'" + sql_escape_string(string(value), driver) + "'";
+}
+
+// Replace each `?` placeholder with the escaped literal of its parameter.
+// QUOTE-AWARE: a `?` inside a string literal (or the \" of an escaped quote in
+// a MySQL literal) is never treated as a placeholder. Throws when the
+// placeholder count does not match the parameter count — silent mismatch is a
+// correctness and security hazard.
+public fn sql_interpolate(sql: string, params, driver: string) -> string {
+    if params == null {
+        return sql;
+    }
+    if params.len() == 0 {
+        return sql;
+    }
+
+    let out = "";
+    let in_str = false;
+    let pi = 0;
+    let i = 0;
+    let n = sql.len();
+    while i < n {
+        let ch = sql.slice(i, i + 1);
+        if in_str {
+            out = out + ch;
+            if driver == "mysql" and ch == "\\" and (i + 1) < n {
+                // MySQL default mode: backslash escapes the next byte inside literals
+                out = out + sql.slice(i + 1, i + 2);
+                i = i + 2;
+            } elif ch == "'" {
+                if (i + 1) < n and sql.slice(i + 1, i + 2) == "'" {
+                    out = out + "'";
+                    i = i + 2;
+                } else {
+                    in_str = false;
+                    i = i + 1;
+                }
+            } else {
+                i = i + 1;
+            }
+        } elif ch == "'" {
+            in_str = true;
+            out = out + ch;
+            i = i + 1;
+        } elif ch == "?" {
+            if pi < params.len() {
+                out = out + sql_quote_value(params[pi], driver);
+                pi = pi + 1;
+            } else {
+                // params were provided but a placeholder remains unmatchable
+                throw "sql_interpolate: placeholder/parameter count mismatch (more ? than params)";
+            }
+            i = i + 1;
+        } else {
+            out = out + ch;
+            i = i + 1;
+        }
+    }
+
+    if pi != params.len() {
+        throw "sql_interpolate: placeholder/parameter count mismatch (" + string(params.len()) + " params, " + string(pi) + " placeholders)";
+    }
+    return out;
+}
+
+// ----------------------------------------------------------------------------
+// PostgreSQL Connection
+// ----------------------------------------------------------------------------
+public class PgConnection {
+    public let handle;
+    public let conn_info;
+
+    fn new(addr: string, user: string, password: string, database: string) {
+        self.conn_info = addr;
+        // pg_connect throws on failure; let the caller decide how to surface it
+        self.handle = pg_connect(addr, user, password, database);
+        // Session hardening: backslash must stay a literal inside string
+        // literals ('' doubling is our only quote escape). Without this a
+        // server running standard_conforming_strings=off could be manipulated
+        // by values ending in a backslash.
+        let r = pg_exec(self.handle, "SET standard_conforming_strings = on");
+        if r.is_err() {
+            throw "pg session setup failed: " + string(r.unwrap_err());
+        }
+        // DoS hygiene: bound runaway queries and lock waits
+        pg_exec(self.handle, "SET statement_timeout = 30000");
+        pg_exec(self.handle, "SET lock_timeout = 10000");
+    }
+
+    public fn driver_name(self) -> string {
+        return "postgres";
+    }
+
+    public fn query(self, sql: string, params = null) {
+        let final_sql = sql_interpolate(sql, params, "postgres");
+        let res = pg_query(self.handle, final_sql);
+        if res.is_err() {
+            throw "pg_query failed: " + string(res.unwrap_err());
+        }
+        return res.unwrap();
+    }
+
+    public fn run(self, sql: string, params = null) {
+        let final_sql = sql_interpolate(sql, params, "postgres");
+        let upper = final_sql.trim().upper();
+
+        if upper.starts_with("INSERT") {
+            // Prefer RETURNING id (works for serial/bigserial PKs)
+            let res = pg_query(self.handle, final_sql + " RETURNING id");
+            if res.is_ok() {
+                let rows = res.unwrap();
+                let lid = 0;
+                if rows.len() > 0 and rows[0].has("id") and rows[0]["id"] != null {
+                    lid = int(rows[0]["id"]);
+                }
+                return map("last_id", lid, "changes", 1);
+            }
+            // Table without an `id` column: retry plain — but check the result
+            let r2 = pg_exec(self.handle, final_sql);
+            if r2.is_err() {
+                throw "pg_insert failed: " + string(r2.unwrap_err());
+            }
+            return map("last_id", 0, "changes", 1);
+        }
+
+        if upper.starts_with("UPDATE") or upper.starts_with("DELETE") {
+            let res = pg_query(self.handle, final_sql + " RETURNING 1");
+            if res.is_ok() {
+                let rows = res.unwrap();
+                return map("last_id", 0, "changes", rows.len());
+            }
+            let r2 = pg_exec(self.handle, final_sql);
+            if r2.is_err() {
+                throw "pg_statement failed: " + string(r2.unwrap_err());
+            }
+            return map("last_id", 0, "changes", 0);
+        }
+
+        let r3 = pg_exec(self.handle, final_sql);
+        if r3.is_err() {
+            throw "pg_statement failed: " + string(r3.unwrap_err());
+        }
+        return map("last_id", 0, "changes", 0);
+    }
+
+    public fn exec(self, sql: string) {
+        let res = pg_exec(self.handle, sql);
+        if res.is_err() {
+            throw "pg_exec failed: " + string(res.unwrap_err());
+        }
+        return res;
+    }
+
+    public fn statement(self, sql: string, params = null) {
+        return self.exec(sql_interpolate(sql, params, "postgres"));
+    }
+
+    public fn close(self) {
+        pg_close(self.handle);
+    }
+}
+
+// ----------------------------------------------------------------------------
+// MySQL / MariaDB Connection
+// ----------------------------------------------------------------------------
+// MariaDB speaks the MySQL wire protocol and ships mysql_native_password by
+// default, so the same driver covers both engines.
+public class MySqlConnection {
+    public let handle;
+    public let conn_info;
+
+    fn new(addr: string, user: string, password: string, database: string) {
+        self.conn_info = addr;
+        self.handle = mysql_connect(addr, user, password, database);
+        // Session hardening: our escaping relies on backslash escapes being
+        // active (quotes themselves are '' doubled and safe under both modes,
+        // but \n / \\ handling is not). Strip NO_BACKSLASH_ESCAPES if present.
+        let mode_sql = "SET SESSION sql_mode = REPLACE(REPLACE(REPLACE(COALESCE(@@SESSION.sql_mode, ''), 'NO_BACKSLASH_ESCAPES,', ''), ',NO_BACKSLASH_ESCAPES', ''), 'NO_BACKSLASH_ESCAPES', '')";
+        let r = mysql_exec(self.handle, mode_sql);
+        if r.is_err() {
+            throw "mysql session setup failed: " + string(r.unwrap_err());
+        }
+        // DoS hygiene: bound runaway SELECTs (ms; SELECT-only in MySQL)
+        mysql_exec(self.handle, "SET SESSION max_execution_time = 30000");
+    }
+
+    public fn driver_name(self) -> string {
+        return "mysql";
+    }
+
+    public fn query(self, sql: string, params = null) {
+        let final_sql = sql_interpolate(sql, params, "mysql");
+        let res = mysql_query(self.handle, final_sql);
+        if res.is_err() {
+            throw "mysql_query failed: " + string(res.unwrap_err());
+        }
+        return res.unwrap();
+    }
+
+    public fn run(self, sql: string, params = null) {
+        let final_sql = sql_interpolate(sql, params, "mysql");
+        let upper = final_sql.trim().upper();
+
+        if upper.starts_with("INSERT") {
+            let res = mysql_exec(self.handle, final_sql);
+            if res.is_err() {
+                throw "mysql_insert failed: " + string(res.unwrap_err());
+            }
+            let lid = 0;
+            let res2 = mysql_query(self.handle, "SELECT LAST_INSERT_ID() AS id");
+            if res2.is_ok() {
+                let rows = res2.unwrap();
+                if rows.len() > 0 and rows[0].has("id") and rows[0]["id"] != null {
+                    lid = int(rows[0]["id"]);
+                }
+            }
+            return map("last_id", lid, "changes", 1);
+        }
+
+        if upper.starts_with("UPDATE") or upper.starts_with("DELETE") {
+            let res = mysql_exec(self.handle, final_sql);
+            if res.is_err() {
+                throw "mysql_statement failed: " + string(res.unwrap_err());
+            }
+            let changes = 0;
+            if res.is_ok() {
+                let val = res.unwrap();
+                if val != null {
+                    changes = int(val);
+                }
+            }
+            return map("last_id", 0, "changes", changes);
+        }
+
+        let res3 = mysql_exec(self.handle, final_sql);
+        if res3.is_err() {
+            throw "mysql_statement failed: " + string(res3.unwrap_err());
+        }
+        return map("last_id", 0, "changes", 0);
+    }
+
+    public fn exec(self, sql: string) {
+        let res = mysql_exec(self.handle, sql);
+        if res.is_err() {
+            throw "mysql_exec failed: " + string(res.unwrap_err());
+        }
+        return res;
+    }
+
+    public fn statement(self, sql: string, params = null) {
+        return self.exec(sql_interpolate(sql, params, "mysql"));
+    }
+
+    public fn close(self) {
+        mysql_close(self.handle);
+    }
+}
+
+// ----------------------------------------------------------------------------
+// SQLite Connection (wrapper for the native db_open handle)
+// ----------------------------------------------------------------------------
+public class SqliteConnection {
+    public let handle;
+    public let conn_info;
+
+    fn new(path: string) {
+        self.conn_info = path;
+        self.handle = db_open(path);
+        self.handle.exec("PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000;");
+    }
+
+    public fn driver_name(self) -> string {
+        return "sqlite";
+    }
+
+    // Native ? binding — no escaping needed
+    public fn query(self, sql: string, params = null) {
+        if params == null {
+            return self.handle.query(sql, []);
+        }
+        return self.handle.query(sql, params);
+    }
+
+    public fn run(self, sql: string, params = null) {
+        if params == null {
+            return self.handle.run(sql, []);
+        }
+        return self.handle.run(sql, params);
+    }
+
+    public fn exec(self, sql: string) {
+        return self.handle.exec(sql);
+    }
+
+    public fn statement(self, sql: string, params = null) {
+        if params == null or params.len() == 0 {
+            return self.handle.exec(sql);
+        }
+        return self.handle.run(sql, params);
+    }
+
+    public fn close(self) {
+        self.handle.exec("PRAGMA wal_checkpoint(TRUNCATE);");
+        self.handle.close();
+    }
+}

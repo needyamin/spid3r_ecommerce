@@ -1,0 +1,76 @@
+// app/Repositories/UserRepository.matrix
+// Phase 2 — customers & role/permission lookups (Phase 3 uses these).
+
+import "framework/Database/DB";
+import "framework/Auth/Hash";
+
+public class UserRepository {
+    fn new() {}
+
+    public fn create_customer(self, email: string, name: string, plain_password: string) {
+        let clean = string(email).trim().lower();
+        let existing = DB.table("users").where("email", "=", clean).first();
+        if existing != null {
+            return null;   // caller turns this into a 422
+        }
+        let id = DB.table("users").insert(map(
+            "name", name,
+            "email", clean,
+            "password", Hash.make(plain_password),
+            "status", "active",
+            "created_at", string(unix_time()),
+            "updated_at", string(unix_time())
+        ));
+        let role = DB.table("roles").where("slug", "=", "customer").first();
+        if role != null {
+            DB.table("user_roles").insert(map("user_id", id, "role_id", role["id"]));
+        }
+        return DB.table("users").where("id", "=", id).first();
+    }
+
+    public fn roles_for(self, user_id) {
+        let rows = DB.table("user_roles").where("user_id", "=", user_id).get();
+        let out = [];
+        let i = 0;
+        while i < rows.len() {
+            let role = DB.table("roles").where("id", "=", rows[i]["role_id"]).first();
+            if role != null {
+                out.push(string(role["slug"]));
+            }
+            i += 1;
+        }
+        return out;
+    }
+
+    public fn has_role(self, user_id, slug: string) -> bool {
+        let roles = self.roles_for(user_id);
+        let i = 0;
+        while i < roles.len() {
+            if roles[i] == slug {
+                return true;
+            }
+            i += 1;
+        }
+        return false;
+    }
+
+    public fn has_permission(self, user_id, permission_slug: string) -> bool {
+        let rows = DB.table("user_roles").where("user_id", "=", user_id).get();
+        let perm = DB.table("permissions").where("slug", "=", permission_slug).first();
+        if perm == null {
+            return false;
+        }
+        let i = 0;
+        while i < rows.len() {
+            let hits = DB.table("role_permissions")
+                .where("role_id", "=", rows[i]["role_id"])
+                .where("permission_id", "=", perm["id"])
+                .count();
+            if hits > 0 {
+                return true;
+            }
+            i += 1;
+        }
+        return false;
+    }
+}

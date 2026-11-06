@@ -1,0 +1,123 @@
+// app/Services/GiftCardService.matrix
+// Phase 10 — gift cards.
+//
+// SECURITY CONTRACT:
+//   - The raw code is NEVER stored. The database holds only its SHA-256
+//     hash, so a database leak cannot yield usable gift cards.
+//   - The raw code is returned exactly once, to the purchaser, at issue time.
+//   - Redemption uses an ATOMIC conditional decrement (balance >= amount)
+//     so two concurrent checkouts can never spend the same balance twice.
+//
+// MONEY RULE: every amount is INTEGER MINOR UNITS of the card's currency.
+
+import "framework/Database/DB";
+import "framework/HttpException";
+
+public class GiftCardService {
+    fn new() {}
+
+    // Normalised hash for a customer-entered code.
+    fn hash_of(self, code: string) -> string {
+        return sha256(string(code).trim().upper());
+    }
+
+    fn card_by_code(self, code: string) {
+        let raw = string(code).trim();
+        if raw == "" {
+            return null;
+        }
+        return DB.table("gift_cards").where("code_hash", "=", self.hash_of(raw)).first();
+    }
+
+    // Issue a new card. Returns the RAW code — show it once, never store it.
+    public fn issue(self, initial_minor: int, currency: string = "BDT", recipient_email: string = "") -> string {
+        if initial_minor <= 0 {
+            throw validation_failed(map("amount", "Gift card amount must be positive."));
+        }
+        let raw = hex_encode(random_bytes(16).unwrap()).upper();
+        let id = DB.table("gift_cards").insert(map(
+            "code_hash", self.hash_of(raw),
+            "initial_minor", initial_minor,
+            "balance_minor", initial_minor,
+            "currency", string(currency).trim().upper(),
+            "recipient_email", recipient_email,
+            "status", "active"
+        ));
+        DB.table("gift_card_transactions").insert(map(
+            "gift_card_id", id, "order_id", null,
+            "amount_minor", initial_minor, "kind", "issue"
+        ));
+        return raw;
+    }
+
+    // Non-mutating preview: how much this code would cover right now.
+    // `max_minor` caps the amount at the amount still payable.
+    public fn value(self, code: string, max_minor: int) -> int {
+        let card = self.card_by_code(code);
+        if card == null or string(card["status"]) != "active" {
+            return 0;
+        }
+        let balance = int(card["balance_minor"]);
+        if balance <= 0 {
+            return 0;
+        }
+        if max_minor >= 0 and balance > max_minor {
+            return max_minor;
+        }
+        return balance;
+    }
+
+    // Balance of a card (0 when the code is unknown or inactive).
+    public fn balance(self, code: string) -> int {
+        let card = self.card_by_code(code);
+        if card == null {
+            return 0;
+        }
+        return int(card["balance_minor"]);
+    }
+
+    // Redeem against an order. Returns the amount actually applied.
+    // `order_id` may be null for a standalone redemption.
+    public fn redeem(self, code: string, amount_minor: int, order_id = null) -> int {
+        if amount_minor <= 0 {
+            throw validation_failed(map("amount", "Charge amount must be positive."));
+        }
+        let card = self.card_by_code(code);
+        if card == null or string(card["status"]) != "active" {
+            throw validation_failed(map("gift_card", "Gift card is invalid or inactive."));
+        }
+        let balance = int(card["balance_minor"]);
+        let applied = amount_minor;
+        if applied > balance {
+            applied = balance;
+        }
+        if applied <= 0 {
+            throw validation_failed(map("gift_card", "Gift card has no balance."));
+        }
+        // ATOMIC conditional decrement: if another transaction already spent
+        // the balance, this changes 0 rows and nothing is applied.
+        let changes = DB.table("gift_cards")
+            .where("id", "=", card["id"])
+            .where("balance_minor", ">=", applied)
+            .decrement("balance_minor", applied);
+        if changes == 0 {
+            return 0;
+        }
+        if balance - applied <= 0 {
+            DB.table("gift_cards").where("id", "=", card["id"]).update(map("status", "redeemed"));
+        }
+        DB.table("gift_card_transactions").insert(map(
+            "gift_card_id", card["id"], "order_id", order_id,
+            "amount_minor", applied, "kind", "redeem"
+        ));
+        return applied;
+    }
+
+    public fn transactions(self, card_id) {
+        return DB.table("gift_card_transactions").where("gift_card_id", "=", card_id).orderBy("id", "DESC").get();
+    }
+
+    public fn list(self) {
+        return DB.table("gift_cards").orderBy("id", "DESC").limit(100).get();
+    }
+}

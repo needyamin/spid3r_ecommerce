@@ -1,0 +1,136 @@
+// app/Support/Money.matrix
+// Spid3r Store — money helpers.
+//
+// RULE: all monetary amounts in the database and services are INTEGER
+// MINOR UNITS (poisha for BDT, cents for USD/EUR). Floats never touch
+// money. Formatting to major-unit strings happens only at the view edge
+// through these helpers.
+//
+//   Money.to_minor("1234.56")   -> 123456
+//   Money.to_major(123456)      -> "1234.56"
+//   Money.format(123456, "BDT") -> "৳1,234.56"
+
+fn is_digit(ch: string) -> bool {
+    return ch == "0" or ch == "1" or ch == "2" or ch == "3" or ch == "4"
+        or ch == "5" or ch == "6" or ch == "7" or ch == "8" or ch == "9";
+}
+
+public fn to_minor(amount_str) -> int {
+    // Accepts "1234.56", "1234", "1,234.56" — digits grouped or not.
+    // Anything that is not recognisably an amount (user-supplied garbage,
+    // injection payloads) yields 0 rather than a crash: a filter bound to 0
+    // simply does not apply.
+    let s = string(amount_str).trim();
+    if s == "" {
+        return 0;
+    }
+    let cleaned = "";
+    let seen_dot = false;
+    let i = 0;
+    while i < len(s) {
+        let ch = s.slice(i, i + 1);
+        if ch == "," or ch == " " {
+            i += 1;
+            continue;
+        }
+        if ch == "." {
+            if seen_dot {
+                return 0;   // two decimal points -> not an amount
+            }
+            seen_dot = true;
+            cleaned = cleaned + ch;
+            i += 1;
+            continue;
+        }
+        if is_digit(ch) {
+            cleaned = cleaned + ch;
+            i += 1;
+            continue;
+        }
+        if ch == "-" and i == 0 {
+            cleaned = cleaned + ch;   // a leading sign only
+            i += 1;
+            continue;
+        }
+        return 0;   // any other character -> not an amount
+    }
+    let neg = false;
+    if cleaned.starts_with("-") {
+        neg = true;
+        cleaned = cleaned.slice(1, len(cleaned));
+    }
+    if cleaned == "" or cleaned == "." {
+        return 0;
+    }
+    let major = cleaned;
+    let frac = "";
+    let dot = cleaned.index_of(".");
+    if dot >= 0 {
+        major = cleaned.slice(0, dot);
+        frac = cleaned.slice(dot + 1, len(cleaned));
+    }
+    while len(frac) < 2 {
+        frac = frac + "0";
+    }
+    if len(frac) > 2 {
+        frac = frac.slice(0, 2);   // truncate beyond minor precision
+    }
+    if major == "" {
+        major = "0";
+    }
+    let value = int(major) * 100 + int(frac);
+    if neg {
+        return 0 - value;
+    }
+    return value;
+}
+
+public fn to_major(minor_units) -> string {
+    let v = int(minor_units);
+    let neg = "";
+    if v < 0 {
+        neg = "-";
+        v = 0 - v;
+    }
+    let major = v / 100;
+    let frac = v - major * 100;
+    let frac_str = string(frac);
+    if len(frac_str) == 1 {
+        frac_str = "0" + frac_str;
+    }
+    return neg + string(major) + "." + frac_str;
+}
+
+// Thousands-grouped, symbol-prefixed display string.
+public fn format(minor_units, currency) -> string {
+    let symbols = map("BDT", "৳", "USD", "$", "EUR", "€");
+    let symbol = "৳";
+    if symbols.has(string(currency).upper()) {
+        symbol = symbols[string(currency).upper()];
+    }
+    let v = int(minor_units);
+    let neg = "";
+    if v < 0 {
+        neg = "-";
+        v = 0 - v;
+    }
+    let major = v / 100;
+    let frac = v - major * 100;
+    let digits = string(major);
+    let grouped = "";
+    let i = 0;
+    let n = len(digits);
+    while i < n {
+        grouped = grouped + digits.slice(i, i + 1);
+        let pos_from_right = n - i - 1;
+        if pos_from_right > 0 and pos_from_right % 3 == 0 {
+            grouped = grouped + ",";
+        }
+        i += 1;
+    }
+    let frac_str = string(frac);
+    if len(frac_str) == 1 {
+        frac_str = "0" + frac_str;
+    }
+    return neg + symbol + grouped + "." + frac_str;
+}

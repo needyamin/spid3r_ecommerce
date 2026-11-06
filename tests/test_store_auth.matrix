@@ -1,0 +1,237 @@
+// tests/test_store_auth.matrix
+// Phase 3 — authentication & authorization integration tests.
+// Drives the real Application kernel with direct request maps (no sockets).
+
+import "framework/Application";
+import "framework/Router";
+import "framework/Database/DB";
+import "framework/Auth/Hash";
+import "routes/web";
+import "routes/queue";
+import "app/Middleware/StoreMiddleware";
+import "app/Services/AuthService";
+import "app/Policies/AccessPolicy";
+import "database/seeders/DatabaseSeeder";
+
+fn get(app, path: string, cookie: string = "") {
+    let headers = map();
+    if cookie != "" {
+        headers["cookie"] = cookie;
+    }
+    return app.handle_request(map("method", "GET", "path", path, "headers", headers));
+}
+
+fn post(app, path: string, data, cookie: string = "") {
+    let headers = map();
+    if cookie != "" {
+        headers["cookie"] = cookie;
+    }
+    return app.handle_request(map("method", "POST", "path", path, "headers", headers, "data", data));
+}
+
+fn cookie_value(res) -> string {
+    let raw = string(res["headers"]["set-cookie"]);
+    let first = raw.split(";")[0];
+    return first.split("=")[1];
+}
+
+fn session_csrf(token: string) -> string {
+    let rows = DB.select("SELECT payload FROM sessions WHERE token = ?", [token]);
+    if rows.len() == 0 {
+        return "";
+    }
+    return string(rows[0]["payload"]);
+}
+
+fn test_registration_and_login(app, tag: string) {
+    let email = "auth-" + tag + "@example.test";
+    assert(string(get(app, "/login")["body"]).contains("Sign in"), "login page renders");
+
+    let weak = post(app, "/register", map(
+        "name", "Probe User", "email", email,
+        "password", "short", "password_confirmation", "short"
+    ));
+    assert(weak["status"] == 422, "weak password rejected with 422");
+
+    let ok = post(app, "/register", map(
+        "name", "Probe User", "email", email,
+        "password", "correct-horse", "password_confirmation", "correct-horse"
+    ));
+    assert(ok["status"] == 302, "registration redirects to login");
+    assert(string(ok["headers"]["location"]).contains("/login"), "registration does not auto-login");
+
+    let dup = post(app, "/register", map(
+        "name", "Dup", "email", email,
+        "password", "correct-horse", "password_confirmation", "correct-horse"
+    ));
+    assert(dup["status"] == 422, "duplicate email rejected");
+
+    let bad = post(app, "/login", map("email", email, "password", "wrong-password"));
+    assert(bad["status"] == 401, "bad credentials return 401");
+
+    let logged = post(app, "/login", map("email", email, "password", "correct-horse"));
+    assert(logged["status"] == 302, "valid credentials redirect to account");
+    let token = cookie_value(logged);
+    assert(token.starts_with("sess_"), "session cookie carries a CSPRNG token");
+    assert(string(logged["headers"]["set-cookie"]).contains("HttpOnly"), "cookie is HttpOnly");
+    assert(string(logged["headers"]["set-cookie"]).contains("SameSite=Lax"), "cookie is SameSite=Lax");
+
+    let cookie = "spid3r_session=" + token;
+    let acct = get(app, "/account", cookie);
+    assert(acct["status"] == 200, "authenticated account page is 200");
+    assert(string(acct["body"]).contains(email), "account page shows the signed-in email");
+
+    // CSRF: authenticated state-changing POST without token is rejected (419).
+    let no_csrf = post(app, "/account/profile", map("name", "Unauthorized"), cookie);
+    assert(no_csrf["status"] == 419, "missing CSRF token rejected on cookie session");
+
+    let csrf = session_csrf(token);
+    assert(csrf.starts_with("csrf_"), "session stores a per-session CSRF token");
+    let prof = post(app, "/account/profile", map("name", "Probe Renamed", "_csrf", csrf), cookie);
+    assert(prof["status"] == 302, "valid CSRF token allows the profile update");
+    let renamed = DB.table("users").where("email", "=", email).first();
+    assert(renamed["name"] == "Probe Renamed", "profile update persisted");
+
+    let out = post(app, "/logout", map("_csrf", csrf), cookie);
+    assert(out["status"] == 302, "logout succeeds with valid CSRF token");
+    assert(get(app, "/account", cookie)["status"] != 200, "session revoked after logout");
+    println("  [PASS] test_registration_and_login");
+}
+
+fn test_password_reset(app, tag: string) {
+    let svc = new AuthService();
+    let email = "reset-" + tag + "@example.test";
+    let user = svc.register("Reset Probe", email, "original-pass");
+    assert(user != null, "reset user created");
+
+    assert(svc.request_password_reset("nobody@nowhere.test") == null, "unknown email yields no token");
+    let token = svc.request_password_reset(email);
+    assert(token != null and len(token) > 20, "reset token issued");
+
+    // Only the hash is stored — the raw token must never appear in the DB.
+    let rows = DB.table("password_resets").where("user_id", "=", user["id"]).get();
+    assert(rows.len() == 1 and rows[0]["token_hash"] != token, "reset token stored hashed");
+    assert(Hash.check(token, string(rows[0]["token_hash"])), "stored hash verifies the raw token");
+
+    assert(svc.reset_password(token, "brand-new-pass"), "password reset succeeds");
+    assert(svc.reset_password(token, "replay-pass") == false, "reset token is single-use");
+    assert(svc.login(email, "brand-new-pass") != null, "login works with the new password");
+    assert(svc.login(email, "original-pass") == null, "old password no longer works");
+    println("  [PASS] test_password_reset");
+}
+
+fn test_email_verification(app, tag: string) {
+    let svc = new AuthService();
+    let email = "verify-" + tag + "@example.test";
+    let user = svc.register("Verify Probe", email, "verify-pass");
+    let token = svc.issue_email_verification(user["id"]);
+    assert(svc.verify_email(token), "verification token accepted");
+    let row = DB.table("users").where("id", "=", user["id"]).first();
+    assert(row["email_verified_at"] != null, "email_verified_at stamped");
+    assert(svc.verify_email(token) == false, "verification is single-use");
+    println("  [PASS] test_email_verification");
+}
+
+fn test_account_status_and_rbac(app, tag: string) {
+    let svc = new AuthService();
+    let policy = new AccessPolicy();
+    let email = "rbac-" + tag + "@example.test";
+    let user = svc.register("RBAC Probe", email, "rbac-pass");
+    let uid = user["id"];
+
+    assert(policy.is_customer(uid), "new account has customer role");
+    assert(not policy.is_admin(uid), "customer is not admin");
+    assert(not policy.can(uid, "catalog.manage"), "customer lacks catalog permission");
+
+    assert(svc.set_status(uid, "suspended"), "account suspended");
+    assert(svc.login(email, "rbac-pass") == null, "suspended account cannot log in");
+    assert(svc.set_status(uid, "active"), "account reactivated");
+    assert(svc.login(email, "rbac-pass") != null, "reactivated account can log in");
+
+    // Promote to admin → all permissions + guarded admin routes open up.
+    let admin_role = DB.table("roles").where("slug", "=", "admin").first();
+    DB.table("user_roles").insert(map("user_id", uid, "role_id", admin_role["id"]));
+    assert(policy.is_admin(uid), "admin role recognized");
+    assert(policy.can(uid, "catalog.manage"), "admin inherits catalog permission");
+    let token = svc.login(email, "rbac-pass");
+    let cookie = "spid3r_session=" + token;
+    assert(get(app, "/admin/", cookie)["status"] == 200, "admin dashboard open to admin");
+    assert(get(app, "/admin/catalog", cookie)["status"] == 200, "permission-gated catalog open to admin");
+    println("  [PASS] test_account_status_and_rbac");
+}
+
+fn test_customer_blocked_from_admin(app, tag: string) {
+    let svc = new AuthService();
+    let email = "cust-" + tag + "@example.test";
+    let user = svc.register("Plain Customer", email, "cust-pass");
+    let token = svc.login(email, "cust-pass");
+    let cookie = "spid3r_session=" + token;
+    assert(get(app, "/admin/", cookie)["status"] == 403, "role:admin blocks customers with 403");
+    assert(get(app, "/admin/catalog", cookie)["status"] == 403, "permission gate blocks customers with 403");
+    assert(get(app, "/admin/")["status"] == 401, "anonymous admin access is 401");
+    println("  [PASS] test_customer_blocked_from_admin");
+}
+
+fn test_login_rate_limit(app, tag: string) {
+    // Distinct pseudo-session isolates this probe from earlier login hits.
+    let cookie = "spid3r_session=ratelimit-probe-" + tag;
+    let limited = 0;
+    let i = 0;
+    while i < 7 {
+        let res = post(app, "/login", map(
+            "email", "ratelimit-" + tag + "@example.test",
+            "password", "wrong-password"
+        ), cookie);
+        if res["status"] == 429 {
+            limited += 1;
+        }
+        i += 1;
+    }
+    assert(limited > 0, "login attempts beyond the limit are throttled (429)");
+    println("  [PASS] test_login_rate_limit");
+}
+
+fn cleanup_users(tag: string) {
+    let emails = [
+        "auth-" + tag + "@example.test",
+        "reset-" + tag + "@example.test",
+        "verify-" + tag + "@example.test",
+        "rbac-" + tag + "@example.test",
+        "cust-" + tag + "@example.test"
+    ];
+    let i = 0;
+    while i < emails.len() {
+        let user = DB.table("users").where("email", "=", emails[i]).first();
+        if user != null {
+            let uid = user["id"];
+            DB.table("user_roles").where("user_id", "=", uid).delete();
+            DB.table("password_resets").where("user_id", "=", uid).delete();
+            DB.table("email_verifications").where("user_id", "=", uid).delete();
+            DB.table("sessions").where("user_id", "=", uid).delete();
+            DB.table("users").where("id", "=", uid).delete();
+        }
+        i += 1;
+    }
+}
+
+fn main() {
+    println("\n=== Running Store Auth Test Suite ===");
+    let app = new Application();
+    register_store_middleware(app);
+    register_web_routes();
+    register_queue_jobs();
+    run_database_seeder();
+    let tag = string(unix_time());
+
+    test_registration_and_login(app, tag);
+    test_password_reset(app, tag);
+    test_email_verification(app, tag);
+    test_account_status_and_rbac(app, tag);
+    test_customer_blocked_from_admin(app, tag);
+    test_login_rate_limit(app, tag);
+
+    cleanup_users(tag);
+    DB.close();
+    println("=== All Store Auth Tests Passed! ===\n");
+    return 0;
+}

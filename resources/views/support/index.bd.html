@@ -1,0 +1,37 @@
+@extends("layouts.store")
+@section('title', title)
+@section('meta_description', meta_description)
+@section("content")
+  <nav class="breadcrumb"><a href="/">Home</a> / <span>Support</span></nav>
+  <h1 class="page-title">Customer support</h1>
+  <p class="rewards-hint">Tell us what went wrong. We reply to the address you give us.</p>
+
+  <section class="auth-card">
+    <h2>Open a ticket</h2>
+    <form method="post" action="/support">
+      <input type="hidden" name="_csrf" value="{{ csrf }}">
+      <label>Email <input type="email" name="email" value="{{ email }}" maxlength="255" required></label>
+      <label>Subject <input type="text" name="subject" maxlength="160" required></label>
+      <label>Message <textarea name="message" rows="6" maxlength="4000" required></textarea></label>
+      <button class="btn btn-primary" type="submit">Send request</button>
+    </form>
+  </section>
+
+@if(tickets)
+  <section class="support-tickets">
+    <h2>Your tickets</h2>
+    <table class="data-table">
+      <thead><tr><th>Subject</th><th>Status</th><th>Opened</th></tr></thead>
+      <tbody>
+@foreach(ticket in tickets)
+        <tr>
+          <td>{{ ticket.subject }}</td>
+          <td>{{ ticket.status }}</td>
+          <td>{{ ticket.created_at }}</td>
+        </tr>
+@endforeach
+      </tbody>
+    </table>
+  </section>
+@endif
+@endsection

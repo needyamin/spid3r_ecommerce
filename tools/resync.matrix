@@ -1,0 +1,26 @@
+// resync.matrix
+// Standalone migration-registry rebuilder.
+//
+// Spid3r imports are compile-time constants, so if you hand-DELETE a
+// migration file while database/migrations/registry.matrix still imports
+// it, `spid3r magic` cannot boot (the module it references is gone).
+// This script does NOT import the registry, so it always runs:
+//
+//     SPID3R_PATH=. spid3r run tools/resync.matrix
+//
+// (SPID3R_PATH=. is required so the framework modules resolve outside
+// package mode.) It rebuilds registry.matrix from the migration files
+// currently on disk.
+
+import "framework/Console/ConsoleKernel";
+
+fn main() {
+    let kernel = new ConsoleKernel();
+    let n = kernel.sync_migration_registry(true, true);
+    if n < 0 {
+        println("[Resync] Failed to write registry.matrix.");
+        return 1;
+    }
+    println("[Resync] Registry rebuilt. Run your `spid3r magic` command again.");
+    return 0;
+}

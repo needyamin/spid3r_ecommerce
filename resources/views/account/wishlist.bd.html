@@ -1,0 +1,25 @@
+@extends("layouts.store")
+@section('title', title)
+@section('meta_description', meta_description)
+@section("content")
+  <nav class="breadcrumb"><a href="/">Home</a> / <a href="/account">Account</a> / <span>Wishlist</span></nav>
+  <h1 class="page-title">Your wishlist</h1>
+
+@if(has_items)
+  <section class="product-grid">
+@foreach(item in items)
+    <div class="product-card">
+      <a class="product-name" href="{{ item.url }}">{{ item.name }}</a>
+      <div class="product-price">{{ item.price_display }}</div>
+      <form method="post" action="/wishlist/remove" class="inline-form">
+        <input type="hidden" name="_csrf" value="{{ csrf }}">
+        <input type="hidden" name="product_id" value="{{ item.id }}">
+        <button class="btn btn-secondary" type="submit">Remove</button>
+      </form>
+    </div>
+@endforeach
+  </section>
+@else
+  <p class="empty-note">Your wishlist is empty. <a href="/catalog">Browse the catalog</a></p>
+@endif
+@endsection

@@ -1,0 +1,177 @@
+// benchmarks/bench.matrix
+// Spid3rWeb Micro-Benchmarks
+//
+// Measures framework hot paths with wall-clock timing. Run under each
+// execution engine and compare honestly:
+//
+//   spid3r run benchmarks/bench.matrix                    # tree-walk interpreter
+//   spid3r run --engine vm benchmarks/bench.matrix        # bytecode VM
+//
+// Rules: no assertions (a benchmark that flakes is a benchmark nobody
+// runs); fixed iteration counts; warm-up pass before timing; only measured
+// numbers get published (benchmarks/RESULTS.md).
+
+import "framework/Router";
+import "framework/Database/DB";
+import "framework/Database/Schema";
+import "framework/View/BD";
+
+fn fmt_rate(ops: int, ms: int) -> string {
+    if ms < 1 {
+        return string(ops) + " ops (<1 ms)";
+    }
+    let rate = int(ops * 1000 / ms);
+    return string(rate) + " ops/sec";
+}
+
+fn time_block(iterations: int, body) -> int {
+    // Warm-up (JIT-free, but primes caches and the template loader).
+    body();
+    let start = now_ms();
+    let i = 0;
+    while i < iterations {
+        body();
+        i += 1;
+    }
+    return now_ms() - start;
+}
+
+// ---------------------------------------------------------------------------
+
+fn bench_route_matching() {
+    let r = new Router();
+    let i = 0;
+    while i < 200 {
+        r.get("/static/path/" + string(i), fn(req) { return null; });
+        r.get("/users/" + string(i) + "/posts/:id", fn(req) { return null; });
+        i += 1;
+    }
+    let hits = map("n", 0);
+    let target = "/users/128/posts/4567";
+    let ms = time_block(2000, fn() {
+        let m = r.match_route("GET", target);
+        if m != null {
+            hits["n"] = hits["n"] + 1;
+        }
+    });
+    println("route matching (200 routes, param capture) : " + fmt_rate(2000, ms) + "  (" + string(ms) + " ms)");
+}
+
+fn bench_query_compilation() {
+    let ms = time_block(3000, fn() {
+        let _sql = DB.table("bench_items")
+            .where("status", "=", "active")
+            .where("score", ">", 10)
+            .whereIn("kind", ["a", "b", "c"])
+            .orderBy("created_at", "DESC")
+            .limit(20)
+            .toSql();
+    });
+    println("query compilation (4 clauses + IN + order)  : " + fmt_rate(3000, ms) + "  (" + string(ms) + " ms)");
+}
+
+fn bench_json_roundtrip() {
+    let payload = map(
+        "id", 42,
+        "name", "bench",
+        "tags", ["a", "b", "c"],
+        "meta", map("nested", true, "score", 1.5, "when", "2026-11-06")
+    );
+    let sink = map("n", 0);
+    let ms = time_block(2000, fn() {
+        let parsed = json_parse(json_write(payload));
+        if parsed["id"] == 42 {
+            sink["n"] = sink["n"] + 1;
+        }
+    });
+    println("JSON write+parse round-trip (nested)        : " + fmt_rate(2000, ms) + "  (" + string(ms) + " ms)");
+}
+
+fn bench_view_render() {
+    let data = map(
+        "title", "Benchmark",
+        "items", ["one", "two", "three", "four", "five"]
+    );
+    // Fail fast if the template is missing — a bench of error strings is
+    // worthless.
+    let probe = global_bd.render("bench", data);
+    if probe.contains("BD Error") {
+        throw "bench_view template missing: " + probe;
+    }
+    let ms = time_block(2000, fn() {
+        let _html = global_bd.render("bench", data);
+    });
+    println("BD template render (interpolation+loop)     : " + fmt_rate(2000, ms) + "  (" + string(ms) + " ms)");
+}
+
+fn bench_sqlite_crud() {
+    if DB.driver_name() != "sqlite" {
+        println("sqlite CRUD                                 : skipped (driver is " + DB.driver_name() + ")");
+        return 0;
+    }
+    Schema.dropIfExists("bench_items");
+    Schema.create("bench_items", fn(t) {
+        t.id();
+        t.string("title");
+        t.integer("score");
+        t.string("status");
+        t.timestamps();
+    });
+
+    // INSERT x 200
+    let n = 200;
+    let start = now_ms();
+    let i = 0;
+    while i < n {
+        DB.table("bench_items").insert(map(
+            "title", "item " + string(i),
+            "score", i,
+            "status", "active",
+            "created_at", "2026-11-06",
+            "updated_at", "2026-11-06"
+        ));
+        i += 1;
+    }
+    let ins_ms = now_ms() - start;
+
+    // SELECT (full scan with WHERE) x 300
+    start = now_ms();
+    i = 0;
+    while i < 300 {
+        let rows = DB.table("bench_items").where("score", ">", 100).get();
+        if rows.len() != 99 {
+            throw "bench select returned wrong row count";
+        }
+        i += 1;
+    }
+    let sel_ms = now_ms() - start;
+
+    // UPDATE x 200
+    start = now_ms();
+    i = 0;
+    while i < n {
+        DB.table("bench_items").where("id", "=", i + 1).update(map("status", "seen"));
+        i += 1;
+    }
+    let upd_ms = now_ms() - start;
+
+    Schema.dropIfExists("bench_items");
+    println("sqlite insert x" + string(n) + "                          : " + fmt_rate(n, ins_ms) + "  (" + string(ins_ms) + " ms)");
+    println("sqlite select x300 (WHERE >, 200 rows)      : " + fmt_rate(300, sel_ms) + "  (" + string(sel_ms) + " ms)");
+    println("sqlite update x" + string(n) + "                          : " + fmt_rate(n, upd_ms) + "  (" + string(upd_ms) + " ms)");
+    return true;
+}
+
+fn main() {
+    println("==================================================================");
+    println(" Spid3rWeb micro-benchmarks — " + string(now_ms()) + " ms epoch");
+    println("==================================================================");
+    bench_route_matching();
+    bench_query_compilation();
+    bench_json_roundtrip();
+    bench_view_render();
+    bench_sqlite_crud();
+    DB.close();
+    println("==================================================================");
+    return 0;
+}

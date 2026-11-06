@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Invoice {{ order.order_number }}</title>
+<link rel="stylesheet" href="/css/invoice.css">
+</head>
+<body>
+  <h1>Invoice</h1>
+  <p class="muted">{{ store_name }} · Order {{ order.order_number }} · {{ order.placed_at }}</p>
+  <p>Status: {{ status_label }}</p>
+  <p><strong>Bill to:</strong> {{ address.full_name }}, {{ address.line1 }}, {{ address.city }} {{ address.postal_code }}</p>
+
+  <table>
+    <tr><th>Item</th><th>SKU</th><th class="right">Qty</th><th class="right">Unit</th><th class="right">Line total</th></tr>
+@foreach(item in items)
+    <tr>
+      <td>{{ item.name_snapshot }}</td><td>{{ item.sku_snapshot }}</td>
+      <td class="right">{{ item.quantity }}</td>
+      <td class="right">{{ item.unit_display }}</td>
+      <td class="right">{{ item.line_display }}</td>
+    </tr>
+@endforeach
+  </table>
+
+  <div class="totals">
+    <div><span>Subtotal</span><span>{{ subtotal_display }}</span></div>
+    <div><span>Discount</span><span>− {{ discount_display }}</span></div>
+    <div><span>Shipping</span><span>{{ shipping_display }}</span></div>
+    <div><span>Tax</span><span>{{ tax_display }}</span></div>
+    <div class="grand"><span>Total</span><span>{{ total_display }}</span></div>
+  </div>
+
+  <p class="no-print"><button type="button" data-print>Print invoice</button></p>
+  <script src="/js/print.js"></script>
+</body>
+</html>

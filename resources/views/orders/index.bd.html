@@ -1,0 +1,30 @@
+@extends("layouts.store")
+@section('title', title)
+@section('meta_description', meta_description)
+@section("content")
+  <nav class="breadcrumb"><a href="/">Home</a> / <span>Order history</span></nav>
+  <h1 class="page-title">Order history</h1>
+@if(has_orders)
+  <div class="cart-list">
+@foreach(order in orders)
+    <div class="cart-row">
+      <div class="cart-row-main">
+        <a href="/orders/{{ order.order_number }}"><strong>{{ order.order_number }}</strong></a>
+        <span class="cart-unit">{{ order.status }} · {{ order.total_display }}</span>
+      </div>
+      <div class="cart-line-total">{{ order.total_display }}</div>
+    </div>
+@endforeach
+  </div>
+  <nav class="pagination">
+@if(has_prev)
+    <a class="btn btn-secondary" href="{{ prev_url }}">← Previous</a>
+@endif
+@if(has_next)
+    <a class="btn btn-secondary" href="{{ next_url }}">Next →</a>
+@endif
+  </nav>
+@else
+  <p class="empty-note">No orders yet. <a href="/catalog">Start shopping</a></p>
+@endif
+@endsection

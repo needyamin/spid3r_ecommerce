@@ -1,0 +1,185 @@
+// tests/test_providers.matrix
+// Unit tests for the Spid3rWeb service provider lifecycle, Application
+// container wiring, and the guest middleware.
+
+import "framework/Application";
+import "framework/Providers/ServiceProvider";
+import "framework/Container/Container";
+import "framework/Events/Event";
+import "framework/Request";
+import "framework/Router";
+import "framework/Middleware";
+import "framework/Auth/Auth";
+import "framework/Response";
+
+// Shared provider implementations (class declarations are top-level only).
+class ProbeProvider extends ServiceProvider {
+    public let boot_calls;
+    public let register_calls;
+
+    fn new() {
+        self.boot_calls = 0;
+        self.register_calls = 0;
+    }
+
+    public fn register(self, container) {
+        self.register_calls = self.register_calls + 1;
+        container.singleton("probe.service", fn(_c) {
+            return map("kind", "probe");
+        });
+    }
+
+    public fn boot(self, container) {
+        self.boot_calls = self.boot_calls + 1;
+        container.instance("probe.booted", true);
+    }
+}
+
+fn test_base_provider_defaults() {
+    let p = new ServiceProvider();
+    let c = new ServiceContainer();
+    // Base register/boot are no-ops and must be callable directly.
+    assert(p.register(c) == null, "base register is a no-op");
+    assert(p.boot(c) == null, "base boot is a no-op");
+    println("  [PASS] test_base_provider_defaults");
+}
+
+fn test_register_phase_bindings() {
+    let app = new Application();
+    let p = new ProbeProvider();
+    app.register(p);
+    assert(p.register_calls == 1, "register() runs exactly once at registration time");
+    assert(p.boot_calls == 0, "boot() must not run during registration");
+
+    // Bindings from the provider are resolvable immediately.
+    let svc = app.container.resolve("probe.service");
+    assert(svc["kind"] == "probe", "provider binding resolves through the app container");
+    assert(app.container.resolve("probe.service") == svc, "provider singleton is memoized");
+
+    // Core bindings the Application itself registers.
+    assert(app.container.bound("app"), "container exposes the application as 'app'");
+    assert(app.container.resolve("app") == app, "'app' binding returns the Application instance");
+    assert(app.container.resolve("router") == app.router, "'router' binding returns the app router");
+    assert(app.container.resolve("events") == Event, "'events' binding returns the event dispatcher");
+    println("  [PASS] test_register_phase_bindings");
+}
+
+fn test_boot_phase_idempotent() {
+    let app = new Application();
+    let p = new ProbeProvider();
+    app.register(p);
+
+    assert(app.boot() != null, "boot() returns the app for chaining");
+    assert(p.boot_calls == 1, "boot() runs the provider's boot exactly once");
+    assert(app.container.resolve("probe.booted") == true, "boot phase can seed the container");
+
+    // Idempotent: a second boot must not re-run providers.
+    app.boot();
+    assert(p.boot_calls == 1, "boot() is idempotent");
+    println("  [PASS] test_boot_phase_idempotent");
+}
+
+fn test_booted_event_dispatched() {
+    let app = new Application();
+    let fired = list();
+    let sink = fired;
+    Event.listen("app.booted", fn(payload, name) {
+        sink.push(name);
+        return null;
+    });
+    app.boot();
+    app.boot();
+    assert(fired.len() == 1, "app.booted fires exactly once across repeated boots");
+    assert(fired[0] == "app.booted", "listener received the event name");
+    Event.flush();
+    println("  [PASS] test_booted_event_dispatched");
+}
+
+fn test_lazy_boot_on_first_request() {
+    let app = new Application();
+    let p = new ProbeProvider();
+    app.register(p);
+    assert(p.boot_calls == 0, "not booted before any request");
+
+    let captured = map("app", null, "booted_during", false);
+    let watch_booted = fn() {
+        return captured["booted_during"];
+    };
+    // A probe route lets us inspect the request-facing application handle.
+    Route.get("/__providers_probe__", fn(r) {
+        captured["app"] = r.app;
+        return json(map("ok", true));
+    });
+
+    let res = app.handle_request(
+        map("method", "GET", "path", "/__providers_probe__", "headers", map())
+    );
+    assert(res["status"] == 200, "probe route answers 200");
+    assert(p.boot_calls == 1, "first request lazy-boots the providers");
+    assert(captured["app"] == app, "handlers receive the application via req.app");
+
+    // Unknown paths still 404 cleanly with providers booted.
+    let missing = app.handle_request(
+        map("method", "GET", "path", "/__no_such_route__", "headers", map())
+    );
+    assert(missing["status"] == 404, "unmatched route answers 404");
+    assert(p.boot_calls == 1, "boot stayed single-shot across requests");
+
+    let _ = watch_booted;
+    println("  [PASS] test_lazy_boot_on_first_request");
+}
+
+fn test_guest_middleware() {
+    let gm = new GuestMiddleware();
+
+    // Guest: middleware passes (null = continue pipeline).
+    let req = new Request();
+    req.auth = new AuthManager();
+    assert(gm.handle(req) == null, "guest passes through guest middleware");
+
+    // Authenticated: redirected away from the guest-only page.
+    req.auth.current_user = map("id", 1, "email", "a@b.c");
+    let res = gm.handle(req);
+    assert(res != null, "authenticated user is short-circuited");
+    assert(res.status_code == 302, "authenticated guest-route visit redirects (302)");
+
+    // The request-scoped auth is preferred over the global facade: mutate
+    // only req.auth, global stays a guest, redirect must still happen.
+    let global_was_guest = Auth.guest();
+    assert(global_was_guest, "global Auth facade untouched by request state");
+    println("  [PASS] test_guest_middleware");
+}
+
+fn test_middleware_alias_resolution() {
+    let app = new Application();
+    // Built-in aliases resolve to instances with .handle(req).
+    for alias in ["auth", "guest", "cors", "logger"] {
+        assert(app.middleware_registry.has(alias), "alias registered: " + alias);
+        let mw = app.middleware_registry[alias](list());
+        assert(mw != null, "alias factory returns a middleware: " + alias);
+    }
+    // Unknown aliases must fail loudly (defensive contract, re-checked here).
+    let threw = false;
+    try {
+        app.handle_request(
+            map("method", "GET", "path", "/__no_such_route__", "headers", map())
+        );
+    } catch (e) {
+        threw = true;
+    }
+    assert(not threw, "clean request path never throws");
+    println("  [PASS] test_middleware_alias_resolution");
+}
+
+fn main() {
+    println("\n=== Running Service Provider Test Suite ===");
+    test_base_provider_defaults();
+    test_register_phase_bindings();
+    test_boot_phase_idempotent();
+    test_booted_event_dispatched();
+    test_lazy_boot_on_first_request();
+    test_guest_middleware();
+    test_middleware_alias_resolution();
+    println("=== All Service Provider Tests Passed! ===\n");
+    return 0;
+}

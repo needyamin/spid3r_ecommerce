@@ -1,0 +1,102 @@
+// database/migrations/011_catalog.matrix
+// Phase 2 — product catalog. Money columns are INTEGER MINOR UNITS.
+
+import "framework/Database/Schema";
+import "framework/Database/Migration";
+import "framework/Database/DB";
+
+public class CatalogTables extends Migration {
+    fn new(name: string = "011_catalog") {
+        super(name);
+    }
+
+    public fn up(self) {
+        Schema.create("categories", table => {
+            table.id();
+            table.integer("parent_id").nullable();
+            table.string("name", 128);
+            table.string("slug", 160).unique();
+            table.text("description").nullable();
+            table.string("image", 255).nullable();
+            table.integer("sort_order").default(0);
+            table.boolean("is_active").default(true);
+            table.string("meta_title", 255).nullable();
+            table.string("meta_description", 255).nullable();
+            table.timestamps();
+            table.foreign("parent_id", "categories", "id", "SET NULL", "CASCADE");
+            table.index("idx_categories_parent", ["parent_id"]);
+            table.index("idx_categories_active", ["is_active", "sort_order"]);
+        });
+
+        Schema.create("brands", table => {
+            table.id();
+            table.string("name", 128).unique();
+            table.string("slug", 160).unique();
+            table.string("logo", 255).nullable();
+            table.text("description").nullable();
+            table.boolean("is_active").default(true);
+            table.timestamps();
+        });
+
+        Schema.create("products", table => {
+            table.id();
+            table.integer("category_id");
+            table.integer("brand_id").nullable();
+            table.string("name", 255);
+            table.string("slug", 255).unique();
+            table.string("sku", 64).unique();
+            table.text("short_description").nullable();
+            table.text("description").nullable();
+            table.bigint("price_minor");
+            table.bigint("compare_at_minor").nullable();
+            table.bigint("cost_minor").nullable();
+            table.string("currency", 8).default("BDT");
+            table.integer("tax_rate_bps").default(0);
+            table.string("status", 24).default("draft");
+            table.boolean("is_featured").default(false);
+            table.integer("weight_grams").default(0);
+            table.string("meta_title", 255).nullable();
+            table.string("meta_description", 255).nullable();
+            table.timestamps();
+            table.foreign("category_id", "categories", "id", "RESTRICT", "CASCADE");
+            table.foreign("brand_id", "brands", "id", "SET NULL", "CASCADE");
+            table.index("idx_products_category", ["category_id"]);
+            table.index("idx_products_brand", ["brand_id"]);
+            table.index("idx_products_status", ["status", "is_featured"]);
+        });
+
+        Schema.create("product_variants", table => {
+            table.id();
+            table.integer("product_id");
+            table.string("sku", 64).unique();
+            table.string("name", 128);
+            table.text("attributes_json").nullable();
+            table.bigint("price_minor");
+            table.bigint("compare_at_minor").nullable();
+            table.boolean("is_active").default(true);
+            table.timestamps();
+            table.foreign("product_id", "products", "id", "CASCADE", "CASCADE");
+            table.index("idx_variants_product", ["product_id"]);
+        });
+
+        Schema.create("product_images", table => {
+            table.id();
+            table.integer("product_id");
+            table.string("path", 255);
+            table.string("alt_text", 255).nullable();
+            table.integer("sort_order").default(0);
+            table.boolean("is_primary").default(false);
+            table.timestamps();
+            table.foreign("product_id", "products", "id", "CASCADE", "CASCADE");
+            table.index("idx_images_product", ["product_id", "sort_order"]);
+        });
+    }
+
+    public fn down(self) {
+        Schema.dropIfExists("product_images");
+        Schema.dropIfExists("product_variants");
+        Schema.dropIfExists("products");
+        Schema.dropIfExists("brands");
+        Schema.dropIfExists("categories");
+    }
+}

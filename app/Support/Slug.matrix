@@ -1,0 +1,44 @@
+// app/Support/Slug.matrix
+// Phase 4 — deterministic, SEO-friendly slugs (used by products, categories
+// and brands). No regex dependency: an explicit whitelist keeps slugs ASCII
+// and crawlable on every engine.
+
+public fn make(raw) -> string {
+    let s = string(raw).trim().lower();
+    let allowed = "abcdefghijklmnopqrstuvwxyz0123456789-";
+    let out = "";
+    let i = 0;
+    while i < len(s) {
+        let ch = s.slice(i, i + 1);
+        if allowed.contains(ch) {
+            out = out + ch;
+        } elif ch == " " or ch == "_" or ch == "." or ch == "/" {
+            if not out.ends_with("-") {
+                out = out + "-";
+            }
+        }
+        i += 1;
+    }
+    while out.starts_with("-") {
+        out = out.slice(1, len(out));
+    }
+    while out.ends_with("-") {
+        out = out.slice(0, len(out) - 1);
+    }
+    return out;
+}
+
+// Appends a short suffix so a duplicate title still gets a unique slug.
+public fn unique(raw, exists_fn) -> string {
+    let base = make(raw);
+    if base == "" {
+        base = "item";
+    }
+    let slug = base;
+    let n = 2;
+    while exists_fn(slug) {
+        slug = base + "-" + string(n);
+        n += 1;
+    }
+    return slug;
+}

@@ -1,0 +1,59 @@
+@extends("layouts.store")
+@section('title', title)
+@section('meta_description', meta_description)
+@section("content")
+  <nav class="breadcrumb"><a href="/">Home</a> / <span>{{ heading }}</span></nav>
+  <h1 class="page-title">{{ heading }}</h1>
+@if(description)
+  <p class="page-description">{{ description }}</p>
+@endif
+
+  <form class="filter-bar" method="get" action="/catalog">
+    <input type="search" name="q" value="{{ q }}" placeholder="Search products" aria-label="Search products">
+    <input type="number" name="min_price" value="{{ min_price }}" placeholder="Min price" step="0.01" min="0">
+    <input type="number" name="max_price" value="{{ max_price }}" placeholder="Max price" step="0.01" min="0">
+    <select name="sort" aria-label="Sort products">
+      <option value="newest">Newest</option>
+      <option value="price_asc">Price: low to high</option>
+      <option value="price_desc">Price: high to low</option>
+      <option value="name">Name</option>
+    </select>
+@if(category_slug)
+    <input type="hidden" name="category" value="{{ category_slug }}">
+@endif
+@if(brand_slug)
+    <input type="hidden" name="brand" value="{{ brand_slug }}">
+@endif
+    <button class="btn btn-primary" type="submit">Apply filters</button>
+  </form>
+
+  <p class="result-count">{{ total }} product(s) · page {{ page }} of {{ last_page }}</p>
+
+@if(has_products)
+    <div class="product-grid">
+@foreach(product in products)
+        <a class="product-card" href="{{ product.url }}">
+@if(product.has_image)
+          <img class="product-img" src="{{ product.image_url }}" alt="{{ product.name }}" loading="lazy" decoding="async">
+@endif
+          <div class="product-name">{{ product.name }}</div>
+@if(product.compare_display)
+          <div class="product-price-old">{{ product.compare_display }}</div>
+@endif
+          <div class="product-price">{{ product.price_display }}</div>
+        </a>
+@endforeach
+    </div>
+@else
+    <p class="empty-note">No products match these filters. <a href="/catalog">Clear filters</a></p>
+@endif
+
+  <nav class="pagination">
+@if(has_prev)
+    <a class="btn btn-secondary" href="{{ prev_url }}">← Previous</a>
+@endif
+@if(has_next)
+    <a class="btn btn-secondary" href="{{ next_url }}">Next →</a>
+@endif
+  </nav>
+@endsection

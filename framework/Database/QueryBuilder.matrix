@@ -1,0 +1,605 @@
+// framework/Database/QueryBuilder.matrix
+// Spid3rWeb Fluent SQL Query Builder — table-agnostic, injection-hardened.
+// Split out of DB.matrix; the DatabaseManager hands out instances via table().
+
+import "Connection";
+
+public class QueryBuilder {
+    public let table_name;
+    public let db_manager;
+    public let select_cols;
+    public let wheres;
+    public let joins;
+    public let order_col;
+    public let order_dir;
+    public let limit_count;
+    public let offset_count;
+
+    fn new(table: string, manager = null) {
+        self.table_name = sql_check_identifier(table);
+        self.db_manager = manager;
+        self.select_cols = ["*"];
+        self.wheres = [];
+        self.joins = [];
+        self.order_col = "";
+        self.order_dir = "ASC";
+        self.limit_count = -1;
+        self.offset_count = 0;
+    }
+
+    public fn select(self, cols) {
+        if type_of(cols) == "list" {
+            let safe = [];
+            for c in cols {
+                safe.push(sql_check_identifier(c));
+            }
+            self.select_cols = safe;
+        } else {
+            self.select_cols = [sql_check_identifier(cols)];
+        }
+        return self;
+    }
+
+    // Allowed SQL comparison operators — anything else falls back to "="
+    // so a stray user-supplied operator can never inject SQL.
+    fn check_op(self, op: string) -> string {
+        let allowed = ["=", "!=", "<>", "<", ">", "<=", ">=", "LIKE", "NOT LIKE", "IN", "NOT IN"];
+        let candidate = string(op).trim().upper();
+        for a in allowed {
+            if candidate == a {
+                return candidate;
+            }
+        }
+        return "=";
+    }
+
+    public fn where(self, column: string, op: string, val = null) {
+        sql_check_identifier(column);
+        if val == null {
+            // where("id", 5) shorthand for where("id", "=", 5)
+            val = op;
+            op = "=";
+        }
+        self.wheres.push({
+            "col": column,
+            "op": self.check_op(op),
+            "val": val,
+            "bool": "AND"
+        });
+        return self;
+    }
+
+    public fn orWhere(self, column: string, op: string, val = null) {
+        sql_check_identifier(column);
+        if val == null {
+            val = op;
+            op = "=";
+        }
+        self.wheres.push({
+            "col": column,
+            "op": self.check_op(op),
+            "val": val,
+            "bool": "OR"
+        });
+        return self;
+    }
+
+    // IN / NOT IN are the only way to reach the IN operator — the check_op
+    // whitelist stays untouched; values are bound as one ? per item.
+    public fn whereIn(self, column: string, values_list) {
+        sql_check_identifier(column);
+        if values_list == null {
+            values_list = [];
+        }
+        self.wheres.push({
+            "col": column,
+            "op": "IN",
+            "val": values_list,
+            "bool": "AND"
+        });
+        return self;
+    }
+
+    public fn whereNotIn(self, column: string, values_list) {
+        sql_check_identifier(column);
+        if values_list == null {
+            values_list = [];
+        }
+        self.wheres.push({
+            "col": column,
+            "op": "NOT IN",
+            "val": values_list,
+            "bool": "AND"
+        });
+        return self;
+    }
+
+    // NULL checks bind no parameter — compiled as "col IS NULL".
+    public fn whereNull(self, column: string) {
+        sql_check_identifier(column);
+        self.wheres.push({
+            "col": column,
+            "op": "IS NULL",
+            "val": null,
+            "bool": "AND"
+        });
+        return self;
+    }
+
+    public fn whereNotNull(self, column: string) {
+        sql_check_identifier(column);
+        self.wheres.push({
+            "col": column,
+            "op": "IS NOT NULL",
+            "val": null,
+            "bool": "AND"
+        });
+        return self;
+    }
+
+    // Grouped conditions: callback receives a fresh QueryBuilder for the same
+    // table; its wheres are compiled into one parenthesized group joined by
+    // their own bool operators, appended with bool_op (AND/OR) to the parent.
+    public fn whereGroup(self, bool_op: string, callback) {
+        let sub_qb = new QueryBuilder(self.table_name, self.db_manager);
+        callback(sub_qb);
+        let b = string(bool_op).upper();
+        if b != "OR" {
+            b = "AND";
+        }
+        self.wheres.push({
+            "col": "",
+            "op": "GROUP",
+            "val": sub_qb.wheres,
+            "bool": b
+        });
+        return self;
+    }
+
+    public fn orderBy(self, column: string, dir: string = "ASC") {
+        sql_check_identifier(column);
+        let d = string(dir).upper();
+        if d != "ASC" and d != "DESC" {
+            d = "ASC";
+        }
+        self.order_col = column;
+        self.order_dir = d;
+        return self;
+    }
+
+    public fn limit(self, count: int) {
+        self.limit_count = count;
+        return self;
+    }
+
+    public fn offset(self, count: int) {
+        self.offset_count = count;
+        return self;
+    }
+
+    // ------------------------------------------------------------------------
+    // Joins
+    // ------------------------------------------------------------------------
+
+    public fn join(self, table: string, first_col: string, op: string, second_col = null) {
+        sql_check_identifier(table);
+        sql_check_identifier(first_col);
+        if second_col != null {
+            sql_check_identifier(second_col);
+        }
+        if second_col == null {
+            second_col = op;
+            op = "=";
+        }
+        self.joins.push({
+            "type": "INNER",
+            "table": table,
+            "first": first_col,
+            "op": op,
+            "second": second_col
+        });
+        return self;
+    }
+
+    public fn innerJoin(self, table: string, first_col: string, op: string, second_col = null) {
+        return self.join(table, first_col, op, second_col);
+    }
+
+    public fn leftJoin(self, table: string, first_col: string, op: string, second_col = null) {
+        sql_check_identifier(table);
+        sql_check_identifier(first_col);
+        if second_col != null {
+            sql_check_identifier(second_col);
+        }
+        if second_col == null {
+            second_col = op;
+            op = "=";
+        }
+        self.joins.push({
+            "type": "LEFT",
+            "table": table,
+            "first": first_col,
+            "op": op,
+            "second": second_col
+        });
+        return self;
+    }
+
+    public fn rightJoin(self, table: string, first_col: string, op: string, second_col = null) {
+        sql_check_identifier(table);
+        sql_check_identifier(first_col);
+        if second_col != null {
+            sql_check_identifier(second_col);
+        }
+        if second_col == null {
+            second_col = op;
+            op = "=";
+        }
+        self.joins.push({
+            "type": "RIGHT",
+            "table": table,
+            "first": first_col,
+            "op": op,
+            "second": second_col
+        });
+        return self;
+    }
+
+    public fn crossJoin(self, table: string) {
+        sql_check_identifier(table);
+        self.joins.push({
+            "type": "CROSS",
+            "table": table,
+            "first": "",
+            "op": "",
+            "second": ""
+        });
+        return self;
+    }
+
+    public fn toSql(self) -> string {
+        let compiled = self.build_select_sql();
+        return compiled["sql"];
+    }
+
+    public fn getBindings(self) {
+        let compiled = self.build_select_sql();
+        return compiled["params"];
+    }
+
+    // ------------------------------------------------------------------------
+    // SQL Compiler
+    // ------------------------------------------------------------------------
+
+    // Compile ONE where entry to SQL, pushing its parameters into params.
+    // Handles IN/NOT IN, IS NULL/IS NOT NULL, nested GROUP entries and the
+    // default "col op ?" binding form.
+    fn compile_condition(self, w, params) -> string {
+        let op = w["op"];
+        if op == "GROUP" {
+            let sub_wheres = w["val"];
+            if sub_wheres == null or sub_wheres.len() == 0 {
+                return "1 = 1";
+            }
+            let inner = "";
+            let first = true;
+            for sw in sub_wheres {
+                if not first {
+                    inner = inner + " " + sw["bool"] + " ";
+                }
+                inner = inner + self.compile_condition(sw, params);
+                first = false;
+            }
+            return "(" + inner + ")";
+        }
+        if op == "IN" or op == "NOT IN" {
+            let vals = w["val"];
+            if vals == null or vals.len() == 0 {
+                // Empty IN can never match; empty NOT IN always matches.
+                if op == "IN" {
+                    return "1 = 0";
+                }
+                return "1 = 1";
+            }
+            let placeholders = [];
+            for v in vals {
+                placeholders.push("?");
+                params.push(v);
+            }
+            return w["col"] + " " + op + " (" + placeholders.join(", ") + ")";
+        }
+        if op == "IS NULL" or op == "IS NOT NULL" {
+            return w["col"] + " " + op;
+        }
+        params.push(w["val"]);
+        return w["col"] + " " + op + " ?";
+    }
+
+    // Compile the WHERE clause ("" when there are no wheres), appending the
+    // bound parameters to params in exact SQL order.
+    fn where_clause(self, params) -> string {
+        if self.wheres.len() == 0 {
+            return "";
+        }
+        let sql = " WHERE ";
+        let first = true;
+        for w in self.wheres {
+            if not first {
+                sql = sql + " " + w["bool"] + " ";
+            }
+            sql = sql + self.compile_condition(w, params);
+            first = false;
+        }
+        return sql;
+    }
+
+    // Shared head compiler (joins + wheres) used by get()/count()/paginate().
+    fn build_head(self, head_sql: string) {
+        let sql = head_sql + " FROM " + self.table_name;
+        let params = [];
+
+        if self.joins.len() > 0 {
+            for j in self.joins {
+                let j_type = j["type"];
+                let j_table = j["table"];
+                if j_type == "CROSS" {
+                    sql = sql + " CROSS JOIN " + j_table;
+                } else {
+                    sql = sql + " " + j_type + " JOIN " + j_table + " ON " + j["first"] + " " + j["op"] + " " + j["second"];
+                }
+            }
+        }
+
+        sql = sql + self.where_clause(params);
+
+        return { "sql": sql, "params": params };
+    }
+
+    // Full SELECT compiler with explicit limit/offset overrides so helper
+    // methods (first, paginate) can compile WITHOUT mutating the builder.
+    // limit_override < 0 means "no limit"; offset_override is the OFFSET.
+    fn build_select_sql_with(self, limit_override: int, offset_override: int) {
+        let head = self.build_head("SELECT " + self.select_cols.join(", "));
+        let sql = head["sql"];
+        let params = head["params"];
+
+        if self.order_col != "" {
+            sql = sql + " ORDER BY " + self.order_col + " " + self.order_dir;
+        }
+
+        if limit_override >= 0 {
+            sql = sql + " LIMIT " + string(limit_override);
+            if offset_override > 0 {
+                sql = sql + " OFFSET " + string(offset_override);
+            }
+        } elif offset_override > 0 {
+            // OFFSET without LIMIT: SQLite requires a LIMIT anchor.
+            if self.db_manager != null and self.db_manager.driver_name() == "sqlite" {
+                sql = sql + " LIMIT -1 OFFSET " + string(offset_override);
+            } else {
+                sql = sql + " OFFSET " + string(offset_override);
+            }
+        }
+
+        return { "sql": sql, "params": params };
+    }
+
+    public fn build_select_sql(self) {
+        return self.build_select_sql_with(self.limit_count, self.offset_count);
+    }
+
+    fn get_connection(self) {
+        return self.db_manager.connection();
+    }
+
+    // ------------------------------------------------------------------------
+    // Execution Methods
+    // ------------------------------------------------------------------------
+
+    public fn get(self) {
+        let compiled = self.build_select_sql();
+        let conn = self.get_connection();
+        return conn.query(compiled["sql"], compiled["params"]);
+    }
+
+    // Non-mutating: compiles LIMIT 1 via the override variant so the builder
+    // stays reusable after first() (limit_count is NOT changed).
+    public fn first(self) {
+        let compiled = self.build_select_sql_with(1, self.offset_count);
+        let conn = self.get_connection();
+        let rows = conn.query(compiled["sql"], compiled["params"]);
+        if rows.len() > 0 {
+            return rows[0];
+        }
+        return null;
+    }
+
+    public fn find(self, id) {
+        return self.where("id", "=", id).first();
+    }
+
+    // Refactored to share build_head() — no duplicated join/where compilation.
+    public fn count(self) -> int {
+        let head = self.build_head("SELECT count(*) as c");
+        let conn = self.get_connection();
+        let rows = conn.query(head["sql"], head["params"]);
+        if rows.len() > 0 and rows[0].has("c") {
+            return int(rows[0]["c"]);
+        }
+        return 0;
+    }
+
+    // True when at least one row matches the current constraints.
+    public fn exists(self) -> bool {
+        let head = self.build_head("SELECT 1");
+        let sql = head["sql"] + " LIMIT 1";
+        let conn = self.get_connection();
+        let rows = conn.query(sql, head["params"]);
+        return rows.len() > 0;
+    }
+
+    // The value of `column` from the first matching row (null when absent).
+    public fn value(self, column: string) {
+        sql_check_identifier(column);
+        let row = self.first();
+        if row != null and row.has(column) {
+            return row[column];
+        }
+        return null;
+    }
+
+    // List of `column` values across all matching rows.
+    public fn pluck(self, column: string) {
+        sql_check_identifier(column);
+        let rows = self.get();
+        let out = [];
+        for r in rows {
+            if r.has(column) {
+                out.push(r[column]);
+            }
+        }
+        return out;
+    }
+
+    // Offset-aware UPDATE: col = col +/- ? with the amount bound as a param.
+    fn adjust_column(self, column: string, by: int, sign: string) {
+        sql_check_identifier(column);
+        let sql = "UPDATE " + self.table_name + " SET " + column + " = " + column + " " + sign + " ?";
+        let params = [by];
+        sql = sql + self.where_clause(params);
+        let conn = self.get_connection();
+        let res = conn.run(sql, params);
+        if res.has("changes") {
+            return int(res["changes"]);
+        }
+        return 0;
+    }
+
+    public fn increment(self, column: string, by: int = 1) {
+        return self.adjust_column(column, by, "+");
+    }
+
+    public fn decrement(self, column: string, by: int = 1) {
+        return self.adjust_column(column, by, "-");
+    }
+
+    // Paginate the current constraints. The data query compiles with
+    // limit/offset overrides — the builder itself is not mutated.
+    public fn paginate(self, page: int = 1, per_page: int = 15) {
+        if page < 1 {
+            page = 1;
+        }
+        if per_page < 1 {
+            per_page = 1;
+        }
+        // Cap: a caller-supplied per_page must never turn into a
+        // full-table dump (per_page=100000 would otherwise be a
+        // denial-of-service vector on public endpoints).
+        if per_page > 100 {
+            per_page = 100;
+        }
+
+        let conn = self.get_connection();
+
+        // Total row count from the same wheres/joins.
+        let head = self.build_head("SELECT count(*) as c");
+        let count_rows = conn.query(head["sql"], head["params"]);
+        let total = 0;
+        if count_rows.len() > 0 and count_rows[0].has("c") {
+            total = int(count_rows[0]["c"]);
+        }
+
+        // last_page = ceil(total / per_page), minimum 1.
+        let last_page = int((total + per_page - 1) / per_page);
+        if last_page < 1 {
+            last_page = 1;
+        }
+
+        let offset = (page - 1) * per_page;
+        let compiled = self.build_select_sql_with(per_page, offset);
+        let rows = conn.query(compiled["sql"], compiled["params"]);
+
+        let from = offset + 1;
+        let to = offset + rows.len();
+        if rows.len() == 0 {
+            from = 0;
+            to = 0;
+        }
+
+        return map(
+            "data", rows,
+            "total", total,
+            "page", page,
+            "per_page", per_page,
+            "last_page", last_page,
+            "from", from,
+            "to", to,
+            "has_more", page < last_page
+        );
+    }
+
+    public fn insert(self, data) {
+        let keys = [];
+        let placeholders = [];
+        let params = [];
+
+        for k in data.keys() {
+            keys.push(sql_check_identifier(k));
+            placeholders.push("?");
+            params.push(data[k]);
+        }
+
+        let sql = "INSERT INTO " + self.table_name + " (" + keys.join(", ") + ") VALUES (" + placeholders.join(", ") + ")";
+        let conn = self.get_connection();
+        let res = conn.run(sql, params);
+        if res.has("last_id") {
+            return int(res["last_id"]);
+        }
+        return 0;
+    }
+
+    public fn update(self, data) {
+        let set_clauses = [];
+        let params = [];
+
+        for k in data.keys() {
+            set_clauses.push(sql_check_identifier(k) + " = ?");
+            params.push(data[k]);
+        }
+
+        let sql = "UPDATE " + self.table_name + " SET " + set_clauses.join(", ");
+        sql = sql + self.where_clause(params);
+
+        let conn = self.get_connection();
+        let res = conn.run(sql, params);
+        if res.has("changes") {
+            return int(res["changes"]);
+        }
+        return 0;
+    }
+
+    public fn delete(self) {
+        let sql = "DELETE FROM " + self.table_name;
+        let params = [];
+        sql = sql + self.where_clause(params);
+
+        let conn = self.get_connection();
+        let res = conn.run(sql, params);
+        if res.has("changes") {
+            return int(res["changes"]);
+        }
+        return 0;
+    }
+}
+
+// Escape a user-supplied value for safe embedding inside a LIKE pattern:
+// backslash first (so the escapes we add are not themselves re-escaped),
+// then the % and _ wildcards. Pair with the driver's ESCAPE clause where
+// required (PostgreSQL/MySQL honor backslash-escaping in LIKE by default).
+public fn sql_escape_like(value) -> string {
+    let s = string(value);
+    let out = s.replace("\\", "\\\\");
+    out = out.replace("%", "\\%");
+    out = out.replace("_", "\\_");
+    return out;
+}

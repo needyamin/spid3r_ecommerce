@@ -1,0 +1,128 @@
+// app/Services/ImageService.matrix
+// Phase 4 — product galleries with SAFE image uploads.
+//
+// Framework capability note (documented in docs/ecommerce/PRODUCTS.md):
+// Request.parse_multipart intentionally skips file parts (binary bodies
+// are not supported by the text-mode parser). To avoid an unnecessary
+// language-runtime change, the admin API accepts base64-encoded image
+// payloads in JSON instead. Files are validated server-side by MAGIC
+// BYTES (never by client-supplied extension or MIME), size-capped, given
+// random names, and written with the runtime's binary `write_bytes`.
+
+import "framework/Database/DB";
+import "app/Support/CatalogCache" as CatalogCache;
+import "framework/HttpException";
+import "framework/Filesystem/Storage";
+import "app/Repositories/CatalogRepository";
+
+public class ImageService {
+    public let images;
+
+    fn new() {
+        self.images = new ImageRepository();
+    }
+
+    fn detect_type(self, b) -> string {
+        let n = len(b);
+        if n >= 8 and b[0] == 137 and b[1] == 80 and b[2] == 78 and b[3] == 71 {
+            return "png";
+        }
+        if n >= 3 and b[0] == 255 and b[1] == 216 and b[2] == 255 {
+            return "jpg";
+        }
+        if n >= 6 and b[0] == 71 and b[1] == 73 and b[2] == 70 {
+            return "gif";
+        }
+        if n >= 12 and b[0] == 82 and b[1] == 73 and b[2] == 70 and b[3] == 70
+            and b[8] == 87 and b[9] == 69 and b[10] == 66 and b[11] == 80 {
+            return "webp";
+        }
+        return "";
+    }
+
+    // `payload` may be a plain base64 string or a data: URL.
+    public fn upload(self, product_id, payload: string, alt_text: string, is_primary: bool) {
+        let product = DB.table("products").where("id", "=", product_id).first();
+        if product == null {
+            throw not_found("Product not found.");
+        }
+        let b64 = string(payload).trim();
+        let comma = b64.index_of(",");
+        if b64.starts_with("data:") and comma >= 0 {
+            b64 = b64.slice(comma + 1, len(b64));
+        }
+        if len(b64) > 2800000 {
+            throw validation_failed(map("image", "Image exceeds the 2 MiB limit."));
+        }
+        let bytes = base64_decode(b64);
+        if len(bytes) < 8 or len(bytes) > 2097152 {
+            throw validation_failed(map("image", "Image exceeds the 2 MiB limit or is empty."));
+        }
+        let ext = self.detect_type(bytes);
+        if ext == "" {
+            throw validation_failed(map("image", "Only PNG, JPEG, GIF and WEBP images are allowed."));
+        }
+
+        let rel = "products/" + string(product_id) + "/"
+            + hex_encode(random_bytes(8).unwrap()) + "." + ext;
+        let disk = Storage.disk("public");
+        // put() creates parent dirs; write_bytes then replaces the empty
+        // placeholder with the exact binary payload.
+        disk.put(rel, "");
+        let written = write_bytes(disk.path(rel), bytes);
+        if written.is_err() {
+            throw bad_request("Could not store the uploaded image.");
+        }
+        if not disk.exists(rel) {
+            throw bad_request("Uploaded image verification failed.");
+        }
+        CatalogCache.bump_catalog_version();
+
+        return DB.transaction(fn() {
+            if is_primary {
+                self.images.clear_primary(product_id);
+            }
+            let id = self.images.create(map(
+                "product_id", product_id,
+                "path", rel,
+                "alt_text", alt_text,
+                "sort_order", self.images.next_sort(product_id),
+                "is_primary", 0
+            ));
+            if is_primary {
+                DB.table("product_images").where("id", "=", id).update(map("is_primary", 1));
+            }
+            return DB.table("product_images").where("id", "=", id).first();
+        });
+    }
+
+    public fn gallery(self, product_id) {
+        let rows = self.images.for_product(product_id);
+        let disk = Storage.disk("public");
+        let out = [];
+        let i = 0;
+        while i < rows.len() {
+            let row = rows[i];
+            out.push(map(
+                "id", row["id"],
+                "url", disk.url(row["path"]),
+                "alt_text", row["alt_text"],
+                "sort_order", row["sort_order"],
+                "is_primary", row["is_primary"] == 1 or row["is_primary"] == true
+            ));
+            i += 1;
+        }
+        return out;
+    }
+
+    public fn delete(self, image_id) -> bool {
+        let row = self.images.find(image_id);
+        if row == null {
+            throw not_found("Image not found.");
+        }
+        Storage.disk("public").delete(row["path"]);
+        let removed = self.images.delete(image_id);
+        CatalogCache.bump_catalog_version();
+        return removed;
+    }
+}

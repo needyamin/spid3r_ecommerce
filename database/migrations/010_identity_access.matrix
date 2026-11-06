@@ -1,0 +1,87 @@
+// database/migrations/010_identity_access.matrix
+// Phase 2 — identity & access-control tables.
+// Dependency order: users (001) exists → roles → permissions → pivots.
+
+import "framework/Database/Schema";
+import "framework/Database/Migration";
+import "framework/Database/DB";
+
+public class IdentityAccessTables extends Migration {
+    fn new(name: string = "010_identity_access") {
+        super(name);
+    }
+
+    public fn up(self) {
+        // Extend the framework's users table for storefront accounts.
+        Schema.table("users", table => {
+            table.string("phone", 32).nullable();
+            table.string("status", 24).default("active").nullable();
+            table.string("email_verified_at", 32).nullable();
+            table.string("last_login_at", 32).nullable();
+            table.integer("loyalty_points").default(0).nullable();
+        });
+
+        Schema.create("roles", table => {
+            table.id();
+            table.string("name", 64).unique();
+            table.string("slug", 64).unique();
+            table.string("description").nullable();
+            table.timestamps();
+        });
+
+        Schema.create("permissions", table => {
+            table.id();
+            table.string("name", 96).unique();
+            table.string("slug", 96).unique();
+            table.string("description").nullable();
+            table.timestamps();
+        });
+
+        Schema.create("user_roles", table => {
+            table.id();
+            table.integer("user_id");
+            table.integer("role_id");
+            table.foreign("user_id", "users", "id", "CASCADE", "CASCADE");
+            table.foreign("role_id", "roles", "id", "CASCADE", "CASCADE");
+            table.unique_columns(["user_id", "role_id"]);
+            table.timestamps();
+        });
+
+        // RBAC join table (permission management, Phase 3/9).
+        Schema.create("role_permissions", table => {
+            table.id();
+            table.integer("role_id");
+            table.integer("permission_id");
+            table.foreign("role_id", "roles", "id", "CASCADE", "CASCADE");
+            table.foreign("permission_id", "permissions", "id", "CASCADE", "CASCADE");
+            table.unique_columns(["role_id", "permission_id"]);
+        });
+
+        Schema.create("addresses", table => {
+            table.id();
+            table.integer("user_id");
+            table.string("label", 64).nullable();
+            table.string("full_name", 128);
+            table.string("phone", 32);
+            table.string("line1", 255);
+            table.string("line2", 255).nullable();
+            table.string("city", 96);
+            table.string("district", 96).nullable();
+            table.string("postal_code", 24).nullable();
+            table.string("country", 64).default("Bangladesh").nullable();
+            table.boolean("is_default").default(false);
+            table.timestamps();
+            table.foreign("user_id", "users", "id", "CASCADE", "CASCADE");
+            table.index("idx_addresses_user", ["user_id"]);
+        });
+    }
+
+    public fn down(self) {
+        // Reverse dependency order.
+        Schema.dropIfExists("addresses");
+        Schema.dropIfExists("role_permissions");
+        Schema.dropIfExists("user_roles");
+        Schema.dropIfExists("permissions");
+        Schema.dropIfExists("roles");
+    }
+}

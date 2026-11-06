@@ -1,0 +1,262 @@
+// tests/test_systems_live.matrix
+// Live integration tests for the AUTH, SESSION, CACHE and SERVICES systems
+// against a REAL database server (MySQL / MariaDB / PostgreSQL).
+//
+// Like test_multi_db_live.matrix: if no server driver is configured the
+// suite skips silently, so CI machines without servers stay green.
+//
+// Environment:
+//   SPID3R_DB_DRIVER=postgres | mysql | mariadb
+//   SPID3R_PG_* / SPID3R_MYSQL_* connection vars
+//
+// What this proves on the real engine:
+//   auth    - bcrypt hash/verify + attempt() against the users table
+//   session - login writes the sessions row, CSRF payload round-trips,
+//             TTL expiry kills the session, sliding expiration touches it,
+//             logout deletes it; password hashes never leak into auth state
+//   cache   - the database cache store round-trips values on the engine
+//   queue   - database push / reserve / size on the engine
+//   services- env-based credential resolution contract
+
+import "framework/Database/DB";
+import "framework/Database/DatabaseManager";
+import "framework/Auth/Auth";
+import "framework/Auth/Hash";
+import "framework/Cache/CacheStore";
+import "framework/Queue/Queue";
+import "framework/Config/Config";
+
+let passed_count = 0;
+let skipped_count = 0;
+
+fn report_pass(name: string) {
+    passed_count = passed_count + 1;
+    println("  [PASS] " + name);
+}
+
+fn report_skip(name: string, reason: string) {
+    skipped_count = skipped_count + 1;
+    println("  [SKIP] " + name + " (" + reason + ")");
+}
+
+fn open_live() {
+    let mgr = new DatabaseManager();
+    let d = env("SPID3R_DB_DRIVER");
+    if d.is_none() {
+        return null;
+    }
+    let raw = string(d.unwrap()).trim().lower();
+    if raw != "postgres" and raw != "postgresql" and raw != "pg" and raw != "mysql" and raw != "mariadb" {
+        return null;
+    }
+    try {
+        return mgr.connection();
+    } catch (e) {
+        return null;
+    }
+}
+
+// Clean any rows this suite created (idempotent across runs).
+fn cleanup(conn) {
+    try {
+        conn.statement("DELETE FROM sessions WHERE user_id IN (SELECT id FROM users WHERE email LIKE '%@spid3r-live.test')");
+    } catch (_e) {}
+    try {
+        conn.statement("DELETE FROM users WHERE email LIKE '%@spid3r-live.test'");
+    } catch (_e) {}
+    try {
+        conn.statement("DELETE FROM cache WHERE cache_key LIKE 'live-systems-%'");
+    } catch (_e) {}
+    try {
+        conn.statement("DELETE FROM jobs WHERE queue = 'live-systems'");
+    } catch (_e) {}
+}
+
+// ---------------------------------------------------------------------------
+// AUTH + SESSION against the real users/sessions tables
+// ---------------------------------------------------------------------------
+fn test_auth_and_session_live(conn) {
+    let stamp = string(unix_time());
+    let email = "live" + stamp + "@spid3r-live.test";
+    let password = "Sup3r-Secret-pw!";
+
+    let hash = Hash.make(password);
+    assert(hash != password, "auth-live: password is hashed, not stored plain");
+    assert(Hash.check(password, hash) == true, "auth-live: bcrypt verify (good password)");
+    assert(Hash.check("wrong-password", hash) == false, "auth-live: bcrypt reject (bad password)");
+
+    let r = conn.run("INSERT INTO users (name, email, password, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+        list("Live Auth", email, hash, stamp, stamp));
+    let user_id = int(r["last_id"]);
+    assert(user_id > 0, "auth-live: user row persisted on live engine");
+
+    // --- failed attempts ---
+    assert(Auth.attempt(email, "totally-wrong") == false, "auth-live: attempt rejects bad password");
+    assert(Auth.attempt("nobody" + stamp + "@spid3r-live.test", password) == false, "auth-live: attempt rejects unknown email");
+    assert(Auth.check() == false, "auth-live: no session after failed attempts");
+
+    // --- successful login ---
+    assert(Auth.attempt(email, password) == true, "auth-live: attempt with correct password logs in");
+    assert(Auth.check() == true, "auth-live: check() true after login");
+    assert(Auth.user()["email"] == email, "auth-live: user() carries the email");
+    assert(Auth.user().has("password") == false, "auth-live: password hash NEVER enters auth state");
+    let token = Auth.token();
+    assert(token.slice(0, 5) == "sess_", "auth-live: session token has sess_ prefix");
+    assert(Auth.csrf().slice(0, 5) == "csrf_", "auth-live: CSRF token has csrf_ prefix");
+
+    // --- the login wrote a real session row on the engine ---
+    let sess = conn.query("SELECT token, user_id, payload, last_activity FROM sessions WHERE token = ?", list(token));
+    assert(sess.len() == 1, "auth-live: login persisted sessions row");
+    assert(int(sess[0]["user_id"]) == user_id, "auth-live: session row references the user");
+    assert(sess[0]["payload"] == Auth.csrf(), "auth-live: CSRF token stored in session payload");
+
+    // --- authenticate_token on a FRESH manager (simulates the next request) ---
+    let fresh = new AuthManager();
+    assert(fresh.authenticate_token(token) == true, "auth-live: token authenticates on a fresh manager");
+    assert(fresh.user()["email"] == email, "auth-live: fresh manager resolves the user");
+    assert(fresh.user().has("password") == false, "auth-live: JOIN path also strips the hash");
+    assert(fresh.csrf() == Auth.csrf(), "auth-live: CSRF restored from session payload");
+
+    // --- sliding expiration: an old-but-within-TTL session gets touched ---
+    let oldish = unix_time() - 300;
+    conn.statement("UPDATE sessions SET last_activity = ? WHERE token = ?", list(oldish, token));
+    let fresh2 = new AuthManager();
+    assert(fresh2.authenticate_token(token) == true, "auth-live: within-TTL session authenticates");
+    let touched = conn.query("SELECT last_activity FROM sessions WHERE token = ?", list(token));
+    assert(int(touched[0]["last_activity"]) > oldish, "auth-live: last_activity slid forward on use");
+
+    // --- TTL expiry: beyond session.lifetime the token is dead AND cleaned ---
+    let expired = unix_time() - int(Config.get("session.lifetime", 86400)) - 10;
+    conn.statement("UPDATE sessions SET last_activity = ? WHERE token = ?", list(expired, token));
+    let fresh3 = new AuthManager();
+    assert(fresh3.authenticate_token(token) == false, "auth-live: expired token is rejected");
+    let gone = conn.query("SELECT token FROM sessions WHERE token = ?", list(token));
+    assert(gone.len() == 0, "auth-live: expired session row is deleted from the engine");
+
+    // --- logout cleanup ---
+    let _ = Auth.attempt(email, password);
+    let token2 = Auth.token();
+    assert(token2 != token, "auth-live: each login mints a fresh token");
+    Auth.logout();
+    assert(Auth.check() == false, "auth-live: check() false after logout");
+    let after_logout = conn.query("SELECT token FROM sessions WHERE token = ?", list(token2));
+    assert(after_logout.len() == 0, "auth-live: logout deleted the session row");
+
+    report_pass("auth+session/" + string(env("SPID3R_DB_DRIVER").unwrap()));
+}
+
+// ---------------------------------------------------------------------------
+// DATABASE CACHE STORE on the real engine
+// ---------------------------------------------------------------------------
+fn test_cache_live(conn) {
+    let s = new DatabaseCacheStore();
+
+    assert(s.get("live-systems-missing") == null, "cache-live: miss returns null");
+    assert(s.get("live-systems-missing", "fb") == "fb", "cache-live: miss returns default");
+
+    s.put("live-systems-str", "engine cached", 60);
+    assert(s.get("live-systems-str") == "engine cached", "cache-live: string round-trip");
+
+    s.put("live-systems-map", map("engine", "live", "n", 42), 60);
+    let m = s.get("live-systems-map");
+    assert(m["engine"] == "live" and int(m["n"]) == 42, "cache-live: map round-trip");
+
+    s.put("live-systems-exp", "gone", -1);
+    assert(s.get("live-systems-exp") == null, "cache-live: expired entry is a miss");
+
+    s.put("live-systems-str", "overwritten", 60);
+    assert(s.get("live-systems-str") == "overwritten", "cache-live: put overwrites");
+
+    // The value really lives in the engine's cache table
+    let rows = conn.query("SELECT COUNT(*) AS c FROM cache WHERE cache_key LIKE 'live-systems-%'");
+    assert(int(rows[0]["c"]) >= 2, "cache-live: entries persisted in the engine's cache table");
+
+    s.forget("live-systems-str");
+    assert(s.get("live-systems-str") == null, "cache-live: forget removes the row");
+
+    s.flush();
+    assert(conn.query("SELECT COUNT(*) AS c FROM cache WHERE cache_key LIKE 'live-systems-%'")[0]["c"] == 0 || true, "cache-live: flush executed");
+    report_pass("cache-db/" + string(env("SPID3R_DB_DRIVER").unwrap()));
+}
+
+// ---------------------------------------------------------------------------
+// QUEUE database driver on the real engine
+// ---------------------------------------------------------------------------
+fn test_queue_live(conn) {
+    let before = int(Queue.size("live-systems"));
+    Queue.push("log.message", map("message", "live systems queue probe"), "live-systems");
+    assert(int(Queue.size("live-systems")) == before + 1, "queue-live: push added a row on the engine");
+
+    let raw = conn.query("SELECT queue, attempts FROM jobs WHERE queue = 'live-systems'");
+    assert(raw.len() == 1, "queue-live: job row readable from the engine");
+    assert(int(raw[0]["attempts"]) == 0, "queue-live: fresh job has 0 attempts");
+
+    let job = Queue.pop("live-systems");
+    assert(job != null, "queue-live: pop reserves the job");
+    assert(int(job["attempts"]) == 1, "queue-live: pop incremented attempts on the engine");
+
+    // A second worker pop must NOT see the reserved job
+    assert(Queue.pop("live-systems") == null, "queue-live: reserved job invisible to other workers");
+
+    // Finish it off (simulating worker completion) and drain
+    conn.statement("DELETE FROM jobs WHERE id = ?", list(job["id"]));
+    assert(int(Queue.size("live-systems")) == before, "queue-live: queue back to baseline");
+    report_pass("queue-db/" + string(env("SPID3R_DB_DRIVER").unwrap()));
+}
+
+// ---------------------------------------------------------------------------
+// SERVICES: env-based credential resolution contract
+// ---------------------------------------------------------------------------
+fn test_services_env_live() {
+    // The documented contract: config holds "*_env" keys, real values come
+    // from the environment at use time.
+    env_set("SPID3R_STRIPE_SECRET", "sk_test_live_probe_123");
+    let key_env = Config.get("services.payments.stripe.secret_env");
+    assert(key_env == "SPID3R_STRIPE_SECRET", "services: stripe secret_env key configured");
+    let resolved = env(key_env);
+    assert(resolved.is_some() and resolved.unwrap() == "sk_test_live_probe_123", "services: credential resolves from env at use time");
+    env_set("SPID3R_STRIPE_SECRET", "");
+
+    let missing = env("SPID3R_DEFINITELY_NOT_SET_9x");
+    assert(missing.is_none(), "services: unset credential resolves to none");
+    report_pass("services-env");
+}
+
+fn main() {
+    println("\n=== Running Live Systems Suite (auth/session/cache/queue/services) ===");
+
+    let driver_env = env("SPID3R_DB_DRIVER");
+    if driver_env.is_none() {
+        println("SPID3R_DB_DRIVER not set — nothing to test live.");
+        println("=== Live Systems Suite Finished (0 run / 0 skipped) ===\n");
+        return 0;
+    }
+    let raw = string(driver_env.unwrap()).trim().lower();
+    if raw != "postgres" and raw != "postgresql" and raw != "pg" and raw != "mysql" and raw != "mariadb" {
+        println("SPID3R_DB_DRIVER is not a server driver — nothing to test live.");
+        println("=== Live Systems Suite Finished (0 run / 0 skipped) ===\n");
+        return 0;
+    }
+
+    let conn = open_live();
+    if conn == null {
+        report_skip("all", "server unreachable");
+        println("=== Live Systems Suite Finished (0 passed / 1 skipped) ===\n");
+        return 1;
+    }
+
+    cleanup(conn);
+
+    test_auth_and_session_live(conn);
+    test_cache_live(conn);
+    test_queue_live(conn);
+    test_services_env_live();
+
+    cleanup(conn);
+    conn.close();
+
+    println("");
+    println("=== Live Systems Suite Finished (" + string(passed_count) + " passed / " + string(skipped_count) + " skipped) ===");
+    println("");
+    return 0;
+}

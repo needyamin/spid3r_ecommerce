@@ -1,0 +1,63 @@
+// database/migrations/015_marketing.matrix
+// Phase 2 — coupons, coupon usage ledger, reviews & ratings.
+
+import "framework/Database/Schema";
+import "framework/Database/Migration";
+import "framework/Database/DB";
+
+public class MarketingTables extends Migration {
+    fn new(name: string = "015_marketing") {
+        super(name);
+    }
+
+    public fn up(self) {
+        Schema.create("coupons", table => {
+            table.id();
+            table.string("code", 48).unique();
+            table.string("type", 24).default("fixed");   // fixed | percent
+            table.bigint("value_minor").default(0);      // fixed amount, or bps for percent
+            table.bigint("min_order_minor").default(0);
+            table.integer("max_uses").default(0);         // 0 = unlimited
+            table.integer("uses").default(0);
+            table.string("starts_at", 32).nullable();
+            table.string("ends_at", 32).nullable();
+            table.boolean("is_active").default(true);
+            table.timestamps();
+            table.index("idx_coupons_active", ["is_active", "code"]);
+        });
+
+        Schema.create("coupon_usages", table => {
+            table.id();
+            table.integer("coupon_id");
+            table.integer("order_id");
+            table.integer("user_id").nullable();
+            table.bigint("discount_minor");
+            table.timestamps();
+            table.foreign("coupon_id", "coupons", "id", "RESTRICT", "CASCADE");
+            table.foreign("order_id", "orders", "id", "CASCADE", "CASCADE");
+            table.unique_columns(["coupon_id", "order_id"]);
+        });
+
+        Schema.create("reviews", table => {
+            table.id();
+            table.integer("product_id");
+            table.integer("user_id");
+            table.integer("order_id").nullable();
+            table.integer("rating");                  // 1..5, validated in service
+            table.string("title", 255).nullable();
+            table.text("body").nullable();
+            table.string("status", 24).default("pending");
+            table.timestamps();
+            table.foreign("product_id", "products", "id", "CASCADE", "CASCADE");
+            table.foreign("user_id", "users", "id", "CASCADE", "CASCADE");
+            table.unique_columns(["product_id", "user_id"]);
+            table.index("idx_reviews_product", ["product_id", "status"]);
+        });
+    }
+
+    public fn down(self) {
+        Schema.dropIfExists("reviews");
+        Schema.dropIfExists("coupon_usages");
+        Schema.dropIfExists("coupons");
+    }
+}

@@ -1,0 +1,201 @@
+// app/Services/CartService.matrix
+// Phase 6 — shopping cart business logic.
+// Takes a plain identity map (user_id + guest cookie key), never a req.
+
+import "framework/Database/DB";
+import "framework/HttpException";
+import "app/Repositories/CartRepository";
+import "app/Repositories/ProductRepository";
+import "app/Repositories/InventoryRepository";
+import "app/Support/Money" as Money;
+
+public class CartService {
+    public let carts;
+    public let products;
+    public let inventory;
+
+    fn new() {
+        self.carts = new CartRepository();
+        self.products = new ProductRepository();
+        self.inventory = new InventoryRepository();
+    }
+
+    fn setting(self, key: string, fallback: int) -> int {
+        let row = DB.table("settings").where("setting_key", "=", key).first();
+        if row == null {
+            return fallback;
+        }
+        return int(row["value"]);
+    }
+
+    // All prices come from the DB, NEVER from the client.
+    fn unit_price(self, product_id, variant_id) -> int {
+        if variant_id != null {
+            let variant = DB.table("product_variants").where("id", "=", variant_id).first();
+            if variant == null or int(variant["product_id"]) != int(product_id) {
+                throw not_found("Variant not found for this product.");
+            }
+            if int(variant["is_active"]) != 1 {
+                throw validation_failed(map("variant_id", "This variant is not available."));
+            }
+            return int(variant["price_minor"]);
+        }
+        let product = self.products.find(product_id);
+        if product == null {
+            throw not_found("Product not found.");
+        }
+        if product["status"] != "published" {
+            throw validation_failed(map("product_id", "This product is not available."));
+        }
+        return int(product["price_minor"]);
+    }
+
+    fn assert_available(self, product_id, variant_id, qty: int) {
+        if qty <= 0 or qty > 99 {
+            throw validation_failed(map("quantity", "Quantity must be between 1 and 99."));
+        }
+        if not self.inventory.available(product_id, null, qty) {
+            throw validation_failed(map("quantity", "Not enough stock available."));
+        }
+    }
+
+    public fn cart(self, ident) {
+        return self.carts.cart_for(ident["user_id"], ident["key"]);
+    }
+
+    public fn add(self, ident, product_id, variant_id, qty: int) -> bool {
+        self.assert_available(product_id, variant_id, qty);
+        let price = self.unit_price(product_id, variant_id);
+        let cart = self.cart(ident);
+        let existing = DB.table("cart_items")
+            .where("cart_id", "=", cart["id"])
+            .where("product_id", "=", product_id)
+            .get();
+        let existing_qty = 0;
+        let i = 0;
+        while i < existing.len() {
+            if existing[i]["variant_id"] == variant_id {
+                existing_qty = int(existing[i]["quantity"]);
+            }
+            i += 1;
+        }
+        self.assert_available(product_id, variant_id, existing_qty + qty);
+        return self.carts.add_item(cart["id"], product_id, variant_id, qty, price);
+    }
+
+    public fn update(self, ident, item_id, qty: int) -> bool {
+        let cart = self.cart(ident);
+        let item = DB.table("cart_items")
+            .where("id", "=", item_id)
+            .where("cart_id", "=", cart["id"])
+            .first();
+        if item == null {
+            throw not_found("Cart item not found.");
+        }
+        self.assert_available(item["product_id"], item["variant_id"], qty);
+        return self.carts.set_quantity(item_id, qty);
+    }
+
+    public fn remove(self, ident, item_id) -> bool {
+        let cart = self.cart(ident);
+        let item = DB.table("cart_items")
+            .where("id", "=", item_id)
+            .where("cart_id", "=", cart["id"])
+            .first();
+        if item == null {
+            throw not_found("Cart item not found.");
+        }
+        return self.carts.remove_item(item_id);
+    }
+
+    // Server-side totals: subtotal (fresh DB prices), a configurable
+    // volume discount, and a flat shipping fee waived above a threshold.
+    public fn summary(self, ident) {
+        let cart = self.cart(ident);
+        let rows = self.carts.items(cart["id"]);
+        let items = [];
+        let subtotal = 0;
+        let warnings = [];
+        let i = 0;
+        while i < rows.len() {
+            let row = rows[i];
+            let product = self.products.find(row["product_id"]);
+            let price = 0;
+            let name = "Unavailable product";
+            let slug = "";
+            let ok = false;
+            if product != null {
+                name = string(product["name"]);
+                slug = string(product["slug"]);
+                price = int(product["price_minor"]);
+                if row["variant_id"] != null {
+                    let variant = DB.table("product_variants").where("id", "=", row["variant_id"]).first();
+                    if variant != null {
+                        price = int(variant["price_minor"]);
+                    }
+                }
+                ok = product["status"] == "published"
+                    and self.inventory.available(row["product_id"], null, int(row["quantity"]));
+                if not ok {
+                    warnings.push(name + " is no longer available in the requested quantity.");
+                }
+                subtotal = subtotal + price * int(row["quantity"]);
+            } else {
+                warnings.push("A cart item references a deleted product.");
+            }
+            items.push(map(
+                "id", row["id"],
+                "product_id", row["product_id"],
+                "name", name,
+                "url", "/product/" + slug,
+                "quantity", int(row["quantity"]),
+                "unit_price_minor", price,
+                "line_total_minor", price * int(row["quantity"]),
+                "price_display", Money.format(price, "BDT"),
+                "line_display", Money.format(price * int(row["quantity"]), "BDT"),
+                "available", ok
+            ));
+            i += 1;
+        }
+
+        let discount = 0;
+        let threshold = self.setting("cart.discount_threshold_minor", 100000);
+        let bps = self.setting("cart.discount_bps", 500);
+        if subtotal >= threshold and bps > 0 {
+            discount = int(subtotal * bps / 10000);
+        }
+        let shipping = self.setting("shipping.flat_minor", 6000);
+        let free_threshold = self.setting("shipping.free_threshold_minor", 200000);
+        let free_shipping = false;
+        if subtotal - discount >= free_threshold {
+            shipping = 0;
+            free_shipping = true;
+        }
+        let total = subtotal - discount + shipping;
+
+        return map(
+            "items", items,
+            "has_items", items.len() > 0,
+            "count", items.len(),
+            "has_warnings", warnings.len() > 0,
+            "warnings", warnings,
+            "subtotal_minor", subtotal,
+            "discount_minor", discount,
+            "shipping_minor", shipping,
+            "total_minor", total,
+            "subtotal_display", Money.format(subtotal, "BDT"),
+            "discount_display", Money.format(discount, "BDT"),
+            "shipping_display", Money.format(shipping, "BDT"),
+            "total_display", Money.format(total, "BDT"),
+            "free_shipping", free_shipping
+        );
+    }
+
+    // Called by the login flow: merge the guest cart into the user's cart.
+    public fn merge_on_login(self, guest_key: string, user_id) -> bool {
+        if guest_key == "" or user_id == null {
+            return false;
+        }
+        return self.carts.merge_guest_into_user(guest_key, user_id);
+    }
+}

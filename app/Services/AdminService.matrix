@@ -1,0 +1,269 @@
+// app/Services/AdminService.matrix
+// Phase 9 — dashboard statistics & management data (queries centralized).
+
+import "framework/Database/DB";
+import "framework/HttpException";
+
+public class AdminService {
+    fn new() {}
+
+    fn count(self, table_name: string, field: string = "", value = null) -> int {
+        if field != "" {
+            return DB.table(table_name).where(field, "=", value).count();
+        }
+        return DB.table(table_name).count();
+    }
+
+    // Dashboard overview — revenue is derived from SETTLED orders only
+    // (cancelled/refunded/pending never count as income).
+    public fn dashboard(self) {
+        let settled = ["paid", "processing", "packed", "shipped", "delivered"];
+        let order_rows = DB.table("orders").whereIn("status", settled).get();
+        let revenue = 0;
+        let i = 0;
+        while i < order_rows.len() {
+            revenue = revenue + int(order_rows[i]["total_minor"]);
+            i += 1;
+        }
+        let low_stock = 0;
+        let inventory = DB.table("inventory").get();
+        i = 0;
+        while i < inventory.len() {
+            if int(inventory[i]["quantity"]) <= int(inventory[i]["low_stock_threshold"]) {
+                low_stock = low_stock + 1;
+            }
+            i += 1;
+        }
+        let recent = DB.table("orders").orderBy("id", "DESC").limit(5).get();
+        return map(
+            "orders", self.count("orders"),
+            "pending_orders", DB.table("orders").where("status", "=", "awaiting_payment").count(),
+            "revenue_minor", revenue,
+            "customers", self.count("users"),
+            "products", self.count("products"),
+            "published_products", self.count("products", "status", "published"),
+            "low_stock", low_stock,
+            "coupons", self.count("coupons"),
+            "recent_orders", recent,
+            "has_recent", recent.len() > 0
+        );
+    }
+
+    public fn customers(self, query: string = "") {
+        let q = DB.table("users").orderBy("id", "DESC");
+        if query != "" {
+            q.where("email", "LIKE", "%" + query + "%");
+        }
+        return q.limit(100).get();
+    }
+
+    public fn set_customer_status(self, user_id, status: string) -> bool {
+        if status != "active" and status != "suspended" {
+            throw validation_failed(map("status", "Invalid account status."));
+        }
+        let user = DB.table("users").where("id", "=", user_id).first();
+        if user == null {
+            throw not_found("Customer not found.");
+        }
+        return DB.table("users").where("id", "=", user_id).update(map("status", status)) > 0;
+    }
+
+    public fn staff(self) {
+        let rows = DB.table("user_roles").get();
+        let ids = [];
+        let i = 0;
+        while i < rows.len() {
+            let role = DB.table("roles").where("id", "=", rows[i]["role_id"]).first();
+            if role != null and role["slug"] != "customer" {
+                ids.push(int(rows[i]["user_id"]));
+            }
+            i += 1;
+        }
+        if ids.len() == 0 {
+            return [];
+        }
+        return DB.table("users").whereIn("id", ids).orderBy("id", "ASC").get();
+    }
+
+    public fn assign_role(self, user_id, role_slug: string) -> bool {
+        let role = DB.table("roles").where("slug", "=", role_slug).first();
+        if role == null {
+            throw not_found("Role not found.");
+        }
+        if DB.table("users").where("id", "=", user_id).first() == null {
+            throw not_found("User not found.");
+        }
+        let exists = DB.table("user_roles")
+            .where("user_id", "=", user_id)
+            .where("role_id", "=", role["id"])
+            .count();
+        if exists > 0 {
+            return false;
+        }
+        DB.table("user_roles").insert(map("user_id", user_id, "role_id", role["id"]));
+        return true;
+    }
+
+    public fn roles(self) {
+        let rows = DB.table("roles").orderBy("id", "ASC").get();
+        let out = [];
+        let i = 0;
+        while i < rows.len() {
+            let role = rows[i];
+            role["permission_count"] = DB.table("role_permissions")
+                .where("role_id", "=", role["id"]).count();
+            out.push(role);
+            i += 1;
+        }
+        return out;
+    }
+
+    public fn permissions(self) {
+        return DB.table("permissions").orderBy("slug", "ASC").get();
+    }
+
+    public fn toggle_permission(self, role_id, permission_slug: string, enabled: bool) -> bool {
+        let perm = DB.table("permissions").where("slug", "=", permission_slug).first();
+        if perm == null {
+            throw not_found("Permission not found.");
+        }
+        if DB.table("roles").where("id", "=", role_id).first() == null {
+            throw not_found("Role not found.");
+        }
+        let link = DB.table("role_permissions")
+            .where("role_id", "=", role_id)
+            .where("permission_id", "=", perm["id"]);
+        if enabled {
+            if link.count() > 0 {
+                return false;
+            }
+            DB.table("role_permissions").insert(map("role_id", role_id, "permission_id", perm["id"]));
+            return true;
+        }
+        return link.delete() > 0;
+    }
+
+    // ---- coupons ----
+    public fn coupons(self) {
+        return DB.table("coupons").orderBy("id", "DESC").get();
+    }
+
+    public fn save_coupon(self, data, coupon_id) {
+        let code = string(data["code"]).trim().upper();
+        if code == "" {
+            throw validation_failed(map("code", "A coupon code is required."));
+        }
+        let kind = string(data["type"]).trim();
+        if kind != "fixed" and kind != "percent" {
+            throw validation_failed(map("type", "Type must be fixed or percent."));
+        }
+        let clash = DB.table("coupons").where("code", "=", code);
+        if coupon_id != null {
+            clash.where("id", "!=", coupon_id);
+        }
+        if clash.count() > 0 {
+            throw validation_failed(map("code", "That coupon code already exists."));
+        }
+        let values = map(
+            "code", code,
+            "type", kind,
+            "value_minor", int(data["value_minor"]),
+            "min_order_minor", int(data["min_order_minor"]),
+            "max_uses", int(data["max_uses"]),
+            "is_active", 1
+        );
+        if int(values["value_minor"]) < 0 or int(values["min_order_minor"]) < 0 or int(values["max_uses"]) < 0 {
+            throw validation_failed(map("value_minor", "Coupon values cannot be negative."));
+        }
+        if coupon_id == null {
+            let id = DB.table("coupons").insert(values);
+            return DB.table("coupons").where("id", "=", id).first();
+        }
+        DB.table("coupons").where("id", "=", coupon_id).update(values);
+        return DB.table("coupons").where("id", "=", coupon_id).first();
+    }
+
+    public fn delete_coupon(self, coupon_id) -> bool {
+        if DB.table("coupons").where("id", "=", coupon_id).first() == null {
+            throw not_found("Coupon not found.");
+        }
+        if DB.table("coupon_usages").where("coupon_id", "=", coupon_id).count() > 0 {
+            throw validation_failed(map("id", "Used coupons cannot be deleted; deactivate them instead."));
+        }
+        return DB.table("coupons").where("id", "=", coupon_id).delete() > 0;
+    }
+
+    // ---- settings (shipping / payment / store configuration) ----
+    public fn settings(self, group: string = "") {
+        let q = DB.table("settings").orderBy("setting_key", "ASC");
+        if group != "" {
+            q.where("setting_group", "=", group);
+        }
+        return q.get();
+    }
+
+    public fn update_setting(self, key: string, value: string, group: string = "general") -> bool {
+        let clean = string(key).trim();
+        if clean == "" {
+            throw validation_failed(map("key", "A setting key is required."));
+        }
+        let existing = DB.table("settings").where("setting_key", "=", clean).first();
+        if existing == null {
+            DB.table("settings").insert(map(
+                "setting_key", clean, "value", value, "setting_group", group
+            ));
+            return true;
+        }
+        return DB.table("settings").where("setting_key", "=", clean).update(map(
+            "value", value, "setting_group", group
+        )) > 0;
+    }
+
+    // ---- audit log ----
+    public fn log(self, user_id, action: string, entity_type: string, entity_id, payload) {
+        return DB.table("audit_logs").insert(map(
+            "user_id", user_id,
+            "action", action,
+            "entity_type", entity_type,
+            "entity_id", string(entity_id),
+            "payload_json", json_write(payload),
+            "created_at", string(unix_time())
+        ));
+    }
+
+    public fn audit(self, limit_count: int = 50) {
+        return DB.table("audit_logs").orderBy("id", "DESC").limit(limit_count).get();
+    }
+
+    // ---- reports / export ----
+    public fn report_rows(self) {
+        let settled = ["paid", "processing", "packed", "shipped", "delivered"];
+        let rows = DB.table("orders").whereIn("status", settled).orderBy("id", "ASC").get();
+        let out = [];
+        let i = 0;
+        while i < rows.len() {
+            let r = rows[i];
+            out.push(map(
+                "order_number", r["order_number"],
+                "status", r["status"],
+                "total_minor", int(r["total_minor"]),
+                "placed_at", r["placed_at"]
+            ));
+            i += 1;
+        }
+        return out;
+    }
+
+    public fn csv_export(self) -> string {
+        let rows = self.report_rows();
+        let csv = "order_number,status,total_minor,placed_at\n";
+        let i = 0;
+        while i < rows.len() {
+            let r = rows[i];
+            csv = csv + string(r["order_number"]) + "," + string(r["status"]) + ","
+                + string(r["total_minor"]) + "," + string(r["placed_at"]) + "\n";
+            i += 1;
+        }
+        return csv;
+    }
+}

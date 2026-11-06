@@ -1,0 +1,169 @@
+// app/Services/AuthService.matrix
+// Phase 3 — authentication & account workflows (business logic only).
+// No HTTP request objects here: controllers pass plain values.
+//
+// Security:
+//   - passwords via bcrypt (Hash.make / Auth.attempt)
+//   - reset/verification tokens stored ONLY as bcrypt hashes
+//   - single-use tokens with expiry; account status enforced on login
+//   - emails are queued (never sent inline), so no SMTP dependency
+//   - unknown emails never reveal whether an account exists (controller
+//     always shows the same message)
+
+import "framework/Database/DB";
+import "framework/Auth/Auth";
+import "framework/Auth/Hash";
+import "framework/Queue/Queue";
+import "app/Repositories/UserRepository";
+
+public class AuthService {
+    public let users;
+
+    fn new() {
+        self.users = new UserRepository();
+    }
+
+    fn fresh_token(self) -> string {
+        return hex_encode(random_bytes(24).unwrap());
+    }
+
+    // Returns the new user row, or null when the email already exists.
+    public fn register(self, name: string, email: string, password: string) {
+        let user = self.users.create_customer(email, name, password);
+        if user == null {
+            return null;
+        }
+        let token = self.issue_email_verification(user["id"]);
+        return user;
+    }
+
+    // Returns the session token on success, null on bad credentials or
+    // disabled accounts.
+    public fn login(self, email: string, password: string) {
+        let clean = string(email).trim().lower();
+        let row = DB.table("users").where("email", "=", clean).first();
+        if row == null {
+            return null;
+        }
+        if row.has("status") and row["status"] != null and string(row["status"]) != "active" {
+            return null;   // suspended/banned accounts cannot authenticate
+        }
+        if not Auth.attempt(clean, password) {
+            return null;
+        }
+        return Auth.token();
+    }
+
+    // Revoke the session identified by the request's cookie/bearer token.
+    public fn logout(self, token: string) -> bool {
+        if token != "" {
+            try {
+                DB.statement("DELETE FROM sessions WHERE token = ?", [token]);
+            } catch (e) {
+                // sessions table optional in minimal installs
+            }
+        }
+        Auth.clear();
+        return true;
+    }
+
+    public fn set_status(self, user_id, status: string) -> bool {
+        return DB.table("users").where("id", "=", user_id).update(map("status", status)) > 0;
+    }
+
+    // Password reset: returns the RAW token for the queued email; the DB
+    // only ever holds its bcrypt hash.
+    public fn request_password_reset(self, email: string) {
+        let clean = string(email).trim().lower();
+        let user = DB.table("users").where("email", "=", clean).first();
+        if user == null {
+            return null;   // controller still renders the generic message
+        }
+        let token = self.fresh_token();
+        let now = unix_time();
+        DB.transaction(fn() {
+            DB.table("password_resets").where("user_id", "=", user["id"]).delete();
+            DB.table("password_resets").insert(map(
+                "user_id", user["id"],
+                "token_hash", Hash.make(token),
+                "expires_at", string(now + 3600)
+            ));
+            return true;
+        });
+        Queue.push("store.password_reset", map("email", clean, "token", token));
+        return token;
+    }
+
+    public fn reset_password(self, token: string, new_password: string) -> bool {
+        let rows = DB.table("password_resets").whereNull("used_at").get();
+        let match_row = null;
+        let i = 0;
+        while i < rows.len() {
+            if Hash.check(token, string(rows[i]["token_hash"])) {
+                match_row = rows[i];
+                break;
+            }
+            i += 1;
+        }
+        if match_row == null {
+            return false;
+        }
+        if int(match_row["expires_at"]) < unix_time() {
+            return false;
+        }
+        return DB.transaction(fn() {
+            DB.table("users").where("id", "=", match_row["user_id"]).update(map(
+                "password", Hash.make(new_password),
+                "updated_at", string(unix_time())
+            ));
+            DB.table("password_resets").where("id", "=", match_row["id"]).update(map(
+                "used_at", string(unix_time())
+            ));
+            return true;
+        });
+    }
+
+    // Email verification: returns the raw token for the queued email.
+    public fn issue_email_verification(self, user_id) {
+        let token = self.fresh_token();
+        DB.table("email_verifications").where("user_id", "=", user_id).delete();
+        DB.table("email_verifications").insert(map(
+            "user_id", user_id,
+            "token_hash", Hash.make(token),
+            "expires_at", string(unix_time() + 86400)
+        ));
+        let user = DB.table("users").where("id", "=", user_id).first();
+        if user != null {
+            Queue.push("store.email_verification", map("email", user["email"], "token", token));
+        }
+        return token;
+    }
+
+    public fn verify_email(self, token: string) -> bool {
+        let rows = DB.table("email_verifications").whereNull("verified_at").get();
+        let match_row = null;
+        let i = 0;
+        while i < rows.len() {
+            if Hash.check(token, string(rows[i]["token_hash"])) {
+                match_row = rows[i];
+                break;
+            }
+            i += 1;
+        }
+        if match_row == null {
+            return false;
+        }
+        if int(match_row["expires_at"]) < unix_time() {
+            return false;
+        }
+        return DB.transaction(fn() {
+            DB.table("users").where("id", "=", match_row["user_id"]).update(map(
+                "email_verified_at", string(unix_time())
+            ));
+            DB.table("email_verifications").where("id", "=", match_row["id"]).update(map(
+                "verified_at", string(unix_time())
+            ));
+            return true;
+        });
+    }
+}

@@ -1,0 +1,36 @@
+// magic
+// Spid3rWeb Magic Command-Line Tool
+
+import "framework/Console/ConsoleKernel";
+import "routes/web";
+import "routes/api";
+import "routes/queue";
+import "database/migrations/registry";
+import "database/seeders/DatabaseSeeder";
+
+fn main() {
+    // 1. Register routes so route:list can inspect them, and queue job
+    //    handlers so queue:work / sync pushes can resolve them
+    register_web_routes();
+    register_api_routes();
+    register_queue_jobs();
+
+    // 2. Setup Console Kernel
+    let kernel = new ConsoleKernel();
+
+    // 3. Register Migrations — auto-discovered.
+    //    registry.matrix is generated from every file in
+    //    database/migrations/ by `spid3r magic migrate:sync` (also run
+    //    automatically by `migrate` and `make:migration`). You never
+    //    edit imports here when adding migrations.
+    register_all_migrations(kernel);
+
+    // 4. Register Seeders
+    kernel.register_seeder(fn() {
+        run_database_seeder();
+    });
+
+    // 5. Parse command line arguments
+    let cli_args = args();
+    return kernel.handle(cli_args);
+}

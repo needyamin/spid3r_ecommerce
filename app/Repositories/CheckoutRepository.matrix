@@ -1,0 +1,54 @@
+// app/Repositories/CheckoutRepository.matrix
+// Phase 7 — address & coupon data access.
+
+import "framework/Database/DB";
+
+public class AddressRepository {
+    fn new() {}
+
+    public fn for_user(self, user_id) {
+        return DB.table("addresses")
+            .where("user_id", "=", user_id)
+            .orderBy("id", "DESC")
+            .get();
+    }
+
+    public fn find(self, id) {
+        return DB.table("addresses").where("id", "=", id).first();
+    }
+
+    public fn belongs_to(self, id, user_id) -> bool {
+        let row = DB.table("addresses")
+            .where("id", "=", id)
+            .where("user_id", "=", user_id)
+            .first();
+        return row != null;
+    }
+
+    public fn create(self, data) {
+        return DB.table("addresses").insert(data);
+    }
+}
+
+public class CouponRepository {
+    fn new() {}
+
+    public fn find_by_code(self, code: string) {
+        return DB.table("coupons").where("code", "=", code).first();
+    }
+
+    public fn record_usage(self, coupon_id, order_id, user_id, discount_minor: int) {
+        return DB.table("coupon_usages").insert(map(
+            "coupon_id", coupon_id,
+            "order_id", order_id,
+            "user_id", user_id,
+            "discount_minor", discount_minor
+        ));
+    }
+
+    public fn increment_uses(self, coupon_id) -> bool {
+        return DB.table("coupons")
+            .where("id", "=", coupon_id)
+            .increment("uses", 1) > 0;
+    }
+}

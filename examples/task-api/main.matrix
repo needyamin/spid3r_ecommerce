@@ -1,0 +1,194 @@
+// examples/task-api/main.matrix
+// Spid3rWeb Task API — a complete, runnable full-stack example.
+//
+// Demonstrates the framework end to end WITHOUT opening a port: service
+// providers, the DI container, model events, the Validator, typed HTTP
+// exceptions, REST resource envelopes, and pagination — exercised through
+// Application.handle_request exactly like live traffic.
+//
+// Run it:
+//   SPID3R_DB_DRIVER=sqlite spid3r run examples/task-api/main.matrix
+// Under the bytecode VM:
+//   SPID3R_DB_DRIVER=sqlite spid3r run --engine vm examples/task-api/main.matrix
+//
+// To serve the same app for real, replace the demo section at the bottom
+// with:  app.listen(8000);
+
+import "framework/Application";
+import "framework/Providers/ServiceProvider";
+import "framework/Response";
+import "framework/Router";
+import "framework/Database/DB";
+import "framework/Database/Schema";
+import "framework/Database/Model";
+import "framework/Resource";
+import "framework/HttpException";
+import "framework/Events/Event";
+
+// ---------------------------------------------------------------------------
+// Domain model + provider
+// ---------------------------------------------------------------------------
+
+class Task extends Model {
+    fn new() {
+        super("tasks", ["title", "done", "priority"], {});
+    }
+}
+
+// A provider keeps bootstrap logic out of the global script: it binds the
+// task repository into the container and wires a model-event listener.
+class TaskProvider extends ServiceProvider {
+    public fn register(self, container) {
+        container.singleton("task.events_fired", fn(_c) {
+            return map("created", 0);
+        });
+    }
+
+    public fn boot(self, container) {
+        let counter = container.make("task.events_fired");
+        Event.listen("model.tasks.created", fn(task, name) {
+            // Model events hand you the instance — react, audit, notify.
+            counter["created"] = counter["created"] + 1;
+            return null;
+        });
+    }
+}
+
+// REST resource: the API shape is decoupled from the table columns.
+let task_transformer = fn(t) {
+    return map(
+        "id", t["id"],
+        "title", t["title"],
+        "done", t["done"] == 1 or t["done"] == true,
+        "priority", t["priority"]
+    );
+};
+
+// ---------------------------------------------------------------------------
+// Controllers
+// ---------------------------------------------------------------------------
+
+class TaskController {
+    public fn index(self, req) {
+        let page = DB.table("tasks").orderBy("priority", "DESC").paginate(1, 10);
+        return json(resource_paginated(page, task_transformer));
+    }
+
+    public fn store(self, req) {
+        let v = req.validate(map(
+            "title", "required|min:3|max:200",
+            "priority", "nullable|min:1|max:9"
+        ));
+        if v.fails() {
+            throw validation_failed(v.error_messages());
+        }
+        let task = new Task();
+        task.set("title", req.input("title", ""));
+        let prio = req.input("priority", 1);
+        if prio == null {
+            prio = 1;
+        }
+        task.set("priority", int(prio));
+        task.set("done", 0);
+        task.save();  // fires model.tasks.created — the provider counts it
+        return json(resource_item(task, task_transformer), 201);
+    }
+
+    public fn show(self, req) {
+        let task = DB.table("tasks").find(req.params["id"]);
+        if task == null {
+            throw not_found("No task with that id.");
+        }
+        return json(resource_item(task, task_transformer));
+    }
+
+    public fn destroy(self, req) {
+        let task = DB.table("tasks").find(req.params["id"]);
+        if task == null {
+            throw not_found("No task with that id.");
+        }
+        let m = new Task();
+        m.set("id", task["id"]);
+        m.set("title", task["title"]);
+        m.set("done", task["done"]);
+        m.set("priority", task["priority"]);
+        m.exists = true;
+        m.delete();
+        return json(resource_item(task, task_transformer));
+    }
+}
+
+// ---------------------------------------------------------------------------
+// App assembly + demo run
+// ---------------------------------------------------------------------------
+
+fn show(label: string, res) {
+    println("---- " + label + " -> " + string(res["status"]));
+    let body = string(res["body"]);
+    if len(body) > 220 {
+        body = body.slice(0, 220) + " ...";
+    }
+    println(body);
+}
+
+fn main() {
+    // Schema (a real app would ship this as a migration instead).
+    Schema.dropIfExists("tasks");
+    Schema.create("tasks", fn(t) {
+        t.id();
+        t.string("title");
+        t.integer("done");
+        t.integer("priority");
+        t.timestamps();
+    });
+
+    let app = new Application();
+    app.register(new TaskProvider());
+
+    let ctl = new TaskController();
+    Route.get("/api/tasks", fn(req) { return ctl.index(req); });
+    Route.post("/api/tasks", fn(req) { return ctl.store(req); });
+    Route.get("/api/tasks/:id", fn(req) { return ctl.show(req); });
+    Route.delete("/api/tasks/:id", fn(req) { return ctl.destroy(req); });
+
+    // POST needs same-origin/CSRF context only over real browsers; the demo
+    // client sends neither an Origin nor a cookie session, so it passes the
+    // CSRF layers and reaches the handler.
+    let post_headers = map("content-type", "application/json");
+
+    println("=== Spid3rWeb Task API demo ===\n");
+
+    // 1. Validation failure -> 422 with field errors.
+    show("POST invalid (no title)",
+        app.handle_request(map("method", "POST", "path", "/api/tasks",
+            "headers", post_headers, "body", "{\"priority\":\"2\"}")));
+
+    // 2. Create -> 201 + resource envelope.
+    show("POST valid",
+        app.handle_request(map("method", "POST", "path", "/api/tasks",
+            "headers", post_headers, "body", "{\"title\":\"Ship Spid3rWeb 1.0\",\"priority\":\"5\"}")));
+
+    // 3. Index -> paginated collection envelope.
+    show("GET /api/tasks",
+        app.handle_request(map("method", "GET", "path", "/api/tasks", "headers", map())));
+
+    // 4. Typed 404 from a missing id.
+    show("GET /api/tasks/999",
+        app.handle_request(map("method", "GET", "path", "/api/tasks/999", "headers", map())));
+
+    // 5. Show a real one, then delete it.
+    show("GET /api/tasks/1",
+        app.handle_request(map("method", "GET", "path", "/api/tasks/1", "headers", map())));
+    show("DELETE /api/tasks/1",
+        app.handle_request(map("method", "DELETE", "path", "/api/tasks/1", "headers", map())));
+
+    // 6. Proof the provider's model-event listener ran.
+    let counter = app.container.make("task.events_fired");
+    println("---- model.tasks.created events observed by the provider: "
+        + string(counter["created"]));
+
+    Schema.dropIfExists("tasks");
+    DB.close();
+    println("\n=== Demo finished cleanly ===");
+    return 0;
+}

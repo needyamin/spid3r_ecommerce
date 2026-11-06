@@ -1,0 +1,12 @@
+// routes/web.matrix
+// Spid3rWeb Web Application Route Registrations
+// On the eCommerce branch this delegates to the Spid3r Store storefront.
+
+import "framework/Router";
+import "framework/Response";
+import "framework/View/BD";
+import "routes/store";
+
+public fn register_web_routes() {
+    register_store_routes();
+}

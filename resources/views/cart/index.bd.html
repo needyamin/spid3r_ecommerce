@@ -1,0 +1,61 @@
+@extends("layouts.store")
+@section('title', title)
+@section('meta_description', meta_description)
+@section("content")
+  <nav class="breadcrumb"><a href="/">Home</a> / <span>Your cart</span></nav>
+  <h1 class="page-title">Your cart</h1>
+
+@if(has_warnings)
+  <div class="alert alert-error">
+@foreach(warning in warnings)
+    <p>{{ warning }}</p>
+@endforeach
+  </div>
+@endif
+
+@if(has_items)
+  <section class="cart-list">
+@foreach(item in items)
+    <div class="cart-row">
+      <div class="cart-row-main">
+        <a href="{{ item.url }}"><strong>{{ item.name }}</strong></a>
+        <span class="cart-unit">{{ item.price_display }} each</span>
+@if(item.available)
+        <span class="stock-badge stock-in">Available</span>
+@else
+        <span class="stock-badge stock-out">Unavailable</span>
+@endif
+      </div>
+      <div class="cart-row-actions">
+        <form method="post" action="/cart/items/{{ item.id }}/quantity">
+          <input type="hidden" name="_csrf" value="{{ csrf }}">
+          <label>Qty <input type="number" name="quantity" value="{{ item.quantity }}" min="1" max="99"></label>
+          <button class="btn btn-secondary" type="submit">Update</button>
+        </form>
+        <form method="post" action="/cart/items/{{ item.id }}/remove">
+          <input type="hidden" name="_csrf" value="{{ csrf }}">
+          <button class="btn btn-secondary" type="submit">Remove</button>
+        </form>
+      </div>
+      <div class="cart-line-total">{{ item.line_display }}</div>
+    </div>
+@endforeach
+  </section>
+
+  <section class="cart-totals">
+    <h2>Order summary</h2>
+    <div class="total-line"><span>Subtotal</span><span>{{ subtotal_display }}</span></div>
+@if(discount_minor)
+    <div class="total-line"><span>Volume discount</span><span>− {{ discount_display }}</span></div>
+@endif
+    <div class="total-line"><span>Shipping estimate</span><span>{{ shipping_display }}</span></div>
+@if(free_shipping)
+    <p class="free-shipping">You qualify for free shipping.</p>
+@endif
+    <div class="total-line total-grand"><strong>Total</strong><strong>{{ total_display }}</strong></div>
+    <a class="btn btn-primary" href="/catalog">Continue shopping</a>
+  </section>
+@else
+  <p class="empty-note">Your cart is empty. <a href="/catalog">Browse the catalog</a></p>
+@endif
+@endsection

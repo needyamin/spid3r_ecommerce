@@ -1,0 +1,241 @@
+// app/Services/PaymentService.matrix
+// Phase 8 — payment orchestration. Isolated from order logic (Phase 7);
+// talks to gateways only through adapters and to the DB only through repos.
+
+import "framework/Database/DB";
+import "framework/HttpException";
+import "app/Repositories/PaymentRepository";
+import "app/Repositories/OrderRepository";
+import "app/Services/OrderService";
+import "app/Services/Gateway/PaymentGateway";
+
+public class PaymentService {
+    public let payments;
+    public let orders;
+    public let order_service;
+    public let gateways;
+
+    fn new() {
+        self.payments = new PaymentRepository();
+        self.orders = new OrderRepository();
+        self.order_service = new OrderService();
+        self.gateways = new GatewayRegistry();
+    }
+
+    public fn providers(self) {
+        return self.gateways.providers();
+    }
+
+    // A guest may pay a guest order by its (random) number; customer orders
+    // require the owner.
+    fn order_for(self, number: string, user_id) {
+        let order = self.orders.find_by_number(number);
+        if order == null {
+            throw not_found("Order not found.");
+        }
+        if order["user_id"] != null {
+            if user_id == null or int(order["user_id"]) != int(user_id) {
+                throw not_found("Order not found.");
+            }
+        }
+        let status = string(order["status"]);
+        if status == "cancelled" or status == "refunded" or status == "delivered" {
+            throw validation_failed(map("order", "This order cannot be paid."));
+        }
+        return order;
+    }
+
+    public fn initiate(self, number: string, provider: string, user_id) {
+        let order = self.order_for(number, user_id);
+        let gateway = self.gateways.resolve(provider);
+        // One payment per order+provider: repeating the request returns the
+        // same row (idempotency), it never creates a second charge.
+        let key = "pay-" + string(order["id"]) + "-" + string(gateway.name);
+        let payment = self.payments.initiate(
+            order["id"], string(gateway.name), int(order["total_minor"]), key
+        );
+        if payment["status"] == "paid" {
+            return map("payment", payment, "redirect_url", "", "already_paid", true);
+        }
+        if payment["status"] != "initiated" {
+            // Never call a gateway twice for the same payment row.
+            let stored = json_parse(string(payment["payload_json"]));
+            let resume_url = "";
+            if type_of(stored) == "map" and stored.has("redirect_url") {
+                resume_url = string(stored["redirect_url"]);
+            }
+            return map(
+                "payment", payment,
+                "redirect_url", resume_url,
+                "instructions", "Resume your existing payment.",
+                "already_paid", false,
+                "already_initiated", true
+            );
+        }
+        let result = gateway.initiate(payment, order);
+        DB.table("payments").where("id", "=", payment["id"]).update(map(
+            "status", result["status"],
+            "payload_json", json_write(result)
+        ));
+        let fresh = DB.table("payments").where("id", "=", payment["id"]).first();
+        return map(
+            "payment", fresh,
+            "redirect_url", result["redirect_url"],
+            "instructions", result["instructions"],
+            "already_paid", false
+        );
+    }
+
+    // Called by the admin route (staff confirms COD) or a gateway polling
+    // worker. ALWAYS performs server-to-server verification first.
+    public fn verify(self, payment_id) {
+        let payment = DB.table("payments").where("id", "=", payment_id).first();
+        if payment == null {
+            throw not_found("Payment not found.");
+        }
+        if payment["status"] == "paid" {
+            return map("verified", false, "duplicate", true, "payment", payment);
+        }
+        let gateway = self.gateways.resolve(string(payment["provider"]));
+        let result = gateway.verify(payment);
+        if not result["verified"] {
+            throw bad_request("Gateway did not confirm this payment.");
+        }
+        let changed = self.payments.mark_verified(payment_id, string(result["transaction_id"]), string(result["payload"]));
+        if changed {
+            self.order_service.set_status(payment["order_id"], "paid");
+        }
+        return map(
+            "verified", changed,
+            "duplicate", not changed,
+            "payment", DB.table("payments").where("id", "=", payment_id).first()
+        );
+    }
+
+    // Webhook: HMAC-SHA256 over the RAW body, then amount/provider/status
+    // checks. Duplicate callbacks are no-ops (status-guarded transition).
+    public fn handle_webhook(self, provider: string, raw_body: string, signature: string) {
+        let gateway = self.gateways.resolve(provider);
+        let secret = gateway.webhook_secret();
+        if secret == "" {
+            throw unauthorized("Webhook secret is not configured.");
+        }
+        let expected = hmac_sha256(secret, raw_body);
+        if string(signature).trim() == "" or string(signature).trim() != expected {
+            throw unauthorized("Invalid webhook signature.");
+        }
+        let event = null;
+        try {
+            event = json_parse(raw_body);
+        } catch (e) {
+            throw bad_request("Invalid webhook payload.");
+        }
+        if type_of(event) != "map" or not event.has("payment_id") {
+            throw bad_request("Webhook payload requires payment_id.");
+        }
+        let payment = DB.table("payments").where("id", "=", event["payment_id"]).first();
+        if payment == null {
+            throw not_found("Payment not found.");
+        }
+        if string(payment["provider"]) != string(provider) {
+            throw bad_request("Payment/provider mismatch.");
+        }
+        let state = "";
+        if event.has("status") {
+            state = string(event["status"]).lower();
+        }
+        if not (state == "paid" or state == "success" or state == "completed") {
+            return map("ignored", true, "reason", "non-success event");
+        }
+        if event.has("amount_minor") and int(event["amount_minor"]) != int(payment["amount_minor"]) {
+            throw bad_request("Webhook amount does not match the payment.");
+        }
+        // A valid signature only proves the webhook is authentic — the
+        // actual settlement is re-confirmed server-to-server with the gateway.
+        let confirmation = gateway.verify(payment);
+        if not confirmation["verified"] {
+            throw bad_request("Gateway did not confirm this payment.");
+        }
+        let changed = self.payments.mark_verified(
+            payment["id"], string(confirmation["transaction_id"]), string(confirmation["payload"])
+        );
+        if changed {
+            self.order_service.set_status(payment["order_id"], "paid");
+        }
+        return map("verified", changed, "duplicate", not changed, "payment_id", payment["id"]);
+    }
+
+    public fn refund(self, payment_id, amount_minor: int, reason: string) {
+        if amount_minor <= 0 {
+            throw validation_failed(map("amount_minor", "Refund amount must be positive."));
+        }
+        let payment = DB.table("payments").where("id", "=", payment_id).first();
+        if payment == null {
+            throw not_found("Payment not found.");
+        }
+        if payment["status"] == "refunded" {
+            return map("duplicate", true, "payment", payment);
+        }
+        if payment["status"] != "paid" {
+            throw validation_failed(map("payment", "Only paid payments can be refunded."));
+        }
+        if amount_minor > int(payment["amount_minor"]) {
+            throw validation_failed(map("amount_minor", "Refund exceeds the payment amount."));
+        }
+        let gateway = self.gateways.resolve(string(payment["provider"]));
+        let result = gateway.refund(payment, amount_minor);
+        if not result["ok"] {
+            throw bad_request("Gateway refused the refund.");
+        }
+        return DB.transaction(fn() {
+            DB.table("refunds").insert(map(
+                "payment_id", payment_id,
+                "amount_minor", amount_minor,
+                "reason", reason,
+                "status", "completed",
+                "gateway_refund_id", result["reference"]
+            ));
+            DB.table("payments").where("id", "=", payment_id).update(map("status", "refunded"));
+            self.order_service.set_status(payment["order_id"], "refunded");
+            return map(
+                "refunded", true,
+                "duplicate", false,
+                "payment", DB.table("payments").where("id", "=", payment_id).first()
+            );
+        });
+    }
+
+    public fn history(self, order_id) {
+        return self.payments.for_order(order_id);
+    }
+
+    // Reconciliation: paid payments whose order is missing, amount-mismatched,
+    // or not in a settled state.
+    public fn reconciliation(self) {
+        let paid = DB.table("payments").where("status", "=", "paid").get();
+        let mismatches = [];
+        let i = 0;
+        while i < paid.len() {
+            let p = paid[i];
+            let order = self.orders.find(p["order_id"]);
+            if order == null {
+                mismatches.push(map("payment_id", p["id"], "issue", "order missing"));
+            } elif int(order["total_minor"]) != int(p["amount_minor"]) {
+                mismatches.push(map("payment_id", p["id"], "issue", "amount mismatch"));
+            } else {
+                let st = string(order["status"]);
+                if st != "paid" and st != "processing" and st != "packed" and st != "shipped" and st != "delivered" {
+                    mismatches.push(map("payment_id", p["id"], "issue", "order status " + st));
+                }
+            }
+            i += 1;
+        }
+        return map(
+            "paid_payments", paid.len(),
+            "initiated_payments", DB.table("payments").where("status", "=", "initiated").count(),
+            "refunded_payments", DB.table("payments").where("status", "=", "refunded").count(),
+            "mismatches", mismatches,
+            "healthy", mismatches.len() == 0
+        );
+    }
+}

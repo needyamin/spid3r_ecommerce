@@ -1,0 +1,72 @@
+// app/Middleware/StoreMiddleware.matrix
+// Phase 3 — named middleware aliases for role & permission gates.
+// register_store_middleware(app) is called by BOTH entry points
+// (server.matrix and ConsoleKernel's serve command) and by tests.
+
+import "framework/HttpException";
+import "app/Policies/AccessPolicy";
+
+public class RequireRoleMiddleware {
+    public let role;
+
+    fn new(role: string = "customer") {
+        self.role = role;
+    }
+
+    public fn handle(self, req) {
+        if req.auth == null or not req.auth.check() {
+            throw unauthorized("Please sign in to continue.");
+        }
+        let policy = new AccessPolicy();
+        let uid = req.auth.id();
+        let allowed = false;
+        if self.role == "admin" {
+            allowed = policy.is_admin(uid);
+        } elif self.role == "staff" {
+            allowed = policy.is_staff(uid);
+        } elif self.role == "customer" {
+            allowed = policy.is_customer(uid);
+        } else {
+            allowed = policy.users.has_role(uid, self.role);
+        }
+        if not allowed {
+            throw forbidden("This area requires the " + self.role + " role.");
+        }
+        return null;
+    }
+}
+
+public class RequirePermissionMiddleware {
+    public let permission;
+
+    fn new(permission: string = "") {
+        self.permission = permission;
+    }
+
+    public fn handle(self, req) {
+        if req.auth == null or not req.auth.check() {
+            throw unauthorized("Please sign in to continue.");
+        }
+        let policy = new AccessPolicy();
+        policy.authorize(req.auth.id(), self.permission);
+        return null;
+    }
+}
+
+public fn register_store_middleware(app) {
+    app.middleware("role", fn(args) {
+        let role = "customer";
+        if args.len() > 0 {
+            role = string(args[0]).trim();
+        }
+        return new RequireRoleMiddleware(role);
+    });
+    app.middleware("permission", fn(args) {
+        let perm = "";
+        if args.len() > 0 {
+            perm = string(args[0]).trim();
+        }
+        return new RequirePermissionMiddleware(perm);
+    });
+    return app;
+}

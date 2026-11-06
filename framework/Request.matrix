@@ -1,0 +1,399 @@
+// framework/Request.matrix
+// Spid3rWeb HTTP Request Representation (query/form/JSON parsing, session
+// extraction, typed accessors). Declarative validation lives in
+// framework/Validator.matrix; validate() below delegates to it.
+
+import "http";
+import "framework/Validator";
+import "framework/Config/Config";
+
+public class Request {
+    public let method;
+    public let path;
+    public let params;
+    public let query_params;
+    public let headers;
+    public let body;
+    public let data;
+    public let session_id;
+    // Request-scoped auth state (an AuthManager instance created per request
+    // by Application.handle_request). Prefer this over the global Auth
+    // facade inside the request lifecycle: the global is shared across
+    // concurrent connections, per-request state is not.
+    public let auth;
+    // The Application instance handling this request (set by
+    // Application.handle_request). Gives handlers access to the service
+    // container (req.app.container) and router without importing globals.
+    public let app;
+    // How the session token arrived: "cookie" | "bearer" | ""
+    public let session_source;
+    // Original raw request map (kept for driver-specific accessors)
+    public let raw;
+
+    fn new(raw_req = null) {
+        self.params = map();
+        self.query_params = map();
+        self.headers = map();
+        self.data = map();
+        self.body = "";
+        self.method = "GET";
+        self.path = "/";
+        self.session_id = "";
+        self.session_source = "";
+        self.auth = null;
+        self.app = null;
+        self.raw = null;
+
+        if raw_req != null {
+            self.init_from_raw(raw_req);
+        }
+    }
+
+    fn init_from_raw(self, raw) {
+        self.raw = raw;
+        if raw.has("method") {
+            self.method = string(raw["method"]).upper();
+        }
+        if raw.has("path") {
+            self.path = string(raw["path"]);
+        }
+        if raw.has("params") and raw["params"] != null {
+            self.params = raw["params"];
+        }
+        if raw.has("headers") and raw["headers"] != null {
+            let h = raw["headers"];
+            for k in h.keys() {
+                self.headers[string(k).lower()] = string(h[k]);
+            }
+        }
+
+        // Direct data injection (useful for tests and programmatic dispatch)
+        if raw.has("data") and raw["data"] != null and type_of(raw["data"]) == "map" {
+            let d = raw["data"];
+            for k in d.keys() {
+                self.data[string(k)] = d[k];
+            }
+        }
+
+        // Query parameters from parsed server map
+        if raw.has("query") and raw["query"] != null and type_of(raw["query"]) == "map" {
+            let q = raw["query"];
+            for k in q.keys() {
+                let sk = string(k);
+                let sv = string(q[k]);
+                self.query_params[sk] = sv;
+                if not self.data.has(sk) {
+                    self.data[sk] = sv;
+                }
+            }
+        }
+
+        // Raw query string from server map
+        if raw.has("raw_query") and raw["raw_query"] != null {
+            let rq = string(raw["raw_query"]);
+            if rq != "" {
+                self.parse_query_string(rq);
+            }
+        }
+
+        // Parse query string if present in path (e.g., /products?page=2&sort=desc)
+        if self.path.contains("?") {
+            let parts = self.path.split("?");
+            self.path = parts[0];
+            if parts.len() > 1 {
+                self.parse_query_string(parts[1]);
+            }
+        }
+
+        // Extract body: support JSON and URL-encoded form data
+        let is_json = false;
+        let parsed_json = http_body_json(raw);
+        if parsed_json.is_ok() {
+            let val = parsed_json.unwrap();
+            if type_of(val) == "map" {
+                for k in val.keys() {
+                    self.data[string(k)] = val[k];
+                }
+                is_json = true;
+            }
+        }
+
+        if raw.has("body") and raw["body"] != null {
+            self.body = string(raw["body"]);
+            if not is_json and self.body != "" {
+                let ct = "";
+                if self.headers.has("content-type") {
+                    ct = string(self.headers["content-type"]).lower();
+                }
+                if ct.contains("application/x-www-form-urlencoded") or (ct == "" and self.body.contains("=")) {
+                    self.parse_form_encoded(self.body);
+                } elif ct.contains("multipart/form-data") {
+                    // Browser forms with FormData send multipart bodies.
+                    // Pass the ORIGINAL-case header: the boundary value is
+                    // case-sensitive and must match the body exactly.
+                    let ct_raw = string(self.headers["content-type"]);
+                    self.parse_multipart(self.body, ct_raw);
+                }
+            }
+        }
+
+        // Extract Session Cookie or Bearer Token
+        self.session_id = self.extract_session_token();
+    }
+
+    fn parse_query_string(self, qs: string) {
+        let clean_qs = qs.trim();
+        if clean_qs.starts_with("?") {
+            clean_qs = clean_qs.slice(1);
+        }
+        let pairs = clean_qs.split("&");
+        for p in pairs {
+            let p_trim = p.trim();
+            if p_trim != "" {
+                let eq = p_trim.index_of("=");
+                if eq >= 0 {
+                    let k = url_decode(p_trim.slice(0, eq).trim());
+                    let v = url_decode(p_trim.slice(eq + 1));
+                    self.query_params[k] = v;
+                    if not self.data.has(k) {
+                        self.data[k] = v;
+                    }
+                } else {
+                    let k = url_decode(p_trim);
+                    self.query_params[k] = "";
+                    if not self.data.has(k) {
+                        self.data[k] = "";
+                    }
+                }
+            }
+        }
+    }
+
+    fn parse_form_encoded(self, body_text: string) {
+        let clean_body = body_text.trim();
+        let pairs = clean_body.split("&");
+        for p in pairs {
+            let p_trim = p.trim();
+            if p_trim != "" {
+                let eq = p_trim.index_of("=");
+                if eq >= 0 {
+                    let k = url_decode(p_trim.slice(0, eq).trim());
+                    let v = url_decode(p_trim.slice(eq + 1));
+                    self.data[k] = v;
+                } else {
+                    let k = url_decode(p_trim);
+                    self.data[k] = "";
+                }
+            }
+        }
+    }
+
+    // Parse a multipart/form-data body (what browser FormData sends).
+    // Text fields only — file upload parts (filename=...) are skipped.
+    fn parse_multipart(self, body_text: string, content_type: string) {
+        let b_idx = content_type.index_of("boundary=");
+        if b_idx < 0 {
+            return;
+        }
+        let boundary = content_type.slice(b_idx + 9, content_type.len()).trim();
+        if boundary.starts_with("\"") and boundary.ends_with("\"") {
+            boundary = boundary.slice(1, boundary.len() - 1);
+        }
+        let delim = "--" + boundary;
+
+        let chunks = body_text.split(delim);
+        for chunk in chunks {
+            let c = chunk;
+            if c.starts_with("\r\n") {
+                c = c.slice(2, c.len());
+            } elif c.starts_with("\n") {
+                c = c.slice(1, c.len());
+            }
+            if c.len() == 0 or c == "--" {
+                continue;
+            }
+
+            // Split part into headers and value
+            let sep = c.index_of("\r\n\r\n");
+            let header_len = 4;
+            if sep < 0 {
+                sep = c.index_of("\n\n");
+                header_len = 2;
+                if sep < 0 {
+                    continue;
+                }
+            }
+            let part_headers = c.slice(0, sep).lower();
+            let value = c.slice(sep + header_len, c.len());
+
+            // Strip the trailing newline that preceded the boundary
+            while value.ends_with("\n") or value.ends_with("\r") {
+                value = value.slice(0, value.len() - 1);
+            }
+
+            // Skip file uploads (binary content is not supported here)
+            if part_headers.contains("filename=") {
+                continue;
+            }
+
+            let n_idx = part_headers.index_of("name=\"");
+            if n_idx < 0 {
+                continue;
+            }
+            let rest = part_headers.slice(n_idx + 6, part_headers.len());
+            let end_q = rest.index_of("\"");
+            if end_q < 0 {
+                continue;
+            }
+            let field = rest.slice(0, end_q);
+            if field != "" {
+                self.data[field] = value;
+            }
+        }
+    }
+
+    fn extract_session_token(self) -> string {
+        // 1. Authorization: Bearer <token>
+        if self.headers.has("authorization") {
+            let auth = self.headers["authorization"];
+            if auth.starts_with("Bearer ") {
+                self.session_source = "bearer";
+                return auth.replace("Bearer ", "").trim();
+            }
+        }
+        // 2. Cookie: <session cookie>=<token>  (name from config/session.matrix)
+        let cookie_name = Config.get("session.cookie", "spid3r_session");
+        if self.headers.has("cookie") {
+            let cookies = self.headers["cookie"].split(";");
+            for c in cookies {
+                let pair = c.trim().split("=");
+                if pair[0] == cookie_name and pair.len() > 1 {
+                    self.session_source = "cookie";
+                    return pair[1].trim();
+                }
+            }
+        }
+        return "";
+    }
+
+    // ------------------------------------------------------------------
+    // Client identity
+    // ------------------------------------------------------------------
+    // Best-effort client IP. Direct socket peers: the runtime may expose
+    // the peer address under several key names depending on version, so we
+    // probe the common ones. Reverse-proxy deployments: set
+    // SPID3R_TRUST_PROXY=1 to honor X-Forwarded-For / X-Real-IP (only do
+    // this when the proxy overwrites — never appends — these headers).
+    public fn client_ip(self) -> string {
+        let trust_proxy = false;
+        let tp = env("SPID3R_TRUST_PROXY");
+        if tp.is_some() {
+            let v = string(tp.unwrap()).trim().lower();
+            if v == "1" or v == "true" or v == "yes" {
+                trust_proxy = true;
+            }
+        }
+        if trust_proxy {
+            if self.headers.has("x-forwarded-for") {
+                let parts = string(self.headers["x-forwarded-for"]).split(",");
+                if parts.len() > 0 {
+                    let first = parts[0].trim();
+                    if first != "" {
+                        return first;
+                    }
+                }
+            }
+            if self.headers.has("x-real-ip") {
+                let rip = string(self.headers["x-real-ip"]).trim();
+                if rip != "" {
+                    return rip;
+                }
+            }
+        }
+        if self.raw != null and type_of(self.raw) == "map" {
+            let candidates = list("peer_addr", "remote_addr", "client_addr", "ip");
+            for k in candidates {
+                if self.raw.has(k) {
+                    let v = string(self.raw[k]);
+                    if v != "" {
+                        return v;
+                    }
+                }
+            }
+        }
+        return "unknown";
+    }
+
+    // ------------------------------------------------------------------------
+    // Input Accessors
+    // ------------------------------------------------------------------------
+
+    public fn input(self, key: string, default_val = null) {
+        if self.data.has(key) {
+            return self.data[key];
+        }
+        if self.query_params.has(key) {
+            return self.query_params[key];
+        }
+        if self.params.has(key) {
+            return self.params[key];
+        }
+        return default_val;
+    }
+
+    public fn string(self, key: string, default_val: string = "") -> string {
+        let v = self.input(key, null);
+        if v == null { return default_val; }
+        return string(v);
+    }
+
+    public fn int(self, key: string, default_val: int = 0) -> int {
+        let v = self.input(key, null);
+        if v == null { return default_val; }
+        try {
+            return int(v);
+        } catch (_e) {
+            return default_val;
+        }
+    }
+
+    public fn has(self, key: string) -> bool {
+        return self.data.has(key) or self.query_params.has(key) or self.params.has(key);
+    }
+
+    public fn all(self) {
+        return self.data;
+    }
+
+    public fn param(self, key: string, default_val = null) {
+        if self.params.has(key) {
+            return self.params[key];
+        }
+        return default_val;
+    }
+
+    public fn query(self, key: string, default_val = null) {
+        if self.query_params.has(key) {
+            return self.query_params[key];
+        }
+        return default_val;
+    }
+
+    public fn header(self, key: string, default_val = null) {
+        let lkey = string(key).lower();
+        if self.headers.has(lkey) {
+            return self.headers[lkey];
+        }
+        return default_val;
+    }
+
+    // ------------------------------------------------------------------------
+    // Declarative Validation (engine in framework/Validator.matrix)
+    // ------------------------------------------------------------------------
+    public fn validate(self, rules) {
+        let engine = new Validator();
+        return engine.check(self, rules);
+    }
+
+}
+

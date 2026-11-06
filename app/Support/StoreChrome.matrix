@@ -1,0 +1,38 @@
+// app/Support/StoreChrome.matrix
+// Shared storefront chrome.
+//
+// Every page of the store renders the same navigation, currency switcher
+// and language switcher. Building that data in ONE place keeps the layout
+// consistent and keeps the translation lookup in a single spot.
+//
+// CURRENCY MODEL:
+//   display_currency — the currency the customer browses prices in.
+//   base_currency   — the currency every amount is actually recorded in
+//                     (and therefore billed in). Amounts are never stored
+//                     in a display currency.
+
+import "app/Services/CurrencyService";
+import "app/Services/LocaleService";
+
+public fn build(req, settings) {
+    let base_currency = string(settings["currency"]);
+    let base_locale = string(settings["locale"]);
+    let currencies = new CurrencyService(base_currency);
+    let locales = new LocaleService(base_locale);
+    let display_currency = currencies.selected(req);
+    let locale = locales.selected(req);
+    return map(
+        "display_currency", display_currency,
+        "base_currency", base_currency,
+        "current_path", string(req.path),
+        "currency_options", currencies.catalog(display_currency),
+        "locale_options", locales.locales(),
+        "active_locale", locale,
+        "nav_catalog", locales.translate(locale, "nav", "catalog", "Catalog"),
+        "nav_cart", locales.translate(locale, "nav", "cart", "Cart"),
+        "nav_wishlist", locales.translate(locale, "nav", "wishlist", "Wishlist"),
+        "nav_track", locales.translate(locale, "nav", "track", "Track order"),
+        "nav_support", locales.translate(locale, "nav", "support", "Support"),
+        "nav_account", locales.translate(locale, "nav", "account", "Account")
+    );
+}

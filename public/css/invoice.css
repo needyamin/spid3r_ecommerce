@@ -1,0 +1,11 @@
+/* Invoice print styles — standalone page, no store layout. */
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #17222e; margin: 32px auto; max-width: 760px; line-height: 1.6; }
+h1 { font-size: 24px; } h2 { font-size: 16px; margin-top: 24px; }
+table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+th, td { text-align: left; padding: 8px; border-bottom: 1px solid #e3e8ee; }
+th.right, td.right { text-align: right; }
+.totals { margin-left: auto; width: 280px; }
+.totals div { display: flex; justify-content: space-between; padding: 4px 0; }
+.grand { border-top: 2px solid #17222e; font-weight: 800; margin-top: 8px; padding-top: 10px; }
+.muted { color: #5b6b7b; font-size: 13px; }
+@media print { .no-print { display: none; } }
