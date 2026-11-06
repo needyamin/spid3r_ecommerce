@@ -99,7 +99,7 @@ just green locally.
 ## Verification tools
 
 ```bash
-./deploy/docker-smoke.sh postgres    # real engine in Docker + real HTTP server
+./deploy/docker-smoke.sh           # real engine in Docker + real HTTP server (MySQL)
 LOAD_ITERS=150 spid3r run tools/store_load.matrix   # application-layer load probe
 spid3r magic route:list              # every registered route
 ```

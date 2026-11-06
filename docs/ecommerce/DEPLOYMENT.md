@@ -46,9 +46,9 @@ Boots the real engine from the same compose file, then verifies the
 **host-process server** — the path CI and `magic serve` deployments use:
 
 ```bash
-./deploy/docker-smoke.sh postgres        # or: mysql
-SMOKE_ONLY=1 ./deploy/docker-smoke.sh postgres   # skip the full suite
-PORT=8010 ./deploy/docker-smoke.sh mysql         # choose the HTTP port
+./deploy/docker-smoke.sh
+SMOKE_ONLY=1 ./deploy/docker-smoke.sh   # skip the full suite
+PORT=8010 ./deploy/docker-smoke.sh   # choose the HTTP port
 ```
 
 What it does, in order:

@@ -576,7 +576,7 @@ Cache.remember(key, ttl, fn() { …query + decorate… })</code></pre>
 <pre><code>rm -f database/database.sqlite*
 spid3r magic migrate &amp;&amp; spid3r magic db:seed
 SPID3R_DB_DRIVER=sqlite spid3r magic test</code></pre>
-<p>Also worth running before pushing: the load probe (<code>LOAD_ITERS=50 spid3r run tools/store_load.matrix</code>) and the Docker smoke (<code>./deploy/docker-smoke.sh postgres</code>).</p>
+<p>Also worth running before pushing: the load probe (<code>LOAD_ITERS=50 spid3r run tools/store_load.matrix</code>) and the Docker smoke (<code>./deploy/docker-smoke.sh</code>).</p>
 
 <h2 id="suitemap">Suite map (31 suites)</h2>
 <table>
@@ -628,8 +628,8 @@ SPID3R_DB_DRIVER=sqlite spid3r magic test</code></pre>
   <div class="card">
     <h4>Host process + Docker DBs</h4>
     <p>The deployment smoke: engine in Docker, real server on the host, ten HTTP checks over TCP, optional full suite, teardown.</p>
-    <pre><code>./deploy/docker-smoke.sh postgres
-SMOKE_ONLY=1 ./deploy/docker-smoke.sh mysql</code></pre>
+    <pre><code>./deploy/docker-smoke.sh
+SMOKE_ONLY=1 ./deploy/docker-smoke.sh</code></pre>
   </div>
 </div>
 <p>Rollback: the app is stateless apart from the DB and the upload volume; migrations through 020 are additive, so an older binary keeps working against a newer schema. DB backup/restore is in <a href="BACKUP.md">BACKUP.md</a>.</p>

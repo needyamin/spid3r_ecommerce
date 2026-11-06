@@ -1,11 +1,11 @@
 # Local Docker environment for Spid3rWeb.
 #
-#   docker compose up --build -d
-#   open http://localhost:8080
+#   docker compose up -d --build
+#   open http://localhost:8090   (store)
+#   open http://localhost:8091   (phpMyAdmin)
 #
-# The app talks to MySQL by default. To switch engines, change
-# SPID3R_DB_DRIVER to "postgres" (or "sqlite" for zero external DB) and the
-# matching SPID3R_* connection vars.
+# The app talks to MySQL. For a zero-external-DB variant switch
+# SPID3R_DB_DRIVER to "sqlite".
 
 services:
   app:
@@ -73,27 +73,5 @@ services:
       retries: 20
     restart: unless-stopped
 
-  postgres:
-    image: postgres:16
-    container_name: spid3rweb-postgres
-    environment:
-      POSTGRES_DB: spid3r
-      POSTGRES_USER: postgres
-      # The runtime's PostgreSQL client speaks md5/trust auth only (not
-      # SCRAM) — same as the CI service container. Documented in
-      # .env.example and docs/ecommerce/DEPLOYMENT.md.
-      POSTGRES_HOST_AUTH_METHOD: trust
-    ports:
-      - "5432:5432"
-    volumes:
-      - pg-data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d spid3r"]
-      interval: 5s
-      timeout: 5s
-      retries: 20
-    restart: unless-stopped
-
 volumes:
   mysql-data:
-  pg-data:

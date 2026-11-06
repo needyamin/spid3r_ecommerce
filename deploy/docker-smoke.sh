@@ -12,9 +12,8 @@
 # the host-process path that CI and `magic serve` deployments use.
 #
 # Usage:
-#   ./deploy/docker-smoke.sh postgres        # default
-#   ./deploy/docker-smoke.sh mysql
-#   SMOKE_ONLY=1 ./deploy/docker-smoke.sh postgres   # skip the full suite
+#   ./deploy/docker-smoke.sh mysql        # default
+#   SMOKE_ONLY=1 ./deploy/docker-smoke.sh mysql   # skip the full suite
 #
 # Environment:
 #   PORT        HTTP port for the verification server (default 8010)
@@ -22,7 +21,7 @@
 
 set -eu
 
-ENGINE="${1:-postgres}"
+ENGINE="${1:-mysql}"
 PORT="${PORT:-8010}"
 BASE="http://127.0.0.1:$PORT"
 COMPOSE="docker compose -f deploy/docker-compose.yml"
@@ -54,18 +53,8 @@ case "$ENGINE" in
         export SPID3R_MYSQL_PASSWORD=spid3r
         export SPID3R_MYSQL_DATABASE=spid3r
         ;;
-    postgres)
-        COMPOSE_SVC=postgres
-        CONTAINER=spid3rweb-postgres
-        export SPID3R_DB_DRIVER=postgres
-        export SPID3R_PG_HOST=127.0.0.1
-        export SPID3R_PG_PORT=5432
-        export SPID3R_PG_USER=postgres
-        export SPID3R_PG_PASSWORD=postgres
-        export SPID3R_PG_DATABASE=spid3r
-        ;;
     *)
-        printf 'unknown engine: %s (use postgres or mysql)\n' "$ENGINE" >&2
+        printf 'unknown engine: %s (use mysql)\n' "$ENGINE" >&2
         exit 2
         ;;
 esac

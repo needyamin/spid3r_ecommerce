@@ -74,7 +74,7 @@ SPID3R_DB_DRIVER=sqlite spid3r magic test
 
 # Real-server verification: boots the engine in Docker, migrates, seeds,
 # starts the actual HTTP server and smoke-tests it over TCP.
-./deploy/docker-smoke.sh postgres        # or: mysql
+./deploy/docker-smoke.sh mysql
 ```
 
 CI runs the full suite on **SQLite, PostgreSQL and MySQL**, plus the
