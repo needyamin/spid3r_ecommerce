@@ -25,4 +25,6 @@ public fn register_checkout_routes() {
     // Admin order management.
     Route.get("/admin/api/orders", fn(req) { return orders.admin_index(req); }).middleware("permission:orders.manage");
     Route.put("/admin/api/orders/:id/status", fn(req) { return orders.admin_status(req); }).middleware("permission:orders.manage");
+    // Browser-form variant (HTML forms can only POST).
+    Route.post("/admin/api/orders/:id/status", fn(req) { return orders.admin_status_form(req); }).middleware("permission:orders.manage");
 }

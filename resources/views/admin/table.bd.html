@@ -5,6 +5,7 @@
 @include("partials.admin_nav")
   <h1 class="page-title">{{ title }}</h1>
 
+@if(show_generic_table)
 @if(has_rows)
   <div class="dz-card p-3 my-3">
     <div class="table-responsive">
@@ -29,9 +30,10 @@
 @else
   <p class="empty-note">No records yet.</p>
 @endif
+@endif
 
 @if(is_settings)
-  <div class="dz-card p-4 my-4" style="max-width: 560px;">
+  <div class="dz-card p-4 my-4 dz-form-narrow">
     <h2 class="h6 mb-3">Update a setting</h2>
     <form method="post" action="/admin/api/settings">
       <input type="hidden" name="_csrf" value="{{ csrf }}">
@@ -52,7 +54,7 @@
   </div>
 @endif
 @if(is_coupons)
-  <div class="dz-card p-4 my-4" style="max-width: 560px;">
+  <div class="dz-card p-4 my-4 dz-form-narrow">
     <h2 class="h6 mb-3">Create coupon</h2>
     <form method="post" action="/admin/api/coupons">
       <input type="hidden" name="_csrf" value="{{ csrf }}">
@@ -80,6 +82,446 @@
       </div>
       <button class="btn btn-primary" type="submit">Create coupon</button>
     </form>
+  </div>
+@endif
+
+@if(is_products)
+  <div class="dz-card p-4 my-3">
+    <h2 class="h6 mb-3">Add a product</h2>
+    <form method="post" action="/admin/api/products/create" data-ajax="admin">
+      <input type="hidden" name="_csrf" value="{{ csrf }}">
+      <div class="row g-2">
+        <div class="col-12 col-lg-4">
+          <label class="form-label small text-secondary mb-1" for="new-product-name">Name</label>
+          <input id="new-product-name" name="name" class="form-control" required>
+        </div>
+        <div class="col-6 col-lg-2">
+          <label class="form-label small text-secondary mb-1" for="new-product-sku">SKU</label>
+          <input id="new-product-sku" name="sku" class="form-control" required>
+        </div>
+        <div class="col-6 col-lg-2">
+          <label class="form-label small text-secondary mb-1" for="new-product-price">Price (BDT)</label>
+          <input id="new-product-price" name="price" type="number" step="0.01" min="0.01" class="form-control" required>
+        </div>
+        <div class="col-6 col-lg-2">
+          <label class="form-label small text-secondary mb-1" for="new-product-stock">Stock</label>
+          <input id="new-product-stock" name="stock" type="number" min="0" value="0" class="form-control">
+        </div>
+        <div class="col-6 col-lg-2">
+          <label class="form-label small text-secondary mb-1" for="new-product-status">Status</label>
+          <select id="new-product-status" name="status" class="form-select">
+            <option value="draft">Draft</option>
+            <option value="published">Published</option>
+          </select>
+        </div>
+      </div>
+      <div class="row g-2 mt-1">
+        <div class="col-12 col-lg-4">
+          <label class="form-label small text-secondary mb-1" for="new-product-category">Category</label>
+          <select id="new-product-category" name="category_id" class="form-select" required>
+@foreach(cat in category_options)
+            <option value="{{ cat.value }}">{{ cat.label }}</option>
+@endforeach
+          </select>
+        </div>
+        <div class="col-12 col-lg-4">
+          <label class="form-label small text-secondary mb-1" for="new-product-brand">Brand</label>
+          <select id="new-product-brand" name="brand_id" class="form-select">
+            <option value="">No brand</option>
+@foreach(b in brand_options)
+            <option value="{{ b.value }}">{{ b.label }}</option>
+@endforeach
+          </select>
+        </div>
+        <div class="col-12 col-lg-4">
+          <label class="form-label small text-secondary mb-1" for="new-product-compare">Compare-at price (BDT)</label>
+          <input id="new-product-compare" name="compare_at" type="number" step="0.01" min="0" class="form-control">
+        </div>
+      </div>
+      <div class="mt-2">
+        <label class="form-label small text-secondary mb-1" for="new-product-short">Short description</label>
+        <input id="new-product-short" name="short_description" class="form-control">
+      </div>
+      <div class="mt-2">
+        <label class="form-label small text-secondary mb-1" for="new-product-description">Description</label>
+        <textarea id="new-product-description" name="description" rows="3" class="form-control"></textarea>
+      </div>
+      <button class="btn btn-primary mt-3" type="submit">Create product</button>
+    </form>
+  </div>
+
+  <div class="dz-card p-3 my-3">
+    <h2 class="h6 mb-3">Products — edit, publish or unpublish</h2>
+@if(has_product_rows)
+    <div class="table-responsive">
+      <table class="table table-sm table-striped table-hover align-middle mb-0">
+        <thead><tr><th>ID</th><th>Name</th><th>SKU</th><th>Price</th><th>Status</th><th>Actions</th></tr></thead>
+        <tbody>
+@foreach(p in product_rows)
+          <tr>
+            <td>{{ p.id }}</td>
+            <td>{{ p.name }}</td>
+            <td>{{ p.sku }}</td>
+            <td class="text-nowrap">{{ p.price_display }}</td>
+            <td>{{ p.status }}</td>
+            <td>
+              <form method="post" action="/admin/api/products/{{ p.id }}/update" data-ajax="admin" class="d-flex flex-wrap align-items-center gap-1 mb-1">
+                <input type="hidden" name="_csrf" value="{{ csrf }}">
+                <input class="form-control form-control-sm dz-admin-input" name="name" value="{{ p.name }}" aria-label="Product name">
+                <input class="form-control form-control-sm dz-admin-input dz-admin-price" name="price" type="number" step="0.01" min="0.01" value="{{ p.price }}" aria-label="Price in BDT">
+                <select class="form-select form-select-sm dz-admin-select" name="status" aria-label="Publication status">
+@foreach(opt in p.status_options)
+@if(opt.selected)
+                  <option value="{{ opt.value }}" selected>{{ opt.label }}</option>
+@else
+                  <option value="{{ opt.value }}">{{ opt.label }}</option>
+@endif
+@endforeach
+                </select>
+                <button class="btn btn-primary btn-sm" type="submit">Save</button>
+              </form>
+              <form method="post" action="/admin/api/products/{{ p.id }}/publish-form" data-ajax="admin" class="d-inline">
+                <input type="hidden" name="_csrf" value="{{ csrf }}">
+                <button class="btn btn-light border btn-sm" type="submit">Publish</button>
+              </form>
+              <form method="post" action="/admin/api/products/{{ p.id }}/unpublish-form" data-ajax="admin" class="d-inline">
+                <input type="hidden" name="_csrf" value="{{ csrf }}">
+                <button class="btn btn-light border btn-sm" type="submit">Unpublish</button>
+              </form>
+            </td>
+          </tr>
+@endforeach
+        </tbody>
+      </table>
+    </div>
+@else
+    <p class="empty-note">No products yet — add the first one above.</p>
+@endif
+  </div>
+@endif
+
+@if(is_categories)
+  <div class="dz-card p-4 my-3">
+    <h2 class="h6 mb-3">Add a category</h2>
+    <form method="post" action="/admin/api/categories/create" data-ajax="admin">
+      <input type="hidden" name="_csrf" value="{{ csrf }}">
+      <div class="row g-2">
+        <div class="col-12 col-lg-4">
+          <label class="form-label small text-secondary mb-1" for="new-category-name">Name</label>
+          <input id="new-category-name" name="name" class="form-control" required>
+        </div>
+        <div class="col-12 col-lg-4">
+          <label class="form-label small text-secondary mb-1" for="new-category-parent">Parent category</label>
+          <select id="new-category-parent" name="parent_id" class="form-select">
+            <option value="">Top level</option>
+@foreach(cat in category_options)
+            <option value="{{ cat.value }}">{{ cat.label }}</option>
+@endforeach
+          </select>
+        </div>
+        <div class="col-12 col-lg-4">
+          <label class="form-label small text-secondary mb-1" for="new-category-sort">Sort order</label>
+          <input id="new-category-sort" name="sort_order" type="number" value="0" class="form-control">
+        </div>
+      </div>
+      <div class="mt-2">
+        <label class="form-label small text-secondary mb-1" for="new-category-description">Description</label>
+        <input id="new-category-description" name="description" class="form-control">
+      </div>
+      <button class="btn btn-primary mt-3" type="submit">Create category</button>
+    </form>
+  </div>
+
+  <div class="dz-card p-3 my-3">
+    <h2 class="h6 mb-3">Categories</h2>
+@if(has_category_rows)
+    <div class="table-responsive">
+      <table class="table table-sm table-striped table-hover align-middle mb-0">
+        <thead><tr><th>ID</th><th>Name</th><th>Slug</th><th>Actions</th></tr></thead>
+        <tbody>
+@foreach(c in category_rows)
+          <tr>
+            <td>{{ c.id }}</td>
+            <td>{{ c.name }}</td>
+            <td>{{ c.slug }}</td>
+            <td>
+              <form method="post" action="/admin/api/categories/{{ c.id }}/update" data-ajax="admin" class="d-flex flex-wrap align-items-center gap-1">
+                <input type="hidden" name="_csrf" value="{{ csrf }}">
+                <input class="form-control form-control-sm dz-admin-input" name="name" value="{{ c.name }}" aria-label="Category name">
+                <button class="btn btn-primary btn-sm" type="submit">Save</button>
+              </form>
+            </td>
+          </tr>
+@endforeach
+        </tbody>
+      </table>
+    </div>
+@else
+    <p class="empty-note">No categories yet — add the first one above.</p>
+@endif
+  </div>
+@endif
+
+@if(is_brands)
+  <div class="dz-card p-4 my-3">
+    <h2 class="h6 mb-3">Add a brand</h2>
+    <form method="post" action="/admin/api/brands/create" data-ajax="admin">
+      <input type="hidden" name="_csrf" value="{{ csrf }}">
+      <div class="row g-2">
+        <div class="col-12 col-lg-4">
+          <label class="form-label small text-secondary mb-1" for="new-brand-name">Name</label>
+          <input id="new-brand-name" name="name" class="form-control" required>
+        </div>
+        <div class="col-12 col-lg-8">
+          <label class="form-label small text-secondary mb-1" for="new-brand-description">Description</label>
+          <input id="new-brand-description" name="description" class="form-control">
+        </div>
+      </div>
+      <button class="btn btn-primary mt-3" type="submit">Create brand</button>
+    </form>
+  </div>
+
+  <div class="dz-card p-3 my-3">
+    <h2 class="h6 mb-3">Brands</h2>
+@if(has_brand_rows)
+    <div class="table-responsive">
+      <table class="table table-sm table-striped table-hover align-middle mb-0">
+        <thead><tr><th>ID</th><th>Name</th><th>Slug</th><th>Actions</th></tr></thead>
+        <tbody>
+@foreach(b in brand_rows)
+          <tr>
+            <td>{{ b.id }}</td>
+            <td>{{ b.name }}</td>
+            <td>{{ b.slug }}</td>
+            <td>
+              <form method="post" action="/admin/api/brands/{{ b.id }}/update" data-ajax="admin" class="d-flex flex-wrap align-items-center gap-1">
+                <input type="hidden" name="_csrf" value="{{ csrf }}">
+                <input class="form-control form-control-sm dz-admin-input" name="name" value="{{ b.name }}" aria-label="Brand name">
+                <button class="btn btn-primary btn-sm" type="submit">Save</button>
+              </form>
+            </td>
+          </tr>
+@endforeach
+        </tbody>
+      </table>
+    </div>
+@else
+    <p class="empty-note">No brands yet — add the first one above.</p>
+@endif
+  </div>
+@endif
+
+@if(is_inventory)
+  <div class="dz-card p-3 my-3">
+    <h2 class="h6 mb-3">Inventory — add stock</h2>
+@if(has_inventory_rows)
+    <div class="table-responsive">
+      <table class="table table-sm table-striped table-hover align-middle mb-0">
+        <thead><tr><th>Product</th><th>Available</th><th>Reserved</th><th>Low-stock at</th><th>Restock</th></tr></thead>
+        <tbody>
+@foreach(inv in inventory_rows)
+          <tr>
+            <td>{{ inv.product_name }}</td>
+            <td>{{ inv.quantity }}</td>
+            <td>{{ inv.reserved }}</td>
+            <td>{{ inv.low_stock_threshold }}</td>
+            <td>
+              <form method="post" action="/admin/api/products/{{ inv.product_id }}/inventory/restock-form" data-ajax="admin" class="d-flex flex-wrap align-items-center gap-1">
+                <input type="hidden" name="_csrf" value="{{ csrf }}">
+                <input class="form-control form-control-sm dz-admin-input dz-admin-price" name="quantity" type="number" min="1" value="1" aria-label="Quantity to add">
+                <button class="btn btn-primary btn-sm" type="submit">Add stock</button>
+              </form>
+            </td>
+          </tr>
+@endforeach
+        </tbody>
+      </table>
+    </div>
+@else
+    <p class="empty-note">No inventory rows yet.</p>
+@endif
+  </div>
+@endif
+
+@if(is_customers)
+  <div class="dz-card p-3 my-3">
+    <h2 class="h6 mb-3">Customers — activate or suspend</h2>
+@if(has_customer_rows)
+    <div class="table-responsive">
+      <table class="table table-sm table-striped table-hover align-middle mb-0">
+        <thead><tr><th>ID</th><th>Name</th><th>Email</th><th>Status</th><th>Actions</th></tr></thead>
+        <tbody>
+@foreach(c in customer_rows)
+          <tr>
+            <td>{{ c.id }}</td>
+            <td>{{ c.name }}</td>
+            <td>{{ c.email }}</td>
+            <td>{{ c.status }}</td>
+            <td>
+              <form method="post" action="/admin/api/customers/{{ c.id }}/status" data-ajax="admin" class="d-flex flex-wrap align-items-center gap-1">
+                <input type="hidden" name="_csrf" value="{{ csrf }}">
+                <select class="form-select form-select-sm dz-admin-select" name="status" aria-label="Account status">
+@foreach(opt in c.status_options)
+@if(opt.selected)
+                  <option value="{{ opt.value }}" selected>{{ opt.label }}</option>
+@else
+                  <option value="{{ opt.value }}">{{ opt.label }}</option>
+@endif
+@endforeach
+                </select>
+                <button class="btn btn-primary btn-sm" type="submit">Save</button>
+              </form>
+            </td>
+          </tr>
+@endforeach
+        </tbody>
+      </table>
+    </div>
+@else
+    <p class="empty-note">No customers yet.</p>
+@endif
+  </div>
+@endif
+
+@if(is_staff)
+  <div class="dz-card p-4 my-3">
+    <h2 class="h6 mb-3">Assign a staff role</h2>
+    <form method="post" action="/admin/api/staff/role" data-ajax="admin" class="d-flex flex-wrap align-items-end gap-2">
+      <input type="hidden" name="_csrf" value="{{ csrf }}">
+      <div>
+        <label class="form-label small text-secondary mb-1" for="staff-member">Staff member</label>
+        <select id="staff-member" name="user_id" class="form-select" required>
+@foreach(s in staff_rows)
+          <option value="{{ s.id }}">{{ s.name }} ({{ s.email }})</option>
+@endforeach
+        </select>
+      </div>
+      <div>
+        <label class="form-label small text-secondary mb-1" for="staff-role">Role</label>
+        <select id="staff-role" name="role" class="form-select" required>
+@foreach(r in role_options)
+          <option value="{{ r.value }}">{{ r.label }}</option>
+@endforeach
+        </select>
+      </div>
+      <button class="btn btn-primary" type="submit">Assign role</button>
+    </form>
+  </div>
+
+  <div class="dz-card p-3 my-3">
+    <h2 class="h6 mb-3">Staff</h2>
+@if(has_staff_rows)
+    <div class="table-responsive">
+      <table class="table table-sm table-striped table-hover align-middle mb-0">
+        <thead><tr><th>ID</th><th>Name</th><th>Email</th></tr></thead>
+        <tbody>
+@foreach(s in staff_rows)
+          <tr>
+            <td>{{ s.id }}</td>
+            <td>{{ s.name }}</td>
+            <td>{{ s.email }}</td>
+          </tr>
+@endforeach
+        </tbody>
+      </table>
+    </div>
+@else
+    <p class="empty-note">No staff members yet.</p>
+@endif
+  </div>
+@endif
+
+@if(is_roles)
+  <div class="dz-card p-4 my-3">
+    <h2 class="h6 mb-3">Grant or revoke a permission</h2>
+    <p class="small text-secondary">Pick a role, choose a permission and save.</p>
+@foreach(r in role_rows)
+    <form method="post" action="/admin/api/roles/{{ r.id }}/permissions" data-ajax="admin" class="d-flex flex-wrap align-items-end gap-2 mb-2">
+      <input type="hidden" name="_csrf" value="{{ csrf }}">
+      <div>
+        <label class="form-label small text-secondary mb-1" for="role-{{ r.id }}">Role</label>
+        <select id="role-{{ r.id }}" name="role_placeholder" class="form-select" disabled>
+          <option selected>{{ r.name }}</option>
+        </select>
+      </div>
+      <div>
+        <label class="form-label small text-secondary mb-1" for="perm-{{ r.id }}">Permission</label>
+        <select id="perm-{{ r.id }}" name="permission" class="form-select" required>
+@foreach(p in permission_options)
+          <option value="{{ p.value }}">{{ p.label }}</option>
+@endforeach
+        </select>
+      </div>
+      <div class="form-check mb-1">
+        <input class="form-check-input" type="checkbox" name="enabled" value="1" id="perm-on-{{ r.id }}">
+        <label class="form-check-label small" for="perm-on-{{ r.id }}">Granted</label>
+      </div>
+      <button class="btn btn-primary" type="submit">Apply to {{ r.name }}</button>
+    </form>
+@endforeach
+  </div>
+
+  <div class="dz-card p-3 my-3">
+    <h2 class="h6 mb-3">Roles</h2>
+@if(has_role_rows)
+    <div class="table-responsive">
+      <table class="table table-sm table-striped table-hover align-middle mb-0">
+        <thead><tr><th>ID</th><th>Name</th><th>Slug</th><th>Permissions</th></tr></thead>
+        <tbody>
+@foreach(r in role_rows)
+          <tr>
+            <td>{{ r.id }}</td>
+            <td>{{ r.name }}</td>
+            <td>{{ r.slug }}</td>
+            <td>{{ r.permission_count }}</td>
+          </tr>
+@endforeach
+        </tbody>
+      </table>
+    </div>
+@else
+    <p class="empty-note">No roles yet.</p>
+@endif
+  </div>
+@endif
+
+@if(is_orders)
+  <div class="dz-card p-3 my-3">
+    <h2 class="h6 mb-3">Orders — update status</h2>
+@if(has_order_rows)
+    <div class="table-responsive">
+      <table class="table table-sm table-striped table-hover align-middle mb-0">
+        <thead><tr><th>Order</th><th>Total</th><th>Placed</th><th>Status</th><th>Actions</th></tr></thead>
+        <tbody>
+@foreach(o in order_rows)
+          <tr>
+            <td>{{ o.order_number }}</td>
+            <td class="text-nowrap">{{ o.total_display }}</td>
+            <td>{{ o.placed_at }}</td>
+            <td>{{ o.status }}</td>
+            <td>
+              <form method="post" action="/admin/api/orders/{{ o.id }}/status" data-ajax="admin" class="d-flex flex-wrap align-items-center gap-1">
+                <input type="hidden" name="_csrf" value="{{ csrf }}">
+                <select class="form-select form-select-sm dz-admin-select" name="status" aria-label="Order status">
+@foreach(opt in o.status_options)
+@if(opt.selected)
+                  <option value="{{ opt.value }}" selected>{{ opt.label }}</option>
+@else
+                  <option value="{{ opt.value }}">{{ opt.label }}</option>
+@endif
+@endforeach
+                </select>
+                <button class="btn btn-primary btn-sm" type="submit">Save</button>
+              </form>
+            </td>
+          </tr>
+@endforeach
+        </tbody>
+      </table>
+    </div>
+@else
+    <p class="empty-note">No orders yet.</p>
+@endif
   </div>
 @endif
 @endsection

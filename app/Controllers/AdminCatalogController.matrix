@@ -13,6 +13,7 @@ import "app/Services/ImageService";
 import "app/Repositories/CatalogRepository";
 import "app/Repositories/ProductRepository";
 import "app/Validators/CatalogValidators" as CatalogValidators;
+import "app/Support/Money" as Money;
 
 let identity = fn(row) { return row; };
 
@@ -165,6 +166,216 @@ public class AdminCatalogController {
     public fn brand_delete(self, req) {
         self.brands.delete(self.id_of(req));
         return json(map("data", map("deleted", true)));
+    }
+
+    // ---------- browser-form write endpoints ----------
+    //
+    // HTML forms can only POST, so every write also gets a form-friendly
+    // POST route (the JSON API keeps its PUT/DELETE variants). These
+    // handlers whitelist the editable columns, accept prices in MAJOR
+    // units ("1234.56" — converted with the money helper, never a float)
+    // and redirect back to the admin page when the client is a browser.
+
+    fn product_form_data(self, req) {
+        let data = map();
+        let name = string(req.input("name", "")).trim();
+        if name != "" {
+            data["name"] = name;
+        }
+        let cat = string(req.input("category_id", "")).trim();
+        if cat != "" {
+            data["category_id"] = int(cat);
+        }
+        let brand = string(req.input("brand_id", "")).trim();
+        if brand != "" {
+            data["brand_id"] = int(brand);
+        }
+        let price = string(req.input("price", "")).trim();
+        if price != "" {
+            data["price_minor"] = Money.to_minor(price);
+        }
+        let compare = string(req.input("compare_at", "")).trim();
+        if compare != "" {
+            data["compare_at_minor"] = Money.to_minor(compare);
+        }
+        let status = string(req.input("status", "")).trim();
+        if status != "" {
+            data["status"] = status;
+        }
+        let short = string(req.input("short_description", "")).trim();
+        if short != "" {
+            data["short_description"] = short;
+        }
+        let desc = string(req.input("description", "")).trim();
+        if desc != "" {
+            data["description"] = desc;
+        }
+        return data;
+    }
+
+    public fn product_create_form(self, req) {
+        let name = string(req.input("name", "")).trim();
+        let sku = string(req.input("sku", "")).trim();
+        let cat = int(req.input("category_id", 0));
+        let price = Money.to_minor(string(req.input("price", "")));
+        if len(name) < 2 {
+            throw validation_failed(map("name", "Enter a product name."));
+        }
+        if sku == "" {
+            throw validation_failed(map("sku", "Enter a SKU."));
+        }
+        if cat <= 0 {
+            throw validation_failed(map("category_id", "Choose a category."));
+        }
+        if price <= 0 {
+            throw validation_failed(map("price", "Enter a price greater than zero."));
+        }
+        let brand = null;
+        let brand_raw = string(req.input("brand_id", "")).trim();
+        if brand_raw != "" {
+            brand = int(brand_raw);
+        }
+        let status = string(req.input("status", "draft")).trim();
+        if status == "" {
+            status = "draft";
+        }
+        let data = map(
+            "name", name,
+            "category_id", cat,
+            "brand_id", brand,
+            "sku", sku,
+            "price_minor", price,
+            "short_description", string(req.input("short_description", "")),
+            "description", string(req.input("description", "")),
+            "tax_rate_bps", 0,
+            "weight_grams", int(req.input("weight_grams", 0)),
+            "meta_title", name,
+            "meta_description", string(req.input("short_description", "")),
+            "status", status
+        );
+        let compare = string(req.input("compare_at", "")).trim();
+        if compare != "" {
+            data["compare_at_minor"] = Money.to_minor(compare);
+        }
+        let row = self.products.create(data);
+        // Optional opening stock (every product gets an inventory row).
+        let stock = int(req.input("stock", 0));
+        if stock > 0 {
+            self.inventory.restock(row["id"], stock);
+        }
+        if req.input("format", "") != "json" {
+            return redirect("/admin/products");
+        }
+        return json(resource_item(row, identity), 201);
+    }
+
+    public fn product_update_form(self, req) {
+        let row = self.products.update(self.id_of(req), self.product_form_data(req));
+        if req.input("format", "") != "json" {
+            return redirect("/admin/products");
+        }
+        return json(resource_item(row, identity));
+    }
+
+    public fn product_publish_form(self, req) {
+        let row = self.products.publish(self.id_of(req), true);
+        if req.input("format", "") != "json" {
+            return redirect("/admin/products");
+        }
+        return json(resource_item(row, identity));
+    }
+
+    public fn product_unpublish_form(self, req) {
+        let row = self.products.publish(self.id_of(req), false);
+        if req.input("format", "") != "json" {
+            return redirect("/admin/products");
+        }
+        return json(resource_item(row, identity));
+    }
+
+    public fn category_create_form(self, req) {
+        let name = string(req.input("name", "")).trim();
+        if len(name) < 2 {
+            throw validation_failed(map("name", "Enter a category name."));
+        }
+        let parent = null;
+        let parent_raw = string(req.input("parent_id", "")).trim();
+        if parent_raw != "" {
+            parent = int(parent_raw);
+        }
+        let description = string(req.input("description", ""));
+        let row = self.categories.create(map(
+            "name", name,
+            "parent_id", parent,
+            "description", description,
+            "sort_order", int(req.input("sort_order", 0)),
+            "meta_title", name,
+            "meta_description", description
+        ));
+        if req.input("format", "") != "json" {
+            return redirect("/admin/categories");
+        }
+        return json(resource_item(row, identity), 201);
+    }
+
+    public fn category_update_form(self, req) {
+        let data = map();
+        let name = string(req.input("name", "")).trim();
+        if name != "" {
+            data["name"] = name;
+        }
+        let description = string(req.input("description", ""));
+        if description != "" {
+            data["description"] = description;
+        }
+        let sort_order = string(req.input("sort_order", "")).trim();
+        if sort_order != "" {
+            data["sort_order"] = int(sort_order);
+        }
+        let row = self.categories.update(self.id_of(req), data);
+        if req.input("format", "") != "json" {
+            return redirect("/admin/categories");
+        }
+        return json(resource_item(row, identity));
+    }
+
+    public fn brand_create_form(self, req) {
+        let name = string(req.input("name", "")).trim();
+        if len(name) < 2 {
+            throw validation_failed(map("name", "Enter a brand name."));
+        }
+        let description = string(req.input("description", ""));
+        let row = self.brands.create(map("name", name, "description", description));
+        if req.input("format", "") != "json" {
+            return redirect("/admin/brands");
+        }
+        return json(resource_item(row, identity), 201);
+    }
+
+    public fn brand_update_form(self, req) {
+        let data = map();
+        let name = string(req.input("name", "")).trim();
+        if name != "" {
+            data["name"] = name;
+        }
+        let description = string(req.input("description", ""));
+        if description != "" {
+            data["description"] = description;
+        }
+        let row = self.brands.update(self.id_of(req), data);
+        if req.input("format", "") != "json" {
+            return redirect("/admin/brands");
+        }
+        return json(resource_item(row, identity));
+    }
+
+    public fn inventory_restock_form(self, req) {
+        self.validate(req, CatalogValidators.restock_rules());
+        let row = self.inventory.restock(self.id_of(req), int(req.input("quantity", 0)));
+        if req.input("format", "") != "json" {
+            return redirect("/admin/inventory");
+        }
+        return json(resource_item(row, identity));
     }
 
     // ---------- variants ----------

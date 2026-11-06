@@ -271,3 +271,9 @@ h1, h2, h3, h4, h5 { font-weight: 700; }
 .demo-creds-title { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--dz-orange-dark); margin-bottom: 4px; }
 .demo-creds-row { font-size: 13px; margin: 2px 0; color: var(--dz-dark); }
 .demo-creds-role { display: inline-block; min-width: 72px; font-weight: 600; color: var(--dz-orange-dark); }
+
+/* ---------- Admin write forms ---------- */
+.dz-form-narrow { max-width: 560px; }
+.dz-admin-input { min-width: 190px; }
+.dz-admin-price { min-width: 110px; max-width: 130px; }
+.dz-admin-select { min-width: 130px; }

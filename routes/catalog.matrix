@@ -39,4 +39,17 @@ public fn register_catalog_routes() {
     Route.get("/admin/api/products/:id/images", fn(req) { return ctl.images_index(req); }).middleware(gate);
     Route.post("/admin/api/products/:id/images", fn(req) { return ctl.image_store(req); }).middleware(gate);
     Route.delete("/admin/api/images/:id", fn(req) { return ctl.image_delete(req); }).middleware(gate);
+
+    // ---- browser-form variants (HTML forms can only POST) ----
+    // These back the admin UI forms: same permission gate, prices in
+    // major units, and a redirect back to the page for non-JSON clients.
+    Route.post("/admin/api/products/create", fn(req) { return ctl.product_create_form(req); }).middleware(gate);
+    Route.post("/admin/api/products/:id/update", fn(req) { return ctl.product_update_form(req); }).middleware(gate);
+    Route.post("/admin/api/products/:id/publish-form", fn(req) { return ctl.product_publish_form(req); }).middleware(gate);
+    Route.post("/admin/api/products/:id/unpublish-form", fn(req) { return ctl.product_unpublish_form(req); }).middleware(gate);
+    Route.post("/admin/api/products/:id/inventory/restock-form", fn(req) { return ctl.inventory_restock_form(req); }).middleware(gate);
+    Route.post("/admin/api/categories/create", fn(req) { return ctl.category_create_form(req); }).middleware(gate);
+    Route.post("/admin/api/categories/:id/update", fn(req) { return ctl.category_update_form(req); }).middleware(gate);
+    Route.post("/admin/api/brands/create", fn(req) { return ctl.brand_create_form(req); }).middleware(gate);
+    Route.post("/admin/api/brands/:id/update", fn(req) { return ctl.brand_update_form(req); }).middleware(gate);
 }

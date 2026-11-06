@@ -47,6 +47,13 @@
     toast("Saved to your wishlist", true);
   }
 
+  // Admin write forms: save over AJAX, then refresh so the table shows
+  // the new state.
+  function handleAdmin(form) {
+    toast("Saved", true);
+    setTimeout(function () { window.location.reload(); }, 500);
+  }
+
   document.addEventListener("submit", function (e) {
     var form = e.target;
     if (!form || !form.hasAttribute || !form.hasAttribute("data-ajax")) return;
@@ -82,6 +89,8 @@
       }
       if (form.getAttribute("data-ajax") === "wishlist") {
         handleWishlist(form, out.data);
+      } else if (form.getAttribute("data-ajax") === "admin") {
+        handleAdmin(form);
       } else {
         handleCart(form, out.data);
       }

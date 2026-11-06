@@ -104,4 +104,30 @@ public class OrderController {
         let order = self.service.set_status(req.params["id"], status);
         return json(resource_item(order, identity));
     }
+
+    // Browser-form variant: HTML forms can only POST, and a browser
+    // should land back on the admin orders page instead of raw JSON.
+    public fn admin_status_form(self, req) {
+        let status = string(req.input("status", "")).trim();
+        if status == "" {
+            throw validation_failed(map("status", "A status is required."));
+        }
+        let order = self.service.set_status(req.params["id"], status);
+        if req.input("format", "") != "json" {
+            return redirect("/admin/orders");
+        }
+        return json(resource_item(order, identity));
+    }
+
+    // The statuses an administrator may set from the orders page.
+    public fn status_options(self) {
+        let out = [];
+        let all = self.service.statuses();
+        let i = 0;
+        while i < all.len() {
+            out.push(map("value", all[i], "label", all[i]));
+            i += 1;
+        }
+        return out;
+    }
 }

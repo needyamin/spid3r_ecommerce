@@ -8,6 +8,7 @@ import "framework/Container/Container";
 import "framework/HttpException";
 import "framework/Database/DB";
 import "app/Services/AdminService";
+import "app/Services/OrderService";
 import "app/Support/StoreChrome" as StoreChrome;
 import "app/Repositories/OrderRepository";
 import "app/Repositories/CatalogRepository";
@@ -15,12 +16,26 @@ import "app/Support/Money" as Money;
 
 let identity = fn(row) { return row; };
 
+// Option list for a <select>: one entry per allowed value, the current
+// one flagged (BD templates can only test truthiness, never compare).
+let status_options_for = fn(current: string, allowed) {
+    let out = [];
+    let i = 0;
+    while i < allowed.len() {
+        let v = string(allowed[i]);
+        out.push(map("value", v, "label", v, "selected", v == string(current)));
+        i += 1;
+    }
+    return out;
+};
+
 public class AdminController {
     public let admin;
     public let orders;
     public let categories;
     public let brands;
     public let settings;
+    public let order_statuses;
 
     fn new() {
         self.admin = new AdminService();
@@ -28,6 +43,7 @@ public class AdminController {
         self.categories = new CategoryRepository();
         self.brands = new BrandRepository();
         self.settings = Container.make("store.settings");
+        self.order_statuses = (new OrderService()).statuses();
     }
 
     fn ctx(self, req, title: string, page: string, extra) {
@@ -168,6 +184,187 @@ public class AdminController {
         return view("admin/dashboard", ctx);
     }
 
+    // Per-page data for the admin write forms: the editable rows plus
+    // the option lists the forms need (categories, brands, roles,
+    // permissions, order statuses).
+    fn page_extras(self, name: string) {
+        let extra = map();
+
+        if name == "products" {
+            let cats = self.categories.all();
+            let cat_opts = [];
+            let ci = 0;
+            while ci < cats.len() {
+                cat_opts.push(map("value", cats[ci]["id"], "label", cats[ci]["name"]));
+                ci += 1;
+            }
+            let brands = self.brands.all();
+            let brand_opts = [];
+            let bi = 0;
+            while bi < brands.len() {
+                brand_opts.push(map("value", brands[bi]["id"], "label", brands[bi]["name"]));
+                bi += 1;
+            }
+            let rows = DB.table("products").orderBy("id", "DESC").limit(100).get();
+            let list = [];
+            let i = 0;
+            while i < rows.len() {
+                list.push(map(
+                    "id", rows[i]["id"],
+                    "name", rows[i]["name"],
+                    "sku", rows[i]["sku"],
+                    "price", Money.to_major(rows[i]["price_minor"]),
+                    "price_display", Money.format(int(rows[i]["price_minor"]), "BDT"),
+                    "status", rows[i]["status"],
+                    "status_options", status_options_for(string(rows[i]["status"]), ["draft", "published", "archived"]),
+                    "category_id", rows[i]["category_id"]
+                ));
+                i += 1;
+            }
+            extra["product_rows"] = list;
+            extra["has_product_rows"] = list.len() > 0;
+            extra["category_options"] = cat_opts;
+            extra["has_category_options"] = cat_opts.len() > 0;
+            extra["brand_options"] = brand_opts;
+            extra["has_brand_options"] = brand_opts.len() > 0;
+        } elif name == "categories" {
+            let rows = self.categories.all();
+            let list = [];
+            let opts = [];
+            let i = 0;
+            while i < rows.len() {
+                list.push(map(
+                    "id", rows[i]["id"],
+                    "name", rows[i]["name"],
+                    "slug", rows[i]["slug"],
+                    "description", rows[i]["description"]
+                ));
+                opts.push(map("value", rows[i]["id"], "label", rows[i]["name"]));
+                i += 1;
+            }
+            extra["category_rows"] = list;
+            extra["has_category_rows"] = list.len() > 0;
+            extra["category_options"] = opts;
+            extra["has_category_options"] = opts.len() > 0;
+        } elif name == "brands" {
+            let rows = self.brands.all();
+            let list = [];
+            let i = 0;
+            while i < rows.len() {
+                list.push(map(
+                    "id", rows[i]["id"],
+                    "name", rows[i]["name"],
+                    "slug", rows[i]["slug"]
+                ));
+                i += 1;
+            }
+            extra["brand_rows"] = list;
+            extra["has_brand_rows"] = list.len() > 0;
+        } elif name == "inventory" {
+            let rows = DB.table("inventory").orderBy("product_id", "ASC").get();
+            let list = [];
+            let i = 0;
+            while i < rows.len() {
+                let product = DB.table("products").where("id", "=", rows[i]["product_id"]).first();
+                let pname = "Product #" + string(rows[i]["product_id"]);
+                if product != null {
+                    pname = string(product["name"]);
+                }
+                list.push(map(
+                    "product_id", rows[i]["product_id"],
+                    "product_name", pname,
+                    "quantity", rows[i]["quantity"],
+                    "reserved", rows[i]["reserved"],
+                    "low_stock_threshold", rows[i]["low_stock_threshold"]
+                ));
+                i += 1;
+            }
+            extra["inventory_rows"] = list;
+            extra["has_inventory_rows"] = list.len() > 0;
+        } elif name == "customers" {
+            let rows = self.admin.customers();
+            let list = [];
+            let i = 0;
+            while i < rows.len() {
+                list.push(map(
+                    "id", rows[i]["id"],
+                    "name", rows[i]["name"],
+                    "email", rows[i]["email"],
+                    "status", rows[i]["status"],
+                    "status_options", status_options_for(string(rows[i]["status"]), ["active", "suspended"])
+                ));
+                i += 1;
+            }
+            extra["customer_rows"] = list;
+            extra["has_customer_rows"] = list.len() > 0;
+        } elif name == "staff" {
+            let rows = self.admin.staff();
+            let list = [];
+            let i = 0;
+            while i < rows.len() {
+                list.push(map(
+                    "id", rows[i]["id"],
+                    "name", rows[i]["name"],
+                    "email", rows[i]["email"]
+                ));
+                i += 1;
+            }
+            let roles = self.admin.roles();
+            let role_opts = [];
+            let ri = 0;
+            while ri < roles.len() {
+                role_opts.push(map("value", roles[ri]["slug"], "label", roles[ri]["name"]));
+                ri += 1;
+            }
+            extra["staff_rows"] = list;
+            extra["has_staff_rows"] = list.len() > 0;
+            extra["role_options"] = role_opts;
+            extra["has_role_options"] = role_opts.len() > 0;
+        } elif name == "roles" {
+            let rows = self.admin.roles();
+            let list = [];
+            let i = 0;
+            while i < rows.len() {
+                list.push(map(
+                    "id", rows[i]["id"],
+                    "name", rows[i]["name"],
+                    "slug", rows[i]["slug"],
+                    "permission_count", rows[i]["permission_count"]
+                ));
+                i += 1;
+            }
+            let perms = self.admin.permissions();
+            let perm_opts = [];
+            let pi = 0;
+            while pi < perms.len() {
+                perm_opts.push(map("value", perms[pi]["slug"], "label", perms[pi]["name"]));
+                pi += 1;
+            }
+            extra["role_rows"] = list;
+            extra["has_role_rows"] = list.len() > 0;
+            extra["permission_options"] = perm_opts;
+            extra["has_permission_options"] = perm_opts.len() > 0;
+        } elif name == "orders" {
+            let rows = self.orders.admin_list(1, 50)["data"];
+            let list = [];
+            let i = 0;
+            while i < rows.len() {
+                list.push(map(
+                    "id", rows[i]["id"],
+                    "order_number", rows[i]["order_number"],
+                    "status", rows[i]["status"],
+                    "status_options", status_options_for(string(rows[i]["status"]), self.order_statuses),
+                    "total_display", Money.format(int(rows[i]["total_minor"]), "BDT"),
+                    "placed_at", rows[i]["placed_at"]
+                ));
+                i += 1;
+            }
+            extra["order_rows"] = list;
+            extra["has_order_rows"] = list.len() > 0;
+        }
+        return extra;
+    }
+
     public fn page(self, req, name: string) {
         let titles = map(
             "products", "Products", "categories", "Categories", "brands", "Brands",
@@ -183,14 +380,41 @@ public class AdminController {
         let data = self.rows_for(name);
         let is_settings = name == "settings" or name == "shipping" or name == "payments";
         let is_coupons = name == "coupons";
-        return view("admin/table", self.ctx(req, title, name, map(
+        // Pages with a dedicated write UI render their own tables; the
+        // generic read-only table is for everything else.
+        let flag_products = name == "products";
+        let flag_categories = name == "categories";
+        let flag_brands = name == "brands";
+        let flag_inventory = name == "inventory";
+        let flag_customers = name == "customers";
+        let flag_staff = name == "staff";
+        let flag_roles = name == "roles";
+        let flag_orders = name == "orders";
+        let has_own_ui = flag_products or flag_categories or flag_brands
+            or flag_inventory or flag_customers or flag_staff
+            or flag_roles or flag_orders;
+        let ctx = self.ctx(req, title, name, map(
             "headers", data["headers"],
             "rows", data["rows"],
             "has_rows", data["has_rows"],
             "is_settings", is_settings,
             "is_coupons", is_coupons,
+            "is_products", flag_products,
+            "is_categories", flag_categories,
+            "is_brands", flag_brands,
+            "is_inventory", flag_inventory,
+            "is_customers", flag_customers,
+            "is_staff", flag_staff,
+            "is_roles", flag_roles,
+            "is_orders", flag_orders,
+            "show_generic_table", not has_own_ui,
             "csrf", req.auth.csrf()
-        )));
+        ));
+        let extras = self.page_extras(name);
+        for k in extras.keys() {
+            ctx[k] = extras[k];
+        }
+        return view("admin/table", ctx);
     }
 
     public fn reports(self, req) {

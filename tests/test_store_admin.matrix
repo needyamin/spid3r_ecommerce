@@ -196,6 +196,103 @@ fn test_reports_export(app, ids, adm) {
     println("  [PASS] test_reports_export");
 }
 
+fn test_catalog_write_forms(app, ids, adm, tag: string) {
+    // The admin pages must expose real write forms, not read-only tables.
+    let products_page = call(app, "GET", "/admin/products", null, adm["cookie"]);
+    let html = string(products_page["body"]);
+    assert(html.contains("Add a product"), "products page has an add form");
+    assert(html.contains("/admin/api/products/create"), "products page posts to the create endpoint");
+    assert(html.contains("/admin/api/products/" + string(ids["product"]) + "/update"), "products page has a per-row update form");
+    assert(html.contains("/admin/api/products/" + string(ids["product"]) + "/publish-form"), "products page has publish controls");
+
+    let cats_page = string(call(app, "GET", "/admin/categories", null, adm["cookie"])["body"]);
+    assert(cats_page.contains("Add a category"), "categories page has an add form");
+    let brands_page = string(call(app, "GET", "/admin/brands", null, adm["cookie"])["body"]);
+    assert(brands_page.contains("Add a brand"), "brands page has an add form");
+    let inv_page = string(call(app, "GET", "/admin/inventory", null, adm["cookie"])["body"]);
+    assert(inv_page.contains("inventory/restock-form"), "inventory page has a restock form");
+    let cust_page = string(call(app, "GET", "/admin/customers", null, adm["cookie"])["body"]);
+    assert(cust_page.contains("/admin/api/customers/"), "customers page has a status form");
+    let roles_page = string(call(app, "GET", "/admin/roles", null, adm["cookie"])["body"]);
+    assert(roles_page.contains("/admin/api/roles/"), "roles page has a permission form");
+    let orders_page = string(call(app, "GET", "/admin/orders", null, adm["cookie"])["body"]);
+    assert(orders_page.contains("/admin/api/orders/" + string(ids["order"]) + "/status"), "orders page has a status form");
+
+    // Create a product through the browser-form endpoint (price in BDT).
+    let created = call(app, "POST", "/admin/api/products/create", map(
+        "name", "Panel Created " + tag,
+        "sku", "PC-" + tag,
+        "category_id", ids["cat"],
+        "price", "199.50",
+        "stock", 7,
+        "status", "published",
+        "_csrf", adm["csrf"],
+        "format", "json"
+    ), adm["cookie"]);
+    assert(created["status"] == 201, "product created through the form endpoint");
+    let new_id = int(body(created)["data"]["id"]);
+    let row = DB.table("products").where("id", "=", new_id).first();
+    assert(int(row["price_minor"]) == 19950, "form price converted to minor units");
+    let stock = DB.table("inventory").where("product_id", "=", new_id).first();
+    assert(int(stock["quantity"]) == 7, "opening stock stored");
+
+    // Edit it: new price + status.
+    let updated = call(app, "POST", "/admin/api/products/" + string(new_id) + "/update", map(
+        "name", "Panel Renamed " + tag,
+        "price", "249.00",
+        "status", "draft",
+        "_csrf", adm["csrf"],
+        "format", "json"
+    ), adm["cookie"]);
+    assert(updated["status"] == 200, "product updated through the form endpoint");
+    let after = DB.table("products").where("id", "=", new_id).first();
+    assert(int(after["price_minor"]) == 24900, "updated price stored in minor units");
+    assert(string(after["status"]) == "draft", "updated status stored");
+    assert(string(after["name"]) == "Panel Renamed " + tag, "updated name stored");
+
+    // Restock through the form endpoint.
+    let restock = call(app, "POST", "/admin/api/products/" + string(new_id) + "/inventory/restock-form", map(
+        "quantity", 5, "_csrf", adm["csrf"], "format", "json"
+    ), adm["cookie"]);
+    assert(restock["status"] == 200, "restock through the form endpoint");
+    let stock2 = DB.table("inventory").where("product_id", "=", new_id).first();
+    assert(int(stock2["quantity"]) == 12, "restock added to the available quantity");
+
+    // Category + brand creation through their form endpoints.
+    let cat = call(app, "POST", "/admin/api/categories/create", map(
+        "name", "Panel Category " + tag, "_csrf", adm["csrf"], "format", "json"
+    ), adm["cookie"]);
+    assert(cat["status"] == 201, "category created through the form endpoint");
+    let brand = call(app, "POST", "/admin/api/brands/create", map(
+        "name", "Panel Brand " + tag, "_csrf", adm["csrf"], "format", "json"
+    ), adm["cookie"]);
+    assert(brand["status"] == 201, "brand created through the form endpoint");
+
+    // Without format=json a browser gets a redirect back to the page.
+    let plain = call(app, "POST", "/admin/api/categories/create", map(
+        "name", "Panel Redirect " + tag, "_csrf", adm["csrf"]
+    ), adm["cookie"]);
+    assert(plain["status"] == 302, "browser form post redirects back to the admin page");
+    assert(string(plain["headers"]["location"]).contains("/admin/categories"), "redirect points at the categories page");
+
+    // Clean up the rows this test created.
+    DB.table("inventory").where("product_id", "=", new_id).delete();
+    DB.table("products").where("id", "=", new_id).delete();
+    let created_cats = DB.table("categories").where("name", "LIKE", "%Panel Category " + tag + "%").get();
+    let i = 0;
+    while i < created_cats.len() {
+        DB.table("categories").where("id", "=", created_cats[i]["id"]).delete();
+        i += 1;
+    }
+    let created_brands = DB.table("brands").where("name", "LIKE", "%Panel Brand " + tag + "%").get();
+    i = 0;
+    while i < created_brands.len() {
+        DB.table("brands").where("id", "=", created_brands[i]["id"]).delete();
+        i += 1;
+    }
+    println("  [PASS] test_catalog_write_forms");
+}
+
 fn cleanup(ids, adm, tag: string) {
     try {
         DB.table("orders").where("order_number", "=", "ADM-ORDER-" + tag).delete();
@@ -240,6 +337,7 @@ fn main() {
         test_staff_roles(app, ids, adm);
         test_coupons_and_settings(app, adm, tag);
         test_reports_export(app, ids, adm);
+        test_catalog_write_forms(app, ids, adm, tag);
     } finally {
         cleanup(ids, adm, tag);
     }
