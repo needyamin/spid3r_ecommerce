@@ -3,7 +3,9 @@
 @section("content")
 <section class="auth-card">
   <h1 class="h4 mb-3">Create account</h1>
-  @if (error)<p class="alert alert-danger">{{ error }}</p>@endif
+@if(error)
+  <p class="alert alert-danger">{{ error }}</p>
+@endif
   <form method="post" action="/register">
     <input type="hidden" name="_csrf" value="{{ csrf }}">
     <div class="mb-2">
