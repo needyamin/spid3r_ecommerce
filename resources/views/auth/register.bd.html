@@ -6,6 +6,14 @@
 @if(error)
   <p class="alert alert-danger">{{ error }}</p>
 @endif
+@if(has_demo_accounts)
+  <div class="demo-creds">
+    <p class="demo-creds-title">Demo accounts — dev build</p>
+@foreach(acc in demo_accounts)
+    <p class="demo-creds-row"><span class="demo-creds-role">{{ acc.role }}</span> {{ acc.email }} / {{ acc.password }}</p>
+@endforeach
+  </div>
+@endif
   <form method="post" action="/register">
     <input type="hidden" name="_csrf" value="{{ csrf }}">
     <div class="mb-2">

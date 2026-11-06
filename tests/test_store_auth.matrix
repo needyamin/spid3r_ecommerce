@@ -45,7 +45,12 @@ fn session_csrf(token: string) -> string {
 
 fn test_registration_and_login(app, tag: string) {
     let email = "auth-" + tag + "@example.test";
-    assert(string(get(app, "/login")["body"]).contains("Sign in"), "login page renders");
+    let login_html = string(get(app, "/login")["body"]);
+    assert(login_html.contains("Sign in"), "login page renders");
+    // Without SPID3R_ENV=dev (production default) the demo-credentials
+    // hint must never leak into the page.
+    assert(not login_html.contains("secret123"), "no demo credentials leak on a production build");
+    assert(not login_html.contains("demo-creds"), "no demo credentials box on a production build");
 
     let weak = post(app, "/register", map(
         "name", "Probe User", "email", email,

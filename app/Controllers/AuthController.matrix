@@ -32,6 +32,25 @@ public class AuthController {
             "meta_description", title + " — " + self.settings["name"],
             "csrf", ""
         );
+        // Dev builds only: surface the seeded demo accounts so evaluators
+        // can sign in with different roles. Production never sets
+        // SPID3R_ENV=dev, so the hint box never renders there.
+        let demo_accounts = [];
+        let env_flag = env("SPID3R_ENV");
+        if env_flag.is_some() and string(env_flag.unwrap()).trim().lower() == "dev" {
+            demo_accounts.push(map(
+                "role", "Admin",
+                "email", "admin@spid3r.test",
+                "password", "secret123"
+            ));
+            demo_accounts.push(map(
+                "role", "Customer",
+                "email", "shopper@spid3r.test",
+                "password", "secret123"
+            ));
+        }
+        ctx["demo_accounts"] = demo_accounts;
+        ctx["has_demo_accounts"] = demo_accounts.len() > 0;
         let chrome = StoreChrome.build(req, self.settings);
         for ck in chrome.keys() {
             ctx[ck] = chrome[ck];

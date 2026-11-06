@@ -24,6 +24,25 @@ services:
       SPID3R_MYSQL_USER: spid3r
       SPID3R_MYSQL_PASSWORD: spid3r
       SPID3R_MYSQL_DATABASE: spid3r
+      # Dev stack: shows the seeded demo credentials on the login/register
+      # pages. NEVER set this on a public deployment.
+      SPID3R_ENV: dev
+    depends_on:
+      mysql:
+        condition: service_healthy
+    restart: unless-stopped
+
+  phpmyadmin:
+    image: phpmyadmin:latest
+    container_name: spid3rweb-phpmyadmin
+    environment:
+      # Connects to the MySQL service on the compose network; you log in
+      # with the MySQL credentials (spid3r / spid3r, or root / rootpass).
+      PMA_HOST: mysql
+      PMA_PORT: "3306"
+      UPLOAD_LIMIT: 100M
+    ports:
+      - "8091:8080"
     depends_on:
       mysql:
         condition: service_healthy

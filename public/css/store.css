@@ -262,3 +262,12 @@ h1, h2, h3, h4, h5 { font-weight: 700; }
   from { opacity: 0; transform: translate(-50%, 8px); }
   to { opacity: 1; transform: translate(-50%, 0); }
 }
+
+/* ---------- Dev-only demo credentials hint (auth pages) ---------- */
+.demo-creds {
+  background: var(--dz-orange-soft); border: 1px dashed var(--dz-orange);
+  border-radius: .375rem; padding: 10px 12px; margin-bottom: 14px;
+}
+.demo-creds-title { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--dz-orange-dark); margin-bottom: 4px; }
+.demo-creds-row { font-size: 13px; margin: 2px 0; color: var(--dz-dark); }
+.demo-creds-role { display: inline-block; min-width: 72px; font-weight: 600; color: var(--dz-orange-dark); }
