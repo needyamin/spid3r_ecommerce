@@ -54,6 +54,27 @@
     setTimeout(function () { window.location.reload(); }, 500);
   }
 
+  // Pull the most useful message out of an error payload:
+  // {errors: {field: "..."}} first (most specific), then {message}/{error}.
+  function errorMessage(data) {
+    if (!data) return "";
+    if (data.errors) {
+      var keys = Object.keys(data.errors);
+      if (keys.length) return String(data.errors[keys[0]]);
+    }
+    if (data.message) return String(data.message);
+    if (data.error) return String(data.error);
+    return "";
+  }
+
+  // A response counts as successful when it says so explicitly ("ok")
+  // or, for endpoints that answer with a plain resource, when the HTTP
+  // status is 2xx.
+  function isSuccess(res, data) {
+    if (data && typeof data.ok === "boolean") return data.ok;
+    return res.ok;
+  }
+
   document.addEventListener("submit", function (e) {
     var form = e.target;
     if (!form || !form.hasAttribute || !form.hasAttribute("data-ajax")) return;
@@ -81,9 +102,10 @@
       });
     }).then(function (out) {
       if (!out) return; // redirecting to /login
-      if (!out.res.ok || !out.data.ok) {
+      if (!isSuccess(out.res, out.data)) {
         busy(form, false);
-        var msg = out.data && out.data.message ? out.data.message : "Something went wrong. Please try again.";
+        var msg = errorMessage(out.data);
+        if (msg === "") msg = "Something went wrong. Please try again.";
         toast(msg, false);
         return;
       }
