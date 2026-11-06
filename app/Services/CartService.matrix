@@ -191,6 +191,22 @@ public class CartService {
         );
     }
 
+    // Lightweight badge count: total quantity across items, WITHOUT
+    // pricing or stock checks (used for the header cart bubble and the
+    // AJAX responses). Uses cart_for, so a missing cart is created —
+    // only call this from cart action contexts, never page chrome.
+    public fn item_count(self, ident) -> int {
+        let cart = self.cart(ident);
+        let rows = DB.table("cart_items").where("cart_id", "=", cart["id"]).get();
+        let total = 0;
+        let i = 0;
+        while i < rows.len() {
+            total = total + int(rows[i]["quantity"]);
+            i += 1;
+        }
+        return total;
+    }
+
     // Called by the login flow: merge the guest cart into the user's cart.
     public fn merge_on_login(self, guest_key: string, user_id) -> bool {
         if guest_key == "" or user_id == null {

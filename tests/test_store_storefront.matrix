@@ -179,6 +179,16 @@ fn test_seo_endpoints(app, tag: string) {
     assert(robots["status"] == 200, "robots renders 200");
     assert(text(robots).contains("Disallow: /admin/"), "robots blocks admin");
     assert(text(robots).contains("Sitemap:"), "robots points to sitemap");
+
+    // Per-page robots meta: catalog pages crawlable, utility pages not.
+    let home_html = text(get(app, "/"));
+    assert(home_html.contains("<meta name=\"robots\" content=\"index, follow\">"), "home page is crawlable");
+    let cart_html = text(get(app, "/cart"));
+    assert(cart_html.contains("noindex"), "cart page is noindex");
+
+    // Header chrome renders the cart / wishlist count bubbles.
+    assert(home_html.contains("dz-cart-count"), "cart badge element renders");
+    assert(home_html.contains("dz-wishlist-count"), "wishlist badge element renders");
     println("  [PASS] test_seo_endpoints");
 }
 

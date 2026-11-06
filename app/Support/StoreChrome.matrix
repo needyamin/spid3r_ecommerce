@@ -11,9 +11,80 @@
 //                     (and therefore billed in). Amounts are never stored
 //                     in a display currency.
 
+import "framework/Database/DB";
 import "app/Services/CurrencyService";
 import "app/Services/LocaleService";
 import "app/Repositories/CatalogRepository";
+import "app/Support/CartIdentity" as CartIdentity;
+
+// Read-only cart badge count: resolves the ACTIVE cart if it already
+// exists (by user for signed-in visitors, by the guest cookie key
+// otherwise) and sums item quantities. NEVER creates cart rows — page
+// chrome must stay side-effect free for anonymous traffic.
+fn cart_badge_count(req) -> int {
+    let key = CartIdentity.cookie_value(req, "cart");
+    let uid = null;
+    if req.auth != null and req.auth.check() {
+        uid = req.auth.id();
+    }
+    let q = DB.table("carts").where("status", "=", "active");
+    if uid != null {
+        q.where("user_id", "=", uid);
+    } else {
+        if key == "" {
+            return 0;
+        }
+        q.where("session_key", "=", key).whereNull("user_id");
+    }
+    let cart = q.first();
+    if cart == null {
+        return 0;
+    }
+    let rows = DB.table("cart_items").where("cart_id", "=", cart["id"]).get();
+    let total = 0;
+    let i = 0;
+    while i < rows.len() {
+        total = total + int(rows[i]["quantity"]);
+        i += 1;
+    }
+    return total;
+}
+
+// Read-only wishlist badge count (0 for guests).
+fn wishlist_badge_count(req) -> int {
+    if req.auth == null or not req.auth.check() {
+        return 0;
+    }
+    return int(DB.table("wishlists").where("user_id", "=", req.auth.id()).count());
+}
+
+// Canonical URL for SEO: absolute only when STORE_URL is configured,
+// because a wrong absolute canonical is worse than none at all.
+fn canonical_url(path: string) -> string {
+    let u = env("STORE_URL");
+    if u.is_some() {
+        let s = string(u.unwrap()).trim();
+        if s != "" {
+            return s + path;
+        }
+    }
+    return "";
+}
+
+// Utility pages (cart, checkout, account, search) should never be
+// indexed; catalog pages stay crawlable.
+fn robots_meta(path: string) -> string {
+    let p = string(path);
+    let blocked = ["/cart", "/checkout", "/account", "/wishlist", "/search", "/login", "/register", "/track", "/support", "/returns"];
+    let i = 0;
+    while i < blocked.len() {
+        if p == blocked[i] or p.starts_with(blocked[i] + "/") {
+            return "noindex, follow";
+        }
+        i += 1;
+    }
+    return "index, follow";
+}
 
 public fn build(req, settings) {
     let base_currency = string(settings["currency"]);
@@ -38,10 +109,25 @@ public fn build(req, settings) {
         ));
         ci += 1;
     }
+    // Header badge counts (read-only; guests without a cart cookie stay 0).
+    let cart_count = 0;
+    let wishlist_count = 0;
+    if req != null {
+        cart_count = cart_badge_count(req);
+        wishlist_count = wishlist_badge_count(req);
+    }
+    let path = string(req.path);
     return map(
         "display_currency", display_currency,
         "base_currency", base_currency,
-        "current_path", string(req.path),
+        "current_path", path,
+        "canonical", canonical_url(path),
+        "has_canonical", canonical_url(path) != "",
+        "robots_meta", robots_meta(path),
+        "cart_count", cart_count,
+        "has_cart_items", cart_count > 0,
+        "wishlist_count", wishlist_count,
+        "has_wishlist_items", wishlist_count > 0,
         "header_search_q", header_q,
         "footer_categories", footer_categories,
         "has_footer_categories", footer_categories.len() > 0,

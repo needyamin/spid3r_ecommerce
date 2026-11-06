@@ -182,6 +182,7 @@ fn test_wishlist(app, ids) {
         "product_id", product_id, "_csrf", csrf, "format", "json"
     ), cookie);
     assert(body(again)["added"] == false, "adding the same product twice is a no-op");
+    assert(int(body(again)["count"]) == 1, "JSON add returns the wishlist badge count");
     assert(DB.table("wishlists").where("user_id", "=", ids["user"]["id"]).count() == 1, "no duplicate wishlist row");
 
     let page = get(app, "/wishlist", cookie);
@@ -192,6 +193,7 @@ fn test_wishlist(app, ids) {
         "product_id", product_id, "_csrf", csrf, "format", "json"
     ), cookie);
     assert(body(removed)["removed"] == true, "wishlist item removed");
+    assert(int(body(removed)["count"]) == 0, "JSON remove returns the refreshed badge count");
     assert(DB.table("wishlists").where("user_id", "=", ids["user"]["id"]).count() == 0, "wishlist row deleted");
 
     // An anonymous visitor is sent to the login page, never into the
@@ -259,6 +261,11 @@ fn test_reviews(app, ids) {
     assert(int(published["data"]["rating"]["count"]) == 1, "rating summary counts the review");
     assert(string(published["data"]["rating"]["average_display"]) == "4.0", "average rating computed");
 
+    // The SEO-friendly slug URL serves the same data as /reviews/:id.
+    let via_slug = body(get(app, "/product/" + product_slug(bought) + "/reviews"));
+    assert(via_slug["data"]["reviews"].len() == 1, "slug reviews URL publishes the review");
+    assert(int(via_slug["data"]["rating"]["count"]) == 1, "slug reviews URL carries the rating summary");
+
     let customer_moderation = post(app, "/admin/reviews/" + string(rows[0]["id"]), map(
         "status", "rejected", "_csrf", csrf, "format", "json"
     ), cookie);
@@ -271,6 +278,10 @@ fn test_recommendations(app, ids) {
     let res = body(get(app, "/recommendations/" + string(products[0])));
     let list = res["data"];
     assert(list.len() == 2, "the two sibling products are recommended");
+
+    // The SEO-friendly slug URL resolves to the same recommendations.
+    let via_slug = body(get(app, "/product/" + product_slug(products[0]) + "/recommendations"));
+    assert(via_slug["data"].len() == 2, "slug recommendations URL works");
     let i = 0;
     while i < list.len() {
         assert(int(list[i]["id"]) != int(products[0]), "the current product is excluded");

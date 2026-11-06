@@ -20,6 +20,10 @@ public fn register_advanced_routes() {
     // ---- reviews & ratings ----
     Route.post("/reviews", fn(req) { return ctl.review_store(req); }).middleware("auth");
     Route.get("/reviews/:product_id", fn(req) { return ctl.review_index(req); }).name("reviews.index");
+    // SEO-friendly slug variants of the numeric review/recommendation
+    // endpoints — human-readable, crawlable, no raw ids in URLs.
+    Route.get("/product/:slug/reviews", fn(req) { return ctl.product_reviews(req); }).name("product.reviews");
+    Route.get("/product/:slug/recommendations", fn(req) { return ctl.product_recommendations(req); }).name("product.recommendations");
 
     // ---- recommendations & recently viewed ----
     Route.get("/recommendations/:product_id", fn(req) { return ctl.recommendations(req); });

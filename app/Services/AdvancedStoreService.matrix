@@ -76,6 +76,14 @@ public class AdvancedStoreService {
         return DB.table("wishlists").where("user_id", "=", user_id).where("product_id", "=", product_id).delete() > 0;
     }
 
+    // Header wishlist bubble + AJAX responses.
+    public fn wishlist_count(self, user_id) -> int {
+        if user_id == null {
+            return 0;
+        }
+        return int(DB.table("wishlists").where("user_id", "=", user_id).count());
+    }
+
     public fn in_wishlist(self, user_id, product_id) -> bool {
         if user_id == null {
             return false;

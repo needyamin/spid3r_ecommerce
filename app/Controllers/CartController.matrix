@@ -26,7 +26,11 @@ public class CartController {
 
     fn json_or_redirect(self, req, payload, ident) {
         if req.input("format", "") == "json" {
-            let res = json(payload);
+            // AJAX clients also get the refreshed badge count so the
+            // header bubble stays in sync without a page reload.
+            let full = payload;
+            full["count"] = self.cart.item_count(ident);
+            let res = json(full);
             return self.with_cart_cookie(res, ident);
         }
         let res = redirect("/cart");

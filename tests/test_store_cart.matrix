@@ -116,6 +116,7 @@ fn test_guest_cart(app, ids, tag: string) {
         "product_id", ids["product"], "quantity", 2, "format", "json"
     ), cookie);
     assert(add["status"] == 200, "add to guest cart succeeds");
+    assert(int(json_parse(string(add["body"]))["count"]) == 2, "JSON add returns the summed quantity for the header badge");
     let s = summary(app, cookie);
     assert(s["count"] == 1, "one distinct cart line");
     assert(int(s["subtotal_minor"]) == 50000, "subtotal = 2 × 250.00");

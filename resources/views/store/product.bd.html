@@ -43,7 +43,7 @@
         </ul>
 @endif
 
-        <form method="post" action="/cart/items" class="d-flex flex-wrap align-items-end gap-2 my-3">
+        <form method="post" action="/cart/items" data-ajax="cart" class="d-flex flex-wrap align-items-end gap-2 my-3">
           <input type="hidden" name="_csrf" value="{{ csrf }}">
           <input type="hidden" name="product_id" value="{{ product.id }}">
           <div>
@@ -59,17 +59,15 @@
 
         <div class="d-flex flex-wrap gap-2">
           <a class="btn btn-light border" href="/catalog">Continue shopping</a>
-@if(signed_in)
-          <form method="post" action="/wishlist/add" class="d-inline">
+          <form method="post" action="/wishlist/add" data-ajax="wishlist" class="d-inline">
             <input type="hidden" name="_csrf" value="{{ csrf }}">
             <input type="hidden" name="product_id" value="{{ product.id }}">
 @if(in_wishlist)
-            <button class="btn btn-outline-primary" type="submit" disabled>♥ Saved to wishlist</button>
+            <button class="btn btn-outline-primary" type="submit">♥ Saved to wishlist</button>
 @else
             <button class="btn btn-outline-primary" type="submit">♡ Add to wishlist</button>
 @endif
           </form>
-@endif
         </div>
       </div>
     </div>

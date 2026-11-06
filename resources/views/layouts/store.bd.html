@@ -5,6 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>@yield("title") · {{ store_name }}</title>
   <meta name="description" content="@yield("meta_description", "Shop quality products at {{ store_name }} — fast delivery, secure checkout, easy returns.")">
+  <meta name="robots" content="{{ robots_meta }}">
+@if(has_canonical)
+  <link rel="canonical" href="{{ canonical }}">
+@endif
   <link rel="stylesheet" href="/css/bootstrap.min.css">
   <link rel="stylesheet" href="/css/store.css">
 </head>
@@ -60,8 +64,20 @@
       <div class="collapse navbar-collapse order-lg-2" id="dzNav">
         <div class="dz-nav-links d-flex flex-column flex-lg-row align-items-lg-center ms-lg-3">
           <a href="/catalog">{{ nav_catalog }}</a>
-          <a href="/cart">{{ nav_cart }}</a>
-          <a href="/wishlist">{{ nav_wishlist }}</a>
+          <a href="/cart" class="dz-nav-icon">{{ nav_cart }}
+@if(has_cart_items)
+            <span id="dz-cart-count" class="badge rounded-pill text-bg-primary count-badge">{{ cart_count }}</span>
+@else
+            <span id="dz-cart-count" class="badge rounded-pill text-bg-primary count-badge d-none">0</span>
+@endif
+          </a>
+          <a href="/wishlist" class="dz-nav-icon">{{ nav_wishlist }}
+@if(has_wishlist_items)
+            <span id="dz-wishlist-count" class="badge rounded-pill text-bg-danger count-badge">{{ wishlist_count }}</span>
+@else
+            <span id="dz-wishlist-count" class="badge rounded-pill text-bg-danger count-badge d-none">0</span>
+@endif
+          </a>
           <a href="/track">{{ nav_track }}</a>
           <a href="/support">{{ nav_support }}</a>
           <a href="/account">{{ nav_account }}</a>
@@ -154,5 +170,6 @@
   </footer>
 
   <script src="/js/bootstrap.bundle.min.js" defer></script>
+  <script src="/js/store.js" defer></script>
 </body>
 </html>

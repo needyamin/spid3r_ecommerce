@@ -242,3 +242,23 @@ h1, h2, h3, h4, h5 { font-weight: 700; }
   .page-title { font-size: 20px; }
   .detail-price { font-size: 24px; }
 }
+
+/* ---------- Header nav badges (cart / wishlist counts) ---------- */
+.dz-nav-icon { display: inline-flex; align-items: center; gap: 6px; }
+.count-badge { font-size: 11.5px; line-height: 1.4; transform: translateY(-1px); }
+
+/* ---------- AJAX toast (no inline styles — CSP-safe) ---------- */
+.dz-toast {
+  position: fixed; left: 50%; bottom: 28px; z-index: 1080;
+  transform: translateX(-50%);
+  padding: 10px 18px; border-radius: .375rem;
+  font-size: 14px; font-weight: 600; color: #fff;
+  box-shadow: var(--dz-shadow-lg);
+  animation: dz-toast-in .18s ease-out;
+}
+.dz-toast-ok { background: #1f7a33; }
+.dz-toast-err { background: #b3261e; }
+@keyframes dz-toast-in {
+  from { opacity: 0; transform: translate(-50%, 8px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}

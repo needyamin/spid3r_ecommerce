@@ -122,7 +122,11 @@ public class AdvancedController {
             throw validation_failed(map("product_id", "Choose a product."));
         }
         let added = self.advanced.wishlist_add(uid, product_id);
-        return self.respond(req, map("ok", true, "added", added), "/wishlist");
+        return self.respond(req, map(
+            "ok", true,
+            "added", added,
+            "count", self.advanced.wishlist_count(uid)
+        ), "/wishlist");
     }
 
     public fn wishlist_remove(self, req) {
@@ -132,7 +136,11 @@ public class AdvancedController {
             throw validation_failed(map("product_id", "Choose a product."));
         }
         let removed = self.advanced.wishlist_remove(uid, product_id);
-        return self.respond(req, map("ok", true, "removed", removed), "/wishlist");
+        return self.respond(req, map(
+            "ok", true,
+            "removed", removed,
+            "count", self.advanced.wishlist_count(uid)
+        ), "/wishlist");
     }
 
     // ---- reviews & ratings ----
@@ -159,6 +167,30 @@ public class AdvancedController {
         let reviews = self.advanced.approved_reviews(product_id);
         let summary = self.advanced.rating_summary(product_id);
         return json(map("data", map("reviews", reviews, "rating", summary)));
+    }
+
+    // SEO-friendly slugs: /product/{slug}/reviews and
+    // /product/{slug}/recommendations. Resolve the slug to the product
+    // id, then reuse the numeric handlers. The legacy /reviews/:id and
+    // /recommendations/:id routes keep working for existing clients.
+    fn product_id_from_slug(self, req) -> int {
+        let product = DB.table("products")
+            .where("slug", "=", string(req.params["slug"]))
+            .first();
+        if product == null {
+            throw not_found("Product not found.");
+        }
+        return int(product["id"]);
+    }
+
+    public fn product_reviews(self, req) {
+        req.params["product_id"] = string(self.product_id_from_slug(req));
+        return self.review_index(req);
+    }
+
+    public fn product_recommendations(self, req) {
+        req.params["product_id"] = string(self.product_id_from_slug(req));
+        return self.recommendations(req);
     }
 
     // ---- recommendations ----
