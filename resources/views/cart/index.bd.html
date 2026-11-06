@@ -53,7 +53,10 @@
     <p class="free-shipping">You qualify for free shipping.</p>
 @endif
     <div class="total-line total-grand"><strong>Total</strong><strong>{{ total_display }}</strong></div>
-    <a class="btn btn-primary" href="/catalog">Continue shopping</a>
+    <div class="cart-cta">
+      <a class="btn btn-primary" href="/checkout">Proceed to checkout</a>
+      <a class="btn btn-secondary" href="/catalog">Continue shopping</a>
+    </div>
   </section>
 @else
   <p class="empty-note">Your cart is empty. <a href="/catalog">Browse the catalog</a></p>

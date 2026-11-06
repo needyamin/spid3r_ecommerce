@@ -63,6 +63,29 @@ public class LocaleService {
         return seen;
     }
 
+    // Switcher-friendly options: each entry carries the code plus a
+    // human-readable label, so templates never render raw "bn"/"en".
+    public fn locale_options(self) {
+        let codes = self.locales();
+        let out = [];
+        let i = 0;
+        while i < codes.len() {
+            out.push(map("code", codes[i], "label", self.locale_label(string(codes[i]))));
+            i += 1;
+        }
+        return out;
+    }
+
+    fn locale_label(self, code: string) -> string {
+        if code == "bn" {
+            return "বাংলা (Bangla)";
+        }
+        if code == "en" {
+            return "English";
+        }
+        return code;
+    }
+
     // The customer's selected locale, validated against the known list.
     public fn selected(self, req) -> string {
         let wanted = CartIdentity.cookie_value(req, "store_locale");

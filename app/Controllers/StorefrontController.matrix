@@ -82,17 +82,64 @@ public class StorefrontController {
         return self.render(req, "store/home", self.settings["name"], ctx);
     }
 
+    // The currently filtered category slug, so the filter bar preselects it.
+    fn requested_category(self, req) -> string {
+        if req != null and req.query_params.has("category") {
+            return string(req.query_params["category"]).trim();
+        }
+        return "";
+    }
+
     public fn catalog(self, req) {
         let code = self.display_currency(req);
         let ctx = self.service.catalog_context(req.query_params, "/catalog", code, self.fx_context());
         ctx["heading"] = "All products";
         ctx["description"] = "";
         ctx["meta_description"] = "Browse all products at " + self.settings["name"] + " — filter by category, brand and price.";
+        ctx["form_action"] = "/catalog";
+        ctx["category_options"] = self.category_options(self.requested_category(req));
+        ctx["has_category_links"] = ctx["category_options"].len() > 0;
         return self.render(req, "store/catalog", "Catalog", ctx);
     }
 
     public fn search(self, req) {
-        return self.catalog(req);
+        let code = self.display_currency(req);
+        let ctx = self.service.catalog_context(req.query_params, "/search", code, self.fx_context());
+        let q = "";
+        if req.query_params.has("q") {
+            q = string(req.query_params["q"]).trim();
+        }
+        if q != "" {
+            ctx["heading"] = "Search results";
+            ctx["description"] = "Products matching \"" + q + "\".";
+        } else {
+            ctx["heading"] = "Search products";
+            ctx["description"] = "Find products by name or keyword.";
+        }
+        ctx["meta_description"] = "Search products at " + self.settings["name"] + " — find exactly what you need.";
+        ctx["form_action"] = "/search";
+        ctx["category_options"] = self.category_options(self.requested_category(req));
+        ctx["has_category_links"] = ctx["category_options"].len() > 0;
+        return self.render(req, "store/catalog", "Search", ctx);
+    }
+
+    // Flat slug/name list for the catalog filter bar and browse chips.
+    // `selected_slug` is precomputed into a boolean because BD @if is
+    // truthiness-only and cannot compare values in templates.
+    fn category_options(self, selected_slug: string) {
+        let rows = self.categories.all();
+        let out = [];
+        let i = 0;
+        while i < rows.len() {
+            let slug = string(rows[i]["slug"]);
+            out.push(map(
+                "slug", slug,
+                "name", string(rows[i]["name"]),
+                "selected", slug == selected_slug
+            ));
+            i += 1;
+        }
+        return out;
     }
 
     public fn category(self, req) {
@@ -112,6 +159,9 @@ public class StorefrontController {
         ctx["heading"] = string(cat["name"]);
         ctx["description"] = string(cat["description"]);
         ctx["meta_description"] = string(cat["meta_description"]);
+        ctx["form_action"] = "/category/" + slug;
+        ctx["category_options"] = self.category_options(slug);
+        ctx["has_category_links"] = ctx["category_options"].len() > 0;
         return self.render(req, "store/catalog", string(cat["name"]), ctx);
     }
 
@@ -130,6 +180,9 @@ public class StorefrontController {
         let code = self.display_currency(req);
         let ctx = self.service.catalog_context(params, "/brand/" + slug, code, self.fx_context());
         ctx["heading"] = string(brand["name"]);
+        ctx["form_action"] = "/brand/" + slug;
+        ctx["category_options"] = self.category_options(self.requested_category(req));
+        ctx["has_category_links"] = ctx["category_options"].len() > 0;
         ctx["description"] = string(brand["description"]);
         ctx["meta_description"] = "Shop " + string(brand["name"]) + " products at " + self.settings["name"] + ".";
         return self.render(req, "store/catalog", string(brand["name"]), ctx);

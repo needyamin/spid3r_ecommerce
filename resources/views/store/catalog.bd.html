@@ -8,8 +8,18 @@
   <p class="page-description">{{ description }}</p>
 @endif
 
-  <form class="filter-bar" method="get" action="/catalog">
+  <form class="filter-bar" method="get" action="{{ form_action }}">
     <input type="search" name="q" value="{{ q }}" placeholder="Search products" aria-label="Search products">
+    <select name="category" aria-label="Category">
+      <option value="">All categories</option>
+@foreach(cat in category_options)
+@if(cat.selected)
+      <option value="{{ cat.slug }}" selected>{{ cat.name }}</option>
+@else
+      <option value="{{ cat.slug }}">{{ cat.name }}</option>
+@endif
+@endforeach
+    </select>
     <input type="number" name="min_price" value="{{ min_price }}" placeholder="Min price" step="0.01" min="0">
     <input type="number" name="max_price" value="{{ max_price }}" placeholder="Max price" step="0.01" min="0">
     <select name="sort" aria-label="Sort products">
@@ -18,14 +28,19 @@
       <option value="price_desc">Price: high to low</option>
       <option value="name">Name</option>
     </select>
-@if(category_slug)
-    <input type="hidden" name="category" value="{{ category_slug }}">
-@endif
 @if(brand_slug)
     <input type="hidden" name="brand" value="{{ brand_slug }}">
 @endif
     <button class="btn btn-primary" type="submit">Apply filters</button>
   </form>
+
+@if(has_category_links)
+  <nav class="category-chips" aria-label="Browse categories">
+@foreach(cat in category_options)
+    <a href="/category/{{ cat.slug }}">{{ cat.name }}</a>
+@endforeach
+  </nav>
+@endif
 
   <p class="result-count">{{ total }} product(s) · page {{ page }} of {{ last_page }}</p>
 

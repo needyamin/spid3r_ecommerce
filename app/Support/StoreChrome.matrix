@@ -21,12 +21,17 @@ public fn build(req, settings) {
     let locales = new LocaleService(base_locale);
     let display_currency = currencies.selected(req);
     let locale = locales.selected(req);
+    let header_q = "";
+    if req != null and req.query_params.has("q") {
+        header_q = string(req.query_params["q"]).trim();
+    }
     return map(
         "display_currency", display_currency,
         "base_currency", base_currency,
         "current_path", string(req.path),
+        "header_search_q", header_q,
         "currency_options", currencies.catalog(display_currency),
-        "locale_options", locales.locales(),
+        "locale_options", locales.locale_options(),
         "active_locale", locale,
         "nav_catalog", locales.translate(locale, "nav", "catalog", "Catalog"),
         "nav_cart", locales.translate(locale, "nav", "cart", "Cart"),

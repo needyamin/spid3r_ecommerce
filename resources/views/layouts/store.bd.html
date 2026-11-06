@@ -19,6 +19,10 @@
         <a href="/support">{{ nav_support }}</a>
         <a href="/account">{{ nav_account }}</a>
       </nav>
+      <form class="header-search" method="get" action="/search" role="search">
+        <input type="search" name="q" value="{{ header_search_q }}" placeholder="Search products" aria-label="Search products">
+        <button class="btn btn-secondary" type="submit">Search</button>
+      </form>
     </div>
 @if(currency_options)
     <div class="wrap header-row header-tools">
@@ -44,7 +48,7 @@
         <label for="locale-select">Language</label>
         <select id="locale-select" name="locale">
 @foreach(loc in locale_options)
-          <option value="{{ loc }}">{{ loc }}</option>
+          <option value="{{ loc.code }}">{{ loc.label }}</option>
 @endforeach
         </select>
         <button class="btn btn-secondary" type="submit">Apply</button>
