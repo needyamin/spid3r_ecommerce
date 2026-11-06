@@ -2,37 +2,42 @@
 @section('title', store_name)
 @section('meta_description', meta_description)
 @section("content")
-  <section class="hero">
+  <section class="dz-hero">
     <h1>{{ store_name }}</h1>
-    <p class="hero-sub">Quality products, honest prices, fast delivery.</p>
-    <div class="hero-actions">
-      <a class="btn btn-primary" href="/catalog">Browse Catalog</a>
+    <p>Quality products, honest prices, fast delivery.</p>
+    <div class="d-flex gap-2 justify-content-center flex-wrap">
+      <a class="btn btn-primary btn-lg px-4" href="/catalog">Browse Catalog</a>
+      <a class="btn btn-outline-primary btn-lg px-4" href="/track">Track Order</a>
     </div>
   </section>
 
-  <section class="catalog-teaser">
-    <h2>Featured Products</h2>
+  <section class="my-4">
+    <h2 class="dz-section-title">Featured Products</h2>
 @if(has_products)
-      <div class="product-grid">
+    <div class="row g-3 row-cols-2 row-cols-md-3 row-cols-lg-4">
 @foreach(product in products)
-          <a class="product-card" href="{{ product.url }}">
-@if(product.has_image)
-            <img class="product-img" src="{{ product.image_url }}" alt="{{ product.name }}" loading="lazy" decoding="async">
-@endif
-            <div class="product-name">{{ product.name }}</div>
-            <div class="product-price">{{ product.price_display }}</div>
-          </a>
-@endforeach
+      <div class="col">
+@include("partials.product_card")
       </div>
+@endforeach
+    </div>
 @else
-      <p class="empty-note">Our catalog is being stocked — check back soon.</p>
+    <p class="empty-note">Our catalog is being stocked — check back soon.</p>
 @endif
   </section>
 
-  <section class="store-features">
-    <div class="feature"><div class="feature-icon">🚚</div><h3>Fast Delivery</h3><p>Nationwide shipping with tracking on every order.</p></div>
-    <div class="feature"><div class="feature-icon">💳</div><h3>Flexible Payment</h3><p>Cash on delivery, bKash, Nagad and cards.</p></div>
-    <div class="feature"><div class="feature-icon">↩️</div><h3>Easy Returns</h3><p>Seven-day hassle-free return policy.</p></div>
-    <div class="feature"><div class="feature-icon">🔒</div><h3>Secure Checkout</h3><p>Every transaction verified server-side.</p></div>
+  <section class="row g-3 my-4">
+    <div class="col-6 col-lg-3">
+      <div class="dz-feature"><div class="feature-icon">🚚</div><h3>Fast Delivery</h3><p>Nationwide shipping with tracking on every order.</p></div>
+    </div>
+    <div class="col-6 col-lg-3">
+      <div class="dz-feature"><div class="feature-icon">💳</div><h3>Flexible Payment</h3><p>Cash on delivery, bKash, Nagad and cards.</p></div>
+    </div>
+    <div class="col-6 col-lg-3">
+      <div class="dz-feature"><div class="feature-icon">↩️</div><h3>Easy Returns</h3><p>Seven-day hassle-free return policy.</p></div>
+    </div>
+    <div class="col-6 col-lg-3">
+      <div class="dz-feature"><div class="feature-icon">🔒</div><h3>Secure Checkout</h3><p>Every transaction verified server-side.</p></div>
+    </div>
   </section>
 @endsection

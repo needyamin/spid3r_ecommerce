@@ -2,36 +2,53 @@
 @section('title', title)
 @section('meta_description', meta_description)
 @section("content")
-  <nav class="breadcrumb"><a href="/">Home</a> / <span>Support</span></nav>
+  <nav aria-label="breadcrumb">
+    <ol class="breadcrumb"><li class="breadcrumb-item"><a href="/">Home</a></li><li class="breadcrumb-item active" aria-current="page">Support</li></ol>
+  </nav>
   <h1 class="page-title">Customer support</h1>
-  <p class="rewards-hint">Tell us what went wrong. We reply to the address you give us.</p>
+  <p class="page-description">Tell us what went wrong. We reply to the address you give us.</p>
 
-  <section class="auth-card">
-    <h2>Open a ticket</h2>
-    <form method="post" action="/support">
-      <input type="hidden" name="_csrf" value="{{ csrf }}">
-      <label>Email <input type="email" name="email" value="{{ email }}" maxlength="255" required></label>
-      <label>Subject <input type="text" name="subject" maxlength="160" required></label>
-      <label>Message <textarea name="message" rows="6" maxlength="4000" required></textarea></label>
-      <button class="btn btn-primary" type="submit">Send request</button>
-    </form>
-  </section>
+  <div class="row g-4">
+    <div class="col-12 col-lg-7">
+      <div class="dz-card p-4">
+        <h2 class="h6 mb-3">Open a ticket</h2>
+        <form method="post" action="/support">
+          <input type="hidden" name="_csrf" value="{{ csrf }}">
+          <div class="mb-2">
+            <label class="form-label small text-secondary mb-1" for="sup-email">Email</label>
+            <input type="email" id="sup-email" name="email" value="{{ email }}" maxlength="255" class="form-control" required>
+          </div>
+          <div class="mb-2">
+            <label class="form-label small text-secondary mb-1" for="sup-subject">Subject</label>
+            <input type="text" id="sup-subject" name="subject" maxlength="160" class="form-control" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label small text-secondary mb-1" for="sup-message">Message</label>
+            <textarea id="sup-message" name="message" rows="6" maxlength="4000" class="form-control" required></textarea>
+          </div>
+          <button class="btn btn-primary" type="submit">Send request</button>
+        </form>
+      </div>
+    </div>
+  </div>
 
 @if(tickets)
-  <section class="support-tickets">
-    <h2>Your tickets</h2>
-    <table class="data-table">
-      <thead><tr><th>Subject</th><th>Status</th><th>Opened</th></tr></thead>
-      <tbody>
+  <div class="dz-card p-4 my-4">
+    <h2 class="h6 mb-3">Your tickets</h2>
+    <div class="table-responsive">
+      <table class="table table-sm table-hover align-middle mb-0">
+        <thead><tr><th>Subject</th><th>Status</th><th>Opened</th></tr></thead>
+        <tbody>
 @foreach(ticket in tickets)
-        <tr>
-          <td>{{ ticket.subject }}</td>
-          <td>{{ ticket.status }}</td>
-          <td>{{ ticket.created_at }}</td>
-        </tr>
+          <tr>
+            <td>{{ ticket.subject }}</td>
+            <td>{{ ticket.status }}</td>
+            <td>{{ ticket.created_at }}</td>
+          </tr>
 @endforeach
-      </tbody>
-    </table>
-  </section>
+        </tbody>
+      </table>
+    </div>
+  </div>
 @endif
 @endsection

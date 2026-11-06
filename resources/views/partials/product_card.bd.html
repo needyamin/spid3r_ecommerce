@@ -1,0 +1,21 @@
+<!-- Daraz-style product card. Expects a `product` map with
+     url, name, price_display, optionally compare_display,
+     has_image and image_url. -->
+<a class="product-card h-100" href="{{ product.url }}">
+@if(product.has_image)
+  <img class="dz-p-img" src="{{ product.image_url }}" alt="{{ product.name }}" loading="lazy" decoding="async">
+@else
+  <div class="dz-p-img-placeholder">📦</div>
+@endif
+  <div class="dz-p-body">
+@if(product.compare_display)
+    <span class="dz-sale-badge mb-1">Sale</span>
+@endif
+    <div class="dz-p-name">{{ product.name }}</div>
+@if(product.compare_display)
+    <div><span class="dz-p-price">{{ product.price_display }}</span> <span class="dz-p-old">{{ product.compare_display }}</span></div>
+@else
+    <div class="dz-p-price">{{ product.price_display }}</div>
+@endif
+  </div>
+</a>

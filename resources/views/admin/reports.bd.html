@@ -2,31 +2,25 @@
 @section('title', title)
 @section('meta_description', meta_description)
 @section("content")
-  <nav class="admin-nav">
-    <a href="/admin/dashboard">Overview</a>
-    <a href="/admin/orders">Orders</a>
-    <a href="/admin/products">Products</a>
-    <a href="/admin/inventory">Inventory</a>
-    <a href="/admin/customers">Customers</a>
-    <a href="/admin/coupons">Coupons</a>
-    <a href="/admin/settings">Settings</a>
-    <a href="/admin/audit">Audit</a>
-    <a href="/admin/reports">Reports</a>
-    <a href="/admin/reviews">Reviews</a>
-    <a href="/admin/returns">Returns</a>
-  </nav>
+@include("partials.admin_nav")
   <h1 class="page-title">Sales &amp; revenue reports</h1>
-  <div class="stat-grid">
-    <div class="stat-card"><span>Revenue (settled)</span><strong>{{ revenue_display }}</strong></div>
-    <div class="stat-card"><span>All orders</span><strong>{{ order_count }}</strong></div>
-    <div class="stat-card"><span>Settled rows</span><strong>{{ settled_rows }}</strong></div>
-  </div>
-  <section class="checkout-panel">
-    <h2>Export</h2>
-    <p class="cart-unit">Settled orders only (paid, processing, packed, shipped, delivered).</p>
-    <div class="hero-actions">
-      <a class="btn btn-primary" href="/admin/reports/export?format=csv">Download CSV</a>
-      <a class="btn btn-secondary" href="/admin/reports/export?format=json">JSON data</a>
+  <div class="row g-3 my-2">
+    <div class="col-12 col-md-4">
+      <div class="stat-card"><span>Revenue (settled)</span><strong>{{ revenue_display }}</strong></div>
     </div>
-  </section>
+    <div class="col-6 col-md-4">
+      <div class="stat-card"><span>All orders</span><strong>{{ order_count }}</strong></div>
+    </div>
+    <div class="col-6 col-md-4">
+      <div class="stat-card"><span>Settled rows</span><strong>{{ settled_rows }}</strong></div>
+    </div>
+  </div>
+  <div class="dz-card p-4 my-4" style="max-width: 640px;">
+    <h2 class="h6 mb-2">Export</h2>
+    <p class="small text-secondary">Settled orders only (paid, processing, packed, shipped, delivered).</p>
+    <div class="d-flex gap-2">
+      <a class="btn btn-primary" href="/admin/reports/export?format=csv">Download CSV</a>
+      <a class="btn btn-light border" href="/admin/reports/export?format=json">JSON data</a>
+    </div>
+  </div>
 @endsection

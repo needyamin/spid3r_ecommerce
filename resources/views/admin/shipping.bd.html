@@ -2,88 +2,114 @@
 @section('title', title)
 @section('meta_description', meta_description)
 @section("content")
-  <nav class="admin-nav">
-    <a href="/admin/dashboard">Overview</a>
-    <a href="/admin/orders">Orders</a>
-    <a href="/admin/returns">Returns</a>
-    <a href="/admin/shipping">Shipping</a>
-    <a href="/admin/products">Products</a>
-    <a href="/admin/inventory">Inventory</a>
-    <a href="/admin/customers">Customers</a>
-    <a href="/admin/settings">Settings</a>
-    <a href="/admin/audit">Audit</a>
-    <a href="/admin/reports">Reports</a>
-    <a href="/admin/reviews">Reviews</a>
-    <a href="/admin/returns">Returns</a>
-  </nav>
-
+@include("partials.admin_nav")
   <h1 class="page-title">Shipping &amp; delivery</h1>
-  <p class="rewards-hint">
+  <p class="page-description">
     Zones match a customer's address (country + district list); the matching
     zone's rate sets the delivery fee and the estimate. With no matching zone
     the flat fee applies: standard {{ flat_standard_minor }} · express {{ flat_express_minor }} minor units.
   </p>
 
-  <section class="rewards-panel">
-    <h2>Delivery zones</h2>
+  <div class="dz-card p-4 my-3">
+    <h2 class="h6 mb-3">Delivery zones</h2>
 @if(has_zones)
-    <table class="data-table">
-      <thead><tr><th>Zone</th><th>Country</th><th>Districts</th><th>Active</th><th>Rate tiers</th></tr></thead>
-      <tbody>
+    <div class="table-responsive">
+      <table class="table table-sm table-striped table-hover align-middle">
+        <thead><tr><th>Zone</th><th>Country</th><th>Districts</th><th>Active</th><th>Rate tiers</th></tr></thead>
+        <tbody>
 @foreach(zone in zones)
-        <tr>
-          <td>{{ zone.name }}</td>
-          <td>{{ zone.country }}</td>
-          <td>{{ zone.districts }}</td>
-          <td>{{ zone.is_active }}</td>
-          <td>
+          <tr>
+            <td>{{ zone.name }}</td>
+            <td>{{ zone.country }}</td>
+            <td>{{ zone.districts }}</td>
+            <td>{{ zone.is_active }}</td>
+            <td>
 @if(zone.has_rates)
-            <ul class="rate-list">
+              <ul class="rate-list">
 @foreach(rate in zone.rates)
-              <li>{{ rate.method }} — {{ rate.fee_minor }} minor · {{ rate.estimated_days_min }}–{{ rate.estimated_days_max }} days · from {{ rate.min_order_minor }}</li>
+                <li>{{ rate.method }} — {{ rate.fee_minor }} minor · {{ rate.estimated_days_min }}–{{ rate.estimated_days_max }} days · from {{ rate.min_order_minor }}</li>
 @endforeach
-            </ul>
+              </ul>
 @else
-            <span class="rewards-hint">flat fee</span>
+              <span class="small text-secondary">flat fee</span>
 @endif
-          </td>
-        </tr>
+            </td>
+          </tr>
 @endforeach
-      </tbody>
-    </table>
+        </tbody>
+      </table>
+    </div>
 @else
     <p class="empty-note">No zones yet — every address uses the flat fee.</p>
 @endif
+  </div>
 
-    <h3>Add or update a zone</h3>
-    <form method="post" action="/admin/api/shipping/zones" class="review-form">
-      <input type="hidden" name="_csrf" value="{{ csrf }}">
-      <label>Name <input type="text" name="name" maxlength="96" required></label>
-      <label>Country <input type="text" name="country" maxlength="64" value="Bangladesh"></label>
-      <label>Districts (comma separated, empty = whole country) <input type="text" name="districts" maxlength="2000"></label>
-      <input type="hidden" name="is_active" value="1">
-      <button class="btn btn-primary" type="submit">Save zone</button>
-    </form>
-  </section>
+  <div class="row g-4">
+    <div class="col-12 col-lg-6">
+      <div class="dz-card p-4 h-100">
+        <h2 class="h6 mb-3">Add or update a zone</h2>
+        <form method="post" action="/admin/api/shipping/zones">
+          <input type="hidden" name="_csrf" value="{{ csrf }}">
+          <div class="mb-2">
+            <label class="form-label small text-secondary mb-1" for="zone-name">Name</label>
+            <input type="text" id="zone-name" name="name" maxlength="96" class="form-control" required>
+          </div>
+          <div class="mb-2">
+            <label class="form-label small text-secondary mb-1" for="zone-country">Country</label>
+            <input type="text" id="zone-country" name="country" maxlength="64" value="Bangladesh" class="form-control">
+          </div>
+          <div class="mb-3">
+            <label class="form-label small text-secondary mb-1" for="zone-districts">Districts (comma separated, empty = whole country)</label>
+            <input type="text" id="zone-districts" name="districts" maxlength="2000" class="form-control">
+          </div>
+          <input type="hidden" name="is_active" value="1">
+          <button class="btn btn-primary" type="submit">Save zone</button>
+        </form>
+      </div>
+    </div>
 
-  <section class="rewards-panel">
-    <h2>Add a delivery rate</h2>
-    <form method="post" action="/admin/api/shipping/rates" class="review-form">
-      <input type="hidden" name="_csrf" value="{{ csrf }}">
-      <label>Zone ID <input type="number" name="zone_id" min="1" required></label>
-      <label>Method
-        <select name="method">
-          <option value="standard">standard</option>
-          <option value="express">express</option>
-        </select>
-      </label>
-      <label>Fee (minor units) <input type="number" name="fee_minor" min="0" required></label>
-      <label>Minimum order (minor units) <input type="number" name="min_order_minor" min="0" value="0"></label>
-      <label>Maximum order (minor units, empty = no limit) <input type="number" name="max_order_minor" min="0"></label>
-      <label>Estimated days (min) <input type="number" name="estimated_days_min" min="0" value="3"></label>
-      <label>Estimated days (max) <input type="number" name="estimated_days_max" min="0" value="7"></label>
-      <input type="hidden" name="is_active" value="1">
-      <button class="btn btn-primary" type="submit">Save rate</button>
-    </form>
-  </section>
+    <div class="col-12 col-lg-6">
+      <div class="dz-card p-4 h-100">
+        <h2 class="h6 mb-3">Add a delivery rate</h2>
+        <form method="post" action="/admin/api/shipping/rates">
+          <input type="hidden" name="_csrf" value="{{ csrf }}">
+          <div class="row g-2">
+            <div class="col-6 col-md-4">
+              <label class="form-label small text-secondary mb-1" for="rate-zone">Zone ID</label>
+              <input type="number" id="rate-zone" name="zone_id" min="1" class="form-control" required>
+            </div>
+            <div class="col-6 col-md-4">
+              <label class="form-label small text-secondary mb-1" for="rate-method">Method</label>
+              <select id="rate-method" name="method" class="form-select">
+                <option value="standard">standard</option>
+                <option value="express">express</option>
+              </select>
+            </div>
+            <div class="col-6 col-md-4">
+              <label class="form-label small text-secondary mb-1" for="rate-fee">Fee (minor units)</label>
+              <input type="number" id="rate-fee" name="fee_minor" min="0" class="form-control" required>
+            </div>
+            <div class="col-6 col-md-6">
+              <label class="form-label small text-secondary mb-1" for="rate-min">Minimum order (minor units)</label>
+              <input type="number" id="rate-min" name="min_order_minor" min="0" value="0" class="form-control">
+            </div>
+            <div class="col-6 col-md-6">
+              <label class="form-label small text-secondary mb-1" for="rate-max">Maximum order (minor units, empty = no limit)</label>
+              <input type="number" id="rate-max" name="max_order_minor" min="0" class="form-control">
+            </div>
+            <div class="col-6 col-md-6">
+              <label class="form-label small text-secondary mb-1" for="rate-days-min">Estimated days (min)</label>
+              <input type="number" id="rate-days-min" name="estimated_days_min" min="0" value="3" class="form-control">
+            </div>
+            <div class="col-6 col-md-6">
+              <label class="form-label small text-secondary mb-1" for="rate-days-max">Estimated days (max)</label>
+              <input type="number" id="rate-days-max" name="estimated_days_max" min="0" value="7" class="form-control">
+            </div>
+          </div>
+          <input type="hidden" name="is_active" value="1">
+          <button class="btn btn-primary mt-3" type="submit">Save rate</button>
+        </form>
+      </div>
+    </div>
+  </div>
 @endsection

@@ -4,35 +4,44 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Invoice {{ order.order_number }}</title>
+<link rel="stylesheet" href="/css/bootstrap.min.css">
 <link rel="stylesheet" href="/css/invoice.css">
 </head>
-<body>
-  <h1>Invoice</h1>
-  <p class="muted">{{ store_name }} · Order {{ order.order_number }} · {{ order.placed_at }}</p>
-  <p>Status: {{ status_label }}</p>
-  <p><strong>Bill to:</strong> {{ address.full_name }}, {{ address.line1 }}, {{ address.city }} {{ address.postal_code }}</p>
+<body class="bg-light">
+  <div class="container py-4" style="max-width: 820px;">
+    <div class="bg-white border rounded p-4">
+      <h1 class="h4 mb-1">Invoice</h1>
+      <p class="text-secondary small mb-3">{{ store_name }} · Order {{ order.order_number }} · {{ order.placed_at }}</p>
+      <p>Status: <span class="badge text-bg-secondary">{{ status_label }}</span></p>
+      <p><strong>Bill to:</strong> {{ address.full_name }}, {{ address.line1 }}, {{ address.city }} {{ address.postal_code }}</p>
 
-  <table>
-    <tr><th>Item</th><th>SKU</th><th class="right">Qty</th><th class="right">Unit</th><th class="right">Line total</th></tr>
+      <div class="table-responsive">
+        <table class="table table-bordered table-sm align-middle">
+          <thead class="table-light"><tr><th>Item</th><th>SKU</th><th class="text-end">Qty</th><th class="text-end">Unit</th><th class="text-end">Line total</th></tr></thead>
+          <tbody>
 @foreach(item in items)
-    <tr>
-      <td>{{ item.name_snapshot }}</td><td>{{ item.sku_snapshot }}</td>
-      <td class="right">{{ item.quantity }}</td>
-      <td class="right">{{ item.unit_display }}</td>
-      <td class="right">{{ item.line_display }}</td>
-    </tr>
+            <tr>
+              <td>{{ item.name_snapshot }}</td><td>{{ item.sku_snapshot }}</td>
+              <td class="text-end">{{ item.quantity }}</td>
+              <td class="text-end">{{ item.unit_display }}</td>
+              <td class="text-end">{{ item.line_display }}</td>
+            </tr>
 @endforeach
-  </table>
+          </tbody>
+        </table>
+      </div>
 
-  <div class="totals">
-    <div><span>Subtotal</span><span>{{ subtotal_display }}</span></div>
-    <div><span>Discount</span><span>− {{ discount_display }}</span></div>
-    <div><span>Shipping</span><span>{{ shipping_display }}</span></div>
-    <div><span>Tax</span><span>{{ tax_display }}</span></div>
-    <div class="grand"><span>Total</span><span>{{ total_display }}</span></div>
+      <div class="ms-auto" style="max-width: 320px;">
+        <div class="total-line"><span>Subtotal</span><span>{{ subtotal_display }}</span></div>
+        <div class="total-line"><span>Discount</span><span>− {{ discount_display }}</span></div>
+        <div class="total-line"><span>Shipping</span><span>{{ shipping_display }}</span></div>
+        <div class="total-line"><span>Tax</span><span>{{ tax_display }}</span></div>
+        <div class="total-line total-grand"><strong>Total</strong><strong>{{ total_display }}</strong></div>
+      </div>
+
+      <p class="no-print mt-3 mb-0"><button type="button" class="btn btn-primary btn-sm" data-print>Print invoice</button></p>
+    </div>
   </div>
-
-  <p class="no-print"><button type="button" data-print>Print invoice</button></p>
   <script src="/js/print.js"></script>
 </body>
 </html>

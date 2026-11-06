@@ -2,15 +2,21 @@
 @section("title")Choose a new password@endsection
 @section("content")
 <section class="auth-card">
-  <h1>Choose a new password</h1>
+  <h1 class="h4 mb-3">Choose a new password</h1>
   <form method="post" action="/reset-password">
     <input type="hidden" name="_csrf" value="{{ csrf }}">
     <input type="hidden" name="token" value="{{ token }}">
-    <label for="password">New password (8+ characters)</label>
-    <input id="password" name="password" type="password" required autocomplete="new-password">
-    <label for="password_confirmation">Confirm new password</label>
-    <input id="password_confirmation" name="password_confirmation" type="password" required autocomplete="new-password">
-    <button class="btn btn-primary" type="submit">Update password</button>
+    <div class="mb-2">
+      <label class="form-label small text-secondary mb-1" for="password">New password (8+ characters)</label>
+      <input id="password" name="password" type="password" class="form-control" required autocomplete="new-password">
+    </div>
+    <div class="mb-3">
+      <label class="form-label small text-secondary mb-1" for="password_confirmation">Confirm new password</label>
+      <input id="password_confirmation" name="password_confirmation" type="password" class="form-control" required autocomplete="new-password">
+    </div>
+    <div class="d-grid">
+      <button class="btn btn-primary" type="submit">Update password</button>
+    </div>
   </form>
 </section>
 @endsection

@@ -2,11 +2,15 @@
 @section('title', title)
 @section('meta_description', meta_description)
 @section("content")
-  <section class="auth-card">
-    <h1>Order confirmed</h1>
-    <p>Thank you — your order <strong>{{ order.order_number }}</strong> has been placed.</p>
-    <p>Status: <strong>{{ order.status }}</strong></p>
-    <p>Total: <strong>{{ total_display }}</strong></p>
-    <p class="auth-links"><a href="/catalog">Continue shopping</a></p>
-  </section>
+  <div class="auth-card text-center">
+    <div class="display-4 mb-2">✅</div>
+    <h1 class="h4">Order confirmed</h1>
+    <p class="text-secondary">Thank you — your order has been placed.</p>
+    <div class="dz-card p-3 my-3 text-start">
+      <div class="total-line"><span>Order number</span><strong>{{ order.order_number }}</strong></div>
+      <div class="total-line"><span>Status</span><span class="stock-badge stock-in">{{ order.status }}</span></div>
+      <div class="total-line total-grand"><strong>Total</strong><strong>{{ total_display }}</strong></div>
+    </div>
+    <a class="btn btn-primary px-4" href="/catalog">Continue shopping</a>
+  </div>
 @endsection

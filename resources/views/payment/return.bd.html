@@ -2,10 +2,11 @@
 @section('title', title)
 @section('meta_description', meta_description)
 @section("content")
-  <section class="auth-card">
-    <h1>Payment status</h1>
-    <p>Order <strong>{{ order.order_number }}</strong> is currently <strong>{{ status }}</strong>.</p>
-    <p class="cart-unit">We never trust a browser redirect as proof of payment. Your order is updated only after server-side verification or a signed gateway notification.</p>
-    <p class="auth-links"><a href="/orders">View order history</a></p>
-  </section>
+  <div class="auth-card text-center">
+    <div class="display-4 mb-2">💳</div>
+    <h1 class="h4">Payment status</h1>
+    <p class="text-secondary">Order <strong>{{ order.order_number }}</strong> is currently <strong class="text-dark">{{ status }}</strong>.</p>
+    <div class="alert alert-secondary small">We never trust a browser redirect as proof of payment. Your order is updated only after server-side verification or a signed gateway notification.</div>
+    <a class="btn btn-primary" href="/orders">View order history</a>
+  </div>
 @endsection

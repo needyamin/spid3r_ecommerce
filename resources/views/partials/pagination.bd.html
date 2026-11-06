@@ -1,0 +1,11 @@
+<!-- Pagination. Expects has_prev, prev_url, has_next, next_url. -->
+@if(has_prev)
+<nav class="d-flex justify-content-center my-4" aria-label="Pagination">
+  <a class="btn btn-light" href="{{ prev_url }}">← Previous</a>
+</nav>
+@endif
+@if(has_next)
+<nav class="d-flex justify-content-center my-4" aria-label="Pagination">
+  <a class="btn btn-light" href="{{ next_url }}">Next →</a>
+</nav>
+@endif

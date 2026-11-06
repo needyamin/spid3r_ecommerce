@@ -2,73 +2,81 @@
 @section('title', title)
 @section('meta_description', meta_description)
 @section("content")
-  <nav class="breadcrumb"><a href="/">Home</a> / <span>{{ heading }}</span></nav>
+  <nav aria-label="breadcrumb">
+    <ol class="breadcrumb"><li class="breadcrumb-item"><a href="/">Home</a></li><li class="breadcrumb-item active" aria-current="page">{{ heading }}</li></ol>
+  </nav>
   <h1 class="page-title">{{ heading }}</h1>
 @if(description)
-  <p class="page-description">{{ description }}</p>
+  <p class="page-description mb-3">{{ description }}</p>
 @endif
 
-  <form class="filter-bar" method="get" action="{{ form_action }}">
-    <input type="search" name="q" value="{{ q }}" placeholder="Search products" aria-label="Search products">
-    <select name="category" aria-label="Category">
-      <option value="">All categories</option>
+  <form class="dz-card p-3 mb-3" method="get" action="{{ form_action }}">
+    <div class="row g-2 align-items-end">
+      <div class="col-12 col-md-4">
+        <label class="form-label small text-secondary mb-1" for="filter-q">Search</label>
+        <input type="search" id="filter-q" name="q" value="{{ q }}" class="form-control" placeholder="Search products" aria-label="Search products">
+      </div>
+      <div class="col-6 col-md-3">
+        <label class="form-label small text-secondary mb-1" for="filter-cat">Category</label>
+        <select id="filter-cat" name="category" class="form-select" aria-label="Category">
+          <option value="">All categories</option>
 @foreach(cat in category_options)
 @if(cat.selected)
-      <option value="{{ cat.slug }}" selected>{{ cat.name }}</option>
+          <option value="{{ cat.slug }}" selected>{{ cat.name }}</option>
 @else
-      <option value="{{ cat.slug }}">{{ cat.name }}</option>
+          <option value="{{ cat.slug }}">{{ cat.name }}</option>
 @endif
 @endforeach
-    </select>
-    <input type="number" name="min_price" value="{{ min_price }}" placeholder="Min price" step="0.01" min="0">
-    <input type="number" name="max_price" value="{{ max_price }}" placeholder="Max price" step="0.01" min="0">
-    <select name="sort" aria-label="Sort products">
-      <option value="newest">Newest</option>
-      <option value="price_asc">Price: low to high</option>
-      <option value="price_desc">Price: high to low</option>
-      <option value="name">Name</option>
-    </select>
+        </select>
+      </div>
+      <div class="col-3 col-md-2">
+        <label class="form-label small text-secondary mb-1" for="filter-min">Min price</label>
+        <input type="number" id="filter-min" name="min_price" value="{{ min_price }}" class="form-control" placeholder="Min" step="0.01" min="0" aria-label="Minimum price">
+      </div>
+      <div class="col-3 col-md-2">
+        <label class="form-label small text-secondary mb-1" for="filter-max">Max price</label>
+        <input type="number" id="filter-max" name="max_price" value="{{ max_price }}" class="form-control" placeholder="Max" step="0.01" min="0" aria-label="Maximum price">
+      </div>
+      <div class="col-6 col-md-3 col-lg-2">
+        <label class="form-label small text-secondary mb-1" for="filter-sort">Sort by</label>
+        <select id="filter-sort" name="sort" class="form-select" aria-label="Sort products">
+          <option value="newest">Newest</option>
+          <option value="price_asc">Price: low to high</option>
+          <option value="price_desc">Price: high to low</option>
+          <option value="name">Name</option>
+        </select>
+      </div>
+      <div class="col-6 col-md-2">
 @if(brand_slug)
-    <input type="hidden" name="brand" value="{{ brand_slug }}">
+        <input type="hidden" name="brand" value="{{ brand_slug }}">
 @endif
-    <button class="btn btn-primary" type="submit">Apply filters</button>
+        <button class="btn btn-primary w-100" type="submit">Apply filters</button>
+      </div>
+    </div>
   </form>
 
 @if(has_category_links)
-  <nav class="category-chips" aria-label="Browse categories">
+  <div class="d-flex flex-wrap gap-2 mb-3">
+    <span class="small text-secondary align-self-center me-1">Browse:</span>
 @foreach(cat in category_options)
-    <a href="/category/{{ cat.slug }}">{{ cat.name }}</a>
+    <a class="btn btn-light btn-sm border" href="/category/{{ cat.slug }}">{{ cat.name }}</a>
 @endforeach
-  </nav>
+  </div>
 @endif
 
-  <p class="result-count">{{ total }} product(s) · page {{ page }} of {{ last_page }}</p>
+  <p class="small text-secondary mb-2">{{ total }} product(s) · page {{ page }} of {{ last_page }}</p>
 
 @if(has_products)
-    <div class="product-grid">
+    <div class="row g-3 row-cols-2 row-cols-md-3 row-cols-lg-4">
 @foreach(product in products)
-        <a class="product-card" href="{{ product.url }}">
-@if(product.has_image)
-          <img class="product-img" src="{{ product.image_url }}" alt="{{ product.name }}" loading="lazy" decoding="async">
-@endif
-          <div class="product-name">{{ product.name }}</div>
-@if(product.compare_display)
-          <div class="product-price-old">{{ product.compare_display }}</div>
-@endif
-          <div class="product-price">{{ product.price_display }}</div>
-        </a>
+      <div class="col">
+@include("partials.product_card")
+      </div>
 @endforeach
     </div>
 @else
     <p class="empty-note">No products match these filters. <a href="/catalog">Clear filters</a></p>
 @endif
 
-  <nav class="pagination">
-@if(has_prev)
-    <a class="btn btn-secondary" href="{{ prev_url }}">← Previous</a>
-@endif
-@if(has_next)
-    <a class="btn btn-secondary" href="{{ next_url }}">Next →</a>
-@endif
-  </nav>
+@include("partials.pagination")
 @endsection

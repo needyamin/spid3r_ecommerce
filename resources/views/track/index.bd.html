@@ -2,60 +2,80 @@
 @section('title', title)
 @section('meta_description', meta_description)
 @section("content")
-  <nav class="breadcrumb"><a href="/">Home</a> / <span>Track order</span></nav>
+  <nav aria-label="breadcrumb">
+    <ol class="breadcrumb"><li class="breadcrumb-item"><a href="/">Home</a></li><li class="breadcrumb-item active" aria-current="page">Track order</li></ol>
+  </nav>
   <h1 class="page-title">Track your order</h1>
 
-  <section class="auth-card">
-    <h2>Order lookup</h2>
-    <p class="rewards-hint">Enter your order number and the email or phone used at checkout.</p>
-    <form method="post" action="/track">
-      <input type="hidden" name="_csrf" value="{{ csrf }}">
-      <label>Order number <input type="text" name="order_number" value="{{ order_number }}" maxlength="32" required></label>
-      <label>Email <input type="email" name="email" maxlength="255"></label>
-      <label>Phone <input type="text" name="phone" maxlength="32"></label>
-      <button class="btn btn-primary" type="submit">Track order</button>
-    </form>
-  </section>
+  <div class="row g-4">
+    <div class="col-12 col-lg-6">
+      <div class="dz-card p-4">
+        <h2 class="h6 mb-1">Order lookup</h2>
+        <p class="small text-secondary">Enter your order number and the email or phone used at checkout.</p>
+        <form method="post" action="/track">
+          <input type="hidden" name="_csrf" value="{{ csrf }}">
+          <div class="mb-2">
+            <label class="form-label small text-secondary mb-1" for="track-number">Order number</label>
+            <input type="text" id="track-number" name="order_number" value="{{ order_number }}" maxlength="32" class="form-control" required>
+          </div>
+          <div class="row g-2">
+            <div class="col-12 col-md-6">
+              <label class="form-label small text-secondary mb-1" for="track-email">Email</label>
+              <input type="email" id="track-email" name="email" maxlength="255" class="form-control">
+            </div>
+            <div class="col-12 col-md-6">
+              <label class="form-label small text-secondary mb-1" for="track-phone">Phone</label>
+              <input type="text" id="track-phone" name="phone" maxlength="32" class="form-control">
+            </div>
+          </div>
+          <button class="btn btn-primary mt-3" type="submit">Track order</button>
+        </form>
+      </div>
+    </div>
+  </div>
 
 @if(has_result)
-  <section class="tracking-result">
-    <h2>Order {{ result.order_number }}</h2>
-    <p class="tracking-status">Status: <strong>{{ result.status_label }}</strong></p>
-    <p>Placed: {{ result.placed_at }}</p>
-    <p>Total: {{ result.total_minor }} {{ result.currency }}</p>
+  <div class="dz-card p-4 my-4">
+    <h2 class="h5 mb-1">Order {{ result.order_number }}</h2>
+    <p>Status: <span class="stock-badge stock-in">{{ result.status_label }}</span></p>
+    <p class="small text-secondary">Placed: {{ result.placed_at }} · Total: {{ result.total_minor }} {{ result.currency }}</p>
 
 @if(result.shipments)
-    <h3>Shipments</h3>
-    <table class="data-table">
-      <thead><tr><th>Carrier</th><th>Tracking number</th><th>Status</th><th>Shipped</th><th>Delivered</th></tr></thead>
-      <tbody>
+    <h3 class="h6 mt-3">Shipments</h3>
+    <div class="table-responsive">
+      <table class="table table-sm table-hover align-middle">
+        <thead><tr><th>Carrier</th><th>Tracking number</th><th>Status</th><th>Shipped</th><th>Delivered</th></tr></thead>
+        <tbody>
 @foreach(parcel in result.shipments)
-        <tr>
-          <td>{{ parcel.carrier }}</td>
-          <td>{{ parcel.tracking_number }}</td>
-          <td>{{ parcel.status }}</td>
-          <td>{{ parcel.shipped_at }}</td>
-          <td>{{ parcel.delivered_at }}</td>
-        </tr>
+          <tr>
+            <td>{{ parcel.carrier }}</td>
+            <td>{{ parcel.tracking_number }}</td>
+            <td>{{ parcel.status }}</td>
+            <td>{{ parcel.shipped_at }}</td>
+            <td>{{ parcel.delivered_at }}</td>
+          </tr>
 @endforeach
-      </tbody>
-    </table>
+        </tbody>
+      </table>
+    </div>
 @endif
 
-    <h3>Items</h3>
-    <table class="data-table">
-      <thead><tr><th>Item</th><th>SKU</th><th>Qty</th><th>Line total</th></tr></thead>
-      <tbody>
+    <h3 class="h6 mt-3">Items</h3>
+    <div class="table-responsive">
+      <table class="table table-sm table-hover align-middle">
+        <thead><tr><th>Item</th><th>SKU</th><th>Qty</th><th>Line total</th></tr></thead>
+        <tbody>
 @foreach(line in result.items)
-        <tr>
-          <td>{{ line.name }}</td>
-          <td>{{ line.sku }}</td>
-          <td>{{ line.quantity }}</td>
-          <td>{{ line.line_total_minor }}</td>
-        </tr>
+          <tr>
+            <td>{{ line.name }}</td>
+            <td>{{ line.sku }}</td>
+            <td>{{ line.quantity }}</td>
+            <td>{{ line.line_total_minor }}</td>
+          </tr>
 @endforeach
-      </tbody>
-    </table>
-  </section>
+        </tbody>
+      </table>
+    </div>
+  </div>
 @endif
 @endsection

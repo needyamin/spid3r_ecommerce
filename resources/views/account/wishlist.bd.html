@@ -2,23 +2,30 @@
 @section('title', title)
 @section('meta_description', meta_description)
 @section("content")
-  <nav class="breadcrumb"><a href="/">Home</a> / <a href="/account">Account</a> / <span>Wishlist</span></nav>
+  <nav aria-label="breadcrumb">
+    <ol class="breadcrumb"><li class="breadcrumb-item"><a href="/">Home</a></li><li class="breadcrumb-item"><a href="/account">Account</a></li><li class="breadcrumb-item active" aria-current="page">Wishlist</li></ol>
+  </nav>
   <h1 class="page-title">Your wishlist</h1>
 
 @if(has_items)
-  <section class="product-grid">
+  <div class="row g-3 row-cols-2 row-cols-md-3 row-cols-lg-4">
 @foreach(item in items)
-    <div class="product-card">
-      <a class="product-name" href="{{ item.url }}">{{ item.name }}</a>
-      <div class="product-price">{{ item.price_display }}</div>
-      <form method="post" action="/wishlist/remove" class="inline-form">
-        <input type="hidden" name="_csrf" value="{{ csrf }}">
-        <input type="hidden" name="product_id" value="{{ item.id }}">
-        <button class="btn btn-secondary" type="submit">Remove</button>
-      </form>
+    <div class="col">
+      <div class="product-card h-100">
+        <div class="dz-p-img-placeholder">📦</div>
+        <div class="dz-p-body">
+          <div class="dz-p-name"><a class="text-dark" href="{{ item.url }}">{{ item.name }}</a></div>
+          <div class="dz-p-price mb-2">{{ item.price_display }}</div>
+          <form method="post" action="/wishlist/remove">
+            <input type="hidden" name="_csrf" value="{{ csrf }}">
+            <input type="hidden" name="product_id" value="{{ item.id }}">
+            <button class="btn btn-light border btn-sm" type="submit">Remove</button>
+          </form>
+        </div>
+      </div>
     </div>
 @endforeach
-  </section>
+  </div>
 @else
   <p class="empty-note">Your wishlist is empty. <a href="/catalog">Browse the catalog</a></p>
 @endif

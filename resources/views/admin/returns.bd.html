@@ -2,71 +2,61 @@
 @section('title', title)
 @section('meta_description', meta_description)
 @section("content")
-  <nav class="admin-nav">
-    <a href="/admin/dashboard">Overview</a>
-    <a href="/admin/orders">Orders</a>
-    <a href="/admin/returns">Returns</a>
-    <a href="/admin/shipping">Shipping</a>
-    <a href="/admin/products">Products</a>
-    <a href="/admin/inventory">Inventory</a>
-    <a href="/admin/customers">Customers</a>
-    <a href="/admin/settings">Settings</a>
-    <a href="/admin/audit">Audit</a>
-    <a href="/admin/reports">Reports</a>
-    <a href="/admin/reviews">Reviews</a>
-    <a href="/admin/returns">Returns</a>
-  </nav>
-
+@include("partials.admin_nav")
   <h1 class="page-title">Returns &amp; exchanges</h1>
-  <p class="rewards-hint">
+  <p class="page-description">
     A request moves requested → approved → received → refunded. Refunding
     restocks the items and records the refund in the payment ledger.
   </p>
 
 @if(has_returns)
-  <table class="data-table">
-    <thead><tr><th>ID</th><th>Order</th><th>Kind</th><th>Qty</th><th>Reason</th><th>Status</th><th>Decision</th></tr></thead>
-    <tbody>
+  <div class="dz-card p-3 my-3">
+    <div class="table-responsive">
+      <table class="table table-sm table-striped table-hover align-middle mb-0">
+        <thead><tr><th>ID</th><th>Order</th><th>Kind</th><th>Qty</th><th>Reason</th><th>Status</th><th>Decision</th></tr></thead>
+        <tbody>
 @foreach(ret in returns)
-      <tr>
-        <td>{{ ret.id }}</td>
-        <td>{{ ret.order_id }}</td>
-        <td>{{ ret.kind }}</td>
-        <td>{{ ret.quantity }}</td>
-        <td>{{ ret.reason }}</td>
-        <td>{{ ret.status }}</td>
-        <td class="review-actions">
+          <tr>
+            <td>{{ ret.id }}</td>
+            <td>{{ ret.order_id }}</td>
+            <td>{{ ret.kind }}</td>
+            <td>{{ ret.quantity }}</td>
+            <td>{{ ret.reason }}</td>
+            <td><span class="stock-badge stock-in">{{ ret.status }}</span></td>
+            <td>
 @if(ret.status == "requested")
-          <form method="post" action="/admin/api/returns/{{ ret.id }}" class="inline-form">
-            <input type="hidden" name="_csrf" value="{{ csrf }}">
-            <input type="hidden" name="status" value="approved">
-            <button class="btn btn-primary" type="submit">Approve</button>
-          </form>
-          <form method="post" action="/admin/api/returns/{{ ret.id }}" class="inline-form">
-            <input type="hidden" name="_csrf" value="{{ csrf }}">
-            <input type="hidden" name="status" value="rejected">
-            <button class="btn btn-secondary" type="submit">Reject</button>
-          </form>
+              <form method="post" action="/admin/api/returns/{{ ret.id }}" class="d-inline">
+                <input type="hidden" name="_csrf" value="{{ csrf }}">
+                <input type="hidden" name="status" value="approved">
+                <button class="btn btn-primary btn-sm" type="submit">Approve</button>
+              </form>
+              <form method="post" action="/admin/api/returns/{{ ret.id }}" class="d-inline">
+                <input type="hidden" name="_csrf" value="{{ csrf }}">
+                <input type="hidden" name="status" value="rejected">
+                <button class="btn btn-light border btn-sm" type="submit">Reject</button>
+              </form>
 @endif
 @if(ret.status == "approved")
-          <form method="post" action="/admin/api/returns/{{ ret.id }}" class="inline-form">
-            <input type="hidden" name="_csrf" value="{{ csrf }}">
-            <input type="hidden" name="status" value="received">
-            <button class="btn btn-primary" type="submit">Mark received</button>
-          </form>
+              <form method="post" action="/admin/api/returns/{{ ret.id }}" class="d-inline">
+                <input type="hidden" name="_csrf" value="{{ csrf }}">
+                <input type="hidden" name="status" value="received">
+                <button class="btn btn-primary btn-sm" type="submit">Mark received</button>
+              </form>
 @endif
 @if(ret.status == "received")
-          <form method="post" action="/admin/api/returns/{{ ret.id }}" class="inline-form">
-            <input type="hidden" name="_csrf" value="{{ csrf }}">
-            <input type="hidden" name="status" value="refunded">
-            <button class="btn btn-primary" type="submit">Refund</button>
-          </form>
+              <form method="post" action="/admin/api/returns/{{ ret.id }}" class="d-inline">
+                <input type="hidden" name="_csrf" value="{{ csrf }}">
+                <input type="hidden" name="status" value="refunded">
+                <button class="btn btn-primary btn-sm" type="submit">Refund</button>
+              </form>
 @endif
-        </td>
-      </tr>
+            </td>
+          </tr>
 @endforeach
-    </tbody>
-  </table>
+        </tbody>
+      </table>
+    </div>
+  </div>
 @else
   <p class="empty-note">There are no return requests yet.</p>
 @endif

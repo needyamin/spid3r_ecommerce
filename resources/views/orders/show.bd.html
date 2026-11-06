@@ -2,32 +2,42 @@
 @section('title', title)
 @section('meta_description', meta_description)
 @section("content")
-  <nav class="breadcrumb"><a href="/">Home</a> / <a href="/orders">Orders</a> / <span>{{ order.order_number }}</span></nav>
+  <nav aria-label="breadcrumb">
+    <ol class="breadcrumb"><li class="breadcrumb-item"><a href="/">Home</a></li><li class="breadcrumb-item"><a href="/orders">Orders</a></li><li class="breadcrumb-item active" aria-current="page">{{ order.order_number }}</li></ol>
+  </nav>
   <h1 class="page-title">Order {{ order.order_number }}</h1>
-  <p class="page-description">Status: <strong>{{ status_label }}</strong></p>
+  <p class="page-description">Status: <span class="stock-badge stock-in">{{ status_label }}</span></p>
 
-  <section class="cart-list">
+  <div class="row g-4">
+    <div class="col-12 col-lg-8">
+      <div class="d-flex flex-column gap-3">
 @foreach(item in items)
-    <div class="cart-row">
-      <div class="cart-row-main"><strong>{{ item.name_snapshot }}</strong><span class="cart-unit">SKU {{ item.sku_snapshot }} · {{ item.unit_display }} × {{ item.quantity }}</span></div>
-      <div class="cart-line-total">{{ item.line_display }}</div>
-    </div>
+        <div class="dz-card p-3 d-flex flex-wrap justify-content-between align-items-center gap-2">
+          <div>
+            <strong>{{ item.name_snapshot }}</strong>
+            <div class="small text-secondary">SKU {{ item.sku_snapshot }} · {{ item.unit_display }} × {{ item.quantity }}</div>
+          </div>
+          <div class="fw-bold">{{ item.line_display }}</div>
+        </div>
 @endforeach
-  </section>
+      </div>
+    </div>
 
-  <section class="cart-totals">
-    <div class="total-line"><span>Subtotal</span><span>{{ subtotal_display }}</span></div>
-    <div class="total-line"><span>Discount</span><span>− {{ discount_display }}</span></div>
-    <div class="total-line"><span>Shipping</span><span>{{ shipping_display }}</span></div>
-    <div class="total-line"><span>Tax</span><span>{{ tax_display }}</span></div>
-    <div class="total-line total-grand"><strong>Total</strong><strong>{{ total_display }}</strong></div>
-  </section>
-
-  <div class="hero-actions">
-    <a class="btn btn-secondary" href="/orders/{{ order.order_number }}/invoice">View invoice</a>
-    <form method="post" action="/orders/{{ order.order_number }}/cancel">
-      <input type="hidden" name="_csrf" value="{{ csrf }}">
-      <button class="btn btn-secondary" type="submit">Cancel order</button>
-    </form>
+    <div class="col-12 col-lg-4">
+      <div class="dz-card p-4">
+        <div class="total-line"><span>Subtotal</span><span>{{ subtotal_display }}</span></div>
+        <div class="total-line text-success"><span>Discount</span><span>− {{ discount_display }}</span></div>
+        <div class="total-line"><span>Shipping</span><span>{{ shipping_display }}</span></div>
+        <div class="total-line"><span>Tax</span><span>{{ tax_display }}</span></div>
+        <div class="total-line total-grand"><strong>Total</strong><strong>{{ total_display }}</strong></div>
+        <div class="d-grid gap-2 mt-3">
+          <a class="btn btn-primary" href="/orders/{{ order.order_number }}/invoice">View invoice</a>
+          <form method="post" action="/orders/{{ order.order_number }}/cancel">
+            <input type="hidden" name="_csrf" value="{{ csrf }}">
+            <button class="btn btn-light border w-100 text-danger" type="submit">Cancel order</button>
+          </form>
+        </div>
+      </div>
+    </div>
   </div>
 @endsection

@@ -2,49 +2,65 @@
 @section('title', title)
 @section('meta_description', meta_description)
 @section("content")
-  <nav class="breadcrumb"><a href="/">Home</a> / <a href="/account">Account</a> / <span>Rewards</span></nav>
+  <nav aria-label="breadcrumb">
+    <ol class="breadcrumb"><li class="breadcrumb-item"><a href="/">Home</a></li><li class="breadcrumb-item"><a href="/account">Account</a></li><li class="breadcrumb-item active" aria-current="page">Rewards</li></ol>
+  </nav>
   <h1 class="page-title">Your rewards</h1>
 
-  <section class="rewards-panel">
-    <div class="points-balance">
-      <span class="points-value">{{ points }}</span>
-      <span class="points-label">loyalty points</span>
+  <div class="row g-4">
+    <div class="col-12 col-lg-6">
+      <div class="dz-card p-4 h-100">
+        <div class="d-flex align-items-baseline gap-2 mb-2">
+          <span class="points-value">{{ points }}</span>
+          <span class="small text-secondary">loyalty points</span>
+        </div>
+        <p class="small text-secondary">You earn 1 point for every 100 of spend once an order is paid.</p>
+        <form method="post" action="/account/rewards/redeem" class="d-flex align-items-end gap-2">
+          <input type="hidden" name="_csrf" value="{{ csrf }}">
+          <div>
+            <label class="form-label small text-secondary mb-1" for="redeem-points">Redeem points</label>
+            <input type="number" id="redeem-points" name="points" min="1" max="{{ points }}" value="1" class="form-control dz-qty">
+          </div>
+          <button class="btn btn-primary" type="submit">Redeem</button>
+        </form>
+      </div>
     </div>
-    <p class="rewards-hint">You earn 1 point for every 100 of spend once an order is paid.</p>
-    <form method="post" action="/account/rewards/redeem" class="inline-form">
-      <input type="hidden" name="_csrf" value="{{ csrf }}">
-      <label>Redeem points <input type="number" name="points" min="1" max="{{ points }}" value="1"></label>
-      <button class="btn btn-primary" type="submit">Redeem</button>
-    </form>
-  </section>
 
-  <section class="referral-panel">
-    <h2>Refer a friend</h2>
-    <p>Share your code. You both get <strong>500 points</strong> when their first order is paid.</p>
-    <p class="referral-code">{{ referral_code }}</p>
-    <p><a href="{{ referral_link }}">Your referral link</a></p>
-    <form method="post" action="/account/referral" class="inline-form">
-      <input type="hidden" name="_csrf" value="{{ csrf }}">
-      <label>Use a referral code <input type="text" name="code" maxlength="32" placeholder="REF-XXXXXX"></label>
-      <button class="btn btn-secondary" type="submit">Apply</button>
-    </form>
-  </section>
+    <div class="col-12 col-lg-6">
+      <div class="dz-card p-4 h-100">
+        <h2 class="h5 mb-2">Refer a friend</h2>
+        <p class="small text-secondary">Share your code. You both get <strong>500 points</strong> when their first order is paid.</p>
+        <p class="referral-code">{{ referral_code }}</p>
+        <p class="small"><a href="{{ referral_link }}">Your referral link</a></p>
+        <form method="post" action="/account/referral" class="d-flex align-items-end gap-2">
+          <input type="hidden" name="_csrf" value="{{ csrf }}">
+          <div>
+            <label class="form-label small text-secondary mb-1" for="referral-code">Use a referral code</label>
+            <input type="text" id="referral-code" name="code" maxlength="32" placeholder="REF-XXXXXX" class="form-control">
+          </div>
+          <button class="btn btn-light border" type="submit">Apply</button>
+        </form>
+      </div>
+    </div>
+  </div>
 
 @if(history)
-  <section class="loyalty-history">
-    <h2>Points history</h2>
-    <table class="data-table">
-      <thead><tr><th>When</th><th>Reason</th><th>Points</th></tr></thead>
-      <tbody>
+  <div class="dz-card p-4 my-4">
+    <h2 class="h6 mb-3">Points history</h2>
+    <div class="table-responsive">
+      <table class="table table-sm table-hover align-middle mb-0">
+        <thead><tr><th>When</th><th>Reason</th><th>Points</th></tr></thead>
+        <tbody>
 @foreach(entry in history)
-        <tr>
-          <td>{{ entry.created_at }}</td>
-          <td>{{ entry.reason }}</td>
-          <td>{{ entry.points }}</td>
-        </tr>
+          <tr>
+            <td>{{ entry.created_at }}</td>
+            <td>{{ entry.reason }}</td>
+            <td>{{ entry.points }}</td>
+          </tr>
 @endforeach
-      </tbody>
-    </table>
-  </section>
+        </tbody>
+      </table>
+    </div>
+  </div>
 @endif
 @endsection

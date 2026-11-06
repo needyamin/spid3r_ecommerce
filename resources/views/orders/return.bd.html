@@ -2,55 +2,78 @@
 @section('title', title)
 @section('meta_description', meta_description)
 @section("content")
-  <nav class="breadcrumb"><a href="/">Home</a> / <a href="/orders">Orders</a> / <a href="/orders/{{ order_number }}">{{ order_number }}</a> / <span>Return</span></nav>
+  <nav aria-label="breadcrumb">
+    <ol class="breadcrumb">
+      <li class="breadcrumb-item"><a href="/">Home</a></li>
+      <li class="breadcrumb-item"><a href="/orders">Orders</a></li>
+      <li class="breadcrumb-item"><a href="/orders/{{ order_number }}">{{ order_number }}</a></li>
+      <li class="breadcrumb-item active" aria-current="page">Return</li>
+    </ol>
+  </nav>
   <h1 class="page-title">Return or exchange</h1>
-  <p class="rewards-hint">Tell us what went wrong. We answer every request.</p>
+  <p class="page-description">Tell us what went wrong. We answer every request.</p>
 
-  <section class="auth-card">
-    <h2>Order {{ order_number }}</h2>
-    <form method="post" action="/orders/{{ order_number }}/return" class="review-form">
-      <input type="hidden" name="_csrf" value="{{ csrf }}">
-      <label>Item
+  <div class="row g-4">
+    <div class="col-12 col-lg-7">
+      <div class="dz-card p-4">
+        <h2 class="h6 mb-3">Order {{ order_number }}</h2>
+        <form method="post" action="/orders/{{ order_number }}/return">
+          <input type="hidden" name="_csrf" value="{{ csrf }}">
+          <div class="mb-2">
+            <label class="form-label small text-secondary mb-1" for="order_item_id">Item</label>
 @if(has_items)
-        <select name="order_item_id">
+            <select id="order_item_id" name="order_item_id" class="form-select">
 @foreach(item in items)
-          <option value="{{ item.id }}">{{ item.name_snapshot }} ({{ item.sku_snapshot }})</option>
+              <option value="{{ item.id }}">{{ item.name_snapshot }} ({{ item.sku_snapshot }})</option>
 @endforeach
-        </select>
+            </select>
 @else
-        <input type="hidden" name="order_item_id" value="">
-        <span>Whole order</span>
+            <input type="hidden" name="order_item_id" value="">
+            <span class="form-control-plaintext">Whole order</span>
 @endif
-      </label>
-      <label>Quantity <input type="number" name="quantity" min="1" value="1"></label>
-      <label>Type
-        <select name="kind">
-          <option value="return">Return for refund</option>
-          <option value="exchange">Exchange</option>
-        </select>
-      </label>
-      <label>What went wrong? <textarea name="reason" rows="4" maxlength="2000" required></textarea></label>
-      <button class="btn btn-primary" type="submit">Send request</button>
-    </form>
-  </section>
+          </div>
+          <div class="row g-2">
+            <div class="col-6 col-md-4">
+              <label class="form-label small text-secondary mb-1" for="ret-qty">Quantity</label>
+              <input type="number" id="ret-qty" name="quantity" min="1" value="1" class="form-control">
+            </div>
+            <div class="col-6 col-md-8">
+              <label class="form-label small text-secondary mb-1" for="ret-kind">Type</label>
+              <select id="ret-kind" name="kind" class="form-select">
+                <option value="return">Return for refund</option>
+                <option value="exchange">Exchange</option>
+              </select>
+            </div>
+          </div>
+          <div class="mt-2 mb-3">
+            <label class="form-label small text-secondary mb-1" for="ret-reason">What went wrong?</label>
+            <textarea id="ret-reason" name="reason" rows="4" maxlength="2000" class="form-control" required></textarea>
+          </div>
+          <button class="btn btn-primary" type="submit">Send request</button>
+        </form>
+      </div>
+    </div>
+  </div>
 
 @if(has_requests)
-  <section class="support-tickets">
-    <h2>Your requests for this order</h2>
-    <table class="data-table">
-      <thead><tr><th>Type</th><th>Quantity</th><th>Status</th><th>Refund</th><th>Opened</th></tr></thead>
-      <tbody>
+  <div class="dz-card p-4 my-4">
+    <h2 class="h6 mb-3">Your requests for this order</h2>
+    <div class="table-responsive">
+      <table class="table table-sm table-hover align-middle mb-0">
+        <thead><tr><th>Type</th><th>Quantity</th><th>Status</th><th>Refund</th><th>Opened</th></tr></thead>
+        <tbody>
 @foreach(ret in requests)
-        <tr>
-          <td>{{ ret.kind }}</td>
-          <td>{{ ret.quantity }}</td>
-          <td>{{ ret.status }}</td>
-          <td>{{ ret.refund_minor }}</td>
-          <td>{{ ret.created_at }}</td>
-        </tr>
+          <tr>
+            <td>{{ ret.kind }}</td>
+            <td>{{ ret.quantity }}</td>
+            <td>{{ ret.status }}</td>
+            <td>{{ ret.refund_minor }}</td>
+            <td>{{ ret.created_at }}</td>
+          </tr>
 @endforeach
-      </tbody>
-    </table>
-  </section>
+        </tbody>
+      </table>
+    </div>
+  </div>
 @endif
 @endsection

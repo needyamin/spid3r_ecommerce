@@ -2,15 +2,17 @@
 @section("title")My account@endsection
 @section("content")
 <section class="auth-card">
-  <h1>My account</h1>
-  <p>Signed in as <strong>{{ user.email }}</strong>.</p>
-  <ul class="account-links">
-    <li><a href="/orders">Order history</a></li>
-    <li><a href="/addresses">Addresses</a></li>
-  </ul>
+  <h1 class="h4 mb-1">My account</h1>
+  <p class="small text-secondary">Signed in as <strong>{{ user.email }}</strong>.</p>
+  <div class="list-group my-3">
+    <a class="list-group-item list-group-item-action" href="/orders">📦 Order history</a>
+    <a class="list-group-item list-group-item-action" href="/addresses">📍 Addresses</a>
+    <a class="list-group-item list-group-item-action" href="/account/rewards">🎁 Rewards</a>
+    <a class="list-group-item list-group-item-action" href="/returns">↩️ Returns</a>
+  </div>
   <form method="post" action="/logout">
     <input type="hidden" name="_csrf" value="{{ csrf }}">
-    <button class="btn btn-secondary" type="submit">Sign out</button>
+    <button class="btn btn-light border" type="submit">Sign out</button>
   </form>
 </section>
 @endsection

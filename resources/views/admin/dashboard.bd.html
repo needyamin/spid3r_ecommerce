@@ -2,44 +2,44 @@
 @section('title', title)
 @section('meta_description', meta_description)
 @section("content")
-  <nav class="admin-nav">
-    <a href="/admin/dashboard">Overview</a>
-    <a href="/admin/orders">Orders</a>
-    <a href="/admin/products">Products</a>
-    <a href="/admin/categories">Categories</a>
-    <a href="/admin/brands">Brands</a>
-    <a href="/admin/inventory">Inventory</a>
-    <a href="/admin/customers">Customers</a>
-    <a href="/admin/staff">Staff</a>
-    <a href="/admin/roles">Roles</a>
-    <a href="/admin/coupons">Coupons</a>
-    <a href="/admin/settings">Settings</a>
-    <a href="/admin/shipping">Shipping</a>
-    <a href="/admin/payments">Payments</a>
-    <a href="/admin/audit">Audit</a>
-    <a href="/admin/reports">Reports</a>
-    <a href="/admin/reviews">Reviews</a>
-    <a href="/admin/returns">Returns</a>
-  </nav>
+@include("partials.admin_nav")
   <h1 class="page-title">Dashboard</h1>
-  <div class="stat-grid">
-    <div class="stat-card"><span>Revenue (settled)</span><strong>{{ revenue_display }}</strong></div>
-    <div class="stat-card"><span>Orders</span><strong>{{ orders }}</strong></div>
-    <div class="stat-card"><span>Awaiting payment</span><strong>{{ pending_orders }}</strong></div>
-    <div class="stat-card"><span>Customers</span><strong>{{ customers }}</strong></div>
-    <div class="stat-card"><span>Published products</span><strong>{{ published_products }} / {{ products }}</strong></div>
-    <div class="stat-card"><span>Low stock</span><strong>{{ low_stock }}</strong></div>
+  <div class="row g-3 my-2">
+    <div class="col-6 col-md-4 col-lg-2">
+      <div class="stat-card"><span>Revenue (settled)</span><strong>{{ revenue_display }}</strong></div>
+    </div>
+    <div class="col-6 col-md-4 col-lg-2">
+      <div class="stat-card"><span>Orders</span><strong>{{ orders }}</strong></div>
+    </div>
+    <div class="col-6 col-md-4 col-lg-2">
+      <div class="stat-card"><span>Awaiting payment</span><strong>{{ pending_orders }}</strong></div>
+    </div>
+    <div class="col-6 col-md-4 col-lg-2">
+      <div class="stat-card"><span>Customers</span><strong>{{ customers }}</strong></div>
+    </div>
+    <div class="col-6 col-md-4 col-lg-2">
+      <div class="stat-card"><span>Published products</span><strong>{{ published_products }} / {{ products }}</strong></div>
+    </div>
+    <div class="col-6 col-md-4 col-lg-2">
+      <div class="stat-card"><span>Low stock</span><strong>{{ low_stock }}</strong></div>
+    </div>
   </div>
 
-  <h2>Recent orders</h2>
+  <div class="dz-card p-4 my-4">
+    <h2 class="h6 mb-3">Recent orders</h2>
 @if(has_recent)
-  <div class="admin-table-wrap"><table class="admin-table">
-    <tr><th>Order</th><th>Status</th><th>Total</th></tr>
+    <div class="table-responsive">
+      <table class="table table-sm table-striped table-hover align-middle mb-0">
+        <thead><tr><th>Order</th><th>Status</th><th>Total</th></tr></thead>
+        <tbody>
 @foreach(order in recent_orders)
-    <tr><td>{{ order.order_number }}</td><td>{{ order.status }}</td><td>{{ order.total_minor }}</td></tr>
+          <tr><td>{{ order.order_number }}</td><td>{{ order.status }}</td><td>{{ order.total_minor }}</td></tr>
 @endforeach
-  </table></div>
+        </tbody>
+      </table>
+    </div>
 @else
-  <p class="empty-note">No orders yet.</p>
+    <p class="empty-note mb-0">No orders yet.</p>
 @endif
+  </div>
 @endsection

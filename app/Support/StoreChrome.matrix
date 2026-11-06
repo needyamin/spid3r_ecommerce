@@ -13,6 +13,7 @@
 
 import "app/Services/CurrencyService";
 import "app/Services/LocaleService";
+import "app/Repositories/CatalogRepository";
 
 public fn build(req, settings) {
     let base_currency = string(settings["currency"]);
@@ -25,11 +26,25 @@ public fn build(req, settings) {
     if req != null and req.query_params.has("q") {
         header_q = string(req.query_params["q"]).trim();
     }
+    // Flat category list for the header category strip.
+    let categories = new CategoryRepository();
+    let cat_rows = categories.all();
+    let footer_categories = [];
+    let ci = 0;
+    while ci < cat_rows.len() {
+        footer_categories.push(map(
+            "slug", string(cat_rows[ci]["slug"]),
+            "name", string(cat_rows[ci]["name"])
+        ));
+        ci += 1;
+    }
     return map(
         "display_currency", display_currency,
         "base_currency", base_currency,
         "current_path", string(req.path),
         "header_search_q", header_q,
+        "footer_categories", footer_categories,
+        "has_footer_categories", footer_categories.len() > 0,
         "currency_options", currencies.catalog(display_currency),
         "locale_options", locales.locale_options(),
         "active_locale", locale,

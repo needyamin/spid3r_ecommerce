@@ -2,16 +2,22 @@
 @section("title")Sign in@endsection
 @section("content")
 <section class="auth-card">
-  <h1>Sign in</h1>
-  @if (error)<p class="alert alert-error">{{ error }}</p>@endif
+  <h1 class="h4 mb-3">Sign in</h1>
+  @if (error)<p class="alert alert-danger">{{ error }}</p>@endif
   <form method="post" action="/login">
     <input type="hidden" name="_csrf" value="{{ csrf }}">
-    <label for="email">Email</label>
-    <input id="email" name="email" type="email" required autocomplete="email">
-    <label for="password">Password</label>
-    <input id="password" name="password" type="password" required autocomplete="current-password">
-    <button class="btn btn-primary" type="submit">Sign in</button>
+    <div class="mb-3">
+      <label class="form-label small text-secondary mb-1" for="email">Email</label>
+      <input id="email" name="email" type="email" class="form-control" required autocomplete="email">
+    </div>
+    <div class="mb-3">
+      <label class="form-label small text-secondary mb-1" for="password">Password</label>
+      <input id="password" name="password" type="password" class="form-control" required autocomplete="current-password">
+    </div>
+    <div class="d-grid">
+      <button class="btn btn-primary" type="submit">Sign in</button>
+    </div>
   </form>
-  <p class="auth-links"><a href="/register">Create an account</a> · <a href="/forgot-password">Forgot password?</a></p>
+  <p class="small text-secondary mt-3 mb-0"><a href="/register">Create an account</a> · <a href="/forgot-password">Forgot password?</a></p>
 </section>
 @endsection

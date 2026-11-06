@@ -2,28 +2,23 @@
 @section('title', title)
 @section('meta_description', meta_description)
 @section("content")
-  <nav class="breadcrumb"><a href="/">Home</a> / <span>Order history</span></nav>
+  <nav aria-label="breadcrumb">
+    <ol class="breadcrumb"><li class="breadcrumb-item"><a href="/">Home</a></li><li class="breadcrumb-item active" aria-current="page">Order history</li></ol>
+  </nav>
   <h1 class="page-title">Order history</h1>
 @if(has_orders)
-  <div class="cart-list">
+  <div class="d-flex flex-column gap-3">
 @foreach(order in orders)
-    <div class="cart-row">
-      <div class="cart-row-main">
-        <a href="/orders/{{ order.order_number }}"><strong>{{ order.order_number }}</strong></a>
-        <span class="cart-unit">{{ order.status }} · {{ order.total_display }}</span>
+    <div class="dz-card p-3 d-flex flex-wrap justify-content-between align-items-center gap-2">
+      <div>
+        <a href="/orders/{{ order.order_number }}" class="fw-bold">{{ order.order_number }}</a>
+        <span class="stock-badge stock-in ms-2">{{ order.status }}</span>
       </div>
-      <div class="cart-line-total">{{ order.total_display }}</div>
+      <div class="fw-bold">{{ order.total_display }}</div>
     </div>
 @endforeach
   </div>
-  <nav class="pagination">
-@if(has_prev)
-    <a class="btn btn-secondary" href="{{ prev_url }}">← Previous</a>
-@endif
-@if(has_next)
-    <a class="btn btn-secondary" href="{{ next_url }}">Next →</a>
-@endif
-  </nav>
+@include("partials.pagination")
 @else
   <p class="empty-note">No orders yet. <a href="/catalog">Start shopping</a></p>
 @endif

@@ -2,20 +2,24 @@
 @section('title', title)
 @section('meta_description', meta_description)
 @section("content")
-  <section class="auth-card">
-    <h1>Choose payment method</h1>
-    <p>Order <strong>{{ order.order_number }}</strong> · Total <strong>{{ total_display }}</strong></p>
+  <div class="auth-card">
+    <h1 class="h5 mb-1">Choose payment method</h1>
+    <p class="small text-secondary">Order <strong>{{ order.order_number }}</strong> · Total <strong>{{ total_display }}</strong></p>
     <form method="post" action="/payment/initiate">
       <input type="hidden" name="_csrf" value="{{ csrf }}">
       <input type="hidden" name="order_number" value="{{ order.order_number }}">
-      <label for="provider">Payment method</label>
-      <select id="provider" name="provider">
+      <div class="mb-3">
+        <label class="form-label small text-secondary mb-1" for="provider">Payment method</label>
+        <select id="provider" name="provider" class="form-select">
 @foreach(provider in providers)
-        <option value="{{ provider }}">{{ provider }}</option>
+          <option value="{{ provider }}">{{ provider }}</option>
 @endforeach
-      </select>
-      <button class="btn btn-primary" type="submit">Continue to payment</button>
+        </select>
+      </div>
+      <div class="d-grid">
+        <button class="btn btn-primary" type="submit">Continue to payment</button>
+      </div>
     </form>
-    <p class="auth-links">Payments are verified server-side. Do not close this page until confirmation.</p>
-  </section>
+    <p class="small text-secondary mt-3 mb-0">🔒 Payments are verified server-side. Do not close this page until confirmation.</p>
+  </div>
 @endsection
