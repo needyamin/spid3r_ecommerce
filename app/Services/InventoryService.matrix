@@ -40,6 +40,31 @@ public class InventoryService {
         return self.status(product_id);
     }
 
+    // Set the absolute on-hand quantity (admin correction) and the
+    // low-stock threshold in one call.
+    public fn set_stock(self, product_id, qty: int, threshold: int) {
+        if qty < 0 {
+            throw validation_failed(map("quantity", "Quantity cannot be negative."));
+        }
+        let ok = self.inventory.set_quantity(product_id, null, qty, "correction");
+        if not ok {
+            throw not_found("Inventory row not found for this product.");
+        }
+        self.inventory.set_threshold(product_id, threshold);
+        CatalogCache.bump_catalog_version();
+        return self.status(product_id);
+    }
+
+    // Update only the low-stock alert threshold.
+    public fn set_threshold(self, product_id, threshold: int) {
+        let ok = self.inventory.set_threshold(product_id, threshold);
+        if not ok {
+            throw not_found("Inventory row not found for this product.");
+        }
+        CatalogCache.bump_catalog_version();
+        return self.status(product_id);
+    }
+
     public fn status(self, product_id) {
         let inv = DB.table("inventory")
             .where("product_id", "=", product_id)

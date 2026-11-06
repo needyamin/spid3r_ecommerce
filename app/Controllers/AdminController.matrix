@@ -9,12 +9,49 @@ import "framework/HttpException";
 import "framework/Database/DB";
 import "app/Services/AdminService";
 import "app/Services/OrderService";
+import "app/Services/ImageService";
+import "app/Services/InventoryService";
 import "app/Support/StoreChrome" as StoreChrome;
 import "app/Repositories/OrderRepository";
 import "app/Repositories/CatalogRepository";
 import "app/Support/Money" as Money;
 
 let identity = fn(row) { return row; };
+
+// Format an integer with a fixed number of decimals WITHOUT floats
+// (tax percent, weight in kg).
+let scaled_display = fn(value: int, decimals: int) -> string {
+    let factor = 1;
+    let i = 0;
+    while i < decimals {
+        factor = factor * 10;
+        i += 1;
+    }
+    let negative = value < 0;
+    let v = value;
+    if negative {
+        v = 0 - v;
+    }
+    let whole = v / factor;
+    let frac_str = string(v - whole * factor);
+    while len(frac_str) < decimals {
+        frac_str = "0" + frac_str;
+    }
+    let sign = "";
+    if negative {
+        sign = "-";
+    }
+    return sign + string(whole) + "." + frac_str;
+};
+
+// Null-safe integer coercion for optional money columns (cost/compare-at
+// may be NULL on older rows).
+let minor_or_zero = fn(v) {
+    if v == null {
+        return 0;
+    }
+    return int(v);
+};
 
 // Option list for a <select>: one entry per allowed value, the current
 // one flagged (BD templates can only test truthiness, never compare).
@@ -206,9 +243,44 @@ public class AdminController {
                 bi += 1;
             }
             let rows = DB.table("products").orderBy("id", "DESC").limit(100).get();
+            // One query for all gallery thumbnails (never N+1).
+            let ids = [];
+            let ri = 0;
+            while ri < rows.len() {
+                ids.push(rows[ri]["id"]);
+                ri += 1;
+            }
+            let thumbs = map();
+            if ids.len() > 0 {
+                let imgs = DB.table("product_images")
+                    .whereIn("product_id", ids)
+                    .orderBy("sort_order", "ASC")
+                    .get();
+                let ii = 0;
+                while ii < imgs.len() {
+                    let pid = string(imgs[ii]["product_id"]);
+                    if not thumbs.has(pid) {
+                        thumbs[pid] = "/uploads/" + string(imgs[ii]["path"]);
+                    }
+                    ii += 1;
+                }
+            }
             let list = [];
             let i = 0;
             while i < rows.len() {
+                let pid = string(rows[i]["id"]);
+                let stock = DB.table("inventory")
+                    .where("product_id", "=", rows[i]["id"])
+                    .whereNull("variant_id")
+                    .first();
+                let qty = 0;
+                if stock != null {
+                    qty = int(stock["quantity"]);
+                }
+                let thumb = "";
+                if thumbs.has(pid) {
+                    thumb = string(thumbs[pid]);
+                }
                 list.push(map(
                     "id", rows[i]["id"],
                     "name", rows[i]["name"],
@@ -217,6 +289,11 @@ public class AdminController {
                     "price_display", Money.format(int(rows[i]["price_minor"]), "BDT"),
                     "status", rows[i]["status"],
                     "status_options", status_options_for(string(rows[i]["status"]), ["draft", "published", "archived"]),
+                    "is_published", string(rows[i]["status"]) == "published",
+                    "is_featured", int(rows[i]["is_featured"]) == 1,
+                    "stock", qty,
+                    "thumb", thumb,
+                    "has_thumb", thumb != "",
                     "category_id", rows[i]["category_id"]
                 ));
                 i += 1;
@@ -415,6 +492,131 @@ public class AdminController {
             ctx[k] = extras[k];
         }
         return view("admin/table", ctx);
+    }
+
+    // The full product management screen: details, gallery, variants,
+    // stock and SEO fields for ONE product.
+    public fn product_manage(self, req) {
+        let pid = int(req.params["id"]);
+        let product = DB.table("products").where("id", "=", pid).first();
+        if product == null {
+            throw not_found("Product not found.");
+        }
+        let image_service = new ImageService();
+        let inventory_service = new InventoryService();
+        let variants_repo = new VariantRepository();
+
+        let gallery = image_service.gallery(pid);
+        // Position labels ("Cover", "2nd", "3rd"...) + move up/down flags.
+        let gallery_rows = [];
+        let gi = 0;
+        while gi < gallery.len() {
+            let img = gallery[gi];
+            let label = "Cover";
+            if gi > 0 {
+                let n = gi + 1;
+                let suffix = "th";
+                if n == 2 {
+                    suffix = "nd";
+                } elif n == 3 {
+                    suffix = "rd";
+                }
+                label = string(n) + suffix;
+            }
+            gallery_rows.push(map(
+                "id", img["id"],
+                "url", img["url"],
+                "alt_text", img["alt_text"],
+                "is_primary", img["is_primary"],
+                "position_label", label,
+                "is_first", gi == 0,
+                "is_last", gi == gallery.len() - 1
+            ));
+            gi += 1;
+        }
+        let variants = variants_repo.for_product(pid);
+        let stock = inventory_service.status(pid);
+        let movements = inventory_service.history(pid);
+
+        // Option lists for the forms on this screen.
+        let cats = self.categories.all();
+        let cat_opts = [];
+        let ci = 0;
+        while ci < cats.len() {
+            cat_opts.push(map(
+                "value", cats[ci]["id"],
+                "label", cats[ci]["name"],
+                "selected", int(cats[ci]["id"]) == int(product["category_id"])
+            ));
+            ci += 1;
+        }
+        let brands = self.brands.all();
+        let brand_opts = [];
+        let bi = 0;
+        while bi < brands.len() {
+            brand_opts.push(map(
+                "value", brands[bi]["id"],
+                "label", brands[bi]["name"],
+                "selected", product["brand_id"] != null and int(brands[bi]["id"]) == int(product["brand_id"])
+            ));
+            bi += 1;
+        }
+
+        // Variants need a "selected"-style flag for their active state.
+        let variant_rows = [];
+        let vi = 0;
+        while vi < variants.len() {
+            let v = variants[vi];
+            variant_rows.push(map(
+                "id", v["id"],
+                "sku", v["sku"],
+                "name", v["name"],
+                "price", Money.to_major(v["price_minor"]),
+                "price_display", Money.format(int(v["price_minor"]), "BDT"),
+                "attributes", v["attributes_json"],
+                "is_active", int(v["is_active"]) == 1,
+                "is_inactive", int(v["is_active"]) != 1
+            ));
+            vi += 1;
+        }
+
+        let movement_rows = [];
+        let mi = 0;
+        while mi < movements.len() {
+            movement_rows.push(map(
+                "delta", movements[mi]["delta"],
+                "reason", movements[mi]["reason"],
+                "created_at", movements[mi]["created_at"]
+            ));
+            mi += 1;
+        }
+
+        let ctx = self.ctx(req, string(product["name"]), "products", map(
+            "csrf", req.auth.csrf(),
+            "product", product,
+            "product_price", Money.to_major(minor_or_zero(product["price_minor"])),
+            "product_price_display", Money.format(minor_or_zero(product["price_minor"]), "BDT"),
+            "product_cost", Money.to_major(minor_or_zero(product["cost_minor"])),
+            "product_compare_at", Money.to_major(minor_or_zero(product["compare_at_minor"])),
+            "product_status_options", status_options_for(string(product["status"]), ["draft", "published", "archived"]),
+            "product_featured", int(product["is_featured"]) == 1,
+            "product_not_featured", int(product["is_featured"]) != 1,
+            "product_tax_percent", scaled_display(minor_or_zero(product["tax_rate_bps"]), 2),
+            "product_weight_kg", scaled_display(minor_or_zero(product["weight_grams"]), 3),
+            "stock_available", int(stock["quantity"]) - int(stock["reserved"]),
+            "category_options", cat_opts,
+            "has_category_options", cat_opts.len() > 0,
+            "brand_options", brand_opts,
+            "has_brand_options", brand_opts.len() > 0,
+            "gallery", gallery_rows,
+            "has_gallery", gallery_rows.len() > 0,
+            "variants", variant_rows,
+            "has_variants", variant_rows.len() > 0,
+            "stock", stock,
+            "movements", movement_rows,
+            "has_movements", movement_rows.len() > 0
+        ));
+        return view("admin/product", ctx);
     }
 
     public fn reports(self, req) {

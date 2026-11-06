@@ -1,0 +1,412 @@
+@extends("layouts.store")
+@section('title', title)
+@section('meta_description', meta_description)
+@section("content")
+@include("partials.admin_nav")
+
+  <nav aria-label="breadcrumb" class="mb-2">
+    <ol class="breadcrumb">
+      <li class="breadcrumb-item"><a href="/admin/dashboard">Dashboard</a></li>
+      <li class="breadcrumb-item"><a href="/admin/products">Products</a></li>
+      <li class="breadcrumb-item active" aria-current="page">{{ product.name }}</li>
+    </ol>
+  </nav>
+
+  <div class="d-flex flex-wrap justify-content-between align-items-center mb-3">
+    <div>
+      <h1 class="page-title mb-1">{{ product.name }}</h1>
+      <p class="small text-secondary mb-0">
+        SKU {{ product.sku }} · {{ product_price_display }} · slug <code>{{ product.slug }}</code>
+      </p>
+    </div>
+    <div class="d-flex flex-wrap gap-2">
+      <a class="btn btn-light border" href="/product/{{ product.slug }}" target="_blank" rel="noopener">View on storefront</a>
+@if(product_status_options)
+      <form method="post" action="/admin/api/products/{{ product.id }}/publish-form" data-ajax="admin" class="d-inline">
+        <input type="hidden" name="_csrf" value="{{ csrf }}">
+        <button class="btn btn-primary" type="submit">Publish</button>
+      </form>
+      <form method="post" action="/admin/api/products/{{ product.id }}/unpublish-form" data-ajax="admin" class="d-inline">
+        <input type="hidden" name="_csrf" value="{{ csrf }}">
+        <button class="btn btn-light border" type="submit">Unpublish</button>
+      </form>
+@endif
+    </div>
+  </div>
+
+  <div class="row g-3">
+    <div class="col-12 col-xl-8">
+      <!-- ---------------- details ---------------- -->
+      <div class="dz-card p-4 my-3">
+        <h2 class="h6 mb-3">Product details</h2>
+        <form method="post" action="/admin/api/products/{{ product.id }}/update" data-ajax="admin">
+          <input type="hidden" name="_csrf" value="{{ csrf }}">
+          <div class="row g-2">
+            <div class="col-12 col-lg-6">
+              <label class="form-label small text-secondary mb-1" for="p-name">Name</label>
+              <input id="p-name" name="name" class="form-control" value="{{ product.name }}" required>
+            </div>
+            <div class="col-12 col-lg-6">
+              <label class="form-label small text-secondary mb-1" for="p-sku">SKU</label>
+              <input id="p-sku" class="form-control" value="{{ product.sku }}" disabled>
+              <div class="form-text">The SKU is immutable — it identifies the product in orders and integrations.</div>
+            </div>
+            <div class="col-12 col-lg-6">
+              <label class="form-label small text-secondary mb-1" for="p-category">Category</label>
+              <select id="p-category" name="category_id" class="form-select">
+@foreach(cat in category_options)
+@if(cat.selected)
+                <option value="{{ cat.value }}" selected>{{ cat.label }}</option>
+@else
+                <option value="{{ cat.value }}">{{ cat.label }}</option>
+@endif
+@endforeach
+              </select>
+            </div>
+            <div class="col-12 col-lg-6">
+              <label class="form-label small text-secondary mb-1" for="p-brand">Brand</label>
+              <select id="p-brand" name="brand_id" class="form-select">
+                <option value="">No brand</option>
+@foreach(b in brand_options)
+@if(b.selected)
+                <option value="{{ b.value }}" selected>{{ b.label }}</option>
+@else
+                <option value="{{ b.value }}">{{ b.label }}</option>
+@endif
+@endforeach
+              </select>
+            </div>
+            <div class="col-6 col-lg-3">
+              <label class="form-label small text-secondary mb-1" for="p-price">Price (BDT)</label>
+              <input id="p-price" name="price" type="number" step="0.01" min="0.01" class="form-control" value="{{ product_price }}" required>
+            </div>
+            <div class="col-6 col-lg-3">
+              <label class="form-label small text-secondary mb-1" for="p-compare">Compare-at (BDT)</label>
+              <input id="p-compare" name="compare_at" type="number" step="0.01" min="0" class="form-control" value="{{ product_compare_at }}">
+            </div>
+            <div class="col-6 col-lg-3">
+              <label class="form-label small text-secondary mb-1" for="p-cost">Cost (BDT)</label>
+              <input id="p-cost" name="cost" type="number" step="0.01" min="0" class="form-control" value="{{ product_cost }}">
+            </div>
+            <div class="col-6 col-lg-3">
+              <label class="form-label small text-secondary mb-1" for="p-tax">Tax rate (%)</label>
+              <input id="p-tax" name="tax_percent" type="number" step="0.01" min="0" class="form-control" value="{{ product_tax_percent }}">
+              <div class="form-text">Reference only — checkout uses the store tax setting.</div>
+            </div>
+            <div class="col-6 col-lg-3">
+              <label class="form-label small text-secondary mb-1" for="p-weight">Weight (kg)</label>
+              <input id="p-weight" name="weight_kg" type="number" step="0.001" min="0" class="form-control" value="{{ product_weight_kg }}">
+              <div class="form-text">Reference only — shipping fees come from the zone rates.</div>
+            </div>
+            <div class="col-6 col-lg-3">
+              <label class="form-label small text-secondary mb-1" for="p-status">Status</label>
+              <select id="p-status" name="status" class="form-select">
+@foreach(opt in product_status_options)
+@if(opt.selected)
+                <option value="{{ opt.value }}" selected>{{ opt.label }}</option>
+@else
+                <option value="{{ opt.value }}">{{ opt.label }}</option>
+@endif
+@endforeach
+              </select>
+            </div>
+            <div class="col-6 col-lg-3">
+              <label class="form-label small text-secondary mb-1" for="p-featured">Featured</label>
+              <select id="p-featured" name="is_featured" class="form-select">
+@if(product_featured)
+                <option value="1" selected>Yes</option>
+                <option value="0">No</option>
+@else
+                <option value="1">Yes</option>
+                <option value="0" selected>No</option>
+@endif
+              </select>
+              <div class="form-text">Marks the product as a featured listing.</div>
+            </div>
+          </div>
+          <div class="mt-2">
+            <label class="form-label small text-secondary mb-1" for="p-short">Short description</label>
+            <input id="p-short" name="short_description" class="form-control" value="{{ product.short_description }}">
+          </div>
+          <div class="mt-2">
+            <label class="form-label small text-secondary mb-1" for="p-desc">Description</label>
+            <textarea id="p-desc" name="description" rows="4" class="form-control">{{ product.description }}</textarea>
+          </div>
+          <button class="btn btn-primary mt-3" type="submit">Save details</button>
+        </form>
+      </div>
+
+      <!-- ---------------- images ---------------- -->
+      <div class="dz-card p-4 my-3">
+        <h2 class="h6 mb-1">Gallery</h2>
+        <p class="small text-secondary">Images are validated by their file signature (PNG, JPEG, GIF, WEBP) and capped at 2 MB. The cover image is the first one in the gallery and the photo shown on product cards.</p>
+@if(has_gallery)
+        <div class="dz-gallery-grid">
+@foreach(img in gallery)
+          <figure class="dz-gallery-item">
+            <img class="dz-gallery-thumb" src="{{ img.url }}" alt="{{ img.alt_text }}" loading="lazy" decoding="async">
+            <div class="dz-gallery-meta">
+              <p class="small text-secondary mb-1">
+@if(img.is_primary)
+                <span class="badge text-bg-primary">{{ img.position_label }}</span>
+@else
+                <span class="badge text-bg-light">{{ img.position_label }}</span>
+@endif
+              </p>
+              <form method="post" action="/admin/api/images/{{ img.id }}/update-form" data-ajax="admin" class="d-flex gap-1 mb-1">
+                <input type="hidden" name="_csrf" value="{{ csrf }}">
+                <input type="hidden" name="product_id" value="{{ product.id }}">
+                <input class="form-control form-control-sm" name="alt_text" value="{{ img.alt_text }}" placeholder="Alt text" aria-label="Alt text">
+                <button class="btn btn-light border btn-sm" type="submit">Save</button>
+              </form>
+              <div class="dz-gallery-buttons">
+@if(img.is_primary)
+                <span class="badge text-bg-primary">Cover</span>
+@else
+                <form method="post" action="/admin/api/images/{{ img.id }}/primary-form" data-ajax="admin" class="d-inline">
+                  <input type="hidden" name="_csrf" value="{{ csrf }}">
+                  <input type="hidden" name="product_id" value="{{ product.id }}">
+                  <button class="btn btn-light border btn-sm" type="submit">Make cover</button>
+                </form>
+@endif
+@if(img.is_first)
+                <button class="btn btn-light border btn-sm" type="button" disabled>↑</button>
+@else
+                <form method="post" action="/admin/api/images/{{ img.id }}/move-form" data-ajax="admin" class="d-inline">
+                  <input type="hidden" name="_csrf" value="{{ csrf }}">
+                  <input type="hidden" name="product_id" value="{{ product.id }}">
+                  <input type="hidden" name="direction" value="-1">
+                  <button class="btn btn-light border btn-sm" type="submit" title="Move earlier">↑</button>
+                </form>
+@endif
+@if(img.is_last)
+                <button class="btn btn-light border btn-sm" type="button" disabled>↓</button>
+@else
+                <form method="post" action="/admin/api/images/{{ img.id }}/move-form" data-ajax="admin" class="d-inline">
+                  <input type="hidden" name="_csrf" value="{{ csrf }}">
+                  <input type="hidden" name="product_id" value="{{ product.id }}">
+                  <input type="hidden" name="direction" value="1">
+                  <button class="btn btn-light border btn-sm" type="submit" title="Move later">↓</button>
+                </form>
+@endif
+                <form method="post" action="/admin/api/images/{{ img.id }}/delete-form" data-ajax="admin" class="d-inline" data-confirm="Remove this image from the gallery?">
+                  <input type="hidden" name="_csrf" value="{{ csrf }}">
+                  <input type="hidden" name="product_id" value="{{ product.id }}">
+                  <button class="btn btn-light border btn-sm" type="submit">Delete</button>
+                </form>
+              </div>
+            </div>
+          </figure>
+@endforeach
+        </div>
+@else
+        <p class="empty-note">No images yet — the storefront shows a placeholder box.</p>
+@endif
+
+        <h3 class="h6 mt-4 mb-2">Add an image</h3>
+        <form method="post" action="/admin/api/products/{{ product.id }}/images-form" data-ajax="admin">
+          <input type="hidden" name="_csrf" value="{{ csrf }}">
+          <input type="hidden" name="image" id="p-image-b64" value="">
+          <div class="row g-2 align-items-end">
+            <div class="col-12 col-lg-5">
+              <label class="form-label small text-secondary mb-1" for="p-image-file">Image file</label>
+              <input id="p-image-file" type="file" accept="image/png,image/jpeg,image/gif,image/webp" class="form-control" data-base64-target="p-image-b64" data-preview-target="p-image-preview">
+              <div class="form-text">PNG, JPEG, GIF or WEBP · max 2 MB</div>
+            </div>
+            <div class="col-12 col-lg-4">
+              <label class="form-label small text-secondary mb-1" for="p-image-alt">Alt text</label>
+              <input id="p-image-alt" name="alt_text" class="form-control" placeholder="Describe the product photo">
+            </div>
+            <div class="col-6 col-lg-2">
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" name="is_primary" value="1" id="p-image-primary">
+                <label class="form-check-label small" for="p-image-primary">Make cover</label>
+              </div>
+            </div>
+            <div class="col-6 col-lg-1">
+              <button class="btn btn-primary w-100" type="submit">Upload</button>
+            </div>
+          </div>
+          <div id="p-image-preview" class="dz-preview mt-2"></div>
+        </form>
+      </div>
+
+      <!-- ---------------- variants ---------------- -->
+      <div class="dz-card p-4 my-3">
+        <h2 class="h6 mb-1">Variants</h2>
+        <p class="small text-secondary">A variant is a purchasable option of this product with its own SKU and price. Leave empty for a simple product. <strong>Note:</strong> the storefront currently sells the base product price — variant prices are recorded but not yet charged.</p>
+@if(has_variants)
+        <div class="table-responsive">
+          <table class="table table-sm table-striped table-hover align-middle mb-3">
+            <thead><tr><th>SKU</th><th>Name</th><th>Price</th><th>State</th><th>Actions</th></tr></thead>
+            <tbody>
+@foreach(v in variants)
+              <tr>
+                <td>{{ v.sku }}</td>
+                <td>{{ v.name }}</td>
+                <td class="text-nowrap">{{ v.price_display }}</td>
+                <td>
+@if(v.is_active)
+                  <span class="badge text-bg-success">Active</span>
+@else
+                  <span class="badge text-bg-secondary">Inactive</span>
+@endif
+                </td>
+                <td>
+                  <form method="post" action="/admin/api/products/{{ product.id }}/variants/{{ v.id }}/update-form" data-ajax="admin" class="d-flex flex-wrap align-items-center gap-1 mb-1">
+                    <input type="hidden" name="_csrf" value="{{ csrf }}">
+                    <input class="form-control form-control-sm dz-admin-input" name="name" value="{{ v.name }}" aria-label="Variant name">
+                    <input class="form-control form-control-sm dz-admin-price" name="price" type="number" step="0.01" min="0.01" value="{{ v.price }}" aria-label="Variant price in BDT">
+@if(v.is_active)
+                    <input type="hidden" name="is_active" value="0">
+                    <button class="btn btn-light border btn-sm" type="submit">Save</button>
+@else
+                    <input type="hidden" name="is_active" value="1">
+                    <button class="btn btn-light border btn-sm" type="submit">Save</button>
+@endif
+                  </form>
+                  <form method="post" action="/admin/api/products/{{ product.id }}/variants/{{ v.id }}/delete-form" data-ajax="admin" class="d-inline">
+                    <input type="hidden" name="_csrf" value="{{ csrf }}">
+                    <button class="btn btn-light border btn-sm" type="submit">Delete</button>
+                  </form>
+                </td>
+              </tr>
+@endforeach
+            </tbody>
+          </table>
+        </div>
+@else
+        <p class="empty-note">No variants yet.</p>
+@endif
+
+        <h3 class="h6 mt-3 mb-2">Add a variant</h3>
+        <form method="post" action="/admin/api/products/{{ product.id }}/variants-form" data-ajax="admin">
+          <input type="hidden" name="_csrf" value="{{ csrf }}">
+          <div class="row g-2 align-items-end">
+            <div class="col-12 col-lg-3">
+              <label class="form-label small text-secondary mb-1" for="v-sku">SKU</label>
+              <input id="v-sku" name="sku" class="form-control" required>
+            </div>
+            <div class="col-12 col-lg-3">
+              <label class="form-label small text-secondary mb-1" for="v-name">Name</label>
+              <input id="v-name" name="name" class="form-control" placeholder="e.g. Red / Large" required>
+            </div>
+            <div class="col-6 col-lg-2">
+              <label class="form-label small text-secondary mb-1" for="v-price">Price (BDT)</label>
+              <input id="v-price" name="price" type="number" step="0.01" min="0.01" class="form-control" required>
+            </div>
+            <div class="col-6 col-lg-2">
+              <label class="form-label small text-secondary mb-1" for="v-compare">Compare-at (BDT)</label>
+              <input id="v-compare" name="compare_at" type="number" step="0.01" min="0" class="form-control">
+            </div>
+            <div class="col-12 col-lg-2">
+              <button class="btn btn-primary w-100" type="submit">Add variant</button>
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <div class="col-12 col-xl-4">
+      <!-- ---------------- inventory ---------------- -->
+      <div class="dz-card p-4 my-3">
+        <h2 class="h6 mb-3">Inventory</h2>
+        <div class="row g-2 mb-3">
+          <div class="col-3">
+            <div class="dz-stat"><span>On hand</span><strong>{{ stock.quantity }}</strong></div>
+          </div>
+          <div class="col-3">
+            <div class="dz-stat"><span>Available</span><strong>{{ stock_available }}</strong></div>
+          </div>
+          <div class="col-3">
+            <div class="dz-stat"><span>Reserved</span><strong>{{ stock.reserved }}</strong></div>
+          </div>
+          <div class="col-3">
+            <div class="dz-stat"><span>Low at</span><strong>{{ stock.low_stock_threshold }}</strong></div>
+          </div>
+        </div>
+@if(stock.low_stock)
+        <p class="alert alert-warning py-2 small">Low stock — the storefront shows an out-of-stock badge at this level.</p>
+@endif
+
+        <h3 class="h6 mt-3 mb-2">Add stock</h3>
+        <form method="post" action="/admin/api/products/{{ product.id }}/inventory/restock-form" data-ajax="admin" class="d-flex align-items-end gap-2 mb-3">
+          <input type="hidden" name="_csrf" value="{{ csrf }}">
+          <div class="flex-grow-1">
+            <label class="form-label small text-secondary mb-1" for="i-add">Units to add</label>
+            <input id="i-add" name="quantity" type="number" min="1" value="1" class="form-control" required>
+          </div>
+          <button class="btn btn-primary" type="submit">Restock</button>
+        </form>
+
+        <h3 class="h6 mb-2">Set exact quantity</h3>
+        <form method="post" action="/admin/api/products/{{ product.id }}/inventory/set-form" data-ajax="admin" class="mb-3">
+          <input type="hidden" name="_csrf" value="{{ csrf }}">
+          <div class="row g-2">
+            <div class="col-6">
+              <label class="form-label small text-secondary mb-1" for="i-set">On hand</label>
+              <input id="i-set" name="quantity" type="number" min="0" value="{{ stock.quantity }}" class="form-control" required>
+            </div>
+            <div class="col-6">
+              <label class="form-label small text-secondary mb-1" for="i-threshold">Low-stock at</label>
+              <input id="i-threshold" name="low_stock_threshold" type="number" min="0" value="{{ stock.low_stock_threshold }}" class="form-control" required>
+            </div>
+          </div>
+          <div class="form-text">Sets the on-hand count to this number — it replaces the current count, it does not add to it.</div>
+          <button class="btn btn-primary mt-2" type="submit" data-confirm="Replace the current stock count?">Save stock</button>
+        </form>
+
+        <h3 class="h6 mb-2">Low-stock alert</h3>
+        <form method="post" action="/admin/api/products/{{ product.id }}/inventory/threshold-form" data-ajax="admin" class="d-flex align-items-end gap-2 mb-3">
+          <input type="hidden" name="_csrf" value="{{ csrf }}">
+          <div class="flex-grow-1">
+            <label class="form-label small text-secondary mb-1" for="i-threshold-only">Warn at</label>
+            <input id="i-threshold-only" name="low_stock_threshold" type="number" min="0" value="{{ stock.low_stock_threshold }}" class="form-control" required>
+          </div>
+          <button class="btn btn-light border" type="submit">Save threshold</button>
+        </form>
+
+@if(has_movements)
+        <h3 class="h6 mb-2">Recent stock movements</h3>
+        <ul class="dz-movements">
+@foreach(m in movements)
+          <li><span>{{ m.delta }}</span> · {{ m.reason }} · {{ m.created_at }}</li>
+@endforeach
+        </ul>
+@endif
+      </div>
+
+      <!-- ---------------- seo ---------------- -->
+      <div class="dz-card p-4 my-3">
+        <h2 class="h6 mb-3">Search engine listing</h2>
+        <form method="post" action="/admin/api/products/{{ product.id }}/update" data-ajax="admin">
+          <input type="hidden" name="_csrf" value="{{ csrf }}">
+          <div class="mb-2">
+            <label class="form-label small text-secondary mb-1" for="p-meta-title">Meta title</label>
+            <input id="p-meta-title" name="meta_title" class="form-control" value="{{ product.meta_title }}">
+          </div>
+          <div class="mb-2">
+            <label class="form-label small text-secondary mb-1" for="p-meta-desc">Meta description</label>
+            <textarea id="p-meta-desc" name="meta_description" rows="3" class="form-control">{{ product.meta_description }}</textarea>
+          </div>
+          <button class="btn btn-primary" type="submit">Save SEO fields</button>
+        </form>
+      </div>
+
+      <!-- ---------------- danger zone ---------------- -->
+      <div class="dz-card p-4 my-3">
+        <h2 class="h6 mb-2">More actions</h2>
+        <div class="d-flex flex-wrap gap-2">
+          <form method="post" action="/admin/api/products/{{ product.id }}/featured-form" data-ajax="admin" class="d-inline">
+            <input type="hidden" name="_csrf" value="{{ csrf }}">
+            <button class="btn btn-light border" type="submit">Toggle featured</button>
+          </form>
+          <form method="post" action="/admin/api/products/{{ product.id }}/delete-form" data-ajax="admin" class="d-inline">
+            <input type="hidden" name="_csrf" value="{{ csrf }}">
+            <button class="btn btn-outline-danger" type="submit" data-confirm="Delete this product? Products that belong to an order cannot be deleted.">Delete product</button>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+@endsection

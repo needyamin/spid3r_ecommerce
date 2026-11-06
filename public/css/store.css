@@ -277,3 +277,52 @@ h1, h2, h3, h4, h5 { font-weight: 700; }
 .dz-admin-input { min-width: 190px; }
 .dz-admin-price { min-width: 110px; max-width: 130px; }
 .dz-admin-select { min-width: 130px; }
+
+/* ---------- Admin product gallery / panels ---------- */
+.dz-gallery {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 12px; margin-bottom: 8px;
+}
+.dz-gallery-item { margin: 0; }
+.dz-gallery-item img {
+  width: 100%; height: 120px; object-fit: cover;
+  border: 1px solid var(--dz-border); border-radius: .375rem; background: #fff;
+}
+.dz-gallery-item figcaption { margin-top: 4px; overflow-wrap: anywhere; }
+.dz-gallery-actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 4px; }
+.dz-image-preview img {
+  max-height: 120px; border: 1px dashed var(--dz-orange);
+  border-radius: .375rem; padding: 4px; background: #fff;
+}
+.dz-stat {
+  border: 1px solid var(--dz-border); border-radius: .375rem;
+  padding: 8px; text-align: center; background: #fff;
+}
+.dz-stat span { display: block; font-size: 11.5px; color: var(--dz-muted); }
+.dz-stat strong { font-size: 18px; color: var(--dz-orange); }
+.dz-movements { list-style: none; padding: 0; margin: 0; font-size: 12.5px; color: var(--dz-muted); }
+.dz-movements li { padding: 3px 0; border-bottom: 1px solid var(--dz-border); }
+.dz-movements li:last-child { border-bottom: 0; }
+
+/* ---------- Admin gallery grid (design-system names) ---------- */
+.dz-gallery-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(165px, 1fr));
+  gap: 14px; margin-bottom: 10px;
+}
+.dz-gallery-item { margin: 0; }
+.dz-gallery-thumb {
+  width: 100%; height: 130px; object-fit: cover;
+  border: 1px solid var(--dz-border); border-radius: .375rem; background: #fff;
+}
+.dz-gallery-meta { margin-top: 6px; }
+.dz-gallery-buttons { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.dz-preview img {
+  max-height: 130px; border: 1px dashed var(--dz-orange);
+  border-radius: .375rem; padding: 4px; background: #fff;
+}
+.dz-admin-thumb {
+  width: 42px; height: 42px; object-fit: cover;
+  border: 1px solid var(--dz-border); border-radius: .375rem; background: #fff;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.dz-admin-thumb-empty { font-size: 18px; color: var(--dz-muted); }

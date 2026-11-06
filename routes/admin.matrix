@@ -16,6 +16,8 @@ public fn register_admin_routes() {
     // Explicit registrations: closures capture loop variables by reference,
     // so generating these in a loop would bind every page to the last name.
     Route.get("/admin/products", fn(req) { return ctl.page(req, "products"); }).middleware("role:admin");
+    // Full product management screen (details, gallery, variants, stock).
+    Route.get("/admin/products/:id", fn(req) { return ctl.product_manage(req); }).middleware("role:admin");
     Route.get("/admin/categories", fn(req) { return ctl.page(req, "categories"); }).middleware("role:admin");
     Route.get("/admin/brands", fn(req) { return ctl.page(req, "brands"); }).middleware("role:admin");
     Route.get("/admin/inventory", fn(req) { return ctl.page(req, "inventory"); }).middleware("role:admin");

@@ -137,6 +137,18 @@
           <label class="form-label small text-secondary mb-1" for="new-product-compare">Compare-at price (BDT)</label>
           <input id="new-product-compare" name="compare_at" type="number" step="0.01" min="0" class="form-control">
         </div>
+        <div class="col-6 col-lg-2">
+          <label class="form-label small text-secondary mb-1" for="new-product-cost">Cost price (BDT)</label>
+          <input id="new-product-cost" name="cost" type="number" step="0.01" min="0" class="form-control">
+        </div>
+        <div class="col-6 col-lg-2">
+          <label class="form-label small text-secondary mb-1" for="new-product-tax">Tax rate (%)</label>
+          <input id="new-product-tax" name="tax_percent" type="number" step="0.01" min="0" max="100" value="0" class="form-control">
+        </div>
+        <div class="col-6 col-lg-2">
+          <label class="form-label small text-secondary mb-1" for="new-product-weight">Weight (kg)</label>
+          <input id="new-product-weight" name="weight_kg" type="number" step="0.001" min="0" value="0" class="form-control">
+        </div>
       </div>
       <div class="mt-2">
         <label class="form-label small text-secondary mb-1" for="new-product-short">Short description</label>
@@ -145,6 +157,16 @@
       <div class="mt-2">
         <label class="form-label small text-secondary mb-1" for="new-product-description">Description</label>
         <textarea id="new-product-description" name="description" rows="3" class="form-control"></textarea>
+      </div>
+      <div class="row g-2 mt-1">
+        <div class="col-12 col-lg-4">
+          <label class="form-label small text-secondary mb-1" for="new-product-meta-title">Meta title</label>
+          <input id="new-product-meta-title" name="meta_title" class="form-control">
+        </div>
+        <div class="col-12 col-lg-8">
+          <label class="form-label small text-secondary mb-1" for="new-product-meta-desc">Meta description</label>
+          <input id="new-product-meta-desc" name="meta_description" class="form-control">
+        </div>
       </div>
       <button class="btn btn-primary mt-3" type="submit">Create product</button>
     </form>
@@ -155,20 +177,41 @@
 @if(has_product_rows)
     <div class="table-responsive">
       <table class="table table-sm table-striped table-hover align-middle mb-0">
-        <thead><tr><th>ID</th><th>Name</th><th>SKU</th><th>Price</th><th>Status</th><th>Actions</th></tr></thead>
+        <thead><tr><th></th><th>Name</th><th>SKU</th><th>Price</th><th>Stock</th><th>Status</th><th>Actions</th></tr></thead>
         <tbody>
 @foreach(p in product_rows)
           <tr>
-            <td>{{ p.id }}</td>
-            <td>{{ p.name }}</td>
+            <td>
+@if(p.has_thumb)
+              <img class="dz-admin-thumb" src="{{ p.thumb }}" alt="{{ p.name }}" loading="lazy" decoding="async">
+@else
+              <span class="dz-admin-thumb dz-admin-thumb-empty" aria-hidden="true">📦</span>
+@endif
+            </td>
+            <td>
+              {{ p.name }}
+@if(p.is_featured)
+              <span class="badge text-bg-warning">Featured</span>
+@endif
+            </td>
             <td>{{ p.sku }}</td>
             <td class="text-nowrap">{{ p.price_display }}</td>
-            <td>{{ p.status }}</td>
+            <td>{{ p.stock }}</td>
             <td>
+@if(p.is_published)
+              <span class="badge text-bg-success">Published</span>
+@else
+              <span class="badge text-bg-secondary">{{ p.status }}</span>
+@endif
+            </td>
+            <td>
+              <div class="d-flex flex-wrap gap-1 mb-1">
+                <a class="btn btn-light border btn-sm" href="/admin/products/{{ p.id }}">Manage</a>
+              </div>
               <form method="post" action="/admin/api/products/{{ p.id }}/update" data-ajax="admin" class="d-flex flex-wrap align-items-center gap-1 mb-1">
                 <input type="hidden" name="_csrf" value="{{ csrf }}">
                 <input class="form-control form-control-sm dz-admin-input" name="name" value="{{ p.name }}" aria-label="Product name">
-                <input class="form-control form-control-sm dz-admin-input dz-admin-price" name="price" type="number" step="0.01" min="0.01" value="{{ p.price }}" aria-label="Price in BDT">
+                <input class="form-control form-control-sm dz-admin-price" name="price" type="number" step="0.01" min="0.01" value="{{ p.price }}" aria-label="Price in BDT">
                 <select class="form-select form-select-sm dz-admin-select" name="status" aria-label="Publication status">
 @foreach(opt in p.status_options)
 @if(opt.selected)
@@ -180,13 +223,24 @@
                 </select>
                 <button class="btn btn-primary btn-sm" type="submit">Save</button>
               </form>
+              <form method="post" action="/admin/api/products/{{ p.id }}/featured-form" data-ajax="admin" class="d-inline">
+                <input type="hidden" name="_csrf" value="{{ csrf }}">
+                <button class="btn btn-light border btn-sm" type="submit">Featured</button>
+              </form>
+@if(p.is_published)
+              <form method="post" action="/admin/api/products/{{ p.id }}/unpublish-form" data-ajax="admin" class="d-inline">
+                <input type="hidden" name="_csrf" value="{{ csrf }}">
+                <button class="btn btn-light border btn-sm" type="submit">Unpublish</button>
+              </form>
+@else
               <form method="post" action="/admin/api/products/{{ p.id }}/publish-form" data-ajax="admin" class="d-inline">
                 <input type="hidden" name="_csrf" value="{{ csrf }}">
                 <button class="btn btn-light border btn-sm" type="submit">Publish</button>
               </form>
-              <form method="post" action="/admin/api/products/{{ p.id }}/unpublish-form" data-ajax="admin" class="d-inline">
+@endif
+              <form method="post" action="/admin/api/products/{{ p.id }}/delete-form" data-ajax="admin" class="d-inline">
                 <input type="hidden" name="_csrf" value="{{ csrf }}">
-                <button class="btn btn-light border btn-sm" type="submit">Unpublish</button>
+                <button class="btn btn-outline-danger btn-sm" type="submit" data-confirm="Delete this product? Products that belong to an order cannot be deleted.">Delete</button>
               </form>
             </td>
           </tr>

@@ -79,9 +79,6 @@ public class ImageService {
         CatalogCache.bump_catalog_version();
 
         return DB.transaction(fn() {
-            if is_primary {
-                self.images.clear_primary(product_id);
-            }
             let id = self.images.create(map(
                 "product_id", product_id,
                 "path", rel,
@@ -90,10 +87,42 @@ public class ImageService {
                 "is_primary", 0
             ));
             if is_primary {
-                DB.table("product_images").where("id", "=", id).update(map("is_primary", 1));
+                // Reuse the cover logic so the image also moves to the
+                // FRONT of the gallery — the storefront picks the card
+                // photo by the lowest sort_order, not by is_primary.
+                self.set_primary(id);
             }
             return DB.table("product_images").where("id", "=", id).first();
         });
+    }
+
+    // Move an image one position up (-1) or down (+1) in the gallery.
+    public fn move(self, image_id, direction: int) -> bool {
+        let row = self.images.find(image_id);
+        if row == null {
+            throw not_found("Image not found.");
+        }
+        let siblings = self.images.for_product(row["product_id"]);
+        let index = 0;
+        let i = 0;
+        while i < siblings.len() {
+            if int(siblings[i]["id"]) == int(image_id) {
+                index = i;
+            }
+            i += 1;
+        }
+        let target = index + direction;
+        if target < 0 or target >= siblings.len() {
+            return false;
+        }
+        let other = siblings[target];
+        // Swap the two sort orders.
+        DB.table("product_images").where("id", "=", image_id)
+            .update(map("sort_order", int(other["sort_order"])));
+        DB.table("product_images").where("id", "=", other["id"])
+            .update(map("sort_order", int(row["sort_order"])));
+        CatalogCache.bump_catalog_version();
+        return true;
     }
 
     public fn gallery(self, product_id) {
@@ -113,6 +142,51 @@ public class ImageService {
             i += 1;
         }
         return out;
+    }
+
+    // Mark one image as the product's primary (cover) shot. The other
+    // images stay in the gallery but lose the flag.
+    //
+    // IMPORTANT: the storefront picks the product-card photo by the
+    // LOWEST sort_order (attach_images), not by is_primary — so the
+    // cover image is also moved to the front of the gallery.
+    public fn set_primary(self, image_id) -> bool {
+        let row = self.images.find(image_id);
+        if row == null {
+            throw not_found("Image not found.");
+        }
+        self.images.clear_primary(row["product_id"]);
+        let ok = DB.table("product_images")
+            .where("id", "=", image_id)
+            .update(map("is_primary", 1, "sort_order", 0)) > 0;
+        // Keep the remaining gallery images in a stable order behind it.
+        let others = DB.table("product_images")
+            .where("product_id", "=", row["product_id"])
+            .where("id", "!=", image_id)
+            .orderBy("sort_order", "ASC")
+            .get();
+        let i = 0;
+        while i < others.len() {
+            DB.table("product_images")
+                .where("id", "=", others[i]["id"])
+                .update(map("sort_order", i + 1));
+            i += 1;
+        }
+        CatalogCache.bump_catalog_version();
+        return ok;
+    }
+
+    // Update the alt text of an existing image.
+    public fn update_alt(self, image_id, alt_text: string) -> bool {
+        let row = self.images.find(image_id);
+        if row == null {
+            throw not_found("Image not found.");
+        }
+        let ok = DB.table("product_images")
+            .where("id", "=", image_id)
+            .update(map("alt_text", alt_text)) > 0;
+        CatalogCache.bump_catalog_version();
+        return ok;
     }
 
     public fn delete(self, image_id) -> bool {

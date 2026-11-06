@@ -123,7 +123,17 @@ public class ImageRepository {
     }
 
     public fn next_sort(self, product_id) -> int {
-        return DB.table("product_images").where("product_id", "=", product_id).count();
+        // MAX + 1 (not COUNT): after an image is deleted the count would
+        // hand out a sort_order that another image already uses.
+        let rows = DB.table("product_images")
+            .where("product_id", "=", product_id)
+            .orderBy("sort_order", "DESC")
+            .limit(1)
+            .get();
+        if rows.len() == 0 {
+            return 0;
+        }
+        return int(rows[0]["sort_order"]) + 1;
     }
 
     public fn clear_primary(self, product_id) {

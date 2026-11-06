@@ -95,6 +95,56 @@ public class InventoryRepository {
         return self.release(product_id, variant_id, qty, "restock");
     }
 
+    // Set the on-hand quantity to an ABSOLUTE value (an admin
+    // correction, not an addition). The difference is recorded as a
+    // stock movement so the history stays auditable. Reserved units are
+    // left untouched — they belong to open orders.
+    public fn set_quantity(self, product_id, variant_id, qty: int, reason: string = "adjustment") -> bool {
+        if qty < 0 {
+            return false;
+        }
+        return DB.transaction(fn() {
+            let q = DB.table("inventory").where("product_id", "=", product_id);
+            if variant_id == null {
+                q.whereNull("variant_id");
+            } else {
+                q.where("variant_id", "=", variant_id);
+            }
+            let row = q.first();
+            if row == null {
+                return false;
+            }
+            let delta = qty - int(row["quantity"]);
+            let changed = DB.table("inventory")
+                .where("id", "=", row["id"])
+                .update(map("quantity", qty)) > 0;
+            if not changed {
+                return false;
+            }
+            if delta != 0 {
+                DB.table("stock_movements").insert(map(
+                    "product_id", product_id,
+                    "variant_id", variant_id,
+                    "delta", delta,
+                    "reason", reason
+                ));
+            }
+            CatalogCache.bump_catalog_version();
+            return true;
+        });
+    }
+
+    // Low-stock alert threshold for a product.
+    public fn set_threshold(self, product_id, threshold: int) -> bool {
+        if threshold < 0 {
+            return false;
+        }
+        return DB.table("inventory")
+            .where("product_id", "=", product_id)
+            .whereNull("variant_id")
+            .update(map("low_stock_threshold", threshold)) > 0;
+    }
+
     public fn movements_for(self, product_id) {
         return DB.table("stock_movements")
             .where("product_id", "=", product_id)

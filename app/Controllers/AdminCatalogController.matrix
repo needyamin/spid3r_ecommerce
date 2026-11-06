@@ -5,6 +5,7 @@
 import "framework/Response";
 import "framework/Resource";
 import "framework/HttpException";
+import "framework/Database/DB";
 import "app/Services/ProductService";
 import "app/Services/CategoryService";
 import "app/Services/BrandService";
@@ -14,6 +15,7 @@ import "app/Repositories/CatalogRepository";
 import "app/Repositories/ProductRepository";
 import "app/Validators/CatalogValidators" as CatalogValidators;
 import "app/Support/Money" as Money;
+import "app/Support/CatalogCache" as CatalogCache;
 
 let identity = fn(row) { return row; };
 
@@ -176,6 +178,42 @@ public class AdminCatalogController {
     // units ("1234.56" — converted with the money helper, never a float)
     // and redirect back to the admin page when the client is a browser.
 
+    // Parse a decimal string into an integer scaled by 10^decimals,
+    // WITHOUT touching a float (money-style exactness for tax percent
+    // and weight). "5.5" with 2 decimals -> 550; "1.25" with 3 -> 1250.
+    fn scaled_value(self, raw: string, decimals: int) -> int {
+        let s = string(raw).trim();
+        if s == "" {
+            return 0;
+        }
+        let parts = s.split(".");
+        let whole = int(parts[0]);
+        let frac = "";
+        if parts.len() > 1 {
+            frac = string(parts[1]);
+        }
+        let keep = decimals;
+        while len(frac) < keep {
+            frac = frac + "0";
+        }
+        let frac_value = 0;
+        if len(frac) > 0 {
+            frac_value = int(frac.slice(0, keep));
+        }
+        let factor = 1;
+        let i = 0;
+        while i < decimals {
+            factor = factor * 10;
+            i += 1;
+        }
+        let negative = s.starts_with("-");
+        let value = whole * factor + frac_value;
+        if negative {
+            return 0 - value;
+        }
+        return value;
+    }
+
     fn product_form_data(self, req) {
         let data = map();
         let name = string(req.input("name", "")).trim();
@@ -196,7 +234,39 @@ public class AdminCatalogController {
         }
         let compare = string(req.input("compare_at", "")).trim();
         if compare != "" {
-            data["compare_at_minor"] = Money.to_minor(compare);
+            let compare_minor = Money.to_minor(compare);
+            if compare_minor <= 0 {
+                throw validation_failed(map("compare_at", "Enter a valid amount, for example 1999.50."));
+            }
+            data["compare_at_minor"] = compare_minor;
+        }
+        let cost = string(req.input("cost", "")).trim();
+        if cost != "" {
+            let cost_minor = Money.to_minor(cost);
+            if cost_minor < 0 {
+                throw validation_failed(map("cost", "Enter a valid amount, for example 899.00."));
+            }
+            data["cost_minor"] = cost_minor;
+        }
+        let tax = string(req.input("tax_percent", "")).trim();
+        if tax != "" {
+            data["tax_rate_bps"] = self.scaled_value(tax, 2);
+        }
+        let weight = string(req.input("weight_kg", "")).trim();
+        if weight != "" {
+            data["weight_grams"] = self.scaled_value(weight, 3);
+        }
+        let meta_title = string(req.input("meta_title", "")).trim();
+        if meta_title != "" {
+            data["meta_title"] = meta_title;
+        }
+        let meta_description = string(req.input("meta_description", "")).trim();
+        if meta_description != "" {
+            data["meta_description"] = meta_description;
+        }
+        let featured = string(req.input("is_featured", "")).trim();
+        if featured != "" {
+            data["is_featured"] = int(featured);
         }
         let status = string(req.input("status", "")).trim();
         if status != "" {
@@ -245,15 +315,15 @@ public class AdminCatalogController {
             "brand_id", brand,
             "sku", sku,
             "price_minor", price,
+            "cost_minor", Money.to_minor(string(req.input("cost", "0"))),
             "short_description", string(req.input("short_description", "")),
             "description", string(req.input("description", "")),
-            "tax_rate_bps", 0,
-            "weight_grams", int(req.input("weight_grams", 0)),
-            "meta_title", name,
-            "meta_description", string(req.input("short_description", "")),
+            "tax_rate_bps", self.scaled_value(string(req.input("tax_percent", "0")), 2),
+            "weight_grams", self.scaled_value(string(req.input("weight_kg", "0")), 3),
+            "meta_title", string(req.input("meta_title", name)),
+            "meta_description", string(req.input("meta_description", string(req.input("short_description", "")))),
             "status", status
-        );
-        let compare = string(req.input("compare_at", "")).trim();
+        );        let compare = string(req.input("compare_at", "")).trim();
         if compare != "" {
             data["compare_at_minor"] = Money.to_minor(compare);
         }
@@ -373,9 +443,206 @@ public class AdminCatalogController {
         self.validate(req, CatalogValidators.restock_rules());
         let row = self.inventory.restock(self.id_of(req), int(req.input("quantity", 0)));
         if req.input("format", "") != "json" {
-            return redirect("/admin/inventory");
+            return redirect("/admin/products/" + string(self.id_of(req)));
         }
         return json(resource_item(row, identity));
+    }
+
+    // Set the absolute on-hand quantity + the low-stock threshold.
+    public fn inventory_set_form(self, req) {
+        let qty = int(req.input("quantity", -1));
+        if qty < 0 {
+            throw validation_failed(map("quantity", "Enter a quantity of zero or more."));
+        }
+        let threshold = int(req.input("low_stock_threshold", 5));
+        let row = self.inventory.set_stock(self.id_of(req), qty, threshold);
+        if req.input("format", "") != "json" {
+            return redirect("/admin/products/" + string(self.id_of(req)));
+        }
+        return json(resource_item(row, identity));
+    }
+
+    // ---------- gallery (browser forms) ----------
+
+    // The framework's multipart parser skips binary parts, so the image
+    // arrives base64-encoded (a data: URL is accepted too). The service
+    // validates the magic bytes, caps the size and stores it under
+    // storage/public/products/.
+    public fn image_upload_form(self, req) {
+        self.validate(req, CatalogValidators.image_rules());
+        let row = self.images.upload(
+            self.id_of(req),
+            string(req.input("image", "")),
+            string(req.input("alt_text", "")),
+            (req.input("is_primary", 0) == 1 or req.input("is_primary", 0) == true)
+        );
+        if req.input("format", "") != "json" {
+            return redirect("/admin/products/" + string(self.id_of(req)));
+        }
+        return json(resource_item(map(
+            "id", row["id"],
+            "url", "/uploads/" + string(row["path"]),
+            "is_primary", row["is_primary"] == 1 or row["is_primary"] == true
+        ), identity), 201);
+    }
+
+    public fn image_delete_form(self, req) {
+        self.images.delete(req.params["id"]);
+        if req.input("format", "") != "json" {
+            return redirect("/admin/products/" + string(req.input("product_id", "0")));
+        }
+        return json(map("data", map("deleted", true)));
+    }
+
+    public fn image_primary_form(self, req) {
+        self.images.set_primary(req.params["id"]);
+        if req.input("format", "") != "json" {
+            return redirect("/admin/products/" + string(req.input("product_id", "0")));
+        }
+        return json(map("data", map("primary", true)));
+    }
+
+    // Update the alt text of an existing image.
+    public fn image_update_form(self, req) {
+        self.images.update_alt(req.params["id"], string(req.input("alt_text", "")));
+        if req.input("format", "") != "json" {
+            return redirect("/admin/products/" + string(req.input("product_id", "0")));
+        }
+        return json(map("data", map("updated", true)));
+    }
+
+    // Move an image up (-1) or down (+1) in the gallery.
+    public fn image_move_form(self, req) {
+        let direction = int(req.input("direction", 0));
+        if direction != -1 and direction != 1 {
+            throw validation_failed(map("direction", "Invalid move direction."));
+        }
+        self.images.move(req.params["id"], direction);
+        if req.input("format", "") != "json" {
+            return redirect("/admin/products/" + string(req.input("product_id", "0")));
+        }
+        return json(map("data", map("moved", true)));
+    }
+
+    // Set only the low-stock threshold.
+    public fn inventory_threshold_form(self, req) {
+        let threshold = int(req.input("low_stock_threshold", -1));
+        if threshold < 0 {
+            throw validation_failed(map("low_stock_threshold", "Enter a threshold of zero or more."));
+        }
+        let ok = self.inventory.set_threshold(self.id_of(req), threshold);
+        if req.input("format", "") != "json" {
+            return redirect("/admin/products/" + string(self.id_of(req)));
+        }
+        return json(resource_item(ok, identity));
+    }
+
+    // Toggle the "featured" flag of a product. The list and detail pages
+    // both post to this endpoint without an explicit value, so we flip the
+    // current state: featured -> unfeatured and vice versa.
+    public fn product_featured_form(self, req) {
+        let product = DB.table("products").where("id", "=", self.id_of(req)).first();
+        if product == null {
+            throw not_found("Product not found.");
+        }
+        let current = int(product["is_featured"]);
+        let flag = 0;
+        if current != 1 {
+            flag = 1;
+        }
+        DB.table("products").where("id", "=", self.id_of(req)).update(map("is_featured", flag));
+        CatalogCache.bump_catalog_version();
+        if req.input("format", "") != "json" {
+            return redirect("/admin/products/" + string(self.id_of(req)));
+        }
+        return json(map("data", map("is_featured", flag)));
+    }
+
+    // Delete a product — refused when it is referenced by orders/carts.
+    public fn product_delete_form(self, req) {
+        self.products.delete(self.id_of(req));
+        if req.input("format", "") != "json" {
+            return redirect("/admin/products");
+        }
+        return json(map("data", map("deleted", true)));
+    }
+
+    // ---------- variants (browser forms) ----------
+
+    public fn variant_store_form(self, req) {
+        let sku = string(req.input("sku", "")).trim().upper();
+        let name = string(req.input("name", "")).trim();
+        let price = Money.to_minor(string(req.input("price", "")));
+        if len(sku) < 2 {
+            throw validation_failed(map("sku", "Enter a variant SKU."));
+        }
+        if len(name) < 2 {
+            throw validation_failed(map("name", "Enter a variant name."));
+        }
+        if price <= 0 {
+            throw validation_failed(map("price", "Enter a price greater than zero."));
+        }
+        if self.variants.sku_exists(sku, null) {
+            throw validation_failed(map("sku", "That SKU is already in use."));
+        }
+        let compare = string(req.input("compare_at", "")).trim();
+        let data = map(
+            "product_id", self.id_of(req),
+            "sku", sku,
+            "name", name,
+            "attributes_json", string(req.input("attributes_json", "{}")),
+            "price_minor", price,
+            "compare_at_minor", null,
+            "is_active", 1
+        );
+        if compare != "" {
+            data["compare_at_minor"] = Money.to_minor(compare);
+        }
+        let id = self.variants.create(data);
+        if req.input("format", "") != "json" {
+            return redirect("/admin/products/" + string(self.id_of(req)));
+        }
+        return json(resource_item(self.variants.find(id), identity), 201);
+    }
+
+    public fn variant_update_form(self, req) {
+        let variant = self.variants.find(req.params["variant_id"]);
+        if variant == null or int(variant["product_id"]) != int(self.id_of(req)) {
+            throw not_found("Variant not found.");
+        }
+        let data = map();
+        let name = string(req.input("name", "")).trim();
+        if name != "" {
+            data["name"] = name;
+        }
+        let price = string(req.input("price", "")).trim();
+        if price != "" {
+            data["price_minor"] = Money.to_minor(price);
+        }
+        let compare = string(req.input("compare_at", "")).trim();
+        if compare != "" {
+            data["compare_at_minor"] = Money.to_minor(compare);
+        }
+        if req.input("is_active", null) != null {
+            data["is_active"] = int(req.input("is_active", 1));
+        }
+        self.variants.update(req.params["variant_id"], data);
+        if req.input("format", "") != "json" {
+            return redirect("/admin/products/" + string(self.id_of(req)));
+        }
+        return json(resource_item(self.variants.find(req.params["variant_id"]), identity));
+    }
+
+    public fn variant_delete_form(self, req) {
+        let variant = self.variants.find(req.params["variant_id"]);
+        if variant == null or int(variant["product_id"]) != int(self.id_of(req)) {
+            throw not_found("Variant not found.");
+        }
+        self.variants.delete(req.params["variant_id"]);
+        if req.input("format", "") != "json" {
+            return redirect("/admin/products/" + string(self.id_of(req)));
+        }
+        return json(map("data", map("deleted", true)));
     }
 
     // ---------- variants ----------
