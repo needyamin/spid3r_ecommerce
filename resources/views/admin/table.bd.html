@@ -2,8 +2,23 @@
 @section('title', title)
 @section('meta_description', meta_description)
 @section("content")
+<div class="dz-admin-page">
 @include("partials.admin_nav")
-  <h1 class="page-title">{{ title }}</h1>
+  <header class="dz-page-heading mb-4">
+    <div>
+      <span class="dz-eyebrow">Admin / {{ title }}</span>
+      <h1 class="page-title mb-1">{{ title }}</h1>
+@if(is_products)
+      <p class="page-description mb-0">Create products, update visibility and manage catalog details.</p>
+@endif
+@if(is_inventory)
+      <p class="page-description mb-0">Track on-hand stock, reserved units and restock levels.</p>
+@endif
+    </div>
+@if(is_products)
+    <a class="btn btn-outline-primary" href="#new-product-name">Add product</a>
+@endif
+  </header>
 
 @if(show_generic_table)
 @if(has_rows)
@@ -86,8 +101,11 @@
 @endif
 
 @if(is_products)
-  <div class="dz-card p-4 my-3">
-    <h2 class="h6 mb-3">Add a product</h2>
+  <section class="dz-card dz-create-card p-3 p-lg-4 my-3" aria-labelledby="new-product-heading">
+    <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+      <div><span class="dz-eyebrow">Catalog setup</span><h2 id="new-product-heading" class="h5 mb-0">Add a product</h2></div>
+      <span class="badge text-bg-light border">Price in BDT</span>
+    </div>
     <form method="post" action="/admin/api/products/create" data-ajax="admin">
       <input type="hidden" name="_csrf" value="{{ csrf }}">
       <div class="row g-2">
@@ -119,6 +137,7 @@
         <div class="col-12 col-lg-4">
           <label class="form-label small text-secondary mb-1" for="new-product-category">Category</label>
           <select id="new-product-category" name="category_id" class="form-select" required>
+            <option value="" selected disabled>Choose a category</option>
 @foreach(cat in category_options)
             <option value="{{ cat.value }}">{{ cat.label }}</option>
 @endforeach
@@ -168,46 +187,69 @@
           <input id="new-product-meta-desc" name="meta_description" class="form-control">
         </div>
       </div>
-      <button class="btn btn-primary mt-3" type="submit">Create product</button>
+      <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mt-3">
+        <span class="form-text">Products with an order or active cart cannot be deleted; archive them instead.</span>
+        <button class="btn btn-primary px-4" type="submit">Create product</button>
+      </div>
     </form>
-  </div>
+  </section>
 
-  <div class="dz-card p-3 my-3">
-    <h2 class="h6 mb-3">Products — edit, publish or unpublish</h2>
+  <section class="dz-card dz-table-card p-3 p-lg-4 my-3" aria-labelledby="products-table-heading">
+    <div class="dz-table-toolbar mb-3">
+      <div><span class="dz-eyebrow">Catalog</span><h2 id="products-table-heading" class="h5 mb-0">Products</h2><p class="small text-secondary mb-0">{{ total_products }} matching product(s)</p></div>
+      <form class="dz-table-search" method="get" action="/admin/products">
+        <label class="visually-hidden" for="product-table-filter">Search products</label>
+        <div class="input-group">
+          <input id="product-table-filter" name="q" value="{{ product_q }}" class="form-control" type="search" placeholder="Search name or SKU">
+          <button class="btn btn-light border" type="submit">Search</button>
+@if(product_q)
+          <a class="btn btn-light border" href="/admin/products">Clear</a>
+@endif
+        </div>
+      </form>
+    </div>
 @if(has_product_rows)
     <div class="table-responsive">
-      <table class="table table-sm table-striped table-hover align-middle mb-0">
-        <thead><tr><th></th><th>Name</th><th>SKU</th><th>Price</th><th>Stock</th><th>Status</th><th>Actions</th></tr></thead>
+      <table id="product-table" class="table dz-admin-table dz-products-table align-middle mb-0">
+        <thead><tr><th scope="col">Image</th><th scope="col">Product</th><th scope="col">SKU</th><th scope="col">Price</th><th scope="col">On hand</th><th scope="col">Status</th><th scope="col">Actions</th></tr></thead>
         <tbody>
 @foreach(p in product_rows)
-          <tr>
-            <td>
+          <tr data-filter-row="{{ p.name }} {{ p.sku }} {{ p.status }}">
+            <td data-label="Image">
 @if(p.has_thumb)
               <img class="dz-admin-thumb" src="{{ p.thumb }}" alt="{{ p.name }}" loading="lazy" decoding="async">
 @else
-              <span class="dz-admin-thumb dz-admin-thumb-empty" aria-hidden="true">📦</span>
+              <span class="dz-admin-thumb dz-admin-thumb-empty" aria-label="No product image">No image</span>
 @endif
             </td>
-            <td>
-              {{ p.name }}
+            <td data-label="Product">
+              <span class="dz-product-row-name">
+@if(p.has_thumb)
+                <img class="dz-admin-thumb d-md-none" src="{{ p.thumb }}" alt="" loading="lazy" decoding="async">
+@endif
+                <span class="fw-semibold">{{ p.name }}</span>
+              </span>
 @if(p.is_featured)
               <span class="badge text-bg-warning">Featured</span>
 @endif
             </td>
-            <td>{{ p.sku }}</td>
-            <td class="text-nowrap">{{ p.price_display }}</td>
-            <td>{{ p.stock }}</td>
-            <td>
+            <td data-label="SKU"><code>{{ p.sku }}</code></td>
+            <td data-label="Price" class="text-nowrap"><strong>{{ p.price_display }}</strong></td>
+            <td data-label="On hand"><strong>{{ p.stock }}</strong><span class="d-block small text-secondary">{{ p.available }} available</span></td>
+            <td data-label="Status">
 @if(p.is_published)
               <span class="badge text-bg-success">Published</span>
 @else
               <span class="badge text-bg-secondary">{{ p.status }}</span>
 @endif
             </td>
-            <td>
-              <div class="d-flex flex-wrap gap-1 mb-1">
-                <a class="btn btn-light border btn-sm" href="/admin/products/{{ p.id }}">Manage</a>
+            <td data-label="Actions">
+              <div class="dz-row-actions">
+                <a class="btn btn-primary btn-sm" href="/admin/products/{{ p.id }}">Manage product</a>
               </div>
+              <details class="dz-row-details">
+                <summary>Edit and actions</summary>
+                <div class="dz-row-details-body">
               <form method="post" action="/admin/api/products/{{ p.id }}/update" data-ajax="admin" class="d-flex flex-wrap align-items-center gap-1 mb-1">
                 <input type="hidden" name="_csrf" value="{{ csrf }}">
                 <input class="form-control form-control-sm dz-admin-input" name="name" value="{{ p.name }}" aria-label="Product name">
@@ -225,7 +267,11 @@
               </form>
               <form method="post" action="/admin/api/products/{{ p.id }}/featured-form" data-ajax="admin" class="d-inline">
                 <input type="hidden" name="_csrf" value="{{ csrf }}">
-                <button class="btn btn-light border btn-sm" type="submit">Featured</button>
+@if(p.is_featured)
+                <button class="btn btn-light border btn-sm" type="submit">Remove featured</button>
+@else
+                <button class="btn btn-light border btn-sm" type="submit">Mark featured</button>
+@endif
               </form>
 @if(p.is_published)
               <form method="post" action="/admin/api/products/{{ p.id }}/unpublish-form" data-ajax="admin" class="d-inline">
@@ -242,16 +288,27 @@
                 <input type="hidden" name="_csrf" value="{{ csrf }}">
                 <button class="btn btn-outline-danger btn-sm" type="submit" data-confirm="Delete this product? Products that belong to an order cannot be deleted.">Delete</button>
               </form>
+                </div>
+              </details>
             </td>
           </tr>
 @endforeach
         </tbody>
       </table>
     </div>
-@else
-    <p class="empty-note">No products yet — add the first one above.</p>
+    <nav class="dz-table-pagination" aria-label="Product pages">
+@if(product_has_prev)
+      <a class="btn btn-light border" href="{{ product_prev_url }}" rel="prev">Previous</a>
 @endif
-  </div>
+      <span class="small text-secondary">Page {{ product_page }} of {{ product_page_count }}</span>
+@if(product_has_next)
+      <a class="btn btn-light border" href="{{ product_next_url }}" rel="next">Next</a>
+@endif
+    </nav>
+@else
+    <p class="empty-note">No products match this search. <a href="/admin/products">Clear search</a></p>
+@endif
+  </section>
 @endif
 
 @if(is_categories)
@@ -366,35 +423,69 @@
 @endif
 
 @if(is_inventory)
-  <div class="dz-card p-3 my-3">
-    <h2 class="h6 mb-3">Inventory — add stock</h2>
+  <section class="dz-card dz-table-card p-3 p-lg-4 my-3" aria-labelledby="inventory-heading">
+    <div class="dz-table-toolbar mb-3">
+      <div><span class="dz-eyebrow">Stock control</span><h2 id="inventory-heading" class="h5 mb-0">Inventory</h2><p class="small text-secondary mb-0">On hand is total stock; available subtracts reserved units.</p></div>
+      <div class="dz-table-search">
+        <label class="visually-hidden" for="inventory-table-filter">Search inventory</label>
+        <input id="inventory-table-filter" class="form-control" type="search" placeholder="Search product" data-table-filter="inventory-table">
+      </div>
+    </div>
 @if(has_inventory_rows)
     <div class="table-responsive">
-      <table class="table table-sm table-striped table-hover align-middle mb-0">
-        <thead><tr><th>Product</th><th>Available</th><th>Reserved</th><th>Low-stock at</th><th>Restock</th></tr></thead>
+      <table id="inventory-table" class="table dz-admin-table dz-inventory-table align-middle mb-0">
+        <thead><tr><th scope="col">Product</th><th scope="col">On hand</th><th scope="col">Available</th><th scope="col">Reserved</th><th scope="col">Low-stock at</th><th scope="col">Update stock</th></tr></thead>
         <tbody>
 @foreach(inv in inventory_rows)
-          <tr>
-            <td>{{ inv.product_name }}</td>
-            <td>{{ inv.quantity }}</td>
-            <td>{{ inv.reserved }}</td>
-            <td>{{ inv.low_stock_threshold }}</td>
-            <td>
-              <form method="post" action="/admin/api/products/{{ inv.product_id }}/inventory/restock-form" data-ajax="admin" class="d-flex flex-wrap align-items-center gap-1">
-                <input type="hidden" name="_csrf" value="{{ csrf }}">
-                <input class="form-control form-control-sm dz-admin-input dz-admin-price" name="quantity" type="number" min="1" value="1" aria-label="Quantity to add">
-                <button class="btn btn-primary btn-sm" type="submit">Add stock</button>
-              </form>
+          <tr data-filter-row="{{ inv.product_name }}">
+            <td data-label="Product">
+              <div class="dz-inventory-product">
+@if(inv.has_thumb)
+                <img class="dz-admin-thumb" src="{{ inv.thumb }}" alt="" loading="lazy" decoding="async">
+@else
+                <span class="dz-admin-thumb dz-admin-thumb-empty" aria-hidden="true">No image</span>
+@endif
+                <div><a class="fw-semibold" href="{{ inv.product_url }}">{{ inv.product_name }}</a><span class="d-block small text-secondary">{{ inv.product_status }}</span></div>
+              </div>
+            </td>
+            <td data-label="On hand"><strong>{{ inv.quantity }}</strong></td>
+            <td data-label="Available"><strong>{{ inv.available }}</strong></td>
+            <td data-label="Reserved">{{ inv.reserved }}</td>
+            <td data-label="Low-stock at">
+@if(inv.is_low_stock)
+              <span class="badge text-bg-warning">Low · {{ inv.low_stock_threshold }}</span>
+@else
+              <span class="badge text-bg-light border">{{ inv.low_stock_threshold }} units</span>
+@endif
+            </td>
+            <td data-label="Update stock">
+              <div class="dz-inventory-actions">
+                <form method="post" action="/admin/api/products/{{ inv.product_id }}/inventory/restock-form" data-ajax="admin" class="dz-restock-form">
+                  <input type="hidden" name="_csrf" value="{{ csrf }}">
+                  <label class="visually-hidden" for="restock-{{ inv.product_id }}">Units to add</label>
+                  <input id="restock-{{ inv.product_id }}" class="form-control form-control-sm" name="quantity" type="number" min="1" value="1" required>
+                  <button class="btn btn-primary btn-sm" type="submit">Restock</button>
+                </form>
+                <form method="post" action="/admin/api/products/{{ inv.product_id }}/inventory/set-form" data-ajax="admin" class="dz-set-stock-form">
+                  <input type="hidden" name="_csrf" value="{{ csrf }}">
+                  <label class="visually-hidden" for="set-quantity-{{ inv.product_id }}">Exact on-hand quantity</label>
+                  <input id="set-quantity-{{ inv.product_id }}" class="form-control form-control-sm" name="quantity" type="number" min="0" value="{{ inv.quantity }}" required>
+                  <label class="visually-hidden" for="set-threshold-{{ inv.product_id }}">Low-stock alert threshold</label>
+                  <input id="set-threshold-{{ inv.product_id }}" class="form-control form-control-sm" name="low_stock_threshold" type="number" min="0" value="{{ inv.low_stock_threshold }}" required>
+                  <button class="btn btn-light border btn-sm" type="submit" data-confirm="Replace the current stock count and threshold?">Set exact</button>
+                </form>
+              </div>
             </td>
           </tr>
 @endforeach
         </tbody>
       </table>
     </div>
+    <p class="dz-filter-empty" data-filter-empty="inventory-table" hidden>No inventory rows match this search.</p>
 @else
-    <p class="empty-note">No inventory rows yet.</p>
+    <div class="empty-note"><strong>No inventory rows yet.</strong><span class="d-block mt-1">Create a product to start tracking stock.</span><a class="btn btn-primary btn-sm mt-3" href="/admin/products">Go to products</a></div>
 @endif
-  </div>
+  </section>
 @endif
 
 @if(is_customers)
@@ -578,4 +669,5 @@
 @endif
   </div>
 @endif
+</div>
 @endsection

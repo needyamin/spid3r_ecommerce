@@ -12,6 +12,7 @@ import "app/Services/OrderService";
 import "app/Services/ImageService";
 import "app/Services/InventoryService";
 import "app/Support/StoreChrome" as StoreChrome;
+import "app/Support/Images" as Images;
 import "app/Repositories/OrderRepository";
 import "app/Repositories/CatalogRepository";
 import "app/Support/Money" as Money;
@@ -90,7 +91,21 @@ public class AdminController {
             "title", title,
             "meta_description", "Store administration — " + title,
             "page", page,
+            "is_admin_area", true,
+            "admin_active_products", page == "products",
+            "admin_active_inventory", page == "inventory",
+            "admin_active_dashboard", page == "dashboard",
             "csrf", ""
+        );
+        base["admin_navigation"] = list(
+            map("label", "Overview", "url", "/admin/dashboard", "active", page == "dashboard"),
+            map("label", "Orders", "url", "/admin/orders", "active", page == "orders"),
+            map("label", "Products", "url", "/admin/products", "active", page == "products"),
+            map("label", "Categories", "url", "/admin/categories", "active", page == "categories"),
+            map("label", "Brands", "url", "/admin/brands", "active", page == "brands"),
+            map("label", "Inventory", "url", "/admin/inventory", "active", page == "inventory"),
+            map("label", "Customers", "url", "/admin/customers", "active", page == "customers"),
+            map("label", "Settings", "url", "/admin/settings", "active", page == "settings")
         );
         let chrome = StoreChrome.build(req, self.settings);
         for ck in chrome.keys() {
@@ -224,7 +239,7 @@ public class AdminController {
     // Per-page data for the admin write forms: the editable rows plus
     // the option lists the forms need (categories, brands, roles,
     // permissions, order statuses).
-    fn page_extras(self, name: string) {
+    fn page_extras(self, name: string, req = null) {
         let extra = map();
 
         if name == "products" {
@@ -242,8 +257,45 @@ public class AdminController {
                 brand_opts.push(map("value", brands[bi]["id"], "label", brands[bi]["name"]));
                 bi += 1;
             }
-            let rows = DB.table("products").orderBy("id", "DESC").limit(100).get();
-            // One query for all gallery thumbnails (never N+1).
+            let product_q = "";
+            let page_number = 1;
+            if req != null and req.query_params.has("q") {
+                product_q = string(req.query_params["q"]).trim();
+            }
+            if req != null and req.query_params.has("page") {
+                page_number = int(req.query_params["page"]);
+                if page_number < 1 {
+                    page_number = 1;
+                }
+            }
+            let page_size = 25;
+            let count_query = DB.table("products");
+            if product_q != "" {
+                let needle = "%" + product_q + "%";
+                count_query.whereGroup("AND", fn(group) {
+                    group.where("name", "LIKE", needle).orWhere("sku", "LIKE", needle);
+                });
+            }
+            let filtered_total = count_query.count();
+            let page_count = 1;
+            if filtered_total > 0 {
+                page_count = (filtered_total + page_size - 1) / page_size;
+            }
+            if page_number > page_count {
+                page_number = page_count;
+            }
+            let rows_query = DB.table("products");
+            if product_q != "" {
+                let needle = "%" + product_q + "%";
+                rows_query.whereGroup("AND", fn(group) {
+                    group.where("name", "LIKE", needle).orWhere("sku", "LIKE", needle);
+                });
+            }
+            let rows = rows_query.orderBy("id", "DESC")
+                .limit(page_size)
+                .offset((page_number - 1) * page_size)
+                .get();
+            // One query for all gallery thumbnails on the current page (never N+1).
             let ids = [];
             let ri = 0;
             while ri < rows.len() {
@@ -260,7 +312,7 @@ public class AdminController {
                 while ii < imgs.len() {
                     let pid = string(imgs[ii]["product_id"]);
                     if not thumbs.has(pid) {
-                        thumbs[pid] = "/uploads/" + string(imgs[ii]["path"]);
+                        thumbs[pid] = Images.public_image_url(imgs[ii]["path"]);
                     }
                     ii += 1;
                 }
@@ -274,8 +326,16 @@ public class AdminController {
                     .whereNull("variant_id")
                     .first();
                 let qty = 0;
+                let reserved = 0;
+                let threshold = 0;
                 if stock != null {
                     qty = int(stock["quantity"]);
+                    reserved = int(stock["reserved"]);
+                    threshold = int(stock["low_stock_threshold"]);
+                }
+                let available = qty - reserved;
+                if available < 0 {
+                    available = 0;
                 }
                 let thumb = "";
                 if thumbs.has(pid) {
@@ -292,14 +352,43 @@ public class AdminController {
                     "is_published", string(rows[i]["status"]) == "published",
                     "is_featured", int(rows[i]["is_featured"]) == 1,
                     "stock", qty,
+                    "available", available,
+                    "reserved", reserved,
+                    "low_stock_threshold", threshold,
+                    "is_low_stock", qty <= threshold,
                     "thumb", thumb,
                     "has_thumb", thumb != "",
                     "category_id", rows[i]["category_id"]
                 ));
                 i += 1;
             }
+            let product_prev_url = "";
+            if page_number > 1 {
+                product_prev_url = "/admin/products?page=" + string(page_number - 1);
+                if product_q != "" {
+                    product_prev_url = product_prev_url + "&q=" + url_encode(product_q);
+                }
+            }
+            let product_next_url = "";
+            if page_number < page_count {
+                product_next_url = "/admin/products?page=" + string(page_number + 1);
+                if product_q != "" {
+                    product_next_url = product_next_url + "&q=" + url_encode(product_q);
+                }
+            }
             extra["product_rows"] = list;
             extra["has_product_rows"] = list.len() > 0;
+            extra["total_products"] = filtered_total;
+            extra["all_products_count"] = DB.table("products").count();
+            extra["product_q"] = product_q;
+            extra["product_page"] = page_number;
+            extra["product_page_count"] = page_count;
+            extra["product_has_prev"] = page_number > 1;
+            extra["product_has_next"] = page_number < page_count;
+            extra["product_prev_url"] = product_prev_url;
+            extra["product_next_url"] = product_next_url;
+            extra["published_products"] = DB.table("products").where("status", "=", "published").count();
+            extra["draft_products"] = DB.table("products").where("status", "=", "draft").count();
             extra["category_options"] = cat_opts;
             extra["has_category_options"] = cat_opts.len() > 0;
             extra["brand_options"] = brand_opts;
@@ -338,7 +427,9 @@ public class AdminController {
             extra["brand_rows"] = list;
             extra["has_brand_rows"] = list.len() > 0;
         } elif name == "inventory" {
-            let rows = DB.table("inventory").orderBy("product_id", "ASC").get();
+            // These forms manage base-product stock; variant-level inventory is
+            // intentionally not exposed until its own update routes exist.
+            let rows = DB.table("inventory").whereNull("variant_id").orderBy("product_id", "ASC").get();
             let list = [];
             let i = 0;
             while i < rows.len() {
@@ -347,12 +438,37 @@ public class AdminController {
                 if product != null {
                     pname = string(product["name"]);
                 }
+            let product_status = "missing";
+            if product != null {
+                product_status = string(product["status"]);
+            }
+                let qty = int(rows[i]["quantity"]);
+                let reserved = int(rows[i]["reserved"]);
+                let available = qty - reserved;
+                if available < 0 {
+                    available = 0;
+                }
+                let threshold = int(rows[i]["low_stock_threshold"]);
+                let thumb = "";
+                let primary = DB.table("product_images")
+                    .where("product_id", "=", rows[i]["product_id"])
+                    .orderBy("sort_order", "ASC")
+                    .first();
+                if primary != null {
+                    thumb = Images.public_image_url(primary["path"]);
+                }
                 list.push(map(
                     "product_id", rows[i]["product_id"],
                     "product_name", pname,
-                    "quantity", rows[i]["quantity"],
-                    "reserved", rows[i]["reserved"],
-                    "low_stock_threshold", rows[i]["low_stock_threshold"]
+                    "product_url", "/admin/products/" + string(rows[i]["product_id"]),
+                    "product_status", product_status,
+                    "quantity", qty,
+                    "available", available,
+                    "reserved", reserved,
+                    "low_stock_threshold", threshold,
+                    "is_low_stock", qty <= threshold,
+                    "thumb", thumb,
+                    "has_thumb", thumb != ""
                 ));
                 i += 1;
             }
@@ -487,7 +603,7 @@ public class AdminController {
             "show_generic_table", not has_own_ui,
             "csrf", req.auth.csrf()
         ));
-        let extras = self.page_extras(name);
+        let extras = self.page_extras(name, req);
         for k in extras.keys() {
             ctx[k] = extras[k];
         }
@@ -599,6 +715,7 @@ public class AdminController {
             "product_cost", Money.to_major(minor_or_zero(product["cost_minor"])),
             "product_compare_at", Money.to_major(minor_or_zero(product["compare_at_minor"])),
             "product_status_options", status_options_for(string(product["status"]), ["draft", "published", "archived"]),
+            "product_is_published", string(product["status"]) == "published",
             "product_featured", int(product["is_featured"]) == 1,
             "product_not_featured", int(product["is_featured"]) != 1,
             "product_tax_percent", scaled_display(minor_or_zero(product["tax_rate_bps"]), 2),

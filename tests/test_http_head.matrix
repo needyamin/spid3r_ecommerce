@@ -6,6 +6,7 @@
 
 import "framework/Application";
 import "framework/Router";
+import "framework/Filesystem/Storage";
 import "routes/web";
 
 let passed = 0;
@@ -51,6 +52,24 @@ fn main() {
     // --- Static files ---
     check("GET /css/welcome.css is served (200)", status_of(app, "GET", "/css/welcome.css") == 200);
     check("HEAD /css/welcome.css is served (200)", status_of(app, "HEAD", "/css/welcome.css") == 200);
+
+    // Binary uploads must bypass the UTF-8-only text reader and retain the
+    // exact byte payload in the HTTP response. Static files are resolved
+    // against the process working directory, so run this suite at project root.
+    let probe_path = "public/uploads/http-static-probe.png";
+    let probe_bytes = base64_decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==");
+    dir_create("public/uploads");
+    write_bytes(probe_path, probe_bytes);
+    let image_res = app.handle_request(map(
+        "method", "GET",
+        "path", "/uploads/http-static-probe.png",
+        "headers", map(),
+        "body", ""
+    ));
+    check("GET /uploads serves raw PNG bytes", int(image_res["status"]) == 200
+        and string(image_res["headers"]["content-type"]) == "image/png"
+        and len(image_res["body"]) == len(probe_bytes));
+    file_delete(probe_path);
 
     // --- Static path traversal must never serve files outside public/ ---
     check("GET /css/../.env is rejected (404)", status_of(app, "GET", "/css/../.env") == 404);

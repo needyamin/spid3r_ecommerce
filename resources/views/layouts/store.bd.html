@@ -13,6 +13,7 @@
   <link rel="stylesheet" href="/css/store.css">
 </head>
 <body>
+@if(not is_admin_area)
   <!-- Top strip: currency & language -->
   @if(currency_options)
   <div class="dz-topbar d-none d-md-block">
@@ -46,22 +47,35 @@
     </div>
   </div>
   @endif
+@endif
 
   <!-- Main header -->
   <header class="dz-header sticky-top">
     <nav class="navbar navbar-expand-lg container">
-      <a class="navbar-brand dz-brand me-2 me-lg-4" href="/"><span class="brand-mark">🕷️</span> {{ store_name }}</a>
+      <a class="navbar-brand dz-brand me-2 me-lg-4" href="/"><span class="brand-mark" aria-hidden="true">S</span> {{ store_name }}</a>
 
+@if(not is_admin_area)
       <form class="dz-search input-group my-2 my-lg-0 order-lg-1" method="get" action="/search" role="search">
         <input type="search" name="q" value="{{ header_search_q }}" class="form-control" placeholder="Search in {{ store_name }}" aria-label="Search products">
-        <button class="btn btn-primary px-3" type="submit" aria-label="Search">🔍</button>
+        <button class="btn btn-primary px-3" type="submit" aria-label="Search">Search</button>
       </form>
+@endif
 
       <button class="navbar-toggler border-0 order-lg-2 ms-lg-3" type="button" data-bs-toggle="collapse" data-bs-target="#dzNav" aria-controls="dzNav" aria-expanded="false" aria-label="Toggle navigation">
         <span class="navbar-toggler-icon"></span>
       </button>
 
       <div class="collapse navbar-collapse order-lg-2" id="dzNav">
+@if(is_admin_area)
+        <div class="dz-admin-header-links d-flex flex-column flex-lg-row align-items-lg-center ms-lg-auto">
+          <a href="/admin/dashboard">Admin overview</a>
+          <a href="/">View storefront</a>
+          <form method="post" action="/logout" class="d-inline">
+            <input type="hidden" name="_csrf" value="{{ csrf }}">
+            <button class="btn btn-outline-secondary btn-sm" type="submit">Sign out</button>
+          </form>
+        </div>
+@else
         <div class="dz-nav-links d-flex flex-column flex-lg-row align-items-lg-center ms-lg-3">
           <a href="/catalog">{{ nav_catalog }}</a>
           <a href="/cart" class="dz-nav-icon">{{ nav_cart }}
@@ -110,10 +124,21 @@
           </form>
         </div>
 @endif
+@endif
       </div>
     </nav>
   </header>
 
+@if(is_admin_area)
+  <div class="dz-admin-ribbon">
+    <div class="container d-flex justify-content-between align-items-center gap-3 py-2">
+      <span><strong>Store administration</strong><span class="ms-2 d-none d-sm-inline">Manage catalog, stock and orders</span></span>
+      <a href="/admin/dashboard">Admin overview</a>
+    </div>
+  </div>
+@endif
+
+@if(not is_admin_area)
   <!-- Category strip -->
   <div class="dz-cats d-none d-md-block overflow-auto">
     <div class="container d-flex">
@@ -125,11 +150,13 @@
 @endif
     </div>
   </div>
+@endif
 
-  <main class="container py-2">
+  <main class="container py-3">
     @yield("content")
   </main>
 
+@if(not is_admin_area)
   <!-- Footer -->
   <footer class="dz-footer">
     <div class="container py-4">
@@ -168,6 +195,11 @@
       </div>
     </div>
   </footer>
+@else
+  <footer class="dz-admin-footer">
+    <div class="container py-3">{{ store_name }} administration <span aria-hidden="true">·</span> Store operations and catalog management</div>
+  </footer>
+@endif
 
   <script src="/js/bootstrap.bundle.min.js" defer></script>
   <script src="/js/store.js" defer></script>

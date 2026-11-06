@@ -7,6 +7,8 @@ import "framework/Database/DB";
 import "routes/web";
 import "routes/queue";
 import "app/Middleware/StoreMiddleware";
+import "app/Support/CatalogCache" as CatalogCache;
+import "framework/Filesystem/Storage";
 import "database/seeders/DatabaseSeeder";
 
 fn get(app, path: string) {
@@ -77,9 +79,15 @@ fn setup_catalog(tag: string) {
         "status", "draft", "currency", "BDT"
     ));
 
-    // One product image (gallery).
+    // One product image (gallery). Write a real file so the storefront
+    // renders the uploaded URL (a missing file would fall back to the
+    // placeholder, which the safe-image helper guarantees elsewhere).
+    let image_rel = "products/test/" + tag + ".png";
+    let one_px_png = base64_decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M8AAAMBAQDJ/pLvAAAAAElFTkSuQmCC");
+    Storage.disk("public").put(image_rel, "");
+    write_bytes(Storage.disk("public").path(image_rel), one_px_png);
     DB.table("product_images").insert(map(
-        "product_id", ids[0], "path", "products/test/" + tag + ".png",
+        "product_id", ids[0], "path", image_rel,
         "alt_text", "Widget 0", "sort_order", 0, "is_primary", 1
     ));
 
@@ -108,10 +116,14 @@ fn test_catalog_filters(app, tag: string) {
     assert(body.contains("Apply filters"), "catalog has filter form");
     let priced = get(app, "/catalog?sort=price_asc");
     assert(text(priced).contains("/uploads/products/test/" + tag + ".png"), "listing shows the gallery image");
+    assert(text(priced).contains("value=\"price_asc\" selected"), "sort dropdown reflects active sort");
+    assert(text(priced).contains("name=\"brand\""), "catalog provides a working brand filter");
     assert(not body.contains("Draft Widget " + tag), "draft product hidden from catalog");
 
     let q = get(app, "/catalog?q=Store%20Widget%20" + tag + "%200");
     assert(text(q).contains("Store Widget " + tag + " 0"), "search matches product name");
+    let by_brand = get(app, "/catalog?brand=brand-" + tag);
+    assert(text(by_brand).contains("value=\"brand-" + tag + "\" selected"), "brand filter retains selected brand");
 
     let cheap = get(app, "/catalog?min_price=500.00");
     assert(text(cheap).contains("14 product(s)") == false, "price filter narrows results");
@@ -154,11 +166,22 @@ fn test_product_detail(app, tag: string) {
     let body = text(res);
     assert(body.contains("Store Widget " + tag + " 0"), "product name");
     assert(body.contains("Buy widget 0 at the store"), "product meta description");
-    assert(body.contains("SK"), "SKU displayed");
+    assert(body.contains("SKU SW-" + tag + "-0"), "SKU displayed with label");
     assert(body.contains("In stock"), "availability shown");
+    assert(body.contains("max=\"10\""), "cart quantity is capped at available stock");
     assert(body.contains("A full description for widget 0"), "description rendered");
     assert(body.contains("Related products"), "related products section");
     assert(body.contains("/uploads/products/test/" + tag + ".png"), "gallery image rendered");
+    assert(body.contains("dz-gallery-viewer"), "product image gallery renders interactive viewer");
+
+    let product = DB.table("products").where("slug", "=", slug).first();
+    DB.table("inventory").where("product_id", "=", product["id"]).whereNull("variant_id").update(map("reserved", 10));
+    CatalogCache.bump_catalog_version();
+    let fully_reserved = text(get(app, "/product/" + slug));
+    assert(fully_reserved.contains("Out of stock"), "fully reserved stock is unavailable to shoppers");
+    assert(fully_reserved.contains("disabled>Out of stock"), "add-to-cart is disabled when available quantity is zero");
+    DB.table("inventory").where("product_id", "=", product["id"]).whereNull("variant_id").update(map("reserved", 0));
+    CatalogCache.bump_catalog_version();
 
     assert(get(app, "/product/draft-widget-" + tag)["status"] == 404, "draft product → 404");
     assert(get(app, "/product/no-such-" + tag)["status"] == 404, "unknown product → 404");
@@ -217,6 +240,7 @@ fn purge_stale() {
 }
 
 fn cleanup(tag: string) {
+    Storage.disk("public").delete("products/test/" + tag + ".png");
     drop_products(tag);
     DB.table("categories").where("slug", "LIKE", "%" + tag + "%").delete();
     DB.table("brands").where("slug", "LIKE", "%" + tag + "%").delete();

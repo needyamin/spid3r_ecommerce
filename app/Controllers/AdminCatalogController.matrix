@@ -16,6 +16,7 @@ import "app/Repositories/ProductRepository";
 import "app/Validators/CatalogValidators" as CatalogValidators;
 import "app/Support/Money" as Money;
 import "app/Support/CatalogCache" as CatalogCache;
+import "app/Support/Images" as Images;
 
 let identity = fn(row) { return row; };
 
@@ -220,65 +221,83 @@ public class AdminCatalogController {
         if name != "" {
             data["name"] = name;
         }
-        let cat = string(req.input("category_id", "")).trim();
-        if cat != "" {
-            data["category_id"] = int(cat);
-        }
-        let brand = string(req.input("brand_id", "")).trim();
-        if brand != "" {
-            data["brand_id"] = int(brand);
-        }
-        let price = string(req.input("price", "")).trim();
-        if price != "" {
-            data["price_minor"] = Money.to_minor(price);
-        }
-        let compare = string(req.input("compare_at", "")).trim();
-        if compare != "" {
-            let compare_minor = Money.to_minor(compare);
-            if compare_minor <= 0 {
-                throw validation_failed(map("compare_at", "Enter a valid amount, for example 1999.50."));
+        if req.has("category_id") {
+            let cat = string(req.input("category_id", "")).trim();
+            if cat != "" {
+                data["category_id"] = int(cat);
             }
-            data["compare_at_minor"] = compare_minor;
         }
-        let cost = string(req.input("cost", "")).trim();
-        if cost != "" {
-            let cost_minor = Money.to_minor(cost);
+        if req.has("brand_id") {
+            let brand = string(req.input("brand_id", "")).trim();
+            if brand == "" {
+                data["brand_id"] = null;
+            } else {
+                data["brand_id"] = int(brand);
+            }
+        }
+        if req.has("price") {
+            let price = string(req.input("price", "")).trim();
+            if price != "" {
+                data["price_minor"] = Money.to_minor(price);
+            }
+        }
+        if req.has("compare_at") {
+            let compare = string(req.input("compare_at", "")).trim();
+            if compare == "" or Money.to_minor(compare) == 0 {
+                data["compare_at_minor"] = null;
+            } else {
+                let compare_minor = Money.to_minor(compare);
+                if compare_minor < 0 {
+                    throw validation_failed(map("compare_at", "Enter a valid amount, for example 1999.50."));
+                }
+                data["compare_at_minor"] = compare_minor;
+            }
+        }
+        if req.has("cost") {
+            let cost = string(req.input("cost", "")).trim();
+            let cost_minor = 0;
+            if cost != "" {
+                cost_minor = Money.to_minor(cost);
+            }
             if cost_minor < 0 {
                 throw validation_failed(map("cost", "Enter a valid amount, for example 899.00."));
             }
             data["cost_minor"] = cost_minor;
         }
-        let tax = string(req.input("tax_percent", "")).trim();
-        if tax != "" {
-            data["tax_rate_bps"] = self.scaled_value(tax, 2);
+        if req.has("tax_percent") {
+            let tax = string(req.input("tax_percent", "")).trim();
+            data["tax_rate_bps"] = 0;
+            if tax != "" {
+                data["tax_rate_bps"] = self.scaled_value(tax, 2);
+            }
         }
-        let weight = string(req.input("weight_kg", "")).trim();
-        if weight != "" {
-            data["weight_grams"] = self.scaled_value(weight, 3);
+        if req.has("weight_kg") {
+            let weight = string(req.input("weight_kg", "")).trim();
+            data["weight_grams"] = 0;
+            if weight != "" {
+                data["weight_grams"] = self.scaled_value(weight, 3);
+            }
         }
-        let meta_title = string(req.input("meta_title", "")).trim();
-        if meta_title != "" {
-            data["meta_title"] = meta_title;
+        if req.has("meta_title") {
+            data["meta_title"] = string(req.input("meta_title", "")).trim();
         }
-        let meta_description = string(req.input("meta_description", "")).trim();
-        if meta_description != "" {
-            data["meta_description"] = meta_description;
+        if req.has("meta_description") {
+            data["meta_description"] = string(req.input("meta_description", "")).trim();
         }
-        let featured = string(req.input("is_featured", "")).trim();
-        if featured != "" {
-            data["is_featured"] = int(featured);
+        if req.has("is_featured") {
+            data["is_featured"] = int(req.input("is_featured", 0));
         }
-        let status = string(req.input("status", "")).trim();
-        if status != "" {
-            data["status"] = status;
+        if req.has("status") {
+            let status = string(req.input("status", "")).trim();
+            if status != "" {
+                data["status"] = status;
+            }
         }
-        let short = string(req.input("short_description", "")).trim();
-        if short != "" {
-            data["short_description"] = short;
+        if req.has("short_description") {
+            data["short_description"] = string(req.input("short_description", "")).trim();
         }
-        let desc = string(req.input("description", "")).trim();
-        if desc != "" {
-            data["description"] = desc;
+        if req.has("description") {
+            data["description"] = string(req.input("description", "")).trim();
         }
         return data;
     }
@@ -467,21 +486,21 @@ public class AdminCatalogController {
     // The framework's multipart parser skips binary parts, so the image
     // arrives base64-encoded (a data: URL is accepted too). The service
     // validates the magic bytes, caps the size and stores it under
-    // storage/public/products/.
+    // public/uploads/products/.
     public fn image_upload_form(self, req) {
         self.validate(req, CatalogValidators.image_rules());
         let row = self.images.upload(
             self.id_of(req),
             string(req.input("image", "")),
             string(req.input("alt_text", "")),
-            (req.input("is_primary", 0) == 1 or req.input("is_primary", 0) == true)
+            int(req.input("is_primary", 0)) == 1
         );
         if req.input("format", "") != "json" {
             return redirect("/admin/products/" + string(self.id_of(req)));
         }
         return json(resource_item(map(
             "id", row["id"],
-            "url", "/uploads/" + string(row["path"]),
+            "url", Images.public_image_url(row["path"]),
             "is_primary", row["is_primary"] == 1 or row["is_primary"] == true
         ), identity), 201);
     }
@@ -679,9 +698,9 @@ public class AdminCatalogController {
             self.id_of(req),
             req.input("image", ""),
             req.input("alt_text", ""),
-            (req.input("is_primary", 0) == 1 or req.input("is_primary", 0) == true)
+            int(req.input("is_primary", 0)) == 1
         );
-        let disk_ok = map("id", row["id"], "url", "/uploads/" + row["path"], "is_primary", row["is_primary"] == 1 or row["is_primary"] == true);
+        let disk_ok = map("id", row["id"], "url", Images.public_image_url(row["path"]), "is_primary", row["is_primary"] == 1 or row["is_primary"] == true);
         return json(resource_item(disk_ok, identity), 201);
     }
 

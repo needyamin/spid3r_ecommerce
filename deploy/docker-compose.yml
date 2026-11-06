@@ -17,6 +17,9 @@ services:
     container_name: spid3rweb-app
     ports:
       - "8090:8000"
+    volumes:
+      # Keep uploaded catalog media outside the replaceable app container.
+      - uploads-data:/var/www/app/public/uploads
     environment:
       SPID3R_DB_DRIVER: mysql
       SPID3R_MYSQL_HOST: mysql
@@ -75,3 +78,4 @@ services:
 
 volumes:
   mysql-data:
+  uploads-data:

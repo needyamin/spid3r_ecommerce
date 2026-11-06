@@ -10,6 +10,7 @@ import "app/Repositories/CatalogRepository";
 import "app/Support/Money" as Money;
 import "app/Support/Fx" as Fx;
 import "app/Support/CatalogCache" as CatalogCache;
+import "app/Support/Images" as Images;
 import "framework/Cache/Cache";
 import "framework/Container/Container";
 
@@ -78,7 +79,7 @@ public class StorefrontService {
             let j = 0;
             while j < images.len() {
                 if images[j]["product_id"] == row["id"] {
-                    found = "/uploads/" + string(images[j]["path"]);
+                    found = Images.public_image_url(images[j]["path"]);
                     break;
                 }
                 j += 1;
@@ -124,7 +125,13 @@ public class StorefrontService {
             out.push(row);
             i += 1;
         }
-        return self.attach_images(out);
+        let decorated = self.attach_images(out);
+        let j = 0;
+        while j < decorated.len() {
+            decorated[j]["has_image"] = decorated[j]["image_url"] != "";
+            j += 1;
+        }
+        return decorated;
     }
 
     // Build a query string from a params map, optionally overriding page.
@@ -209,7 +216,16 @@ public class StorefrontService {
         if params.has("sort") and string(params["sort"]).trim() != "" {
             sort = string(params["sort"]).trim();
         }
+        if sort != "newest" and sort != "price_asc" and sort != "price_desc" and sort != "name" {
+            sort = "newest";
+        }
         filters["sort"] = sort;
+        let sort_options = list(
+            map("value", "newest", "label", "Newest", "selected", sort == "newest"),
+            map("value", "price_asc", "label", "Price: low to high", "selected", sort == "price_asc"),
+            map("value", "price_desc", "label", "Price: high to low", "selected", sort == "price_desc"),
+            map("value", "name", "label", "Name", "selected", sort == "name")
+        );
         let page = 1;
         if params.has("page") {
             page = int(string(params["page"]));
@@ -219,7 +235,7 @@ public class StorefrontService {
         filters["per_page"] = 12;
 
         let result = self.products.published(filters);
-        let rows = self.decorate(result["data"], currency);
+        let rows = self.decorate(result["data"], currency, fx);
         let i = 0;
         while i < rows.len() {
             rows[i]["has_image"] = rows[i]["image_url"] != "";
@@ -270,6 +286,7 @@ public class StorefrontService {
             "min_price", min_val,
             "max_price", max_val,
             "sort", sort,
+            "sort_options", sort_options,
             "category_slug", cat_val,
             "brand_slug", brand_val
         );
@@ -315,9 +332,14 @@ public class StorefrontService {
         let gallery = [];
         let i = 0;
         while i < gallery_rows.len() {
+            let alt_text = string(gallery_rows[i]["alt_text"]).trim();
+            if alt_text == "" {
+                alt_text = string(product["name"]) + " product photo " + string(i + 1);
+            }
             gallery.push(map(
-                "url", "/uploads/" + string(gallery_rows[i]["path"]),
-                "alt_text", gallery_rows[i]["alt_text"]
+                "url", Images.public_image_url(gallery_rows[i]["path"]),
+                "alt_text", alt_text,
+                "is_first", i == 0
             ));
             i += 1;
         }
@@ -328,18 +350,26 @@ public class StorefrontService {
             .whereNull("variant_id")
             .first();
         let qty = 0;
+        let reserved = 0;
         if inv != null {
             qty = int(inv["quantity"]);
+            reserved = int(inv["reserved"]);
+        }
+        let available = qty - reserved;
+        if available < 0 {
+            available = 0;
         }
         return map(
             "product", decorated[0],
             "gallery", gallery,
             "has_gallery", gallery.len() > 0,
+            "has_multiple_gallery", gallery.len() > 1,
             "variants", variants,
             "has_variants", variants.len() > 0,
             "related", related,
             "has_related", related.len() > 0,
-            "in_stock", qty > 0,
+            "in_stock", available > 0,
+            "available_quantity", available,
             "meta_description", string(product["meta_description"])
         );
     }

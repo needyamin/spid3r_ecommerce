@@ -90,6 +90,29 @@ public class StorefrontController {
         return "";
     }
 
+    fn requested_brand(self, req) -> string {
+        if req != null and req.query_params.has("brand") {
+            return string(req.query_params["brand"]).trim();
+        }
+        return "";
+    }
+
+    fn brand_options(self, selected_slug: string) {
+        let rows = self.brands.all();
+        let out = [];
+        let i = 0;
+        while i < rows.len() {
+            let slug = string(rows[i]["slug"]);
+            out.push(map(
+                "slug", slug,
+                "name", string(rows[i]["name"]),
+                "selected", slug == selected_slug
+            ));
+            i += 1;
+        }
+        return out;
+    }
+
     public fn catalog(self, req) {
         let code = self.display_currency(req);
         let ctx = self.service.catalog_context(req.query_params, "/catalog", code, self.fx_context());
@@ -99,6 +122,8 @@ public class StorefrontController {
         ctx["form_action"] = "/catalog";
         ctx["category_options"] = self.category_options(self.requested_category(req));
         ctx["has_category_links"] = ctx["category_options"].len() > 0;
+        ctx["brand_options"] = self.brand_options(self.requested_brand(req));
+        ctx["has_brand_options"] = ctx["brand_options"].len() > 0;
         return self.render(req, "store/catalog", "Catalog", ctx);
     }
 
@@ -120,6 +145,8 @@ public class StorefrontController {
         ctx["form_action"] = "/search";
         ctx["category_options"] = self.category_options(self.requested_category(req));
         ctx["has_category_links"] = ctx["category_options"].len() > 0;
+        ctx["brand_options"] = self.brand_options(self.requested_brand(req));
+        ctx["has_brand_options"] = ctx["brand_options"].len() > 0;
         return self.render(req, "store/catalog", "Search", ctx);
     }
 
@@ -159,9 +186,11 @@ public class StorefrontController {
         ctx["heading"] = string(cat["name"]);
         ctx["description"] = string(cat["description"]);
         ctx["meta_description"] = string(cat["meta_description"]);
-        ctx["form_action"] = "/category/" + slug;
+        ctx["form_action"] = "/catalog";
         ctx["category_options"] = self.category_options(slug);
         ctx["has_category_links"] = ctx["category_options"].len() > 0;
+        ctx["brand_options"] = self.brand_options(self.requested_brand(req));
+        ctx["has_brand_options"] = ctx["brand_options"].len() > 0;
         return self.render(req, "store/catalog", string(cat["name"]), ctx);
     }
 
@@ -180,10 +209,11 @@ public class StorefrontController {
         let code = self.display_currency(req);
         let ctx = self.service.catalog_context(params, "/brand/" + slug, code, self.fx_context());
         ctx["heading"] = string(brand["name"]);
-        ctx["form_action"] = "/brand/" + slug;
+        ctx["form_action"] = "/catalog";
         ctx["category_options"] = self.category_options(self.requested_category(req));
         ctx["has_category_links"] = ctx["category_options"].len() > 0;
-        ctx["description"] = string(brand["description"]);
+        ctx["brand_options"] = self.brand_options(slug);
+        ctx["has_brand_options"] = ctx["brand_options"].len() > 0;
         ctx["meta_description"] = "Shop " + string(brand["name"]) + " products at " + self.settings["name"] + ".";
         return self.render(req, "store/catalog", string(brand["name"]), ctx);
     }

@@ -12,7 +12,8 @@
   }
 
   var toastTimer = null;
-  function toast(message, ok) {    var existing = document.getElementById("dz-toast");
+  function toast(message, ok) {
+    var existing = document.getElementById("dz-toast");
     if (existing) existing.remove();
     var el = document.createElement("div");
     el.id = "dz-toast";
@@ -48,9 +49,52 @@
 
   // Admin write forms: save over AJAX, then refresh so the table shows
   // the new state.
-  function handleAdmin(form) {
-    toast("Saved", true);
-    setTimeout(function () { window.location.reload(); }, 500);
+  function handleAdmin(form, data) {
+    var message = form.getAttribute("data-success-message") || "Saved";
+    if (data && data.data && data.data.deleted) message = "Deleted";
+    toast(message, true);
+    var destination = form.getAttribute("data-success-redirect");
+    setTimeout(function () {
+      if (destination) window.location.assign(destination);
+      else window.location.reload();
+    }, 450);
+  }
+
+  function wireTableFilters() {
+    document.addEventListener("input", function (e) {
+      var input = e.target;
+      if (!input.matches || !input.matches("[data-table-filter]")) return;
+      var table = document.getElementById(input.getAttribute("data-table-filter"));
+      if (!table) return;
+      var query = String(input.value || "").trim().toLowerCase();
+      var rows = table.querySelectorAll("tbody tr[data-filter-row]");
+      var visible = 0;
+      rows.forEach(function (row) {
+        var text = String(row.getAttribute("data-filter-row") || "").toLowerCase();
+        var match = query === "" || text.indexOf(query) !== -1;
+        row.hidden = !match;
+        if (match) visible += 1;
+      });
+      var empty = document.querySelector("[data-filter-empty='" + table.id + "']");
+      if (empty) empty.hidden = visible > 0;
+    });
+  }
+
+  function wireGalleryThumbnails() {
+    document.addEventListener("click", function (e) {
+      var button = e.target.closest && e.target.closest("[data-gallery-thumb]");
+      if (!button) return;
+      var target = document.getElementById(button.getAttribute("data-gallery-target"));
+      if (!target) return;
+      target.src = button.getAttribute("data-image-src");
+      target.alt = button.getAttribute("data-image-alt") || "Product image";
+      var siblings = button.parentNode.querySelectorAll("[data-gallery-thumb]");
+      siblings.forEach(function (thumb) {
+        var selected = thumb === button;
+        thumb.classList.toggle("is-active", selected);
+        thumb.setAttribute("aria-pressed", selected ? "true" : "false");
+      });
+    });
   }
 
   // Pull the most useful message out of an error payload:
@@ -91,6 +135,10 @@
         return;
       }
       var reader = new FileReader();
+      reader.onerror = function () {
+        toast("Could not read this image file. Choose another file and try again.", false);
+        input.value = "";
+      };
       reader.onload = function (ev) {
         var form = input.closest("form");
         if (!form) return;
@@ -176,7 +224,7 @@
       if (form.getAttribute("data-ajax") === "wishlist") {
         handleWishlist(form, out.data);
       } else if (form.getAttribute("data-ajax") === "admin") {
-        handleAdmin(form);
+        handleAdmin(form, out.data);
       } else {
         handleCart(form, out.data);
       }
@@ -189,4 +237,6 @@
   });
 
   wireImageInputs();
+  wireTableFilters();
+  wireGalleryThumbnails();
 })();

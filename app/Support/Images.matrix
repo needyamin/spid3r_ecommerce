@@ -1,0 +1,25 @@
+// app/Support/Images.matrix
+// Single source of truth for resolving an uploaded product image path to a
+// URL. When the underlying file is missing on disk (stale row, broken
+// upload, or accidental deletion) we fall back to a static placeholder so
+// the UI never renders a broken <img>. Uploaded assets live under the
+// Storage "public" disk and are served from /uploads/.
+
+import "framework/Filesystem/Storage";
+
+public fn public_image_url(path) -> string {
+    if path == null or path == "" {
+        return "/images/placeholder.svg";
+    }
+    let p = string(path);
+    // Already a resolved web URL (e.g. a previous call returned
+    // /uploads/... or /images/...). Return it unchanged so the helper is
+    // idempotent and never feeds an absolute path to Storage.exists().
+    if p.starts_with("/uploads/") or p.starts_with("/images/") {
+        return p;
+    }
+    if Storage.disk("public").exists(p) {
+        return "/uploads/" + p;
+    }
+    return "/images/placeholder.svg";
+}

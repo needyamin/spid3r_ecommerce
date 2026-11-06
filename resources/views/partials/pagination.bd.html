@@ -1,11 +1,9 @@
 <!-- Pagination. Expects has_prev, prev_url, has_next, next_url. -->
+<nav class="dz-pagination my-4" aria-label="Catalog pages">
 @if(has_prev)
-<nav class="d-flex justify-content-center my-4" aria-label="Pagination">
-  <a class="btn btn-light" href="{{ prev_url }}">← Previous</a>
-</nav>
+  <a class="btn btn-light border" href="{{ prev_url }}" rel="prev">Previous</a>
 @endif
 @if(has_next)
-<nav class="d-flex justify-content-center my-4" aria-label="Pagination">
-  <a class="btn btn-light" href="{{ next_url }}">Next →</a>
-</nav>
+  <a class="btn btn-primary" href="{{ next_url }}" rel="next">Next page</a>
 @endif
+</nav>

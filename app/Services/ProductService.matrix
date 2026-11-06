@@ -4,6 +4,7 @@
 import "framework/Database/DB";
 import "app/Support/CatalogCache" as CatalogCache;
 import "framework/HttpException";
+import "framework/Filesystem/Storage";
 import "app/Repositories/ProductRepository";
 import "app/Repositories/InventoryRepository";
 import "app/Support/Slug" as Slug;
@@ -220,14 +221,24 @@ public class ProductService {
                 "This product is still in " + string(in_carts) + " shopping cart(s) and cannot be deleted — archive it instead."
             ));
         }
-        return DB.transaction(fn() {
+        let image_rows = DB.table("product_images").where("product_id", "=", id).get();
+        let removed = DB.transaction(fn() {
             DB.table("product_images").where("product_id", "=", id).delete();
             DB.table("product_variants").where("product_id", "=", id).delete();
             DB.table("inventory").where("product_id", "=", id).delete();
             DB.table("stock_movements").where("product_id", "=", id).delete();
-            let removed = DB.table("products").where("id", "=", id).delete() > 0;
+            let ok = DB.table("products").where("id", "=", id).delete() > 0;
             CatalogCache.bump_catalog_version();
-            return removed;
+            return ok;
         });
+        if removed {
+            let disk = Storage.disk("public");
+            let i = 0;
+            while i < image_rows.len() {
+                disk.delete(image_rows[i]["path"]);
+                i += 1;
+            }
+        }
+        return removed;
     }
 }

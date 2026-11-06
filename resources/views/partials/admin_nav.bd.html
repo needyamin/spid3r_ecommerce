@@ -1,20 +1,18 @@
-<!-- Admin section navigation. -->
-<nav class="nav nav-pills flex-wrap gap-1 my-3 bg-white p-2 rounded border" aria-label="Admin sections">
-  <a class="nav-link py-1 px-2" href="/admin/dashboard">Overview</a>
-  <a class="nav-link py-1 px-2" href="/admin/orders">Orders</a>
-  <a class="nav-link py-1 px-2" href="/admin/products">Products</a>
-  <a class="nav-link py-1 px-2" href="/admin/categories">Categories</a>
-  <a class="nav-link py-1 px-2" href="/admin/brands">Brands</a>
-  <a class="nav-link py-1 px-2" href="/admin/inventory">Inventory</a>
-  <a class="nav-link py-1 px-2" href="/admin/customers">Customers</a>
-  <a class="nav-link py-1 px-2" href="/admin/staff">Staff</a>
-  <a class="nav-link py-1 px-2" href="/admin/roles">Roles</a>
-  <a class="nav-link py-1 px-2" href="/admin/coupons">Coupons</a>
-  <a class="nav-link py-1 px-2" href="/admin/settings">Settings</a>
-  <a class="nav-link py-1 px-2" href="/admin/shipping">Shipping</a>
-  <a class="nav-link py-1 px-2" href="/admin/payments">Payments</a>
-  <a class="nav-link py-1 px-2" href="/admin/audit">Audit</a>
-  <a class="nav-link py-1 px-2" href="/admin/reports">Reports</a>
-  <a class="nav-link py-1 px-2" href="/admin/reviews">Reviews</a>
-  <a class="nav-link py-1 px-2" href="/admin/returns">Returns</a>
-</nav>
+<section class="dz-admin-nav mb-4" aria-label="Admin workspace">
+  <div class="dz-admin-nav-heading">
+    <div>
+      <span class="dz-eyebrow">Store management</span>
+      <h2 class="h5 mb-0">Admin workspace</h2>
+    </div>
+    <a class="btn btn-light border btn-sm" href="/">View storefront</a>
+  </div>
+  <nav class="nav nav-pills flex-nowrap overflow-auto gap-1" aria-label="Admin sections">
+@foreach(item in admin_navigation)
+@if(item.active)
+    <a class="nav-link active" href="{{ item.url }}" aria-current="page">{{ item.label }}</a>
+@else
+    <a class="nav-link" href="{{ item.url }}">{{ item.label }}</a>
+@endif
+@endforeach
+  </nav>
+</section>

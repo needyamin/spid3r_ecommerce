@@ -172,6 +172,23 @@ public class Application {
 
         for p in candidates {
             if file_exists(p) {
+                // `read_file` decodes text as UTF-8 and fails for most image
+                // bytes. Uploaded assets must use the binary-safe reader and
+                // pass the raw bytes through the HTTP response body unchanged.
+                if clean.starts_with("uploads/") {
+                    let binary = read_bytes(p);
+                    if binary.is_ok() {
+                        let resp = response("", 200);
+                        resp.body = binary.unwrap();
+                        resp.header("content-type", self.content_type_for(p));
+                        if self.debug {
+                            resp.header("cache-control", "no-cache");
+                        } else {
+                            resp.header("cache-control", "public, max-age=3600");
+                        }
+                        return resp;
+                    }
+                }
                 let res = read_file(p);
                 if res.is_ok() {
                     let resp = response(res.unwrap(), 200);
@@ -192,7 +209,7 @@ public class Application {
 
     // URL prefixes served as static assets from public/
     fn is_static_prefix(self, path: string) -> bool {
-        let prefixes = list("/css/", "/js/", "/assets/", "/images/", "/fonts/", "/vendor/");
+        let prefixes = list("/css/", "/js/", "/assets/", "/images/", "/fonts/", "/vendor/", "/uploads/");
         for p in prefixes {
             if path.starts_with(p) {
                 return true;

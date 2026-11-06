@@ -6,178 +6,201 @@
     <ol class="breadcrumb"><li class="breadcrumb-item"><a href="/">Home</a></li><li class="breadcrumb-item"><a href="/catalog">Catalog</a></li><li class="breadcrumb-item active" aria-current="page">{{ product.name }}</li></ol>
   </nav>
 
-  <div class="row g-4">
-    <div class="col-12 col-md-6">
+  <div class="dz-product-page">
+    <div class="row g-3 g-lg-4 align-items-start">
+      <section class="col-12 col-lg-7" aria-label="Product images">
 @if(has_gallery)
+        <div class="dz-gallery-viewer">
+          <div class="dz-gallery-stage">
 @foreach(image in gallery)
-      <img class="dz-detail-img mb-2" src="{{ image.url }}" alt="{{ image.alt_text }}" loading="lazy" decoding="async">
-@endforeach
-@else
-      <div class="dz-detail-placeholder">📦</div>
+@if(image.is_first)
+            <img id="dz-product-main-image" class="dz-product-main-image" src="{{ image.url }}" alt="{{ image.alt_text }}" loading="lazy" decoding="async">
 @endif
-    </div>
-
-    <div class="col-12 col-md-6">
-      <div class="dz-card p-3 p-md-4">
-        <h1 class="h4 mb-1">{{ product.name }}</h1>
-        <p class="small text-secondary mb-2">SKU: {{ product.sku }}</p>
-@if(product.compare_display)
-        <p class="detail-price mb-1">{{ product.price_display }} <span class="dz-p-old">{{ product.compare_display }}</span> <span class="dz-sale-badge ms-1">Sale</span></p>
+@endforeach
+          </div>
+@if(has_multiple_gallery)
+          <div class="dz-gallery-thumbnails" role="group" aria-label="Choose product image">
+@foreach(image in gallery)
+@if(image.is_first)
+            <button type="button" class="dz-gallery-thumb-button is-active" data-gallery-thumb data-gallery-target="dz-product-main-image" data-image-src="{{ image.url }}" data-image-alt="{{ image.alt_text }}" aria-label="Show {{ image.alt_text }}" aria-pressed="true">
 @else
-        <p class="detail-price mb-1">{{ product.price_display }}</p>
+            <button type="button" class="dz-gallery-thumb-button" data-gallery-thumb data-gallery-target="dz-product-main-image" data-image-src="{{ image.url }}" data-image-alt="{{ image.alt_text }}" aria-label="Show {{ image.alt_text }}" aria-pressed="false">
+@endif
+              <img src="{{ image.url }}" alt="" loading="lazy" decoding="async">
+            </button>
+@endforeach
+          </div>
+@endif
+        </div>
+@else
+        <div class="dz-detail-placeholder" role="img" aria-label="No product image available"><span>No product image</span></div>
+@endif
+      </section>
+
+      <section class="col-12 col-lg-5" aria-labelledby="product-title">
+        <div class="dz-card dz-product-buybox">
+          <div class="dz-product-kicker">SKU {{ product.sku }}</div>
+          <h1 id="product-title" class="dz-product-title">{{ product.name }}</h1>
+          <div class="dz-rating-summary" aria-label="{{ rating.average_display }} out of 5 from {{ rating.count }} reviews">
+            <span class="dz-rating-stars" aria-hidden="true">{{ rating.average_display }} / 5</span>
+            <a href="#customer-reviews">{{ rating.count }} review(s)</a>
+          </div>
+@if(product.compare_display)
+          <div class="dz-price-line"><span class="dz-product-price">{{ product.price_display }}</span><span class="dz-p-old">{{ product.compare_display }}</span><span class="dz-sale-badge">Sale</span></div>
+@else
+          <div class="dz-price-line"><span class="dz-product-price">{{ product.price_display }}</span></div>
 @endif
 @if(in_stock)
-        <p><span class="stock-badge stock-in">In stock</span></p>
+          <div class="dz-stock-line"><span class="stock-badge stock-in">In stock</span><span class="small text-secondary">{{ available_quantity }} available</span></div>
 @else
-        <p><span class="stock-badge stock-out">Out of stock</span></p>
+          <div class="dz-stock-line"><span class="stock-badge stock-out">Out of stock</span><span class="small text-secondary">Please check back later.</span></div>
 @endif
 @if(product.short_description)
-        <p class="text-secondary">{{ product.short_description }}</p>
+          <p class="dz-product-short-description">{{ product.short_description }}</p>
 @endif
 @if(has_variants)
-        <h2 class="h6 mt-3">Options</h2>
-        <ul class="small text-secondary ps-3">
+          <div class="dz-variant-note">
+            <h2 class="h6 mb-2">Product options</h2>
+            <ul class="dz-variant-list">
 @foreach(variant in variants)
-          <li>{{ variant.name }} — {{ variant.sku }}</li>
+              <li><span>{{ variant.name }}</span><code>{{ variant.sku }}</code></li>
 @endforeach
-        </ul>
-@endif
-
-        <form method="post" action="/cart/items" data-ajax="cart" class="d-flex flex-wrap align-items-end gap-2 my-3">
-          <input type="hidden" name="_csrf" value="{{ csrf }}">
-          <input type="hidden" name="product_id" value="{{ product.id }}">
-          <div>
-            <label class="form-label small text-secondary mb-1" for="add-quantity">Quantity</label>
-            <input type="number" class="form-control dz-qty" id="add-quantity" name="quantity" value="1" min="1" max="99">
+            </ul>
+            <p class="small text-secondary mb-0">Option pricing is for reference; checkout currently uses the product price shown above.</p>
           </div>
-@if(in_stock)
-          <button class="btn btn-primary px-4" type="submit">🛒 Add to cart</button>
-@else
-          <button class="btn btn-primary px-4" type="submit" disabled>Out of stock</button>
 @endif
-        </form>
 
-        <div class="d-flex flex-wrap gap-2">
-          <a class="btn btn-light border" href="/catalog">Continue shopping</a>
-          <form method="post" action="/wishlist/add" data-ajax="wishlist" class="d-inline">
+          <form method="post" action="/cart/items" data-ajax="cart" class="dz-add-to-cart-form">
             <input type="hidden" name="_csrf" value="{{ csrf }}">
             <input type="hidden" name="product_id" value="{{ product.id }}">
-@if(in_wishlist)
-            <button class="btn btn-outline-primary" type="submit">♥ Saved to wishlist</button>
+            <div class="dz-buy-controls">
+              <div>
+                <label class="form-label small fw-semibold mb-1" for="add-quantity">Quantity</label>
+                <input type="number" class="form-control dz-qty" id="add-quantity" name="quantity" value="1" min="1" max="{{ available_quantity }}" required>
+              </div>
+@if(in_stock)
+              <button class="btn btn-primary dz-add-to-cart" type="submit">Add to cart</button>
 @else
-            <button class="btn btn-outline-primary" type="submit">♡ Add to wishlist</button>
+              <button class="btn btn-primary dz-add-to-cart" type="submit" disabled>Out of stock</button>
 @endif
+            </div>
           </form>
+
+          <div class="dz-product-actions">
+            <a class="btn btn-light border" href="/catalog">Continue shopping</a>
+            <form method="post" action="/wishlist/add" data-ajax="wishlist" class="d-inline">
+              <input type="hidden" name="_csrf" value="{{ csrf }}">
+              <input type="hidden" name="product_id" value="{{ product.id }}">
+@if(in_wishlist)
+              <button class="btn btn-outline-primary" type="submit">Saved to wishlist</button>
+@else
+              <button class="btn btn-outline-primary" type="submit">Add to wishlist</button>
+@endif
+            </form>
+          </div>
+          <div class="dz-product-assurances">
+            <span>Secure checkout</span><span>Easy returns</span><span>Fast delivery</span>
+          </div>
         </div>
-      </div>
+      </section>
     </div>
-  </div>
 
 @if(product.description)
-  <section class="dz-desc-box my-4">
-    <h2 class="h6 mb-2">Description</h2>
-    <p class="mb-0">{{ product.description }}</p>
-  </section>
+    <section class="dz-card dz-description-card my-4" aria-labelledby="product-description-heading">
+      <h2 id="product-description-heading" class="h5">Product description</h2>
+      <div class="dz-description-copy">{{ product.description }}</div>
+    </section>
 @endif
 
-  <section class="dz-card p-3 p-md-4 my-4">
-    <h2 class="h6 mb-2">Customer reviews</h2>
-    <p class="small text-secondary"><strong class="text-dark fs-5">{{ rating.average_display }}</strong> / 5 — {{ rating.count }} review(s)</p>
+    <section id="customer-reviews" class="dz-card dz-reviews-card my-4" aria-labelledby="reviews-heading">
+      <div class="dz-section-heading">
+        <div><span class="dz-eyebrow">Customer feedback</span><h2 id="reviews-heading" class="h5 mb-0">Customer reviews</h2></div>
+        <p class="mb-0"><strong class="fs-5">{{ rating.average_display }}</strong> / 5 <span class="text-secondary">· {{ rating.count }} review(s)</span></p>
+      </div>
 @if(has_reviews)
 @foreach(review in reviews)
-    <article class="review">
-      <h3 class="h6 mb-1">{{ review.title }}</h3>
-      <p class="small text-secondary mb-1">{{ review.rating }} / 5</p>
-      <p class="mb-0">{{ review.body }}</p>
-    </article>
+      <article class="review">
+        <div class="d-flex flex-wrap justify-content-between gap-2"><h3 class="h6 mb-1">{{ review.title }}</h3><span class="dz-review-score">{{ review.rating }} / 5</span></div>
+        <p class="mb-0">{{ review.body }}</p>
+      </article>
 @endforeach
 @else
-    <p class="empty-note">No reviews yet.</p>
+      <p class="empty-note">No reviews yet. Be the first to share your experience.</p>
 @endif
 @if(signed_in)
-    <h3 class="h6 mt-3">Write a review</h3>
-    <form method="post" action="/reviews" class="row g-2">
-      <input type="hidden" name="_csrf" value="{{ csrf }}">
-      <input type="hidden" name="product_id" value="{{ product.id }}">
-      <div class="col-12 col-md-3">
-        <label class="form-label small text-secondary mb-1" for="review-rating">Rating</label>
-        <select id="review-rating" name="rating" class="form-select">
-          <option value="5">5 — Excellent</option>
-          <option value="4">4 — Good</option>
-          <option value="3">3 — Average</option>
-          <option value="2">2 — Poor</option>
-          <option value="1">1 — Terrible</option>
-        </select>
-      </div>
-      <div class="col-12 col-md-5">
-        <label class="form-label small text-secondary mb-1" for="review-title">Title</label>
-        <input id="review-title" type="text" name="title" class="form-control" maxlength="120">
-      </div>
-      <div class="col-12">
-        <label class="form-label small text-secondary mb-1" for="review-body">Your review</label>
-        <textarea id="review-body" name="body" rows="4" class="form-control" maxlength="4000" required></textarea>
-      </div>
-      <div class="col-12">
-        <button class="btn btn-primary" type="submit">Submit review</button>
-      </div>
-    </form>
+      <h3 class="h6 mt-4">Write a review</h3>
+      <form method="post" action="/reviews" class="row g-3">
+        <input type="hidden" name="_csrf" value="{{ csrf }}">
+        <input type="hidden" name="product_id" value="{{ product.id }}">
+        <div class="col-12 col-md-3">
+          <label class="form-label fw-semibold" for="review-rating">Rating</label>
+          <select id="review-rating" name="rating" class="form-select"><option value="5">5 — Excellent</option><option value="4">4 — Good</option><option value="3">3 — Average</option><option value="2">2 — Poor</option><option value="1">1 — Terrible</option></select>
+        </div>
+        <div class="col-12 col-md-9">
+          <label class="form-label fw-semibold" for="review-title">Title</label>
+          <input id="review-title" type="text" name="title" class="form-control" maxlength="120">
+        </div>
+        <div class="col-12">
+          <label class="form-label fw-semibold" for="review-body">Your review</label>
+          <textarea id="review-body" name="body" rows="4" class="form-control" maxlength="4000" required></textarea>
+        </div>
+        <div class="col-12"><button class="btn btn-primary" type="submit">Submit review</button></div>
+      </form>
 @endif
-  </section>
+    </section>
 
 @if(has_recommendations)
-  <section class="my-4">
-    <h2 class="dz-section-title">You might also like</h2>
-    <div class="row g-3 row-cols-2 row-cols-md-3 row-cols-lg-4">
+    <section class="dz-product-suggestions my-4" aria-labelledby="recommendations-heading">
+      <div class="dz-section-heading"><div><span class="dz-eyebrow">Picked for you</span><h2 id="recommendations-heading" class="h5 mb-0">You might also like</h2></div></div>
+      <div class="row g-3 row-cols-2 row-cols-md-3 row-cols-lg-4">
 @foreach(rec in recommendations)
-      <div class="col">
-        <a class="product-card h-100" href="{{ rec.url }}">
-          <div class="dz-p-img-placeholder">📦</div>
-          <div class="dz-p-body">
-            <div class="dz-p-name">{{ rec.name }}</div>
-            <div class="dz-p-price">{{ rec.price_display }}</div>
-          </div>
-        </a>
-      </div>
+        <div class="col"><a class="product-card h-100" href="{{ rec.url }}">
+@if(rec.has_image)
+          <img class="dz-p-img" src="{{ rec.image_url }}" alt="{{ rec.name }}" loading="lazy" decoding="async">
+@else
+          <div class="dz-p-img-placeholder" aria-hidden="true"><span>No image</span></div>
+@endif
+          <div class="dz-p-body"><div class="dz-p-name">{{ rec.name }}</div><div class="dz-p-price">{{ rec.price_display }}</div></div>
+        </a></div>
 @endforeach
-    </div>
-  </section>
+      </div>
+    </section>
 @endif
 
 @if(has_recently_viewed)
-  <section class="my-4">
-    <h2 class="dz-section-title">Recently viewed</h2>
-    <div class="row g-3 row-cols-2 row-cols-md-3 row-cols-lg-4">
+    <section class="dz-product-suggestions my-4" aria-labelledby="recently-viewed-heading">
+      <div class="dz-section-heading"><div><span class="dz-eyebrow">Your browsing</span><h2 id="recently-viewed-heading" class="h5 mb-0">Recently viewed</h2></div></div>
+      <div class="row g-3 row-cols-2 row-cols-md-3 row-cols-lg-4">
 @foreach(seen in recently_viewed)
-      <div class="col">
-        <a class="product-card h-100" href="{{ seen.url }}">
-          <div class="dz-p-img-placeholder">📦</div>
-          <div class="dz-p-body">
-            <div class="dz-p-name">{{ seen.name }}</div>
-            <div class="dz-p-price">{{ seen.price_display }}</div>
-          </div>
-        </a>
-      </div>
+        <div class="col"><a class="product-card h-100" href="{{ seen.url }}">
+@if(seen.has_image)
+          <img class="dz-p-img" src="{{ seen.image_url }}" alt="{{ seen.name }}" loading="lazy" decoding="async">
+@else
+          <div class="dz-p-img-placeholder" aria-hidden="true"><span>No image</span></div>
+@endif
+          <div class="dz-p-body"><div class="dz-p-name">{{ seen.name }}</div><div class="dz-p-price">{{ seen.price_display }}</div></div>
+        </a></div>
 @endforeach
-    </div>
-  </section>
+      </div>
+    </section>
 @endif
 
 @if(has_related)
-  <section class="my-4">
-    <h2 class="dz-section-title">Related products</h2>
-    <div class="row g-3 row-cols-2 row-cols-md-3 row-cols-lg-4">
+    <section class="dz-product-suggestions my-4" aria-labelledby="related-products-heading">
+      <div class="dz-section-heading"><div><span class="dz-eyebrow">More to explore</span><h2 id="related-products-heading" class="h5 mb-0">Related products</h2></div></div>
+      <div class="row g-3 row-cols-2 row-cols-md-3 row-cols-lg-4">
 @foreach(rel in related)
-      <div class="col">
-        <a class="product-card h-100" href="{{ rel.url }}">
-          <div class="dz-p-img-placeholder">📦</div>
-          <div class="dz-p-body">
-            <div class="dz-p-name">{{ rel.name }}</div>
-            <div class="dz-p-price">{{ rel.price_display }}</div>
-          </div>
-        </a>
-      </div>
-@endforeach
-    </div>
-  </section>
+        <div class="col"><a class="product-card h-100" href="{{ rel.url }}">
+@if(rel.has_image)
+          <img class="dz-p-img" src="{{ rel.image_url }}" alt="{{ rel.name }}" loading="lazy" decoding="async">
+@else
+          <div class="dz-p-img-placeholder" aria-hidden="true"><span>No image</span></div>
 @endif
+          <div class="dz-p-body"><div class="dz-p-name">{{ rel.name }}</div><div class="dz-p-price">{{ rel.price_display }}</div></div>
+        </a></div>
+@endforeach
+      </div>
+    </section>
+@endif
+  </div>
 @endsection

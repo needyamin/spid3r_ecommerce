@@ -92,6 +92,19 @@ fn test_dashboard_pages(app, ids, adm) {
         assert(res["status"] == 200, "admin page renders: " + pages[i]);
         i += 1;
     }
+    let products_html = string(call(app, "GET", "/admin/products", null, adm["cookie"])["body"]);
+    assert(products_html.contains("/admin/products/" + string(ids["product"])), "product row navigates to product editor");
+    let filtered_page = string(call(app, "GET", "/admin/products?q=" + url_encode("Admin Widget " + string(ids["tag"])), null, adm["cookie"])["body"]);
+    assert(filtered_page.contains("Admin Widget " + string(ids["tag"])), "product list search matches name");
+    assert(not filtered_page.contains("QA curl diagnosis"), "product list search excludes unrelated products");
+    assert(filtered_page.contains("name=\"q\" value=\"Admin Widget " + string(ids["tag"]) + "\""), "product list preserves the search query");
+    let page_two = call(app, "GET", "/admin/products?page=2", null, adm["cookie"]);
+    assert(page_two["status"] == 200, "product list page parameter is handled");
+    assert(products_html.contains("href=\"/admin/products\" aria-current=\"page\""), "products navigation is active");
+    let inventory_html = string(call(app, "GET", "/admin/inventory", null, adm["cookie"])["body"]);
+    assert(inventory_html.contains("On hand") and inventory_html.contains("Available"), "inventory distinguishes on-hand from available stock");
+    assert(inventory_html.contains("/admin/api/products/" + string(ids["product"]) + "/inventory/set-form"), "inventory supports exact stock edits");
+    assert(inventory_html.contains("href=\"/admin/products/" + string(ids["product"]) + "\""), "inventory links to product editor");
     assert(call(app, "GET", "/admin/dashboard", null, "")["status"] == 401, "anonymous admin blocked");
     println("  [PASS] test_dashboard_pages");
 }
@@ -240,9 +253,20 @@ fn test_catalog_write_forms(app, ids, adm, tag: string) {
     assert(int(stock["quantity"]) == 7, "opening stock stored");
 
     // Edit it: new price + status.
+    let clear_brand_id = DB.table("brands").insert(map(
+        "name", "Form clear brand " + tag,
+        "slug", "form-clear-brand-" + tag
+    ));
     let updated = call(app, "POST", "/admin/api/products/" + string(new_id) + "/update", map(
         "name", "Panel Renamed " + tag,
+        "brand_id", string(clear_brand_id),
         "price", "249.00",
+        "compare_at", "299.00",
+        "cost", "49.00",
+        "meta_title", "Temporary title",
+        "meta_description", "Temporary description",
+        "short_description", "Temporary short",
+        "description", "Temporary long",
         "status", "draft",
         "_csrf", adm["csrf"],
         "format", "json"
@@ -252,6 +276,26 @@ fn test_catalog_write_forms(app, ids, adm, tag: string) {
     assert(int(after["price_minor"]) == 24900, "updated price stored in minor units");
     assert(string(after["status"]) == "draft", "updated status stored");
     assert(string(after["name"]) == "Panel Renamed " + tag, "updated name stored");
+    assert(int(after["brand_id"]) == int(clear_brand_id), "brand selection persists through the edit form");
+    let cleared = call(app, "POST", "/admin/api/products/" + string(new_id) + "/update", map(
+        "compare_at", "", "cost", "", "meta_title", "", "meta_description", "",
+        "short_description", "", "description", "", "brand_id", "",
+        "_csrf", adm["csrf"], "format", "json"
+    ), adm["cookie"]);
+    assert(cleared["status"] == 200, "optional product fields can be cleared");
+    let cleared_row = DB.table("products").where("id", "=", new_id).first();
+    assert(cleared_row["compare_at_minor"] == null, "empty compare-at removes sale reference");
+    assert(int(cleared_row["cost_minor"]) == 0, "blank cost is normalized to zero");
+    assert(string(cleared_row["meta_title"]) == "" and string(cleared_row["meta_description"]) == "", "SEO fields can be cleared");
+    assert(string(cleared_row["short_description"]) == "" and string(cleared_row["description"]) == "", "descriptions can be cleared");
+    assert(cleared_row["brand_id"] == null, "empty brand selection clears the brand");
+    let draft_detail = string(call(app, "GET", "/admin/products/" + string(new_id), null, adm["cookie"])["body"]);
+    assert(draft_detail.contains("/publish-form"), "draft detail page exposes publish action");
+    assert(not draft_detail.contains("/unpublish-form"), "draft detail page hides unpublish action");
+    call(app, "POST", "/admin/api/products/" + string(new_id) + "/publish-form", map("_csrf", adm["csrf"], "format", "json"), adm["cookie"]);
+    let published_detail = string(call(app, "GET", "/admin/products/" + string(new_id), null, adm["cookie"])["body"]);
+    assert(published_detail.contains("/unpublish-form"), "published detail page exposes unpublish action");
+    assert(not published_detail.contains("/publish-form"), "published detail page hides publish action");
 
     // Restock through the form endpoint.
     let restock = call(app, "POST", "/admin/api/products/" + string(new_id) + "/inventory/restock-form", map(
@@ -281,6 +325,7 @@ fn test_catalog_write_forms(app, ids, adm, tag: string) {
     // Clean up the rows this test created.
     DB.table("inventory").where("product_id", "=", new_id).delete();
     DB.table("products").where("id", "=", new_id).delete();
+    DB.table("brands").where("id", "=", clear_brand_id).delete();
     let created_cats = DB.table("categories").where("name", "LIKE", "%Panel Category " + tag + "%").get();
     let i = 0;
     while i < created_cats.len() {

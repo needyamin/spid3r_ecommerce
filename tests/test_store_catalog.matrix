@@ -174,6 +174,20 @@ fn test_variants(app, admin, tag: string, pid) {
         "attributes_json", "{\"size\":\"L\"}"
     ), admin["cookie"], admin["csrf"]));
     assert(v["data"]["sku"] == "VAR-" + tag, "variant SKU stored");
+    let variant_id = v["data"]["id"];
+    let edited = body(api(app, "POST", "/admin/api/products/" + string(pid) + "/variants/" + string(variant_id) + "/update-form", map(
+        "name", "Large Revised", "price", "320.00", "is_active", "1", "format", "json"
+    ), admin["cookie"], admin["csrf"]));
+    assert(edited["data"]["name"] == "Large Revised", "variant edit saves its name");
+    assert(int(edited["data"]["is_active"]) == 1, "saving an active variant keeps it active");
+    let disabled = body(api(app, "POST", "/admin/api/products/" + string(pid) + "/variants/" + string(variant_id) + "/update-form", map(
+        "is_active", "0", "format", "json"
+    ), admin["cookie"], admin["csrf"]));
+    assert(int(disabled["data"]["is_active"]) == 0, "variant can be deactivated explicitly");
+    let enabled = body(api(app, "POST", "/admin/api/products/" + string(pid) + "/variants/" + string(variant_id) + "/update-form", map(
+        "is_active", "1", "format", "json"
+    ), admin["cookie"], admin["csrf"]));
+    assert(int(enabled["data"]["is_active"]) == 1, "variant can be activated explicitly");
 
     let dup = api(app, "POST", "/admin/api/products/" + string(pid) + "/variants", map(
         "sku", "VAR-" + tag, "name", "Dup", "price_minor", 1000
@@ -188,6 +202,9 @@ fn test_variants(app, admin, tag: string, pid) {
 
     let list = body(api(app, "GET", "/admin/api/products/" + string(pid) + "/variants", null, admin["cookie"], admin["csrf"]));
     assert(list["data"].len() == 1, "variant listed for product");
+    let deleted = api(app, "POST", "/admin/api/products/" + string(pid) + "/variants/" + string(variant_id) + "/delete-form", map("format", "json"), admin["cookie"], admin["csrf"]);
+    assert(deleted["status"] == 200, "variant delete form removes the variant");
+    assert(DB.table("product_variants").where("id", "=", variant_id).count() == 0, "variant row removed");
     println("  [PASS] test_variants");
 }
 
@@ -210,6 +227,48 @@ fn test_gallery_uploads(app, admin, pid) {
     let row = DB.table("product_images").where("id", "=", image_id).first();
     assert(Storage.disk("public").exists(row["path"]), "uploaded file exists on disk");
     assert(row["is_primary"] == 1 or row["is_primary"] == true, "primary image marked");
+    assert(int(row["sort_order"]) == 0, "cover photo is first in storefront order");
+
+    // Form-encoded checkbox values arrive as strings, not integers.
+    let form_upload = body(api(app, "POST", "/admin/api/products/" + string(pid) + "/images-form", map(
+        "image", PNG_1PX,
+        "alt_text", "Form cover",
+        "is_primary", "1",
+        "format", "json"
+    ), admin["cookie"], admin["csrf"]));
+    let form_id = form_upload["data"]["id"];
+    let form_row = DB.table("product_images").where("id", "=", form_id).first();
+    assert(form_row["is_primary"] == 1 or form_row["is_primary"] == true, "string checkbox value marks cover");
+    assert(int(form_row["sort_order"]) == 0, "selected cover moves to gallery front");
+    assert(int(DB.table("product_images").where("id", "=", image_id).first()["sort_order"]) == 1, "old cover remains behind new cover");
+
+    // Deleting the current cover promotes the next gallery image.
+    let del_cover = api(app, "DELETE", "/admin/api/images/" + string(form_id), null, admin["cookie"], admin["csrf"]);
+    assert(del_cover["status"] == 200, "cover image deleted");
+    let fallback = DB.table("product_images").where("id", "=", image_id).first();
+    assert(fallback["is_primary"] == 1 or fallback["is_primary"] == true, "remaining image becomes cover");
+    assert(int(fallback["sort_order"]) == 0, "fallback cover moves to gallery front");
+
+    let second_upload = body(api(app, "POST", "/admin/api/products/" + string(pid) + "/images", map(
+        "image", PNG_1PX,
+        "alt_text", "Reordered image"
+    ), admin["cookie"], admin["csrf"]));
+    let second_id = second_upload["data"]["id"];
+    let moved = api(app, "POST", "/admin/api/images/" + string(second_id) + "/move-form", map(
+        "direction", "-1", "product_id", pid, "format", "json"
+    ), admin["cookie"], admin["csrf"]);
+    assert(moved["status"] == 200, "gallery image reorders through form");
+    let reordered = DB.table("product_images").where("id", "=", second_id).first();
+    let previous_cover = DB.table("product_images").where("id", "=", image_id).first();
+    assert(int(reordered["sort_order"]) == 0, "moved image is first in gallery order");
+    assert(reordered["is_primary"] == 1 or reordered["is_primary"] == true, "moved first image becomes primary cover");
+    assert(int(previous_cover["sort_order"]) == 1 and int(previous_cover["is_primary"]) == 0, "old cover follows moved image and loses primary flag");
+    let del_moved_cover = api(app, "POST", "/admin/api/images/" + string(second_id) + "/delete-form", map(
+        "product_id", pid, "format", "json"
+    ), admin["cookie"], admin["csrf"]);
+    assert(del_moved_cover["status"] == 200, "reordered cover deleted");
+    let restored_cover = DB.table("product_images").where("id", "=", image_id).first();
+    assert(restored_cover["is_primary"] == 1 or restored_cover["is_primary"] == true, "remaining photo promoted after moved cover deletion");
 
     let bad = api(app, "POST", "/admin/api/products/" + string(pid) + "/images", map(
         "image", "AAAAAAAAAAAAAAAAAAAA"
@@ -217,12 +276,35 @@ fn test_gallery_uploads(app, admin, pid) {
     assert(bad["status"] == 422, "fake image (bad magic bytes) rejected");
 
     let gallery = body(api(app, "GET", "/admin/api/products/" + string(pid) + "/images", null, admin["cookie"], admin["csrf"]));
-    assert(gallery["data"].len() == 1, "gallery returns the uploaded image");
+    assert(gallery["data"].len() == 1, "gallery returns the remaining uploaded image");
 
     let del = api(app, "DELETE", "/admin/api/images/" + string(image_id), null, admin["cookie"], admin["csrf"]);
     assert(del["status"] == 200, "image deleted");
     assert(DB.table("product_images").where("id", "=", image_id).count() == 0, "image row removed");
     println("  [PASS] test_gallery_uploads");
+}
+
+fn test_product_delete_removes_images(app, admin, tag: string, cat_id) {
+    let created = body(api(app, "POST", "/admin/api/products", map(
+        "name", "Disposable image product " + tag,
+        "category_id", cat_id,
+        "sku", "DEL-IMG-" + tag,
+        "price_minor", 1500,
+        "short_description", "Temporary fixture",
+        "description", "Temporary fixture",
+        "status", "draft"
+    ), admin["cookie"], admin["csrf"]));
+    let product_id = created["data"]["id"];
+    let uploaded = body(api(app, "POST", "/admin/api/products/" + string(product_id) + "/images", map(
+        "image", PNG_1PX,
+        "alt_text", "Delete fixture"
+    ), admin["cookie"], admin["csrf"]));
+    let image = DB.table("product_images").where("id", "=", uploaded["data"]["id"]).first();
+    assert(Storage.disk("public").exists(image["path"]), "delete fixture image exists before product deletion");
+    let deleted = api(app, "DELETE", "/admin/api/products/" + string(product_id), null, admin["cookie"], admin["csrf"]);
+    assert(deleted["status"] == 200, "disposable product deleted");
+    assert(not Storage.disk("public").exists(image["path"]), "product deletion removes orphaned image file");
+    println("  [PASS] test_product_delete_removes_images");
 }
 
 fn test_permission_gate(app, tag: string) {
@@ -276,6 +358,7 @@ fn main() {
     test_variants(app, admin, tag, ids["pid"]);
     test_brands(app, admin, tag, ids["brand"]);
     test_gallery_uploads(app, admin, ids["pid"]);
+    test_product_delete_removes_images(app, admin, tag, ids["cat"]);
     test_permission_gate(app, tag);
 
     cleanup(ids, admin["email"], tag);

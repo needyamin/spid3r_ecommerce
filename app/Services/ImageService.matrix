@@ -14,6 +14,7 @@ import "app/Support/CatalogCache" as CatalogCache;
 import "framework/HttpException";
 import "framework/Filesystem/Storage";
 import "app/Repositories/CatalogRepository";
+import "app/Support/Images" as Images;
 
 public class ImageService {
     public let images;
@@ -121,20 +122,26 @@ public class ImageService {
             .update(map("sort_order", int(other["sort_order"])));
         DB.table("product_images").where("id", "=", other["id"])
             .update(map("sort_order", int(row["sort_order"])));
-        CatalogCache.bump_catalog_version();
+        // The storefront chooses the lowest sort_order; keep its chosen
+        // image and the admin cover badge in sync after every reorder.
+        let reordered = self.images.for_product(row["product_id"]);
+        if reordered.len() > 0 {
+            self.set_primary(reordered[0]["id"]);
+        } else {
+            CatalogCache.bump_catalog_version();
+        }
         return true;
     }
 
     public fn gallery(self, product_id) {
         let rows = self.images.for_product(product_id);
-        let disk = Storage.disk("public");
         let out = [];
         let i = 0;
         while i < rows.len() {
             let row = rows[i];
             out.push(map(
                 "id", row["id"],
-                "url", disk.url(row["path"]),
+                "url", Images.public_image_url(row["path"]),
                 "alt_text", row["alt_text"],
                 "sort_order", row["sort_order"],
                 "is_primary", row["is_primary"] == 1 or row["is_primary"] == true
@@ -194,8 +201,17 @@ public class ImageService {
         if row == null {
             throw not_found("Image not found.");
         }
+        let product_id = row["product_id"];
+        let was_primary = row["is_primary"] == 1 or row["is_primary"] == true;
         Storage.disk("public").delete(row["path"]);
         let removed = self.images.delete(image_id);
+        if removed and was_primary {
+            // Never leave the product without a cover when other photos remain.
+            let remaining = self.images.for_product(product_id);
+            if remaining.len() > 0 {
+                self.set_primary(remaining[0]["id"]);
+            }
+        }
         CatalogCache.bump_catalog_version();
         return removed;
     }

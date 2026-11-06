@@ -5,7 +5,7 @@
 @if(product.has_image)
   <img class="dz-p-img" src="{{ product.image_url }}" alt="{{ product.name }}" loading="lazy" decoding="async">
 @else
-  <div class="dz-p-img-placeholder">📦</div>
+  <div class="dz-p-img-placeholder" aria-hidden="true"><span>No image</span></div>
 @endif
   <div class="dz-p-body">
 @if(product.compare_display)

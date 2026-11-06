@@ -2,6 +2,7 @@
 @section('title', title)
 @section('meta_description', meta_description)
 @section("content")
+<div class="dz-admin-page dz-product-editor">
 @include("partials.admin_nav")
 
   <nav aria-label="breadcrumb" class="mb-2">
@@ -12,32 +13,43 @@
     </ol>
   </nav>
 
-  <div class="d-flex flex-wrap justify-content-between align-items-center mb-3">
+  <header class="dz-page-heading dz-product-heading mb-4">
     <div>
+      <span class="dz-eyebrow">Catalog / Product editor</span>
       <h1 class="page-title mb-1">{{ product.name }}</h1>
-      <p class="small text-secondary mb-0">
-        SKU {{ product.sku }} · {{ product_price_display }} · slug <code>{{ product.slug }}</code>
-      </p>
+      <div class="d-flex flex-wrap align-items-center gap-2 small text-secondary">
+        <span>SKU <code>{{ product.sku }}</code></span><span aria-hidden="true">·</span><strong class="text-dark">{{ product_price_display }}</strong><span aria-hidden="true">·</span><code>{{ product.slug }}</code>
+@if(product_is_published)
+        <span class="badge text-bg-success">Published</span>
+@else
+        <span class="badge text-bg-secondary">{{ product.status }}</span>
+@endif
+      </div>
     </div>
-    <div class="d-flex flex-wrap gap-2">
-      <a class="btn btn-light border" href="/product/{{ product.slug }}" target="_blank" rel="noopener">View on storefront</a>
-@if(product_status_options)
-      <form method="post" action="/admin/api/products/{{ product.id }}/publish-form" data-ajax="admin" class="d-inline">
-        <input type="hidden" name="_csrf" value="{{ csrf }}">
-        <button class="btn btn-primary" type="submit">Publish</button>
-      </form>
+    <div class="dz-product-heading-actions">
+@if(product_is_published)
+      <a class="btn btn-light border" href="/product/{{ product.slug }}" target="_blank" rel="noopener">View storefront</a>
+@else
+      <span class="small text-secondary">This product is hidden from shoppers.</span>
+@endif
+@if(product_is_published)
       <form method="post" action="/admin/api/products/{{ product.id }}/unpublish-form" data-ajax="admin" class="d-inline">
         <input type="hidden" name="_csrf" value="{{ csrf }}">
         <button class="btn btn-light border" type="submit">Unpublish</button>
       </form>
+@else
+      <form method="post" action="/admin/api/products/{{ product.id }}/publish-form" data-ajax="admin" class="d-inline">
+        <input type="hidden" name="_csrf" value="{{ csrf }}">
+        <button class="btn btn-primary" type="submit">Publish</button>
+      </form>
 @endif
     </div>
-  </div>
+  </header>
 
-  <div class="row g-3">
+  <div class="row g-3 dz-product-layout">
     <div class="col-12 col-xl-8">
       <!-- ---------------- details ---------------- -->
-      <div class="dz-card p-4 my-3">
+      <div class="dz-card dz-editor-card p-3 p-lg-4 my-3">
         <h2 class="h6 mb-3">Product details</h2>
         <form method="post" action="/admin/api/products/{{ product.id }}/update" data-ajax="admin">
           <input type="hidden" name="_csrf" value="{{ csrf }}">
@@ -137,7 +149,7 @@
       </div>
 
       <!-- ---------------- images ---------------- -->
-      <div class="dz-card p-4 my-3">
+      <div class="dz-card dz-editor-card p-3 p-lg-4 my-3">
         <h2 class="h6 mb-1">Gallery</h2>
         <p class="small text-secondary">Images are validated by their file signature (PNG, JPEG, GIF, WEBP) and capped at 2 MB. The cover image is the first one in the gallery and the photo shown on product cards.</p>
 @if(has_gallery)
@@ -170,23 +182,23 @@
                 </form>
 @endif
 @if(img.is_first)
-                <button class="btn btn-light border btn-sm" type="button" disabled>↑</button>
+                <button class="btn btn-light border btn-sm" type="button" aria-label="Already first image" disabled>↑</button>
 @else
                 <form method="post" action="/admin/api/images/{{ img.id }}/move-form" data-ajax="admin" class="d-inline">
                   <input type="hidden" name="_csrf" value="{{ csrf }}">
                   <input type="hidden" name="product_id" value="{{ product.id }}">
                   <input type="hidden" name="direction" value="-1">
-                  <button class="btn btn-light border btn-sm" type="submit" title="Move earlier">↑</button>
+                  <button class="btn btn-light border btn-sm" type="submit" aria-label="Move image earlier" title="Move earlier">↑</button>
                 </form>
 @endif
 @if(img.is_last)
-                <button class="btn btn-light border btn-sm" type="button" disabled>↓</button>
+                <button class="btn btn-light border btn-sm" type="button" aria-label="Already last image" disabled>↓</button>
 @else
                 <form method="post" action="/admin/api/images/{{ img.id }}/move-form" data-ajax="admin" class="d-inline">
                   <input type="hidden" name="_csrf" value="{{ csrf }}">
                   <input type="hidden" name="product_id" value="{{ product.id }}">
                   <input type="hidden" name="direction" value="1">
-                  <button class="btn btn-light border btn-sm" type="submit" title="Move later">↓</button>
+                  <button class="btn btn-light border btn-sm" type="submit" aria-label="Move image later" title="Move later">↓</button>
                 </form>
 @endif
                 <form method="post" action="/admin/api/images/{{ img.id }}/delete-form" data-ajax="admin" class="d-inline" data-confirm="Remove this image from the gallery?">
@@ -232,7 +244,7 @@
       </div>
 
       <!-- ---------------- variants ---------------- -->
-      <div class="dz-card p-4 my-3">
+      <div class="dz-card dz-editor-card p-3 p-lg-4 my-3">
         <h2 class="h6 mb-1">Variants</h2>
         <p class="small text-secondary">A variant is a purchasable option of this product with its own SKU and price. Leave empty for a simple product. <strong>Note:</strong> the storefront currently sells the base product price — variant prices are recorded but not yet charged.</p>
 @if(has_variants)
@@ -258,17 +270,28 @@
                     <input class="form-control form-control-sm dz-admin-input" name="name" value="{{ v.name }}" aria-label="Variant name">
                     <input class="form-control form-control-sm dz-admin-price" name="price" type="number" step="0.01" min="0.01" value="{{ v.price }}" aria-label="Variant price in BDT">
 @if(v.is_active)
-                    <input type="hidden" name="is_active" value="0">
-                    <button class="btn btn-light border btn-sm" type="submit">Save</button>
-@else
                     <input type="hidden" name="is_active" value="1">
-                    <button class="btn btn-light border btn-sm" type="submit">Save</button>
+@else
+                    <input type="hidden" name="is_active" value="0">
 @endif
+                    <button class="btn btn-light border btn-sm" type="submit">Save</button>
                   </form>
-                  <form method="post" action="/admin/api/products/{{ product.id }}/variants/{{ v.id }}/delete-form" data-ajax="admin" class="d-inline">
-                    <input type="hidden" name="_csrf" value="{{ csrf }}">
-                    <button class="btn btn-light border btn-sm" type="submit">Delete</button>
-                  </form>
+                  <div class="d-flex flex-wrap gap-1">
+                    <form method="post" action="/admin/api/products/{{ product.id }}/variants/{{ v.id }}/update-form" data-ajax="admin" class="d-inline">
+                      <input type="hidden" name="_csrf" value="{{ csrf }}">
+@if(v.is_active)
+                      <input type="hidden" name="is_active" value="0">
+                      <button class="btn btn-light border btn-sm" type="submit">Deactivate</button>
+@else
+                      <input type="hidden" name="is_active" value="1">
+                      <button class="btn btn-light border btn-sm" type="submit">Activate</button>
+@endif
+                    </form>
+                    <form method="post" action="/admin/api/products/{{ product.id }}/variants/{{ v.id }}/delete-form" data-ajax="admin" class="d-inline" data-confirm="Delete this variant?">
+                      <input type="hidden" name="_csrf" value="{{ csrf }}">
+                      <button class="btn btn-outline-danger btn-sm" type="submit">Delete</button>
+                    </form>
+                  </div>
                 </td>
               </tr>
 @endforeach
@@ -309,19 +332,19 @@
 
     <div class="col-12 col-xl-4">
       <!-- ---------------- inventory ---------------- -->
-      <div class="dz-card p-4 my-3">
+      <div class="dz-card dz-editor-card p-3 p-lg-4 my-3">
         <h2 class="h6 mb-3">Inventory</h2>
         <div class="row g-2 mb-3">
-          <div class="col-3">
+          <div class="col-6 col-md-3">
             <div class="dz-stat"><span>On hand</span><strong>{{ stock.quantity }}</strong></div>
           </div>
-          <div class="col-3">
+          <div class="col-6 col-md-3">
             <div class="dz-stat"><span>Available</span><strong>{{ stock_available }}</strong></div>
           </div>
-          <div class="col-3">
+          <div class="col-6 col-md-3">
             <div class="dz-stat"><span>Reserved</span><strong>{{ stock.reserved }}</strong></div>
           </div>
-          <div class="col-3">
+          <div class="col-6 col-md-3">
             <div class="dz-stat"><span>Low at</span><strong>{{ stock.low_stock_threshold }}</strong></div>
           </div>
         </div>
@@ -377,7 +400,7 @@
       </div>
 
       <!-- ---------------- seo ---------------- -->
-      <div class="dz-card p-4 my-3">
+      <div class="dz-card dz-editor-card p-3 p-lg-4 my-3">
         <h2 class="h6 mb-3">Search engine listing</h2>
         <form method="post" action="/admin/api/products/{{ product.id }}/update" data-ajax="admin">
           <input type="hidden" name="_csrf" value="{{ csrf }}">
@@ -394,14 +417,18 @@
       </div>
 
       <!-- ---------------- danger zone ---------------- -->
-      <div class="dz-card p-4 my-3">
+      <div class="dz-card dz-editor-card p-3 p-lg-4 my-3">
         <h2 class="h6 mb-2">More actions</h2>
         <div class="d-flex flex-wrap gap-2">
           <form method="post" action="/admin/api/products/{{ product.id }}/featured-form" data-ajax="admin" class="d-inline">
             <input type="hidden" name="_csrf" value="{{ csrf }}">
-            <button class="btn btn-light border" type="submit">Toggle featured</button>
+@if(product_featured)
+            <button class="btn btn-light border" type="submit">Remove featured status</button>
+@else
+            <button class="btn btn-light border" type="submit">Mark as featured</button>
+@endif
           </form>
-          <form method="post" action="/admin/api/products/{{ product.id }}/delete-form" data-ajax="admin" class="d-inline">
+          <form method="post" action="/admin/api/products/{{ product.id }}/delete-form" data-ajax="admin" data-success-redirect="/admin/products" class="d-inline">
             <input type="hidden" name="_csrf" value="{{ csrf }}">
             <button class="btn btn-outline-danger" type="submit" data-confirm="Delete this product? Products that belong to an order cannot be deleted.">Delete product</button>
           </form>
@@ -409,4 +436,5 @@
       </div>
     </div>
   </div>
+</div>
 @endsection
