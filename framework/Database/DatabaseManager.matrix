@@ -236,7 +236,7 @@ public class DatabaseManager {
             if self.driver == "sqlite" {
                 self.db_handle.exec("PRAGMA wal_checkpoint(TRUNCATE);");
                 self.db_handle.handle.close();
-            } else {
+            } elif self.driver != "mysql" {
                 self.db_handle.close();
             }
             self.db_handle = null;
