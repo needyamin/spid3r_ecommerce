@@ -1,0 +1,166 @@
+// framework/Auth/Jwt.matrix
+// Spid3rWeb Stateless JWT (HS256) Token Engine
+//
+// Zero-DB-lookup stateless authentication for APIs and microservices.
+// Uses Spid3r native `hmac_sha256`, `base64_encode`, `base64_decode`,
+// and `secure_compare` for constant-time signature verification.
+
+import "framework/Config/Config";
+
+fn b64url_encode(input: string) -> string {
+    let b64 = base64_encode(input).replace("+", "-").replace("/", "_");
+    while b64.ends_with("=") {
+        b64 = b64.slice(0, b64.len() - 1);
+    }
+    return b64;
+}
+
+fn b64url_decode(input: string) -> string {
+    let b64 = input.replace("-", "+").replace("_", "/");
+    let rem = b64.len() % 4;
+    if rem == 2 {
+        b64 = b64 + "==";
+    } elif rem == 3 {
+        b64 = b64 + "=";
+    }
+    let res = base64_decode(b64);
+    let raw_bytes = res;
+    if type_of(res) == "result" {
+        if res.is_err() {
+            return "";
+        }
+        raw_bytes = res.unwrap();
+    }
+    if type_of(raw_bytes) == "string" {
+        return raw_bytes;
+    }
+    if type_of(raw_bytes) == "bytes" {
+        let chars = [];
+        let i = 0;
+        let n = len(raw_bytes);
+        while i < n {
+            chars.push(chr(raw_bytes.get(i)));
+            i += 1;
+        }
+        return chars.join("");
+    }
+    return "";
+}
+
+fn resolve_jwt_secret(custom_secret: string = "") -> string {
+    if custom_secret != "" {
+        return custom_secret;
+    }
+    let env_jwt = env("JWT_SECRET");
+    if env_jwt.is_some() and string(env_jwt.unwrap()).trim() != "" {
+        return string(env_jwt.unwrap()).trim();
+    }
+    let app_key = string(Config.get("app.key", ""));
+    if app_key != "" {
+        return app_key;
+    }
+    let env_key = env("APP_KEY");
+    if env_key.is_some() and string(env_key.unwrap()).trim() != "" {
+        return string(env_key.unwrap()).trim();
+    }
+    return "spid3rweb-default-jwt-secret-key-change-in-prod";
+}
+
+public class JwtEngine {
+    public fn sign(self, payload, ttl: int = 3600, secret: string = "") -> string {
+        let key = resolve_jwt_secret(secret);
+        let header_json = json_write({"alg": "HS256", "typ": "JWT"});
+        let claims = {};
+        if type_of(payload) == "map" {
+            for (k, v) in payload {
+                if k != "password" {
+                    claims[k] = v;
+                }
+            }
+        }
+        let now = unix_time();
+        if not claims.has("iat") {
+            claims["iat"] = now;
+        }
+        if ttl > 0 and not claims.has("exp") {
+            claims["exp"] = now + ttl;
+        }
+        let header_b64 = b64url_encode(header_json);
+        let payload_b64 = b64url_encode(json_write(claims));
+        let signing_input = header_b64 + "." + payload_b64;
+        let sig = b64url_encode(hmac_sha256(key, signing_input));
+        return signing_input + "." + sig;
+    }
+
+    public fn verify(self, token: string, secret: string = "") {
+        if token == "" {
+            return null;
+        }
+        let parts = token.split(".");
+        if parts.len() != 3 {
+            return null;
+        }
+        let header_b64 = parts[0];
+        let payload_b64 = parts[1];
+        let provided_sig = parts[2];
+        if header_b64 == "" or payload_b64 == "" or provided_sig == "" {
+            return null;
+        }
+
+        let key = resolve_jwt_secret(secret);
+        let signing_input = header_b64 + "." + payload_b64;
+        let expected_sig = b64url_encode(hmac_sha256(key, signing_input));
+        if not secure_compare(provided_sig, expected_sig) {
+            return null;
+        }
+
+        let raw_payload = b64url_decode(payload_b64);
+        if raw_payload == "" {
+            return null;
+        }
+        let parsed = json_parse(raw_payload);
+        if type_of(parsed) == "result" {
+            if parsed.is_err() {
+                return null;
+            }
+            parsed = parsed.unwrap();
+        }
+        let claims = parsed;
+        if type_of(claims) != "map" {
+            return null;
+        }
+
+        if claims.has("exp") and claims["exp"] != null {
+            try {
+                let exp_time = int(claims["exp"]);
+                if unix_time() > exp_time {
+                    return null;
+                }
+            } catch (_e) {
+                return null;
+            }
+        }
+        return claims;
+    }
+
+    public fn decode_unverified(self, token: string) {
+        let parts = token.split(".");
+        if parts.len() != 3 {
+            return null;
+        }
+        let raw_payload = b64url_decode(parts[1]);
+        if raw_payload == "" {
+            return null;
+        }
+        let parsed = json_parse(raw_payload);
+        if type_of(parsed) == "result" {
+            if parsed.is_ok() {
+                return parsed.unwrap();
+            }
+            return null;
+        }
+        return parsed;
+    }
+}
+
+public let Jwt = new JwtEngine();

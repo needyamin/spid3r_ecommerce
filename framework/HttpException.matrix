@@ -38,6 +38,21 @@ public fn is_http_exception(e) -> bool {
     return type_of(e) == "map" and e.has("__spid3rweb_exception") and e["__spid3rweb_exception"] == true;
 }
 
+// Immediately abort request processing with an HTTP status code and message.
+public fn abort_http(status: int, message: string = "", errors = null) {
+    let msg = message;
+    if msg == "" {
+        if status == 400 { msg = "Bad Request."; }
+        elif status == 401 { msg = "Authentication required."; }
+        elif status == 403 { msg = "This action is unauthorized."; }
+        elif status == 404 { msg = "Not Found."; }
+        elif status == 422 { msg = "The given data was invalid."; }
+        elif status == 429 { msg = "Too Many Requests."; }
+        else { msg = "HTTP Error " + string(status); }
+    }
+    throw make_http_exception(status, msg, errors);
+}
+
 // 400 — malformed request syntax.
 public fn bad_request(message: string = "Bad Request.") {
     return make_http_exception(400, message);

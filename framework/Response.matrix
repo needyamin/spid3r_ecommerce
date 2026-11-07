@@ -5,6 +5,25 @@ import "http";
 import "framework/Env";
 import "framework/Config/Config";
 
+fn init_hsts_enabled() -> bool {
+    let hsts = env("SPID3R_HSTS");
+    return hsts.is_some() and string(hsts.unwrap()).trim().lower() == "1";
+}
+
+let HSTS_ENABLED = init_hsts_enabled();
+
+fn resolve_response_cookie_secret() -> string {
+    let app_key = string(Config.get("app.key", ""));
+    if app_key != "" {
+        return app_key;
+    }
+    let env_key = env("APP_KEY");
+    if env_key.is_some() and string(env_key.unwrap()).trim() != "" {
+        return string(env_key.unwrap()).trim();
+    }
+    return "spid3rweb-default-cookie-secret-key";
+}
+
 public class Response {
     public let status_code;
     public let headers;
@@ -17,12 +36,6 @@ public class Response {
         // intentionally NOT global defaults: blanket access-control-allow-*
         // should only be set by CorsMiddleware / API routing, never on
         // cookie-authenticated HTML responses.
-        //
-        // CSP: script-src is STRICT ('self', no inline) — the app ships no
-        // inline JavaScript. style-src keeps 'unsafe-inline' because the
-        // framework's standalone error pages (ErrorRenderer) must render
-        // even when no static assets are reachable; executable content is
-        // not affected. A page that needs more can override the header.
         self.headers = map(
             "content-type", "text/html; charset=utf-8",
             "x-content-type-options", "nosniff",
@@ -33,7 +46,9 @@ public class Response {
             "permissions-policy", "camera=(), microphone=(), geolocation=()",
             "content-security-policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'; object-src 'none'"
         );
-        // Opt-in HSTS for TLS deployments (SPID3R_HSTS=1)
+        // Opt-in HSTS for TLS deployments (SPID3R_HSTS=1). Evaluated per
+        // response (not cached at module load) so runtime env changes — e.g.
+        // tests calling env_set() after boot — are honored, matching v1.
         let hsts = env("SPID3R_HSTS");
         if hsts.is_some() and string(hsts.unwrap()).trim().lower() == "1" {
             self.headers["strict-transport-security"] = "max-age=31536000; includeSubDomains";
@@ -109,8 +124,63 @@ public class Response {
         return self;
     }
 
+    public fn signed_cookie(self, name: string, value: string, path: string = "/", max_age: int = 86400, secure = null) {
+        let sig = hmac_sha256(resolve_response_cookie_secret(), name + "=" + value);
+        return self.cookie(name, value + "." + sig, path, max_age, secure);
+    }
+
+    public fn clear_cookie(self, name: string, path: string = "/") {
+        return self.cookie(name, "", path, 0);
+    }
+
     public fn status(self, code: int) {
         self.status_code = code;
+        return self;
+    }
+
+    // Express-style fluent methods on `res` (`res.status(201).json(data)`)
+    public fn json(self, data, status: int = 0) {
+        if status > 0 {
+            self.status_code = status;
+        }
+        self.body = json_write(data);
+        self.header("content-type", "application/json; charset=utf-8");
+        return self;
+    }
+
+    public fn html(self, content: string, status: int = 0) {
+        if status > 0 {
+            self.status_code = status;
+        }
+        self.body = string(content);
+        self.header("content-type", "text/html; charset=utf-8");
+        return self;
+    }
+
+    public fn text(self, content: string, status: int = 0) {
+        if status > 0 {
+            self.status_code = status;
+        }
+        self.body = string(content);
+        self.header("content-type", "text/plain; charset=utf-8");
+        return self;
+    }
+
+    public fn send(self, content, status: int = 0) {
+        if status > 0 {
+            self.status_code = status;
+        }
+        let t = type_of(content);
+        if t == "map" or t == "list" {
+            return self.json(content);
+        }
+        return self.html(string(content));
+    }
+
+    public fn redirect(self, url: string, status: int = 302) {
+        self.status_code = status;
+        self.body = "";
+        self.header("location", url);
         return self;
     }
 
@@ -136,6 +206,12 @@ public fn json(data, status: int = 200) {
 public fn html(content: string, status: int = 200) {
     let res = new Response(content, status);
     res.header("content-type", "text/html; charset=utf-8");
+    return res;
+}
+
+public fn text(content: string, status: int = 200) {
+    let res = new Response(content, status);
+    res.header("content-type", "text/plain; charset=utf-8");
     return res;
 }
 

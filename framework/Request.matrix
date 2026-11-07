@@ -1,30 +1,49 @@
 // framework/Request.matrix
-// Spid3rWeb HTTP Request Representation (query/form/JSON parsing, session
-// extraction, typed accessors). Declarative validation lives in
-// framework/Validator.matrix; validate() below delegates to it.
+// Spid3rWeb HTTP Request Representation (query/form/JSON/multipart parsing,
+// method spoofing, cookies, file uploads, session & auth accessors, and
+// one-line validation).
 
 import "http";
 import "framework/Validator";
 import "framework/Config/Config";
+import "framework/HttpException";
+import "framework/Session/Session";
+import "framework/Filesystem/Storage";
+
+fn resolve_cookie_secret() -> string {
+    let app_key = string(Config.get("app.key", ""));
+    if app_key != "" {
+        return app_key;
+    }
+    let env_key = env("APP_KEY");
+    if env_key.is_some() and string(env_key.unwrap()).trim() != "" {
+        return string(env_key.unwrap()).trim();
+    }
+    return "spid3rweb-default-cookie-secret-key";
+}
 
 public class Request {
     public let method;
+    public let original_method;
     public let path;
     public let params;
     public let query_params;
     public let headers;
+    public let cookies;
+    public let files;
     public let body;
     public let data;
     public let session_id;
     // Request-scoped auth state (an AuthManager instance created per request
-    // by Application.handle_request). Prefer this over the global Auth
-    // facade inside the request lifecycle: the global is shared across
-    // concurrent connections, per-request state is not.
+    // by Application.handle_request).
     public let auth;
-    // The Application instance handling this request (set by
-    // Application.handle_request). Gives handlers access to the service
-    // container (req.app.container) and router without importing globals.
+    public let user_data;
+    // The Application instance handling this request.
     public let app;
+    // Mutable Response builder for 2-arg Express-style `(req, res) => ...` handlers.
+    public let res;
+    // Lazy general-purpose SessionStore (`req.session()`).
+    public let session_store;
     // How the session token arrived: "cookie" | "bearer" | ""
     public let session_source;
     // Original raw request map (kept for driver-specific accessors)
@@ -34,14 +53,20 @@ public class Request {
         self.params = map();
         self.query_params = map();
         self.headers = map();
+        self.cookies = map();
+        self.files = map();
         self.data = map();
         self.body = "";
         self.method = "GET";
+        self.original_method = "GET";
         self.path = "/";
         self.session_id = "";
         self.session_source = "";
         self.auth = null;
+        self.user_data = null;
         self.app = null;
+        self.res = null;
+        self.session_store = null;
         self.raw = null;
 
         if raw_req != null {
@@ -53,6 +78,7 @@ public class Request {
         self.raw = raw;
         if raw.has("method") {
             self.method = string(raw["method"]).upper();
+            self.original_method = self.method;
         }
         if raw.has("path") {
             self.path = string(raw["path"]);
@@ -65,6 +91,11 @@ public class Request {
             for k in h.keys() {
                 self.headers[string(k).lower()] = string(h[k]);
             }
+        }
+
+        // Parse cookies from Cookie header
+        if self.headers.has("cookie") {
+            self.parse_cookies(string(self.headers["cookie"]));
         }
 
         // Direct data injection (useful for tests and programmatic dispatch)
@@ -105,8 +136,8 @@ public class Request {
             }
         }
 
-        // Extract body: support JSON and URL-encoded form data
-        let is_json = false;
+        // Extract body: support JSON, URL-encoded form data, and multipart/form-data
+        let parsed_as_json = false;
         let parsed_json = http_body_json(raw);
         if parsed_json.is_ok() {
             let val = parsed_json.unwrap();
@@ -114,13 +145,13 @@ public class Request {
                 for k in val.keys() {
                     self.data[string(k)] = val[k];
                 }
-                is_json = true;
+                parsed_as_json = true;
             }
         }
 
         if raw.has("body") and raw["body"] != null {
             self.body = string(raw["body"]);
-            if not is_json and self.body != "" {
+            if not parsed_as_json and self.body != "" {
                 let ct = "";
                 if self.headers.has("content-type") {
                     ct = string(self.headers["content-type"]).lower();
@@ -128,17 +159,44 @@ public class Request {
                 if ct.contains("application/x-www-form-urlencoded") or (ct == "" and self.body.contains("=")) {
                     self.parse_form_encoded(self.body);
                 } elif ct.contains("multipart/form-data") {
-                    // Browser forms with FormData send multipart bodies.
-                    // Pass the ORIGINAL-case header: the boundary value is
-                    // case-sensitive and must match the body exactly.
                     let ct_raw = string(self.headers["content-type"]);
                     self.parse_multipart(self.body, ct_raw);
                 }
             }
         }
 
+        // HTML Form Method Spoofing (_method or X-HTTP-Method-Override on POST)
+        if self.method == "POST" {
+            let spoof = "";
+            if self.headers.has("x-http-method-override") {
+                spoof = string(self.headers["x-http-method-override"]).trim().upper();
+            } elif self.data.has("_method") {
+                spoof = string(self.data["_method"]).trim().upper();
+            } elif self.query_params.has("_method") {
+                spoof = string(self.query_params["_method"]).trim().upper();
+            }
+            if spoof == "PUT" or spoof == "PATCH" or spoof == "DELETE" {
+                self.method = spoof;
+            }
+        }
+
         // Extract Session Cookie or Bearer Token
         self.session_id = self.extract_session_token();
+    }
+
+    fn parse_cookies(self, cookie_header: string) {
+        let pairs = cookie_header.split(";");
+        for p in pairs {
+            let trimmed = p.trim();
+            if trimmed != "" {
+                let eq = trimmed.index_of("=");
+                if eq > 0 {
+                    let k = trimmed.slice(0, eq).trim();
+                    let v = trimmed.slice(eq + 1, trimmed.len()).trim();
+                    self.cookies[k] = url_decode(v);
+                }
+            }
+        }
     }
 
     fn parse_query_string(self, qs: string) {
@@ -188,8 +246,7 @@ public class Request {
         }
     }
 
-    // Parse a multipart/form-data body (what browser FormData sends).
-    // Text fields only — file upload parts (filename=...) are skipped.
+    // Parse a multipart/form-data body (both text fields and file uploads).
     fn parse_multipart(self, body_text: string, content_type: string) {
         let b_idx = content_type.index_of("boundary=");
         if b_idx < 0 {
@@ -223,32 +280,69 @@ public class Request {
                     continue;
                 }
             }
-            let part_headers = c.slice(0, sep).lower();
+            let part_headers_raw = c.slice(0, sep);
+            let part_headers = part_headers_raw.lower();
             let value = c.slice(sep + header_len, c.len());
 
             // Strip the trailing newline that preceded the boundary
-            while value.ends_with("\n") or value.ends_with("\r") {
+            if value.ends_with("\r\n") {
+                value = value.slice(0, value.len() - 2);
+            } elif value.ends_with("\n") or value.ends_with("\r") {
                 value = value.slice(0, value.len() - 1);
-            }
-
-            // Skip file uploads (binary content is not supported here)
-            if part_headers.contains("filename=") {
-                continue;
             }
 
             let n_idx = part_headers.index_of("name=\"");
             if n_idx < 0 {
                 continue;
             }
-            let rest = part_headers.slice(n_idx + 6, part_headers.len());
+            let rest = part_headers_raw.slice(n_idx + 6, part_headers_raw.len());
             let end_q = rest.index_of("\"");
             if end_q < 0 {
                 continue;
             }
             let field = rest.slice(0, end_q);
-            if field != "" {
-                self.data[field] = value;
+            if field == "" {
+                continue;
             }
+
+            // File upload part (`filename="..."`)
+            let fn_idx = part_headers.index_of("filename=\"");
+            if fn_idx >= 0 {
+                let fn_rest = part_headers_raw.slice(fn_idx + 10, part_headers_raw.len());
+                let fn_end = fn_rest.index_of("\"");
+                let filename = "";
+                if fn_end >= 0 {
+                    let raw_fn = fn_rest.slice(0, fn_end).replace("\\", "/");
+                    let fn_segs = raw_fn.split("/");
+                    filename = fn_segs[fn_segs.len() - 1];
+                }
+                let part_ct = "application/octet-stream";
+                let ct_idx = part_headers.index_of("content-type:");
+                if ct_idx >= 0 {
+                    let ct_sub = part_headers_raw.slice(ct_idx + 13, part_headers_raw.len());
+                    let ct_lines = ct_sub.split("\n");
+                    if ct_lines.len() > 0 {
+                        part_ct = ct_lines[0].trim();
+                    }
+                }
+                if filename != "" {
+                    let ext = "";
+                    let dot_segs = filename.split(".");
+                    if dot_segs.len() > 1 {
+                        ext = "." + dot_segs[dot_segs.len() - 1];
+                    }
+                    self.files[field] = {
+                        "name": filename,
+                        "type": part_ct,
+                        "size": value.len(),
+                        "content": value,
+                        "ext": ext
+                    };
+                }
+                continue;
+            }
+
+            self.data[field] = value;
         }
     }
 
@@ -263,27 +357,16 @@ public class Request {
         }
         // 2. Cookie: <session cookie>=<token>  (name from config/session.matrix)
         let cookie_name = Config.get("session.cookie", "spid3r_session");
-        if self.headers.has("cookie") {
-            let cookies = self.headers["cookie"].split(";");
-            for c in cookies {
-                let pair = c.trim().split("=");
-                if pair[0] == cookie_name and pair.len() > 1 {
-                    self.session_source = "cookie";
-                    return pair[1].trim();
-                }
-            }
+        if self.cookies.has(cookie_name) {
+            self.session_source = "cookie";
+            return string(self.cookies[cookie_name]);
         }
         return "";
     }
 
     // ------------------------------------------------------------------
-    // Client identity
+    // Client Identity & Content Negotiation
     // ------------------------------------------------------------------
-    // Best-effort client IP. Direct socket peers: the runtime may expose
-    // the peer address under several key names depending on version, so we
-    // probe the common ones. Reverse-proxy deployments: set
-    // SPID3R_TRUST_PROXY=1 to honor X-Forwarded-For / X-Real-IP (only do
-    // this when the proxy overwrites — never appends — these headers).
     public fn client_ip(self) -> string {
         let trust_proxy = false;
         let tp = env("SPID3R_TRUST_PROXY");
@@ -324,6 +407,106 @@ public class Request {
         return "unknown";
     }
 
+    public fn ip(self) -> string {
+        return self.client_ip();
+    }
+
+    public fn bearer(self) -> string {
+        if self.headers.has("authorization") {
+            let auth = string(self.headers["authorization"]);
+            if auth.starts_with("Bearer ") {
+                return auth.slice(7, auth.len()).trim();
+            }
+        }
+        return "";
+    }
+
+    public fn user(self) {
+        if self.user_data != null {
+            return self.user_data;
+        }
+        if self.auth != null {
+            return self.auth.user();
+        }
+        return null;
+    }
+
+    public fn session(self) {
+        if self.session_store == null {
+            let sid = self.cookie("spid3r_sid", "");
+            self.session_store = new SessionStore(string(sid));
+        }
+        return self.session_store;
+    }
+
+    public fn is_json(self) -> bool {
+        let ct = string(self.header("content-type", "")).lower();
+        return ct.contains("application/json");
+    }
+
+    public fn wants_json(self) -> bool {
+        let accept = string(self.header("accept", "")).lower();
+        return self.path.starts_with("/api/") or accept.contains("application/json") or self.is_json();
+    }
+
+    // ------------------------------------------------------------------------
+    // Cookie & File Upload Accessors
+    // ------------------------------------------------------------------------
+
+    public fn cookie(self, name: string, default_val = null) {
+        if self.cookies.has(name) {
+            return self.cookies[name];
+        }
+        return default_val;
+    }
+
+    public fn signed_cookie(self, name: string, default_val = null) {
+        if not self.cookies.has(name) {
+            return default_val;
+        }
+        let raw_val = string(self.cookies[name]);
+        let parts = raw_val.split(".");
+        if parts.len() < 2 {
+            return default_val;
+        }
+        let sig = parts[parts.len() - 1];
+        if sig == "" or raw_val.len() <= sig.len() + 1 {
+            return default_val;
+        }
+        let payload = raw_val.slice(0, raw_val.len() - sig.len() - 1);
+        let expected = hmac_sha256(resolve_cookie_secret(), name + "=" + payload);
+        if secure_compare(sig, expected) {
+            return payload;
+        }
+        return default_val;
+    }
+
+    public fn file(self, key: string) {
+        if self.files.has(key) {
+            return self.files[key];
+        }
+        return null;
+    }
+
+    public fn has_file(self, key: string) -> bool {
+        return self.files.has(key) and self.files[key] != null;
+    }
+
+    public fn store_file(self, key: string, directory: string = "uploads", disk_name: string = "public") -> string {
+        let f = self.file(key);
+        if f == null {
+            throw bad_request("No uploaded file found for field '" + key + "'.");
+        }
+        let safe_name = string(unix_time()) + "_" + hex_encode(random_bytes(6).unwrap()) + string(f["ext"]);
+        let rel_path = directory;
+        if rel_path != "" and not rel_path.ends_with("/") {
+            rel_path = rel_path + "/";
+        }
+        rel_path = rel_path + safe_name;
+        Storage.disk(disk_name).put(rel_path, string(f["content"]));
+        return rel_path;
+    }
+
     // ------------------------------------------------------------------------
     // Input Accessors
     // ------------------------------------------------------------------------
@@ -355,6 +538,64 @@ public class Request {
         } catch (_e) {
             return default_val;
         }
+    }
+
+    public fn float(self, key: string, default_val: float = 0.0) -> float {
+        let v = self.input(key, null);
+        if v == null { return default_val; }
+        try {
+            return float(v);
+        } catch (_e) {
+            return default_val;
+        }
+    }
+
+    public fn bool(self, key: string, default_val: bool = false) -> bool {
+        let v = self.input(key, null);
+        if v == null { return default_val; }
+        if type_of(v) == "bool" { return v; }
+        let s = string(v).trim().lower();
+        if s == "true" or s == "1" or s == "yes" or s == "on" { return true; }
+        if s == "false" or s == "0" or s == "no" or s == "off" { return false; }
+        return default_val;
+    }
+
+    public fn only(self, keys) {
+        let out = {};
+        for k in keys {
+            let sk = string(k);
+            if self.has(sk) {
+                out[sk] = self.input(sk);
+            }
+        }
+        return out;
+    }
+
+    public fn except(self, keys) {
+        let excluded = {};
+        for k in keys {
+            excluded[string(k)] = true;
+        }
+        let out = {};
+        for (k, v) in self.data {
+            if not excluded.has(k) {
+                out[k] = v;
+            }
+        }
+        return out;
+    }
+
+    public fn page(self, default_val: int = 1) -> int {
+        let p = self.int("page", default_val);
+        if p < 1 { return 1; }
+        return p;
+    }
+
+    public fn per_page(self, default_val: int = 15, max_val: int = 100) -> int {
+        let pp = self.int("per_page", default_val);
+        if pp < 1 { return default_val; }
+        if pp > max_val { return max_val; }
+        return pp;
     }
 
     public fn has(self, key: string) -> bool {
@@ -395,5 +636,13 @@ public class Request {
         return engine.check(self, rules);
     }
 
+    // Validate request inputs against `rules`. Throws a 422 HttpException if
+    // validation fails; otherwise returns the map of validated & coerced values.
+    public fn validate_or_fail(self, rules) {
+        let v = self.validate(rules);
+        if v.fails() {
+            throw validation_failed(v.error_messages(), v.first());
+        }
+        return v.validated();
+    }
 }
-

@@ -1,0 +1,151 @@
+// framework/Web.matrix
+// Spid3rWeb Single-Import Barrel Module
+//
+// Build complete apps or microservices with a single import:
+//   import "framework/Web";
+//   let app = web();
+//   let Post = model("posts", {"fillable": ["title", "body"]});
+//   app.get("/api/posts", req => Post.paginate(req.page(), req.per_page()));
+//   app.listen(8000);
+
+import "framework/Application";
+import "framework/Router";
+import "framework/Request";
+import "framework/Response";
+import "framework/Controller";
+import "framework/Middleware";
+import "framework/Validator";
+import "framework/Resource";
+import "framework/HttpException";
+import "framework/Database/DB";
+import "framework/Database/Schema";
+import "framework/Database/Model";
+import "framework/View/BD";
+import "framework/Auth/Auth";
+import "framework/Auth/Hash";
+import "framework/Auth/Jwt";
+import "framework/Cache/Cache";
+import "framework/Config/Config";
+import "framework/Events/Event";
+import "framework/Log/Log";
+import "framework/Mail/Mail";
+import "framework/Queue/Queue";
+import "framework/Filesystem/Storage";
+import "framework/Testing/TestClient";
+
+// ----------------------------------------------------------------------------
+// Application, Router, Model & TestClient Factories
+// ----------------------------------------------------------------------------
+
+public fn web(base_path: string = ".") {
+    return new Application(base_path);
+}
+
+public fn router() {
+    return new Router();
+}
+
+public fn route(name: string, params = null) -> string {
+    return Route.url(name, params);
+}
+
+public fn model(table_name: string, opts = {}) {
+    return new ModelRepository(table_name, opts);
+}
+
+public fn abort(status: int, message: string = "", errors = null) {
+    abort_http(status, message, errors);
+}
+
+public fn test_client(app) {
+    return new TestClient(app);
+}
+
+// ----------------------------------------------------------------------------
+// Response & View Helpers
+// ----------------------------------------------------------------------------
+
+public fn send_json(data, status: int = 200) {
+    return json(data, status);
+}
+
+public fn send_html(content: string, status: int = 200) {
+    return html(content, status);
+}
+
+public fn send_text(content: string, status: int = 200) {
+    return text(content, status);
+}
+
+public fn redirect_to(url: string, status: int = 302) {
+    return redirect(url, status);
+}
+
+public fn render_view(view_name: string, data = null) {
+    return view(view_name, data);
+}
+
+public fn views() {
+    return global_bd;
+}
+
+// ----------------------------------------------------------------------------
+// Subsystem Accessors
+// ----------------------------------------------------------------------------
+
+public fn db(table: string = "") {
+    if table != "" {
+        return DB.table(table);
+    }
+    return DB;
+}
+
+public fn schema() {
+    return Schema;
+}
+
+public fn cache() {
+    return Cache;
+}
+
+public fn auth() {
+    return Auth;
+}
+
+public fn jwt() {
+    return Jwt;
+}
+
+public fn hash() {
+    return Hash;
+}
+
+public fn log() {
+    return Log;
+}
+
+public fn queue() {
+    return Queue;
+}
+
+public fn mail() {
+    return Mail;
+}
+
+public fn storage(disk_name: string = "") {
+    if disk_name != "" {
+        return Storage.disk(disk_name);
+    }
+    return Storage;
+}
+
+public fn events() {
+    return Event;
+}
+
+public fn config(key: string = "", default_val = null) {
+    if key != "" {
+        return Config.get(key, default_val);
+    }
+    return Config;
+}

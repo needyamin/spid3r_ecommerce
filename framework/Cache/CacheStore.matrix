@@ -51,58 +51,146 @@ public fn cache_json_parse(text: string, fallback) {
 }
 
 // ---------------------------------------------------------------------------
-// Memory Cache Store (per-process, fastest)
+// Memory Cache Store (per-process, thread-safe, bounded LRU/FIFO eviction)
 // ---------------------------------------------------------------------------
 
 public class MemoryCacheStore {
     public let items;
+    public let max_entries;
+    private let store_lock;
 
-    fn new() {
-        self.items = map();
+    fn new(max_entries: int = 10000) {
+        self.items = {};
+        self.max_entries = max_entries;
+        self.store_lock = mutex(true);
     }
 
     public fn driver_name(self) -> string {
         return "memory";
     }
 
+    fn evict_if_needed(self) {
+        if self.max_entries <= 0 or self.items.len() < self.max_entries {
+            return;
+        }
+        // First pass: sweep expired entries
+        let keys = self.items.keys();
+        for k in keys {
+            if self.items.has(k) and cache_is_expired(int(self.items[k]["expires_at"])) {
+                self.items.remove(k);
+            }
+        }
+        // Second pass: if still at capacity, evict the oldest inserted key
+        while self.items.len() >= self.max_entries {
+            let remaining = self.items.keys();
+            if remaining.len() == 0 {
+                break;
+            }
+            self.items.remove(remaining[0]);
+        }
+    }
+
     public fn get(self, key: string, default_val = null) {
+        let _g = self.store_lock.lock();
         if not self.items.has(key) {
+            self.store_lock.unlock();
             return default_val;
         }
         let entry = self.items[key];
         if cache_is_expired(int(entry["expires_at"])) {
             // Lazy eviction
             self.items.remove(key);
+            self.store_lock.unlock();
             return default_val;
         }
-        return entry["value"];
+        let val = entry["value"];
+        self.store_lock.unlock();
+        return val;
     }
 
     public fn put(self, key: string, value, seconds) {
-        self.items[key] = map(
-            "value", value,
-            "expires_at", cache_expiration(seconds)
-        );
+        let _g = self.store_lock.lock();
+        if not self.items.has(key) {
+            self.evict_if_needed();
+        }
+        self.items[key] = {
+            "value": value,
+            "expires_at": cache_expiration(seconds)
+        };
+        self.store_lock.unlock();
         return true;
     }
 
+    public fn add(self, key: string, value, seconds) -> bool {
+        let _g = self.store_lock.lock();
+        if self.items.has(key) {
+            if not cache_is_expired(int(self.items[key]["expires_at"])) {
+                self.store_lock.unlock();
+                return false;
+            }
+            self.items.remove(key);
+        }
+        self.evict_if_needed();
+        self.items[key] = {
+            "value": value,
+            "expires_at": cache_expiration(seconds)
+        };
+        self.store_lock.unlock();
+        return true;
+    }
+
+    public fn increment(self, key: string, by: int = 1) -> int {
+        let _g = self.store_lock.lock();
+        let current = 0;
+        let exp = 0;
+        if self.items.has(key) {
+            let entry = self.items[key];
+            if not cache_is_expired(int(entry["expires_at"])) {
+                current = int(entry["value"]);
+                exp = int(entry["expires_at"]);
+            } else {
+                self.items.remove(key);
+            }
+        } else {
+            self.evict_if_needed();
+        }
+        let next = current + by;
+        self.items[key] = {
+            "value": next,
+            "expires_at": exp
+        };
+        self.store_lock.unlock();
+        return next;
+    }
+
     public fn forget(self, key: string) {
+        let _g = self.store_lock.lock();
         if self.items.has(key) {
             self.items.remove(key);
         }
+        self.store_lock.unlock();
         return true;
     }
 
     public fn flush(self) {
-        self.items = map();
+        let _g = self.store_lock.lock();
+        self.items = {};
+        self.store_lock.unlock();
         return true;
     }
 
     public fn has(self, key: string) -> bool {
+        let _g = self.store_lock.lock();
         if not self.items.has(key) {
+            self.store_lock.unlock();
             return false;
         }
-        return not cache_is_expired(int(self.items[key]["expires_at"]));
+        let expired = cache_is_expired(int(self.items[key]["expires_at"]));
+        if expired {
+            self.items.remove(key);
+        }
+        self.store_lock.unlock();
+        return not expired;
     }
 }
 

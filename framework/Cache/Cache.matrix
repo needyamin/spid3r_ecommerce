@@ -91,6 +91,9 @@ public class CacheManager {
 
     public fn add(self, key: string, value, seconds = 3600) -> bool {
         let s = self.store();
+        if s.driver_name() == "memory" or s.driver_name() == "database" {
+            return s.add(key, value, seconds);
+        }
         if s.has(key) {
             return false;
         }
@@ -132,9 +135,13 @@ public class CacheManager {
     }
 
     public fn increment(self, key: string, by: int = 1) -> int {
-        let current = self.store().get(key, 0);
+        let s = self.store();
+        if s.driver_name() == "memory" {
+            return s.increment(key, by);
+        }
+        let current = s.get(key, 0);
         let next = int(current) + by;
-        self.store().put(key, next, 0);
+        s.put(key, next, 0);
         return next;
     }
 

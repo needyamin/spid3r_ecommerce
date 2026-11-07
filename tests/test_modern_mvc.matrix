@@ -1,0 +1,377 @@
+// tests/test_modern_mvc.matrix
+// Comprehensive Test Suite for Spid3rWeb Modern MVC Evolution (Phases 1-5)
+
+import "framework/Web";
+
+fn assert_eq(actual, expected, label: string) {
+    if string(actual) != string(expected) {
+        throw "FAIL [" + label + "]: expected '" + string(expected) + "', got '" + string(actual) + "'";
+    }
+}
+
+fn assert_true(cond: bool, label: string) {
+    if not cond {
+        throw "FAIL [" + label + "]: expected true, got false";
+    }
+}
+
+fn main() {
+    println("\n=== Running Modern MVC & DX Test Suite ===");
+
+    // ------------------------------------------------------------------------
+    // 1. Barrel Module, Direct Routing, Auto-Coercion & (req, res) Handlers
+    // ------------------------------------------------------------------------
+    let app = web();
+    app.router.clear();
+
+    app.get("/auto-json", req => {
+        let _ = req;
+        return {"framework": "Spid3rWeb", "modern": true};
+    });
+
+    app.get("/auto-html", req => {
+        let _ = req;
+        return "<h1>Hello Spid3r</h1>";
+    });
+
+    app.post("/express-style", (req, res) => {
+        return res.status(201).json({"created": req.string("name", "anon")});
+    });
+
+    let client = app.test_client();
+    client.get("/auto-json")
+        .assert_ok()
+        .assert_json_path("framework", "Spid3rWeb")
+        .assert_json_path("modern", true);
+
+    client.get("/auto-html")
+        .assert_ok()
+        .assert_see("<h1>Hello Spid3r</h1>");
+
+    client.post_json("/express-style", {"name": "Neo"})
+        .assert_created()
+        .assert_json_path("created", "Neo");
+
+    println("  [PASS] test_barrel_and_express_routing");
+
+    // ------------------------------------------------------------------------
+    // 2. Wildcard Routes, Sub-Router Mounting & Named Reverse Routing
+    // ------------------------------------------------------------------------
+    app.get("/users/:id/profile", req => {"id": req.int("id")}).name("users.profile");
+    app.get("/assets/*filepath", req => {"file": req.param("filepath")});
+
+    let sub = router();
+    sub.get("/health", req => {
+        let _ = req;
+        return {"sub": "ok"};
+    }).name("api.health");
+    app.mount("/v2", sub);
+
+    assert_eq(route("users.profile", {"id": 42, "tab": "settings"}), "/users/42/profile?tab=settings", "reverse route with query");
+    assert_eq(route("api.health"), "/v2/health", "mounted named route");
+
+    client.get("/assets/docs/guide/intro.pdf")
+        .assert_ok()
+        .assert_json_path("file", "docs/guide/intro.pdf");
+
+    client.get("/v2/health")
+        .assert_ok()
+        .assert_json_path("sub", "ok");
+
+    println("  [PASS] test_wildcards_mounting_and_reverse_routing");
+
+    // ------------------------------------------------------------------------
+    // 3. True Onion Middleware, ETag (304), RequestId & Rate-Limit Headers
+    // ------------------------------------------------------------------------
+    app.middleware("timing", fn(_args) {
+        return (req, next) => {
+            req.data["mw_before"] = "yes";
+            let res = next(req);
+            res.header("x-onion-after", "completed");
+            return res;
+        };
+    });
+
+    app.get("/onion-test", req => {
+        return {"before": req.string("mw_before"), "has_req_id": req.header("x-request-id", "") != ""};
+    }).middleware(["request_id", "etag", "timing", "throttle:10,60"]);
+
+    let r1 = client.get("/onion-test");
+    r1.assert_ok()
+      .assert_json_path("before", "yes")
+      .assert_json_path("has_req_id", true)
+      .assert_header("x-onion-after", "completed")
+      .assert_header("x-ratelimit-limit", "10");
+
+    let etag = r1.header("etag");
+    assert_true(etag != "", "ETag header generated");
+    assert_true(r1.header("x-request-id") != "", "X-Request-Id header generated");
+
+    // Conditional GET with If-None-Match -> 304 Not Modified
+    client.get("/onion-test", {"if-none-match": etag})
+        .assert_status(304);
+
+    println("  [PASS] test_onion_middleware_etag_and_request_id");
+
+    // ------------------------------------------------------------------------
+    // 4. Method Spoofing, Signed Cookies & Multipart File Uploads
+    // ------------------------------------------------------------------------
+    app.put("/spoofed-put", req => {"method": req.method, "orig": req.original_method});
+    app.delete("/spoofed-delete", req => {"method": req.method});
+
+    client.post("/spoofed-put", {"_method": "PUT", "origin": "http://localhost"}, {"host": "localhost", "origin": "http://localhost"})
+        .assert_ok()
+        .assert_json_path("method", "PUT")
+        .assert_json_path("orig", "POST");
+
+    client.post("/spoofed-delete", "", {"host": "localhost", "origin": "http://localhost", "x-http-method-override": "DELETE"})
+        .assert_ok()
+        .assert_json_path("method", "DELETE");
+
+    app.get("/set-signed", (req, res) => {
+        let _ = req;
+        return res.signed_cookie("prefs", "dark_mode").json({"set": true});
+    });
+    app.get("/read-signed", req => {
+        return {"prefs": req.signed_cookie("prefs", "none")};
+    });
+
+    let set_res = client.get("/set-signed").assert_ok();
+    let sc_hdr = set_res.header("set-cookie");
+    let cookie_pair = sc_hdr.split(";")[0];
+    let cookie_val = cookie_pair.replace("prefs=", "").trim();
+
+    client.with_cookie("prefs", cookie_val)
+        .get("/read-signed")
+        .assert_ok()
+        .assert_json_path("prefs", "dark_mode");
+
+    // Tampered signed cookie is rejected
+    client.with_cookie("prefs", "light_mode" + cookie_val.slice(9, cookie_val.len()))
+        .get("/read-signed")
+        .assert_ok()
+        .assert_json_path("prefs", "none");
+
+    // Multipart file upload
+    app.post("/api/upload", req => {
+        if not req.has_file("avatar") {
+            abort(400, "Missing avatar");
+        }
+        let f = req.file("avatar");
+        return {
+            "name": f["name"],
+            "ext": f["ext"],
+            "size": f["size"],
+            "caption": req.string("caption")
+        };
+    });
+
+    let boundary = "----Spid3rBoundary123";
+    let mp_body = "--" + boundary + "\r\n"
+        + "Content-Disposition: form-data; name=\"caption\"\r\n\r\n"
+        + "Profile Photo\r\n"
+        + "--" + boundary + "\r\n"
+        + "Content-Disposition: form-data; name=\"avatar\"; filename=\"photo.png\"\r\n"
+        + "Content-Type: image/png\r\n\r\n"
+        + "PNG_BINARY_DATA\r\n"
+        + "--" + boundary + "--\r\n";
+
+    client.request("POST", "/api/upload", mp_body, {"content-type": "multipart/form-data; boundary=" + boundary})
+        .assert_ok()
+        .assert_json_path("name", "photo.png")
+        .assert_json_path("ext", ".png")
+        .assert_json_path("size", 15)
+        .assert_json_path("caption", "Profile Photo");
+
+    println("  [PASS] test_method_spoofing_signed_cookies_and_uploads");
+
+    // ------------------------------------------------------------------------
+    // 5. Declarative validate_or_fail() with Type Coercion & Rich Rules
+    // ------------------------------------------------------------------------
+    app.post("/api/validate-test", req => {
+        let clean = req.validate_or_fail({
+            "age": "required|integer|between:18,99",
+            "website": "required|url",
+            "trace_id": "required|uuid",
+            "code": "required|regex:^[A-Z]{3}-[0-9]{3}$",
+            "active": "required|bool"
+        });
+        return {
+            "age_type": type_of(clean["age"]),
+            "age": clean["age"],
+            "active_type": type_of(clean["active"]),
+            "active": clean["active"],
+            "code": clean["code"]
+        };
+    });
+
+    client.post_json("/api/validate-test", {
+        "age": "25",
+        "website": "https://spid3r.dev/docs",
+        "trace_id": "550e8400-e29b-41d4-a716-446655440000",
+        "code": "SPD-101",
+        "active": "true"
+    }).assert_ok()
+      .assert_json_path("age_type", "int")
+      .assert_json_path("age", 25)
+      .assert_json_path("active_type", "bool")
+      .assert_json_path("active", true)
+      .assert_json_path("code", "SPD-101");
+
+    // Invalid payload automatically returns 422 Unprocessable Entity
+    client.post_json("/api/validate-test", {
+        "age": "12",
+        "website": "not-a-url",
+        "trace_id": "bad-uuid",
+        "code": "bad",
+        "active": "yes"
+    }).assert_unprocessable();
+
+    println("  [PASS] test_validate_or_fail_and_coercion");
+
+    // ------------------------------------------------------------------------
+    // 6. SessionStore & One-Time Flash Messages
+    // ------------------------------------------------------------------------
+    app.post("/api/session-write", req => {
+        req.session().put("cart_items", 4);
+        req.session().flash("notice", "Item added!");
+        return {"saved": true};
+    });
+
+    app.get("/api/session-read", req => {
+        return {
+            "cart_items": req.session().get("cart_items", 0),
+            "notice": req.session().get_flash("notice", "none")
+        };
+    });
+
+    let s_write = client.post_json("/api/session-write", {}).assert_ok();
+    let sid_hdr = s_write.header("set-cookie");
+    let sid_val = sid_hdr.split(";")[0].replace("spid3r_sid=", "").trim();
+    assert_true(sid_val.starts_with("sid_"), "Session ID cookie issued");
+
+    let sess_client = app.test_client().with_cookie("spid3r_sid", sid_val);
+    // First read sees both session value and flash message
+    sess_client.get("/api/session-read")
+        .assert_ok()
+        .assert_json_path("cart_items", 4)
+        .assert_json_path("notice", "Item added!");
+
+    // Second read sees persistent session value, but flash message was consumed
+    sess_client.get("/api/session-read")
+        .assert_ok()
+        .assert_json_path("cart_items", 4)
+        .assert_json_path("notice", "none");
+
+    println("  [PASS] test_session_store_and_flash");
+
+    // ------------------------------------------------------------------------
+    // 7. Stateless JWT Auth & Protected Routes
+    // ------------------------------------------------------------------------
+    app.get("/api/me", req => {
+        return {"user": req.user()};
+    }).middleware("auth");
+
+    // Unauthenticated request -> 401
+    app.test_client().get("/api/me").assert_unauthorized();
+
+    // Authenticated with stateless JWT via acting_as -> 200 (zero DB queries needed)
+    app.test_client()
+        .acting_as({"id": 77, "name": "Trinity", "role": "operator"})
+        .get("/api/me")
+        .assert_ok()
+        .assert_json_path("user.id", 77)
+        .assert_json_path("user.name", "Trinity");
+
+    println("  [PASS] test_jwt_stateless_auth");
+
+    // ------------------------------------------------------------------------
+    // 8. Zero-Boilerplate model() Repository, Casts, Hidden & Dirty Tracking
+    // ------------------------------------------------------------------------
+    schema().dropIfExists("articles");
+    schema().create("articles", table => {
+        table.id();
+        table.string("title");
+        table.string("secret_token").nullable();
+        table.integer("published").default(0);
+        table.text("meta").nullable();
+        table.timestamps();
+    });
+
+    let Article = model("articles", {
+        "fillable": ["title", "secret_token", "published", "meta"],
+        "hidden": ["secret_token"],
+        "casts": {
+            "published": "bool",
+            "meta": "json"
+        }
+    });
+
+    let art = Article.create({
+        "title": "Spid3r 2.0",
+        "secret_token": "top-secret-xyz",
+        "published": true,
+        "meta": {"views": 100, "tags": ["mvc", "fast"]}
+    });
+
+    assert_eq(art.is_dirty(), false, "newly saved model is clean");
+    assert_eq(art.get("published"), true, "bool cast on get()");
+    assert_eq(art.get("meta")["views"], 100, "json cast on get()");
+
+    let serialized = art.to_map();
+    assert_eq(serialized.has("secret_token"), false, "hidden field stripped in to_map()");
+    assert_eq(serialized["published"], true, "cast applied in to_map()");
+
+    art.set("title", "Spid3r 2.0 Released");
+    assert_eq(art.is_dirty("title"), true, "dirty tracking detects modified column");
+    assert_eq(art.is_dirty("published"), false, "unchanged column is not dirty");
+    art.save();
+    assert_eq(art.is_dirty(), false, "clean after save()");
+
+    let fetched = Article.find_or_fail(art.get("id"));
+    assert_eq(fetched.get("title"), "Spid3r 2.0 Released", "find_or_fail hydrates updated record");
+
+    // Test 404 on missing find_or_fail through HTTP
+    app.get("/api/articles/:id", req => {
+        return Article.find_or_fail(req.int("id")).to_map();
+    });
+
+    app.test_client().get("/api/articles/" + string(art.get("id")))
+        .assert_ok()
+        .assert_json_path("title", "Spid3r 2.0 Released");
+
+    app.test_client().get("/api/articles/99999")
+        .assert_not_found();
+
+    schema().dropIfExists("articles");
+    println("  [PASS] test_zero_boilerplate_model_casts_hidden_dirty");
+
+    // ------------------------------------------------------------------------
+    // 9. SpiderBD v2: @if Comparisons, @elif, Loop Metadata, @csrf, @method
+    // ------------------------------------------------------------------------
+    views().share("app_title", "Spid3rCloud");
+
+    let tpl = "@if(score >= 90)\nGrade: A\n@elif(score >= 80 and active == true)\nGrade: B\n@else\nGrade: C\n@endif\n"
+        + "@foreach(tag in tags)\n[{{ loop.iteration }}/{{ loop.count }}:{{ tag }}]@if(loop.last) (END)@endif\n@endforeach\n"
+        + "<form>@csrf\n@method('PATCH')</form>\n"
+        + "Shared: {{ app_title }}";
+
+    let rendered = views().render_string(tpl, {
+        "score": 85,
+        "active": true,
+        "tags": ["fast", "clean"],
+        "csrf_token": "tok_123"
+    });
+
+    assert_true(rendered.contains("Grade: B"), "SpiderBD @elif with >= and ==");
+    assert_true(rendered.contains("[1/2:fast]"), "SpiderBD loop.iteration and loop.count");
+    assert_true(rendered.contains("[2/2:clean] (END)"), "SpiderBD loop.last conditional");
+    assert_true(rendered.contains("name=\"_csrf\" value=\"tok_123\""), "SpiderBD @csrf directive");
+    assert_true(rendered.contains("name=\"_method\" value=\"PATCH\""), "SpiderBD @method directive");
+    assert_true(rendered.contains("Shared: Spid3rCloud"), "SpiderBD global share()");
+
+    println("  [PASS] test_spiderbd_v2_directives_and_expressions");
+
+    db().close();
+    println("=== All Modern MVC & DX Tests Passed! ===\n");
+}

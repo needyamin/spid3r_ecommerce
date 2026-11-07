@@ -1,0 +1,253 @@
+// framework/Testing/TestClient.matrix
+// Spid3rWeb Fluent HTTP Integration Test Client & Assertion Wrapper
+//
+// Example:
+//   let client = new TestClient(app);
+//   client.acting_as({"id": 1, "name": "Ada"})
+//         .post_json("/api/posts", {"title": "Spid3r MVC"})
+//         .assert_created()
+//         .assert_json_path("title", "Spid3r MVC");
+
+import "framework/Auth/Jwt";
+
+fn resolve_json_dot_path(root, dot_path: string) {
+    if root == null or dot_path == "" {
+        return root;
+    }
+    let parts = dot_path.split(".");
+    let curr = root;
+    for seg in parts {
+        if curr == null {
+            return null;
+        }
+        let t = type_of(curr);
+        if t == "map" {
+            if curr.has(seg) {
+                curr = curr[seg];
+            } else {
+                return null;
+            }
+        } elif t == "list" {
+            try {
+                let idx = int(seg);
+                if idx >= 0 and idx < curr.len() {
+                    curr = curr[idx];
+                } else {
+                    return null;
+                }
+            } catch (_e) {
+                return null;
+            }
+        } else {
+            return null;
+        }
+    }
+    return curr;
+}
+
+public class TestResponse {
+    public let status;
+    public let headers;
+    public let body;
+    public let raw;
+
+    fn new(raw_http) {
+        self.raw = raw_http;
+        self.status = int(raw_http["status"]);
+        self.headers = raw_http["headers"];
+        self.body = string(raw_http["body"]);
+    }
+
+    public fn json(self) {
+        let parsed = json_parse(self.body);
+        if type_of(parsed) == "result" {
+            if parsed.is_err() {
+                throw "TestResponse.json(): response body is not valid JSON: " + self.body;
+            }
+            return parsed.unwrap();
+        }
+        return parsed;
+    }
+
+    public fn header(self, key: string, default_val: string = "") -> string {
+        let lk = key.lower();
+        if self.headers != null and self.headers.has(lk) {
+            return string(self.headers[lk]);
+        }
+        return default_val;
+    }
+
+    public fn assert_status(self, expected: int) {
+        if self.status != expected {
+            throw "Assertion failed: expected HTTP status " + string(expected) + ", got " + string(self.status) + " (body: " + self.body + ")";
+        }
+        return self;
+    }
+
+    public fn assert_ok(self) {
+        return self.assert_status(200);
+    }
+
+    public fn assert_created(self) {
+        return self.assert_status(201);
+    }
+
+    public fn assert_no_content(self) {
+        return self.assert_status(204);
+    }
+
+    public fn assert_not_found(self) {
+        return self.assert_status(404);
+    }
+
+    public fn assert_unauthorized(self) {
+        return self.assert_status(401);
+    }
+
+    public fn assert_forbidden(self) {
+        return self.assert_status(403);
+    }
+
+    public fn assert_unprocessable(self) {
+        return self.assert_status(422);
+    }
+
+    public fn assert_header(self, key: string, expected_val: string = "") {
+        let lk = key.lower();
+        if self.headers == null or not self.headers.has(lk) {
+            throw "Assertion failed: expected header '" + lk + "' to be present.";
+        }
+        if expected_val != "" and string(self.headers[lk]) != expected_val {
+            throw "Assertion failed: expected header '" + lk + "' to equal '" + expected_val + "', got '" + string(self.headers[lk]) + "'";
+        }
+        return self;
+    }
+
+    public fn assert_see(self, substring: string) {
+        if not self.body.contains(substring) {
+            throw "Assertion failed: expected response body to contain '" + substring + "', got: " + self.body;
+        }
+        return self;
+    }
+
+    public fn assert_dont_see(self, substring: string) {
+        if self.body.contains(substring) {
+            throw "Assertion failed: expected response body NOT to contain '" + substring + "'.";
+        }
+        return self;
+    }
+
+    public fn assert_json_path(self, dot_path: string, expected_val) {
+        let data = self.json();
+        let actual = resolve_json_dot_path(data, dot_path);
+        if string(actual) != string(expected_val) {
+            throw "Assertion failed at JSON path '" + dot_path + "': expected '" + string(expected_val) + "', got '" + string(actual) + "'";
+        }
+        return self;
+    }
+}
+
+public class TestClient {
+    public let app;
+    public let default_headers;
+    public let cookies;
+
+    fn new(app_instance) {
+        self.app = app_instance;
+        self.default_headers = {};
+        self.cookies = {};
+    }
+
+    public fn with_header(self, key: string, value: string) {
+        self.default_headers[key.lower()] = value;
+        return self;
+    }
+
+    public fn with_headers(self, hdrs) {
+        for (k, v) in hdrs {
+            self.default_headers[string(k).lower()] = string(v);
+        }
+        return self;
+    }
+
+    public fn with_token(self, token: string) {
+        self.default_headers["authorization"] = "Bearer " + token;
+        return self;
+    }
+
+    public fn acting_as(self, user, ttl: int = 3600) {
+        let token = Jwt.sign(user, ttl);
+        return self.with_token(token);
+    }
+
+    public fn with_cookie(self, name: string, value: string) {
+        self.cookies[name] = value;
+        return self;
+    }
+
+    public fn request(self, method: string, path: string, body_str: string = "", extra_headers = {}) {
+        let merged_headers = {};
+        for (dk, dv) in self.default_headers {
+            merged_headers[dk] = dv;
+        }
+        if self.cookies.len() > 0 {
+            let c_parts = [];
+            for (ck, cv) in self.cookies {
+                c_parts.push(string(ck) + "=" + string(cv));
+            }
+            merged_headers["cookie"] = c_parts.join("; ");
+        }
+        if extra_headers != null and type_of(extra_headers) == "map" {
+            for (ek, ev) in extra_headers {
+                merged_headers[string(ek).lower()] = string(ev);
+            }
+        }
+        let raw_req = {
+            "method": method.upper(),
+            "path": path,
+            "headers": merged_headers,
+            "body": body_str
+        };
+        let raw_res = self.app.handle_request(raw_req);
+        return new TestResponse(raw_res);
+    }
+
+    public fn get(self, path: string, headers = {}) {
+        return self.request("GET", path, "", headers);
+    }
+
+    public fn delete(self, path: string, headers = {}) {
+        return self.request("DELETE", path, "", headers);
+    }
+
+    public fn post(self, path: string, body_or_map = "", headers = {}) {
+        if type_of(body_or_map) == "map" {
+            let pairs = [];
+            for (k, v) in body_or_map {
+                pairs.push(string(k) + "=" + string(v));
+            }
+            let h = {"content-type": "application/x-www-form-urlencoded"};
+            for (ek, ev) in headers { h[string(ek).lower()] = string(ev); }
+            return self.request("POST", path, pairs.join("&"), h);
+        }
+        return self.request("POST", path, string(body_or_map), headers);
+    }
+
+    public fn post_json(self, path: string, payload = {}, headers = {}) {
+        let h = {"content-type": "application/json", "accept": "application/json"};
+        for (ek, ev) in headers { h[string(ek).lower()] = string(ev); }
+        return self.request("POST", path, json_write(payload), h);
+    }
+
+    public fn put_json(self, path: string, payload = {}, headers = {}) {
+        let h = {"content-type": "application/json", "accept": "application/json"};
+        for (ek, ev) in headers { h[string(ek).lower()] = string(ev); }
+        return self.request("PUT", path, json_write(payload), h);
+    }
+
+    public fn patch_json(self, path: string, payload = {}, headers = {}) {
+        let h = {"content-type": "application/json", "accept": "application/json"};
+        for (ek, ev) in headers { h[string(ek).lower()] = string(ev); }
+        return self.request("PATCH", path, json_write(payload), h);
+    }
+}

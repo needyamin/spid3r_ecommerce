@@ -1,8 +1,11 @@
 // framework/Validator.matrix
-// Spid3rWeb Declarative Validation Engine.
-// Split out of Request.matrix; Request.validate() delegates here.
+// Spid3rWeb Declarative Validation & Type-Coercion Engine.
+// Split out of Request.matrix; Request.validate() and Request.validate_or_fail()
+// delegate here.
 // Rule strings are pipe-separated ("required|integer|min_value:1"); the
 // "nullable" modifier lets empty values skip every other rule.
+
+import "framework/Database/DB";
 
 // RFC-style email check: single @, length limits, valid user/domain chars,
 // no leading/trailing dots, real TLD (non-numeric, >= 2 chars).
@@ -79,13 +82,53 @@ fn is_valid_email(val_str: string) -> bool {
     return true;
 }
 
+fn is_valid_url(val_str: string) -> bool {
+    if val_str.contains(" ") or val_str.contains("\t") or val_str.contains("\r") or val_str.contains("\n") {
+        return false;
+    }
+    let rest = "";
+    if val_str.starts_with("https://") {
+        rest = val_str.slice(8, val_str.len());
+    } elif val_str.starts_with("http://") {
+        rest = val_str.slice(7, val_str.len());
+    } else {
+        return false;
+    }
+    if rest.len() == 0 or rest.starts_with("/") or rest.starts_with(".") {
+        return false;
+    }
+    return true;
+}
+
+fn is_valid_uuid(val_str: string) -> bool {
+    if val_str.len() != 36 {
+        return false;
+    }
+    let parts = val_str.lower().split("-");
+    if parts.len() != 5 {
+        return false;
+    }
+    if parts[0].len() != 8 or parts[1].len() != 4 or parts[2].len() != 4 or parts[3].len() != 4 or parts[4].len() != 12 {
+        return false;
+    }
+    let hex_chars = "0123456789abcdef-";
+    for ch in val_str.lower().split("") {
+        if not hex_chars.contains(ch) {
+            return false;
+        }
+    }
+    return true;
+}
+
 public class Validator {
     public let errors;
     public let failed;
+    public let validated_data;
 
     fn new() {
         self.errors = map();
         self.failed = false;
+        self.validated_data = map();
     }
 
     public fn add_error(self, field: string, message: string) {
@@ -102,6 +145,10 @@ public class Validator {
 
     public fn passes(self) -> bool {
         return not self.failed;
+    }
+
+    public fn validated(self) {
+        return self.validated_data;
     }
 
     public fn error_messages(self) {
@@ -150,8 +197,8 @@ public class Validator {
     // Rule engine
     // ------------------------------------------------------------------
     // Evaluate `rules` against the request. Reads input through the
-    // request's own input() (body → query → route params). Returns the
-    // Validator so callers can chain fails()/error_summary().
+    // request's own input() (body -> query -> route params). Returns the
+    // Validator so callers can chain fails()/error_summary()/validated().
     public fn check(self, req, rules) {
         let validator = new Validator();
 
@@ -164,15 +211,29 @@ public class Validator {
 
             // The "nullable" modifier: empty values pass every other rule.
             let skip_if_empty = false;
+            let coerce_to = "";
             for nr in field_rules {
-                if nr.trim() == "nullable" {
+                let nrt = nr.trim();
+                if nrt == "nullable" {
                     skip_if_empty = true;
+                } elif nrt == "integer" or nrt == "int" {
+                    coerce_to = "int";
+                } elif nrt == "numeric" or nrt == "float" {
+                    if coerce_to == "" { coerce_to = "float"; }
+                } elif nrt == "boolean" or nrt == "bool" {
+                    coerce_to = "bool";
+                } elif nrt == "array" or nrt == "list" {
+                    coerce_to = "list";
+                } elif nrt == "map" {
+                    coerce_to = "map";
                 }
             }
             if skip_if_empty and (val == null or val_str == "") {
+                validator.validated_data[field] = null;
                 continue;
             }
 
+            let field_had_error = false;
             for r in field_rules {
                 let r_trimmed = r.trim();
                 let rule_name = r_trimmed;
@@ -186,12 +247,14 @@ public class Validator {
                 if rule_name == "required" {
                     if val == null or (type_of(val) == "string" and val_str == "") or (type_of(val) == "list" and val.len() == 0) {
                         validator.add_error(field, "The " + field + " field is required.");
+                        field_had_error = true;
                     }
                 } elif rule_name == "min" {
                     if val_str != "" {
                         let min_len = int(rule_arg);
                         if val_str.len() < min_len {
                             validator.add_error(field, "The " + field + " must be at least " + rule_arg + " characters.");
+                            field_had_error = true;
                         }
                     }
                 } elif rule_name == "max" {
@@ -199,44 +262,70 @@ public class Validator {
                         let max_len = int(rule_arg);
                         if val_str.len() > max_len {
                             validator.add_error(field, "The " + field + " must not exceed " + rule_arg + " characters.");
+                            field_had_error = true;
+                        }
+                    }
+                } elif rule_name == "between" {
+                    if val_str != "" and rule_arg.contains(",") {
+                        let b_parts = rule_arg.split(",");
+                        let low = float(b_parts[0].trim());
+                        let high = float(b_parts[1].trim());
+                        if coerce_to == "int" or coerce_to == "float" {
+                            try {
+                                let n = float(val_str);
+                                if n < low or n > high {
+                                    validator.add_error(field, "The " + field + " must be between " + b_parts[0].trim() + " and " + b_parts[1].trim() + ".");
+                                    field_had_error = true;
+                                }
+                            } catch (_e) {
+                                validator.add_error(field, "The " + field + " must be a number.");
+                                field_had_error = true;
+                            }
+                        } else {
+                            let slen = float(val_str.len());
+                            if slen < low or slen > high {
+                                validator.add_error(field, "The " + field + " must be between " + b_parts[0].trim() + " and " + b_parts[1].trim() + " characters.");
+                                field_had_error = true;
+                            }
                         }
                     }
                 } elif rule_name == "min_value" {
-                    // Numeric lower bound (min is string-length). Skips empty
-                    // values like every non-required rule; pairs with the
-                    // "integer"/"numeric" rules which catch non-numeric input.
                     if val_str != "" {
                         let num = 0.0;
                         try {
                             num = float(val_str);
                         } catch (_e) {
                             validator.add_error(field, "The " + field + " must be a number.");
+                            field_had_error = true;
                             num = null;
                         }
                         if num != null and num < float(rule_arg) {
                             validator.add_error(field, "The " + field + " must be at least " + rule_arg + ".");
+                            field_had_error = true;
                         }
                     }
                 } elif rule_name == "max_value" {
-                    // Numeric upper bound (max is string-length).
                     if val_str != "" {
                         let num = 0.0;
                         try {
                             num = float(val_str);
                         } catch (_e) {
                             validator.add_error(field, "The " + field + " must be a number.");
+                            field_had_error = true;
                             num = null;
                         }
                         if num != null and num > float(rule_arg) {
                             validator.add_error(field, "The " + field + " must not be greater than " + rule_arg + ".");
+                            field_had_error = true;
                         }
                     }
-                } elif rule_name == "numeric" {
+                } elif rule_name == "numeric" or rule_name == "float" {
                     if val_str != "" {
                         try {
                             let _f = float(val_str);
                         } catch (_e) {
                             validator.add_error(field, "The " + field + " must be a number.");
+                            field_had_error = true;
                         }
                     }
                 } elif rule_name == "integer" or rule_name == "int" {
@@ -245,12 +334,75 @@ public class Validator {
                             let _i = int(val_str);
                         } catch (_e) {
                             validator.add_error(field, "The " + field + " must be an integer.");
+                            field_had_error = true;
                         }
                     }
                 } elif rule_name == "email" {
                     if val_str != "" {
                         if not is_valid_email(val_str) {
                             validator.add_error(field, "The " + field + " must be a valid email address.");
+                            field_had_error = true;
+                        }
+                    }
+                } elif rule_name == "url" {
+                    if val_str != "" {
+                        if not is_valid_url(val_str) {
+                            validator.add_error(field, "The " + field + " must be a valid URL.");
+                            field_had_error = true;
+                        }
+                    }
+                } elif rule_name == "uuid" {
+                    if val_str != "" {
+                        if not is_valid_uuid(val_str) {
+                            validator.add_error(field, "The " + field + " must be a valid UUID.");
+                            field_had_error = true;
+                        }
+                    }
+                } elif rule_name == "regex" {
+                    if val_str != "" and rule_arg != "" {
+                        if not regex_match(rule_arg, val_str) {
+                            validator.add_error(field, "The " + field + " format is invalid.");
+                            field_had_error = true;
+                        }
+                    }
+                } elif rule_name == "array" or rule_name == "list" {
+                    if val != null and type_of(val) != "list" {
+                        validator.add_error(field, "The " + field + " must be a list.");
+                        field_had_error = true;
+                    }
+                } elif rule_name == "map" {
+                    if val != null and type_of(val) != "map" {
+                        validator.add_error(field, "The " + field + " must be a map.");
+                        field_had_error = true;
+                    }
+                } elif rule_name == "unique" {
+                    if val_str != "" and rule_arg != "" {
+                        let u_parts = rule_arg.split(",");
+                        let u_table = u_parts[0].trim();
+                        let u_col = field;
+                        if u_parts.len() > 1 and u_parts[1].trim() != "" {
+                            u_col = u_parts[1].trim();
+                        }
+                        let q = DB.table(u_table).where(u_col, "=", val_str);
+                        if u_parts.len() > 2 and u_parts[2].trim() != "" {
+                            q.where("id", "!=", u_parts[2].trim());
+                        }
+                        if q.exists() {
+                            validator.add_error(field, "The " + field + " has already been taken.");
+                            field_had_error = true;
+                        }
+                    }
+                } elif rule_name == "exists" {
+                    if val_str != "" and rule_arg != "" {
+                        let e_parts = rule_arg.split(",");
+                        let e_table = e_parts[0].trim();
+                        let e_col = field;
+                        if e_parts.len() > 1 and e_parts[1].trim() != "" {
+                            e_col = e_parts[1].trim();
+                        }
+                        if not DB.table(e_table).where(e_col, "=", val_str).exists() {
+                            validator.add_error(field, "The selected " + field + " does not exist.");
+                            field_had_error = true;
                         }
                     }
                 } elif rule_name == "confirmed" {
@@ -259,6 +411,7 @@ public class Validator {
                     if conf_val != null { conf_str = string(conf_val).trim(); }
                     if val_str != conf_str {
                         validator.add_error(field, "The " + field + " confirmation does not match.");
+                        field_had_error = true;
                     }
                 } elif rule_name == "same" {
                     let same_val = req.input(rule_arg, null);
@@ -266,6 +419,7 @@ public class Validator {
                     if same_val != null { same_str = string(same_val).trim(); }
                     if val_str != same_str {
                         validator.add_error(field, "The " + field + " and " + rule_arg + " must match.");
+                        field_had_error = true;
                     }
                 } elif rule_name == "in" {
                     if val_str != "" {
@@ -278,6 +432,7 @@ public class Validator {
                         }
                         if not matched {
                             validator.add_error(field, "The selected " + field + " is invalid.");
+                            field_had_error = true;
                         }
                     }
                 } elif rule_name == "boolean" or rule_name == "bool" {
@@ -285,6 +440,7 @@ public class Validator {
                         let b_lower = val_str.lower();
                         if b_lower != "true" and b_lower != "false" and b_lower != "1" and b_lower != "0" and b_lower != "yes" and b_lower != "no" {
                             validator.add_error(field, "The " + field + " field must be true or false.");
+                            field_had_error = true;
                         }
                     }
                 } elif rule_name == "alpha" {
@@ -298,6 +454,7 @@ public class Validator {
                         }
                         if not all_alpha {
                             validator.add_error(field, "The " + field + " must only contain letters.");
+                            field_had_error = true;
                         }
                     }
                 } elif rule_name == "alphanumeric" or rule_name == "alpha_num" {
@@ -311,8 +468,25 @@ public class Validator {
                         }
                         if not all_alphanum {
                             validator.add_error(field, "The " + field + " must only contain letters and numbers.");
+                            field_had_error = true;
                         }
                     }
+                }
+            }
+
+            // Populate coerced validated_data when field passed validation
+            if not field_had_error and val != null {
+                if coerce_to == "int" and val_str != "" {
+                    try { validator.validated_data[field] = int(val_str); } catch (_e) { validator.validated_data[field] = val; }
+                } elif coerce_to == "float" and val_str != "" {
+                    try { validator.validated_data[field] = float(val_str); } catch (_e) { validator.validated_data[field] = val; }
+                } elif coerce_to == "bool" and val_str != "" {
+                    let bl = val_str.lower();
+                    validator.validated_data[field] = (bl == "true" or bl == "1" or bl == "yes");
+                } elif type_of(val) == "string" {
+                    validator.validated_data[field] = val_str;
+                } else {
+                    validator.validated_data[field] = val;
                 }
             }
         }

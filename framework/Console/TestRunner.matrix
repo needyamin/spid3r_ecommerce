@@ -1,8 +1,7 @@
 // framework/Console/TestRunner.matrix
 // Spid3rWeb Test Suite Runner — spawned-process execution of every
-// registered suite with optional --filter/--engine overrides.
-// Extracted from ConsoleKernel.matrix; the kernel's command_test keeps
-// the recursion guard and delegates here.
+// registered and auto-discovered `tests/test_*.matrix` suite with optional
+// --filter/--engine overrides.
 
 import "framework/Database/DB";
 
@@ -13,9 +12,6 @@ public class TestRunner {
         self.root = root;
     }
 
-    // Locate the spid3r interpreter binary used to spawn suite processes:
-    // running executable → SPID3R_BIN/SPID3R_EXE/CARGO_BIN_EXE_* env vars →
-    // common target/debug|release layouts → PATH fallback.
     fn resolve_spid3r_binary(self) -> string {
         let cur = exe_path();
         if cur.is_ok() {
@@ -78,9 +74,62 @@ public class TestRunner {
         }
     }
 
-    // Run all registered suites. Supported options (positionally after
-    // "test"): --filter=<substr> to run a subset, --engine=<name> to force
-    // the interpreter engine. Returns 0 only when every suite passed.
+    fn discover_suites(self) {
+        let base_suites = list(
+            "tests/test_router.matrix",
+            "tests/test_validator.matrix",
+            "tests/test_query_builder.matrix",
+            "tests/test_model.matrix",
+            "tests/test_resource.matrix",
+            "tests/test_websocket.matrix",
+            "tests/test_drivers.matrix",
+            "tests/test_container.matrix",
+            "tests/test_events.matrix",
+            "tests/test_providers.matrix",
+            "tests/test_cache.matrix",
+            "tests/test_core_systems.matrix",
+            "tests/test_throttle.matrix",
+            "tests/test_http_head.matrix",
+            "tests/test_multi_db_live.matrix",
+            "tests/test_systems_live.matrix"
+        );
+        let seen = {};
+        for s in base_suites {
+            seen[s] = true;
+        }
+        let tests_dir = self.root + "tests";
+        let ls = list_dir(tests_dir);
+        if ls.is_ok() {
+            let extra = [];
+            for name in ls.unwrap() {
+                let n = string(name);
+                if n.starts_with("test_") and n.ends_with(".matrix") {
+                    let rel = "tests/" + n;
+                    if not seen.has(rel) {
+                        seen[rel] = true;
+                        extra.push(rel);
+                    }
+                }
+            }
+            // Sort extra suites alphabetically
+            let i = 1;
+            while i < extra.len() {
+                let cur = extra[i];
+                let j = i - 1;
+                while j >= 0 and extra[j] > cur {
+                    extra[j + 1] = extra[j];
+                    j = j - 1;
+                }
+                extra[j + 1] = cur;
+                i = i + 1;
+            }
+            for e in extra {
+                base_suites.push(e);
+            }
+        }
+        return base_suites;
+    }
+
     public fn run(self, cli_args = null) -> int {
         let root = self.root;
         if root != "" {
@@ -116,39 +165,7 @@ public class TestRunner {
         println("            Spid3rWeb Complete Test Suite Execution               ");
         println("==================================================================");
 
-        let test_suites = list(
-            "tests/test_router.matrix",
-            "tests/test_validator.matrix",
-            "tests/test_query_builder.matrix",
-            "tests/test_model.matrix",
-            "tests/test_resource.matrix",
-            "tests/test_store.matrix",
-            "tests/test_store_schema.matrix",
-            "tests/test_store_auth.matrix",
-            "tests/test_store_catalog.matrix",
-            "tests/test_store_storefront.matrix",
-            "tests/test_store_cart.matrix",
-            "tests/test_store_checkout.matrix",
-            "tests/test_store_payment.matrix",
-            "tests/test_store_admin.matrix",
-        "tests/test_store_advanced.matrix",
-        "tests/test_store_shipping.matrix",
-        "tests/test_store_security.matrix",
-        "tests/test_store_performance.matrix",
-        "tests/test_store_unit.matrix",
-        "tests/test_store_journey.matrix",
-            "tests/test_websocket.matrix",
-            "tests/test_drivers.matrix",
-            "tests/test_container.matrix",
-            "tests/test_events.matrix",
-            "tests/test_providers.matrix",
-            "tests/test_cache.matrix",
-            "tests/test_core_systems.matrix",
-            "tests/test_throttle.matrix",
-            "tests/test_http_head.matrix",
-            "tests/test_multi_db_live.matrix",
-            "tests/test_systems_live.matrix"
-        );
+        let test_suites = self.discover_suites();
 
         let total_run = 0;
         let passed = 0;

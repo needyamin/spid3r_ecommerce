@@ -1,9 +1,19 @@
 // framework/Middleware.matrix
-// Spid3rWeb Middleware Pipeline & Built-in Guards
+// Spid3rWeb True Onion Middleware Pipeline & Built-in Guards
+//
+// Supports THREE middleware styles seamlessly:
+//   1. Closure / Function Onion Middleware (Express / Hono / Koa style):
+//      `app.use((req, next) => { let res = next(req); res.header("x-foo", "bar"); return res; });`
+//   2. Class Onion Middleware (2-argument `handle(self, req, next)`):
+//      Calls `let res = next(req);` to invoke downstream pipeline and mutate/inspect response.
+//   3. Legacy Pre-Filter Class Middleware (1-argument `handle(self, req)`):
+//      Returns `null` to proceed to the next middleware, or returns a `Response`
+//      to short-circuit the pipeline.
 
 import "framework/Response";
 import "framework/Auth/Auth";
 import "framework/Cache/Cache";
+import "framework/Config/Config";
 
 public class Pipeline {
     public let passable;
@@ -11,7 +21,7 @@ public class Pipeline {
 
     fn new() {
         self.passable = null;
-        self.pipes = list();
+        self.pipes = [];
     }
 
     public fn send(self, passable) {
@@ -24,20 +34,98 @@ public class Pipeline {
         return self;
     }
 
-    public fn then(self, destination) {
-        let req = self.passable;
-        let index = 0;
+    // Ensure any handler/middleware return value is wrapped in a Response object
+    // when after-middleware needs `.header(...)` or `.status_code`.
+    fn ensure_response_obj(self, val) {
+        if val == null {
+            return null;
+        }
+        let t = type_of(val);
+        if t == "instance" {
+            return val;
+        }
+        if t == "map" {
+            if val.has("status") and val.has("headers") and val.has("body") {
+                let r = new Response(string(val["body"]), int(val["status"]));
+                r.headers = val["headers"];
+                return r;
+            }
+            return json(val, 200);
+        }
+        if t == "list" {
+            return json(val, 200);
+        }
+        if t == "string" {
+            return html(val, 200);
+        }
+        return response(string(val), 200);
+    }
 
-        // Recursive or iterative pipeline execution
-        for pipe in self.pipes {
-            let res = pipe.handle(req);
-            // If middleware returns a response (short-circuit), stop pipeline
-            if res != null {
-                return res;
+    fn run_step(self, index: int, current_req, destination) {
+        if self.pipes == null or index >= self.pipes.len() {
+            return destination(current_req);
+        }
+
+        let pipe = self.pipes[index];
+        let me = self;
+        let next_called = {"flag": false, "res": null};
+
+        let next_fn = fn(next_req = null) {
+            next_called["flag"] = true;
+            let r_to_pass = current_req;
+            if next_req != null {
+                r_to_pass = next_req;
+            }
+            let down_res = me.run_step(index + 1, r_to_pass, destination);
+            let wrapped = me.ensure_response_obj(down_res);
+            next_called["res"] = wrapped;
+            return wrapped;
+        };
+
+        // Attach `req.next` so even 1-arg middleware can call `req.next()` if desired
+        let res = null;
+        let pt = type_of(pipe);
+
+        if pt == "function" {
+            // Try 2-arg `(req, next) => ...` first, fallback to 1-arg `req => ...`
+            res = pipe(current_req, next_fn);
+        } else {
+            // Instance with `.handle` — try 2-arg `.handle(req, next)` if supported,
+            // otherwise fallback to 1-arg `.handle(req)`.
+            let handled_2arg = false;
+            try {
+                res = pipe.handle(current_req, next_fn);
+                handled_2arg = true;
+            } catch (err) {
+                let err_msg = string(err);
+                // Note: the interpreter's arity error reads "expects 1
+                // argument(s), got 2" — match "argument" so both spellings
+                // ("arguments", "argument(s)") are covered.
+                if err_msg.contains("expected 2 arguments, got 3") or err_msg.contains("expected 1 arguments, got 2") or err_msg.contains("arity") or err_msg.contains("argument") {
+                    handled_2arg = false;
+                } else {
+                    throw err;
+                }
+            }
+            if not handled_2arg {
+                res = pipe.handle(current_req);
             }
         }
 
-        return destination(req);
+        // If the middleware returned a non-null response directly, use it
+        if res != null {
+            return res;
+        }
+        // If the middleware called `next(req)` and returned null, return the downstream response
+        if next_called["flag"] {
+            return next_called["res"];
+        }
+        // Legacy 1-arg middleware returned `null` without calling `next` -> proceed to next step!
+        return self.run_step(index + 1, current_req, destination);
+    }
+
+    public fn then(self, destination) {
+        return self.run_step(0, self.passable, destination);
     }
 }
 
@@ -46,24 +134,57 @@ public class Pipeline {
 // ----------------------------------------------------------------------------
 
 public class CorsMiddleware {
-    fn new() {}
+    public let allow_origin;
+    public let allow_methods;
+    public let allow_headers;
 
-    public fn handle(self, req) {
+    fn new(origin: string = "*", methods: string = "GET, POST, PUT, DELETE, PATCH, OPTIONS", headers: string = "content-type, authorization, x-requested-with, x-csrf-token") {
+        self.allow_origin = origin;
+        self.allow_methods = methods;
+        self.allow_headers = headers;
+    }
+
+    public fn handle(self, req, next = null) {
         if req.method == "OPTIONS" {
             let res = response("", 204);
-            res.header("access-control-allow-origin", "*");
-            res.header("access-control-allow-methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS");
-            res.header("access-control-allow-headers", "content-type, authorization, x-requested-with");
+            res.header("access-control-allow-origin", self.allow_origin);
+            res.header("access-control-allow-methods", self.allow_methods);
+            res.header("access-control-allow-headers", self.allow_headers);
             return res;
         }
-        return null; // proceed
+        if next != null {
+            let res = next(req);
+            if res != null and type_of(res) == "instance" {
+                // Attach CORS headers on API / JSON responses unless already set
+                if req.path.starts_with("/api/") or (res.headers.has("content-type") and string(res.headers["content-type"]).contains("application/json")) {
+                    if not res.headers.has("access-control-allow-origin") {
+                        res.header("access-control-allow-origin", self.allow_origin);
+                        res.header("access-control-allow-methods", self.allow_methods);
+                        res.header("access-control-allow-headers", self.allow_headers);
+                    }
+                }
+            }
+            return res;
+        }
+        return null;
     }
 }
 
 public class LoggerMiddleware {
     fn new() {}
 
-    public fn handle(self, req) {
+    public fn handle(self, req, next = null) {
+        let start = now_ms();
+        if next != null {
+            let res = next(req);
+            let elapsed = now_ms() - start;
+            let status = 200;
+            if res != null and type_of(res) == "instance" {
+                status = res.status_code;
+            }
+            println("[Spid3rWeb] " + req.method + " " + req.path + " -> " + string(status) + " (" + string(elapsed) + "ms)");
+            return res;
+        }
         println("[Spid3rWeb] " + req.method + " " + req.path);
         return null;
     }
@@ -72,7 +193,7 @@ public class LoggerMiddleware {
 public class AuthMiddleware {
     fn new() {}
 
-    public fn handle(self, req) {
+    public fn handle(self, req, next = null) {
         // Prefer the request-scoped auth state (set by Application); fall
         // back to the global facade for direct/legacy invocation.
         let auth = null;
@@ -89,9 +210,12 @@ public class AuthMiddleware {
 
         if not auth.check() {
             if req.path.starts_with("/api/") or req.header("accept", "").contains("application/json") {
-                return json(map("error", "Unauthorized", "message", "Authentication required."), 401);
+                return json({"error": "Unauthorized", "message": "Authentication required."}, 401);
             }
             return redirect("/login");
+        }
+        if next != null {
+            return next(req);
         }
         return null;
     }
@@ -107,7 +231,7 @@ public class GuestMiddleware {
         self.redirect_to = redirect_to;
     }
 
-    public fn handle(self, req) {
+    public fn handle(self, req, next = null) {
         let auth = null;
         if req.auth != null {
             auth = req.auth;
@@ -116,6 +240,9 @@ public class GuestMiddleware {
         }
         if auth.check() {
             return redirect(self.redirect_to);
+        }
+        if next != null {
+            return next(req);
         }
         return null;
     }
@@ -137,7 +264,7 @@ public class ThrottleMiddleware {
         self.decay_seconds = decay_seconds;
     }
 
-    public fn handle(self, req) {
+    public fn handle(self, req, next = null) {
         // Key by session token when present (stable per client), else by IP.
         let identity = req.client_ip();
         if req.session_id != "" {
@@ -155,13 +282,73 @@ public class ThrottleMiddleware {
         if hits > self.max_attempts {
             let retry = self.decay_seconds;
             if req.path.starts_with("/api/") or req.header("accept", "").contains("application/json") {
-                return json(map(
-                    "error", "Too Many Requests",
-                    "message", "Rate limit exceeded. Try again in " + string(retry) + " seconds."
-                ), 429);
+                return json({
+                    "error": "Too Many Requests",
+                    "message": "Rate limit exceeded. Try again in " + string(retry) + " seconds."
+                }, 429);
             }
             let res = response("<!DOCTYPE html><html lang='en'><head><meta charset='utf-8'><title>429 Too Many Requests - Spid3rWeb</title></head><body><h1>429 — Too Many Requests</h1><p>Rate limit exceeded. Please try again in a few moments.</p></body></html>", 429);
             res.header("retry-after", string(retry));
+            return res;
+        }
+        if next != null {
+            let res = next(req);
+            if res != null and type_of(res) == "instance" {
+                let remaining = self.max_attempts - hits;
+                if remaining < 0 { remaining = 0; }
+                res.header("x-ratelimit-limit", string(self.max_attempts));
+                res.header("x-ratelimit-remaining", string(remaining));
+            }
+            return res;
+        }
+        return null;
+    }
+}
+
+// ----------------------------------------------------------------------------
+// EtagMiddleware — Automatic ETag & 304 Not Modified for GET/HEAD 200 responses
+// ----------------------------------------------------------------------------
+public class EtagMiddleware {
+    fn new() {}
+
+    public fn handle(self, req, next = null) {
+        if next == null {
+            return null;
+        }
+        let res = next(req);
+        if res == null or type_of(res) != "instance" {
+            return res;
+        }
+        if (req.method == "GET" or req.method == "HEAD") and res.status_code == 200 and res.body != "" {
+            let etag = "\"" + sha256(res.body).slice(0, 16) + "\"";
+            res.header("etag", etag);
+            let inm = req.header("if-none-match", "");
+            if inm != "" and inm == etag {
+                res.status(304);
+                res.body = "";
+            }
+        }
+        return res;
+    }
+}
+
+// ----------------------------------------------------------------------------
+// RequestIdMiddleware — Attaches X-Request-Id to req and response headers
+// ----------------------------------------------------------------------------
+public class RequestIdMiddleware {
+    fn new() {}
+
+    public fn handle(self, req, next = null) {
+        let req_id = req.header("x-request-id", "");
+        if req_id == "" {
+            req_id = "req_" + hex_encode(random_bytes(8).unwrap());
+        }
+        req.headers["x-request-id"] = req_id;
+        if next != null {
+            let res = next(req);
+            if res != null and type_of(res) == "instance" {
+                res.header("x-request-id", req_id);
+            }
             return res;
         }
         return null;

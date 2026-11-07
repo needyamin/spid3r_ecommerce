@@ -1,5 +1,16 @@
 // framework/Router.matrix
-// Spid3rWeb Expressive Pattern Router & Controller Dispatcher
+// Spid3rWeb High-Performance Pattern Router & Controller Dispatcher
+//
+// Routing Architecture:
+//   1. O(1) Static Route Map (`static_routes[method][path]`) for exact paths
+//      without parameters or wildcards — zero string splitting or iteration.
+//   2. Pre-split Segment Bucketed Dynamic Routes (`dynamic_by_len[method][len]`)
+//      for `:param` and `{param}` routes — pattern segments are pre-parsed once
+//      at registration time, and only routes with matching segment counts are
+//      inspected on request!
+//   3. Wildcard Routes (`wildcard_routes[method]`) for trailing `*` or `*param`
+//      catch-all prefixes (e.g. `/files/*path`).
+//   4. Named Reverse Routing (`router.url(name, params)` / `route(name, params)`).
 
 public class RouteEntry {
     public let method;
@@ -7,13 +18,34 @@ public class RouteEntry {
     public let handler;
     public let middleware_list;
     public let route_name;
+    public let segments;
+    public let is_static;
+    public let has_wildcard;
+    private let router_ref;
 
-    fn new(method: string, path: string, handler) {
+    fn new(method: string, path: string, handler, router_ref = null) {
         self.method = string(method).upper();
         self.path = path;
         self.handler = handler;
-        self.middleware_list = list();
+        self.middleware_list = [];
         self.route_name = "";
+        self.router_ref = router_ref;
+        self.segments = path.split("/");
+        self.is_static = true;
+        self.has_wildcard = false;
+
+        let i = 0;
+        let n = self.segments.len();
+        while i < n {
+            let seg = self.segments[i];
+            if seg.starts_with(":") or (seg.starts_with("{") and seg.ends_with("}")) {
+                self.is_static = false;
+            } elif seg.starts_with("*") {
+                self.is_static = false;
+                self.has_wildcard = true;
+            }
+            i += 1;
+        }
     }
 
     public fn middleware(self, mw) {
@@ -26,24 +58,55 @@ public class RouteEntry {
     }
 
     public fn name(self, n: string) {
-        self.route_name = n;
+        if self.router_ref != null and self.router_ref.group_name_prefix != "" {
+            self.route_name = self.router_ref.group_name_prefix + n;
+        } else {
+            self.route_name = n;
+        }
+        if self.router_ref != null and self.route_name != "" {
+            self.router_ref.named_routes[self.route_name] = self;
+        }
         return self;
     }
 }
 
 public class Router {
     public let routes_list;
+    public let static_routes;
+    public let dynamic_by_len;
+    public let wildcard_routes;
+    public let named_routes;
     public let group_prefix;
+    public let group_name_prefix;
     public let group_middleware;
     // App-defined catch-all invoked when no route matches and no static
     // asset exists. Receives the Request; must return a Response.
     public let fallback_handler;
 
     fn new() {
-        self.routes_list = list();
+        self.routes_list = [];
+        self.static_routes = {};
+        self.dynamic_by_len = {};
+        self.wildcard_routes = {};
+        self.named_routes = {};
         self.group_prefix = "";
-        self.group_middleware = list();
+        self.group_name_prefix = "";
+        self.group_middleware = [];
         self.fallback_handler = null;
+    }
+
+    // Clear all registered routes (useful in tests or hot reloads).
+    public fn clear(self) {
+        self.routes_list = [];
+        self.static_routes = {};
+        self.dynamic_by_len = {};
+        self.wildcard_routes = {};
+        self.named_routes = {};
+        self.group_prefix = "";
+        self.group_name_prefix = "";
+        self.group_middleware = [];
+        self.fallback_handler = null;
+        return self;
     }
 
     // Register a catch-all handler for unmatched requests.
@@ -63,7 +126,13 @@ public class Router {
         return entry;
     }
 
+    // Register a route responding to all standard HTTP verbs.
+    public fn any(self, path: string, handler) {
+        return self.match_any(["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"], path, handler);
+    }
+
     public fn add(self, method: string, path: string, handler) {
+        let m = string(method).upper();
         let full_path = self.group_prefix + path;
         if full_path.len() > 1 and full_path.ends_with("/") {
             full_path = full_path.slice(0, full_path.len() - 1);
@@ -71,12 +140,74 @@ public class Router {
         if not full_path.starts_with("/") {
             full_path = "/" + full_path;
         }
+        // Normalize accidental double slashes from group prefix + route path
+        while full_path.contains("//") {
+            full_path = full_path.replace("//", "/");
+        }
 
-        let entry = new RouteEntry(method, full_path, handler);
-        for m in self.group_middleware {
-            entry.middleware(m);
+        let entry = new RouteEntry(m, full_path, handler, self);
+        for mw in self.group_middleware {
+            entry.middleware(mw);
         }
         self.routes_list.push(entry);
+
+        // Index into fast lookup tables
+        if entry.is_static {
+            if not self.static_routes.has(m) {
+                self.static_routes[m] = {};
+            }
+            // Keep first-registered precedence if duplicate path registered
+            if not self.static_routes[m].has(full_path) {
+                self.static_routes[m][full_path] = entry;
+            }
+        } elif entry.has_wildcard {
+            if not self.wildcard_routes.has(m) {
+                self.wildcard_routes[m] = [];
+            }
+            self.wildcard_routes[m].push(entry);
+        } else {
+            if not self.dynamic_by_len.has(m) {
+                self.dynamic_by_len[m] = {};
+            }
+            let seg_key = string(entry.segments.len());
+            if not self.dynamic_by_len[m].has(seg_key) {
+                self.dynamic_by_len[m][seg_key] = {
+                    "all": [],
+                    "first_seg": {},
+                    "second_seg": {},
+                    "param_first": []
+                };
+            }
+            let bucket = self.dynamic_by_len[m][seg_key];
+            bucket["all"].push(entry);
+
+            // Index by first literal segment (index 1, after leading "")
+            let s1 = "";
+            if entry.segments.len() > 1 {
+                s1 = entry.segments[1];
+            }
+            if s1 == "" or s1.starts_with(":") or s1.starts_with("{") {
+                bucket["param_first"].push(entry);
+            } else {
+                if not bucket["first_seg"].has(s1) {
+                    bucket["first_seg"][s1] = [];
+                }
+                bucket["first_seg"][s1].push(entry);
+
+                // Also index by (s1 + "/" + s2) when segment 2 is literal!
+                if entry.segments.len() > 2 {
+                    let s2 = entry.segments[2];
+                    if not s2.starts_with(":") and not s2.starts_with("{") {
+                        let s12 = s1 + "/" + s2;
+                        if not bucket["second_seg"].has(s12) {
+                            bucket["second_seg"][s12] = [];
+                        }
+                        bucket["second_seg"][s12].push(entry);
+                    }
+                }
+            }
+        }
+
         return entry;
     }
 
@@ -100,13 +231,39 @@ public class Router {
         return self.add("PATCH", path, handler);
     }
 
+    public fn options(self, path: string, handler) {
+        return self.add("OPTIONS", path, handler);
+    }
+
+    // Mount another Router's routes under a URL prefix.
+    public fn mount(self, prefix: string, sub_router) {
+        let sub_routes = sub_router.routes();
+        let i = 0;
+        while i < sub_routes.len() {
+            let r = sub_routes[i];
+            let entry = self.add(r.method, prefix + r.path, r.handler);
+            for mw in r.middleware_list {
+                entry.middleware(mw);
+            }
+            if r.route_name != "" {
+                entry.name(r.route_name);
+            }
+            i += 1;
+        }
+        return self;
+    }
+
     public fn group(self, options, callback) {
         let prev_prefix = self.group_prefix;
-        let prev_mw = list();
+        let prev_name_prefix = self.group_name_prefix;
+        let prev_mw = [];
         for m in self.group_middleware { prev_mw.push(m); }
 
         if options.has("prefix") {
-            self.group_prefix = self.group_prefix + options["prefix"];
+            self.group_prefix = self.group_prefix + string(options["prefix"]);
+        }
+        if options.has("name") {
+            self.group_name_prefix = self.group_name_prefix + string(options["name"]);
         }
         if options.has("middleware") {
             let mw = options["middleware"];
@@ -120,11 +277,84 @@ public class Router {
         callback();
 
         self.group_prefix = prev_prefix;
+        self.group_name_prefix = prev_name_prefix;
         self.group_middleware = prev_mw;
+        return self;
     }
 
     // ------------------------------------------------------------------------
-    // Route Matching & Parameter Extraction
+    // Named Reverse Routing (URL Generation)
+    // ------------------------------------------------------------------------
+
+    public fn url(self, name: string, params = null) -> string {
+        let entry = null;
+        if self.named_routes.has(name) {
+            entry = self.named_routes[name];
+        } else {
+            // Fallback scan in case route_name was mutated directly
+            for r in self.routes_list {
+                if r.route_name == name {
+                    entry = r;
+                    break;
+                }
+            }
+        }
+        if entry == null {
+            throw "Router: named route '" + name + "' is not defined";
+        }
+        if params == null or type_of(params) != "map" {
+            return entry.path;
+        }
+
+        let used_keys = {};
+        let out_segs = [];
+        for seg in entry.segments {
+            if seg.starts_with(":") {
+                let k = seg.slice(1, seg.len());
+                if not params.has(k) {
+                    throw "Router: missing required parameter '" + k + "' for route '" + name + "'";
+                }
+                used_keys[k] = true;
+                out_segs.push(string(params[k]));
+            } elif seg.starts_with("{") and seg.ends_with("}") {
+                let k = seg.slice(1, seg.len() - 1).trim();
+                if not params.has(k) {
+                    throw "Router: missing required parameter '" + k + "' for route '" + name + "'";
+                }
+                used_keys[k] = true;
+                out_segs.push(string(params[k]));
+            } elif seg.starts_with("*") {
+                let k = seg.slice(1, seg.len());
+                if k == "" { k = "wildcard"; }
+                if params.has(k) {
+                    used_keys[k] = true;
+                    out_segs.push(string(params[k]));
+                }
+            } else {
+                out_segs.push(seg);
+            }
+        }
+
+        let built = out_segs.join("/");
+        if built == "" {
+            built = "/";
+        }
+
+        // Any extra params not consumed by path placeholders become query string params
+        let qs_parts = [];
+        for (k, v) in params {
+            if not used_keys.has(k) and v != null {
+                qs_parts.push(string(k) + "=" + string(v));
+            }
+        }
+        if qs_parts.len() > 0 {
+            built = built + "?" + qs_parts.join("&");
+        }
+        return built;
+    }
+
+    // ------------------------------------------------------------------------
+    // Route Matching & Parameter Extraction (O(1) Static + Bucketed Dynamic)
     // ------------------------------------------------------------------------
 
     public fn match_route(self, method: string, request_path: string) {
@@ -145,18 +375,164 @@ public class Router {
     }
 
     fn match_route_exact(self, m: string, target_path: string) {
-        for route in self.routes_list {
-            if route.method == m {
-                let params = self.match_path(route.path, target_path);
-                if params != null {
-                    return map(
-                        "route", route,
-                        "params", params
-                    );
+        // 1. O(1) Fast-Path: Static route hash table lookup
+        if self.static_routes.has(m) {
+            let m_statics = self.static_routes[m];
+            if m_statics.has(target_path) {
+                return {
+                    "route": m_statics[target_path],
+                    "params": {}
+                };
+            }
+        }
+
+        // Split target path ONCE per request (never per route)
+        let a_parts = null;
+
+        // 2. Bucketed Dynamic Routes (same segment count + prefix index)
+        if self.dynamic_by_len.has(m) {
+            a_parts = target_path.split("/");
+            let a_len = a_parts.len();
+            let seg_key = string(a_len);
+            let m_dyn = self.dynamic_by_len[m];
+            if m_dyn.has(seg_key) {
+                let bucket = m_dyn[seg_key];
+
+                // Fast-path 2a: Two-segment literal prefix lookup (e.g. /users/128/...)
+                if a_len > 2 {
+                    let s12 = a_parts[1] + "/" + a_parts[2];
+                    if bucket["second_seg"].has(s12) {
+                        let c2 = bucket["second_seg"][s12];
+                        let k = 0;
+                        let kn = c2.len();
+                        while k < kn {
+                            let r2 = c2[k];
+                            let p2 = self.match_segments(r2.segments, a_parts);
+                            if p2 != null {
+                                return { "route": r2, "params": p2 };
+                            }
+                            k += 1;
+                        }
+                    }
+                }
+
+                // Fast-path 2b: First-segment literal prefix lookup (e.g. /users/...)
+                if a_len > 1 {
+                    let s1 = a_parts[1];
+                    if bucket["first_seg"].has(s1) {
+                        let c1 = bucket["first_seg"][s1];
+                        let i = 0;
+                        let n = c1.len();
+                        while i < n {
+                            let route = c1[i];
+                            let params = self.match_segments(route.segments, a_parts);
+                            if params != null {
+                                return { "route": route, "params": params };
+                            }
+                            i += 1;
+                        }
+                    }
+                }
+
+                // Fallback 2c: Routes starting with a parameter at segment 1 (/:slug/...)
+                let pf = bucket["param_first"];
+                let j = 0;
+                let jn = pf.len();
+                while j < jn {
+                    let route_pf = pf[j];
+                    let params_pf = self.match_segments(route_pf.segments, a_parts);
+                    if params_pf != null {
+                        return { "route": route_pf, "params": params_pf };
+                    }
+                    j += 1;
                 }
             }
         }
+
+        // 3. Wildcard Routes (prefix match + remainder capture)
+        if self.wildcard_routes.has(m) {
+            if a_parts == null {
+                a_parts = target_path.split("/");
+            }
+            let w_list = self.wildcard_routes[m];
+            let i = 0;
+            let n = w_list.len();
+            while i < n {
+                let route = w_list[i];
+                let params = self.match_wildcard_segments(route.segments, a_parts);
+                if params != null {
+                    return {
+                        "route": route,
+                        "params": params
+                    };
+                }
+                i += 1;
+            }
+        }
+
         return null;
+    }
+
+    fn match_segments(self, p_parts, a_parts) {
+        let params = {};
+        let i = 0;
+        let n = p_parts.len();
+        while i < n {
+            let p_seg = p_parts[i];
+            let a_seg = a_parts[i];
+
+            if p_seg.starts_with(":") {
+                let param_name = p_seg.slice(1, p_seg.len());
+                params[param_name] = a_seg;
+            } elif p_seg.starts_with("{") and p_seg.ends_with("}") {
+                let param_name = p_seg.slice(1, p_seg.len() - 1).trim();
+                params[param_name] = a_seg;
+            } elif p_seg != a_seg {
+                return null;
+            }
+            i += 1;
+        }
+        return params;
+    }
+
+    fn match_wildcard_segments(self, p_parts, a_parts) {
+        let p_len = p_parts.len();
+        let a_len = a_parts.len();
+        if a_len < p_len - 1 {
+            return null;
+        }
+        let params = {};
+        let i = 0;
+        while i < p_len {
+            let p_seg = p_parts[i];
+            if p_seg.starts_with("*") {
+                let param_name = p_seg.slice(1, p_seg.len());
+                if param_name == "" {
+                    param_name = "wildcard";
+                }
+                let rest = [];
+                let j = i;
+                while j < a_len {
+                    rest.push(a_parts[j]);
+                    j += 1;
+                }
+                params[param_name] = rest.join("/");
+                return params;
+            }
+            if i >= a_len {
+                return null;
+            }
+            let a_seg = a_parts[i];
+            if p_seg.starts_with(":") {
+                params[p_seg.slice(1, p_seg.len())] = a_seg;
+            } elif p_seg.starts_with("{") and p_seg.ends_with("}") {
+                params[p_seg.slice(1, p_seg.len() - 1).trim()] = a_seg;
+            } elif p_seg != a_seg {
+                return null;
+            }
+            i += 1;
+        }
+        return params;
     }
 
     // Verbs registered for a path; drives 405 Method Not Allowed + Allow header.
@@ -165,7 +541,7 @@ public class Router {
         if target_path.len() > 1 and target_path.ends_with("/") {
             target_path = target_path.slice(0, target_path.len() - 1);
         }
-        let found = list();
+        let found = [];
         for route in self.routes_list {
             if self.match_path(route.path, target_path) != null and not found.contains(route.method) {
                 found.push(route.method);
@@ -176,46 +552,44 @@ public class Router {
 
     fn match_path(self, pattern: string, actual: string) {
         if pattern == actual {
-            return map();
+            return {};
         }
 
         let p_parts = pattern.split("/");
         let a_parts = actual.split("/");
 
+        if p_parts.len() > 0 and p_parts[p_parts.len() - 1].starts_with("*") {
+            return self.match_wildcard_segments(p_parts, a_parts);
+        }
+
         if p_parts.len() != a_parts.len() {
             return null;
         }
 
-        let params = map();
-        let i = 0;
-        while i < p_parts.len() {
-            let p_seg = p_parts[i];
-            let a_seg = a_parts[i];
-
-            if p_seg.starts_with(":") {
-                let param_name = p_seg.slice(1, p_seg.len());
-                params[param_name] = a_seg;
-            } else if p_seg.starts_with("{") and p_seg.ends_with("}") {
-                let param_name = p_seg.slice(1, p_seg.len() - 1).trim();
-                params[param_name] = a_seg;
-            } else if p_seg != a_seg {
-                return null;
-            }
-            i = i + 1;
-        }
-
-        return params;
+        return self.match_segments(p_parts, a_parts);
     }
 
     // ------------------------------------------------------------------------
     // Dispatch Action
     // ------------------------------------------------------------------------
 
-    // Dispatch a route handler. Handlers are closures — Spid3r has no
-    // runtime reflection, so controller methods cannot be referenced by
-    // name ("Controller@action" strings are not supported).
+    // Dispatch a route handler. Supports:
+    //   - 1-argument handlers: `req => ...` (Fast-path, zero overhead)
+    //   - 2-argument Express-style handlers: `(req, res) => ...`
     public fn dispatch(self, handler, req) {
-        return handler(req);
+        try {
+            return handler(req);
+        } catch (e) {
+            let msg = string(e).lower();
+            if (msg.contains("argument") or msg.contains("arity") or msg.contains("parameter")) and req.res != null {
+                let out = handler(req, req.res);
+                if out == null {
+                    return req.res;
+                }
+                return out;
+            }
+            throw e;
+        }
     }
 
     public fn routes(self) {
@@ -225,3 +599,7 @@ public class Router {
 
 public let Route = new Router();
 
+// Global helper for named route URL generation: route_url("posts.show", {"id": 5})
+public fn route_url(name: string, params = null) -> string {
+    return Route.url(name, params);
+}

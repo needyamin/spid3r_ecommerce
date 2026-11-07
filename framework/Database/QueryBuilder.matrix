@@ -3,6 +3,7 @@
 // Split out of DB.matrix; the DatabaseManager hands out instances via table().
 
 import "Connection";
+import "framework/HttpException";
 
 public class QueryBuilder {
     public let table_name;
@@ -165,6 +166,14 @@ public class QueryBuilder {
         self.order_col = column;
         self.order_dir = d;
         return self;
+    }
+
+    public fn latest(self, column: string = "id") {
+        return self.orderBy(column, "DESC");
+    }
+
+    public fn oldest(self, column: string = "id") {
+        return self.orderBy(column, "ASC");
     }
 
     public fn limit(self, count: int) {
@@ -414,8 +423,32 @@ public class QueryBuilder {
         return null;
     }
 
+    public fn first_or_fail(self, message: string = "") {
+        let row = self.first();
+        if row == null {
+            let msg = message;
+            if msg == "" {
+                msg = "Record not found in " + self.table_name + ".";
+            }
+            throw not_found(msg);
+        }
+        return row;
+    }
+
     public fn find(self, id) {
         return self.where("id", "=", id).first();
+    }
+
+    public fn find_or_fail(self, id, message: string = "") {
+        let row = self.find(id);
+        if row == null {
+            let msg = message;
+            if msg == "" {
+                msg = "Record #" + string(id) + " not found in " + self.table_name + ".";
+            }
+            throw not_found(msg);
+        }
+        return row;
     }
 
     // Refactored to share build_head() — no duplicated join/where compilation.

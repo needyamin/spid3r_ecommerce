@@ -3,6 +3,7 @@
 
 import "framework/Database/DB";
 import "framework/Auth/Hash";
+import "framework/Auth/Jwt";
 import "framework/Config/Config";
 
 public class AuthManager {
@@ -38,6 +39,20 @@ public class AuthManager {
         return false;
     }
 
+    // Mint a stateless JWT for a user map and mark the current AuthManager as logged in.
+    public fn jwt(self, user, ttl: int = 3600) -> string {
+        let safe_user = map();
+        for k in user.keys() {
+            if k != "password" {
+                safe_user[k] = user[k];
+            }
+        }
+        let token = Jwt.sign(safe_user, ttl);
+        self.current_user = safe_user;
+        self.current_token = token;
+        return token;
+    }
+
     public fn login(self, user) {
         // Password hashes must never linger in auth state — views and API
         // responses render from this map.
@@ -66,6 +81,18 @@ public class AuthManager {
 
     public fn authenticate_token(self, token: string) -> bool {
         if token == "" { return false; }
+
+        // Stateless JWT fast-path: if token has 3 dot-separated segments, verify HS256 JWT without DB hit
+        if token.contains(".") and token.split(".").len() == 3 {
+            let claims = Jwt.verify(token);
+            if claims != null {
+                self.current_user = claims;
+                self.current_token = token;
+                return true;
+            }
+            return false;
+        }
+
         try {
             // Server-side session TTL: session.lifetime seconds of inactivity
             // expires a session (config/session.matrix).
@@ -107,7 +134,7 @@ public class AuthManager {
     }
 
     public fn logout(self) {
-        if self.current_token != "" {
+        if self.current_token != "" and not self.current_token.contains(".") {
             try {
                 DB.statement("DELETE FROM " + self.sessions_table() + " WHERE token = ?", list(self.current_token));
             } catch (_e) {}

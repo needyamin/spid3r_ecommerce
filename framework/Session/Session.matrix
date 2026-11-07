@@ -1,0 +1,143 @@
+// framework/Session/Session.matrix
+// Spid3rWeb General-Purpose Session & Flash Store
+//
+// Provides key-value session storage and one-request flash messages:
+//   req.session().put("cart_count", 3);
+//   req.session().flash("status", "Profile updated!");
+//   let msg = req.session().get_flash("status", "");
+
+import "framework/Cache/Cache";
+import "framework/Config/Config";
+
+public class SessionStore {
+    public let id;
+    public let data;
+    private let dirty;
+    private let new_cookie;
+
+    fn new(existing_id: string = "") {
+        self.id = existing_id;
+        self.data = {};
+        self.dirty = false;
+        self.new_cookie = false;
+
+        if self.id != "" {
+            let stored = Cache.get("session:" + self.id, null);
+            if stored != null and type_of(stored) == "map" {
+                self.data = stored;
+            }
+        }
+    }
+
+    fn ensure_id(self) {
+        if self.id == "" {
+            self.id = "sid_" + hex_encode(random_bytes(16).unwrap());
+            self.new_cookie = true;
+        }
+    }
+
+    public fn is_dirty(self) -> bool {
+        return self.dirty;
+    }
+
+    public fn get(self, key: string, default_val = null) {
+        if self.data.has(key) {
+            return self.data[key];
+        }
+        return default_val;
+    }
+
+    public fn put(self, key: string, value) {
+        self.ensure_id();
+        self.data[key] = value;
+        self.dirty = true;
+        return self;
+    }
+
+    public fn has(self, key: string) -> bool {
+        return self.data.has(key) and self.data[key] != null;
+    }
+
+    public fn forget(self, key: string) {
+        if self.data.has(key) {
+            self.data.remove(key);
+            self.dirty = true;
+        }
+        return self;
+    }
+
+    public fn all(self) {
+        return self.data;
+    }
+
+    public fn flush(self) {
+        self.data = {};
+        if self.id != "" {
+            Cache.forget("session:" + self.id);
+        }
+        self.dirty = true;
+        return self;
+    }
+
+    // Store a flash value for the next request.
+    public fn flash(self, key: string, value) {
+        self.ensure_id();
+        let flash_bag = {};
+        if self.data.has("__flash__") and type_of(self.data["__flash__"]) == "map" {
+            flash_bag = self.data["__flash__"];
+        }
+        flash_bag[key] = value;
+        self.data["__flash__"] = flash_bag;
+        self.dirty = true;
+        return self;
+    }
+
+    // Retrieve and consume a flash value (one-time read).
+    public fn get_flash(self, key: string, default_val = null) {
+        if self.data.has("__flash__") and type_of(self.data["__flash__"]) == "map" {
+            let flash_bag = self.data["__flash__"];
+            if flash_bag.has(key) {
+                let val = flash_bag[key];
+                flash_bag.remove(key);
+                self.data["__flash__"] = flash_bag;
+                self.dirty = true;
+                return val;
+            }
+        }
+        return default_val;
+    }
+
+    public fn has_flash(self, key: string) -> bool {
+        if self.data.has("__flash__") and type_of(self.data["__flash__"]) == "map" {
+            return self.data["__flash__"].has(key);
+        }
+        return false;
+    }
+
+    public fn save(self) {
+        if self.id != "" and self.dirty {
+            let ttl = int(Config.get("session.lifetime", 86400));
+            Cache.put("session:" + self.id, self.data, ttl);
+            self.dirty = false;
+        }
+    }
+
+    public fn commit_to_http(self, http_map) {
+        if not self.dirty {
+            return;
+        }
+        self.save();
+        if self.new_cookie and type_of(http_map) == "map" and http_map.has("headers") {
+            let ttl = int(Config.get("session.lifetime", 86400));
+            let cookie_str = "spid3r_sid=" + self.id + "; Path=/; Max-Age=" + string(ttl) + "; HttpOnly; SameSite=Lax";
+            let headers = http_map["headers"];
+            if headers.has("set-cookie") {
+                headers["set-cookie"] = string(headers["set-cookie"]) + ", " + cookie_str;
+            } else {
+                headers["set-cookie"] = cookie_str;
+            }
+            http_map["headers"] = headers;
+            self.new_cookie = false;
+        }
+    }
+}

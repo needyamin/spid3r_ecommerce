@@ -7,7 +7,11 @@ import "framework/Database/DB";
 import "framework/Database/Schema";
 import "framework/Database/Migration";
 import "framework/Queue/Queue";
+import "framework/Cache/Cache";
 import "TestRunner";
+// Store-specific named middleware aliases (role:, permission:) must exist
+// for `magic serve` too — server.matrix registers the same set for its
+// own boot path.
 import "app/Middleware/StoreMiddleware";
 
 public class ConsoleKernel {
@@ -68,6 +72,12 @@ public class ConsoleKernel {
             return self.command_migrate_status();
         } elif command == "db:seed" {
             return self.command_db_seed();
+        } elif command == "queue:work" {
+            return self.command_queue_work(cli_args);
+        } elif command == "cache:clear" {
+            return self.command_cache_clear();
+        } elif command == "key:generate" {
+            return self.command_key_generate();
         } elif command == "make:controller" {
             if cli_args.len() < 2 {
                 println("Error: Not enough arguments (missing controller name). Usage: make:controller <Name>");
@@ -84,8 +94,24 @@ public class ConsoleKernel {
                 make_mig = true;
             }
             return self.command_make_model(cli_args[1], make_mig);
-        } elif command == "queue:work" {
-            return self.command_queue_work(cli_args);
+        } elif command == "make:middleware" {
+            if cli_args.len() < 2 {
+                println("Error: Not enough arguments (missing middleware name). Usage: make:middleware <Name>");
+                return 1;
+            }
+            return self.command_make_middleware(cli_args[1]);
+        } elif command == "make:provider" {
+            if cli_args.len() < 2 {
+                println("Error: Not enough arguments (missing provider name). Usage: make:provider <Name>");
+                return 1;
+            }
+            return self.command_make_provider(cli_args[1]);
+        } elif command == "make:test" {
+            if cli_args.len() < 2 {
+                println("Error: Not enough arguments (missing test name). Usage: make:test <name>");
+                return 1;
+            }
+            return self.command_make_test(cli_args[1]);
         } elif command == "make:migration" {
             if cli_args.len() < 2 {
                 println("Error: Not enough arguments (missing migration name). Usage: make:migration <name>");
@@ -114,8 +140,13 @@ public class ConsoleKernel {
         println("  migrate:status            Show the status of each migration");
         println("  db:seed                   Seed the database with records");
         println("  queue:work [--once]       Process queued jobs (--once = drain and exit)");
-        println("  make:controller <Name>    Create a new controller class");
-        println("  make:model <Name> [-m]    Create a new Active Record model (optional migration)");
+        println("  cache:clear               Flush the application cache store");
+        println("  key:generate              Generate a random 256-bit APP_KEY in .env");
+        println("  make:controller <Name>    Create a new MVC controller class");
+        println("  make:model <Name> [-m]    Create a new model repository (optional migration)");
+        println("  make:middleware <Name>    Create a new Onion HTTP middleware class");
+        println("  make:provider <Name>      Create a new ServiceProvider class");
+        println("  make:test <name>          Create a new integration test suite");
         println("  make:migration <name>     Create a new database migration file");
         println("  help                      Display this help message\n");
     }
@@ -139,10 +170,6 @@ public class ConsoleKernel {
     }
 
     fn command_test(self, cli_args = null) -> int {
-        // Recursion guard: some registered suites (e.g. e2e tier2 CLI
-        // boundaries) invoke `magic test` themselves to verify the command
-        // works. Without a guard that recurses forever. A nested test run
-        // is a no-op that reports success — the outer run does the work.
         if env("SPID3R_MAGIC_TEST_GUARD").is_some() {
             return 0;
         }
@@ -152,10 +179,51 @@ public class ConsoleKernel {
         return runner.run(cli_args);
     }
 
+    fn command_cache_clear(self) -> int {
+        Cache.flush();
+        println("[Magic] Application cache cleared.");
+        return 0;
+    }
+
+    fn command_key_generate(self) -> int {
+        let new_key = "hex:" + hex_encode(random_bytes(32).unwrap());
+        let env_path = self.resolve_root() + ".env";
+        let content = "";
+        if file_exists(env_path) {
+            let r = read_file(env_path);
+            if r.is_ok() {
+                content = string(r.unwrap());
+            }
+        }
+        if content.contains("APP_KEY=") {
+            let out_lines = [];
+            for line in content.split("\n") {
+                if line.trim().starts_with("APP_KEY=") {
+                    out_lines.push("APP_KEY=" + new_key);
+                } else {
+                    out_lines.push(line);
+                }
+            }
+            content = out_lines.join("\n");
+        } else {
+            if content != "" and not content.ends_with("\n") {
+                content = content + "\n";
+            }
+            content = content + "APP_KEY=" + new_key + "\n";
+        }
+        let w = write_file(env_path, content);
+        if w.is_err() {
+            println("[Magic Error] " + w.unwrap_err());
+            return 1;
+        }
+        println("[Magic] Application key set successfully in " + env_path);
+        return 0;
+    }
+
     fn command_route_list(self) -> int {
         let routes = Route.routes();
         println("\n+--------+------------------------------------+--------------------------------+");
-        println("| Method | URI                                | Action                         |");
+        println("| Method | URI                                | Action / Name                  |");
         println("+--------+------------------------------------+--------------------------------+");
 
         for r in routes {
@@ -168,6 +236,8 @@ public class ConsoleKernel {
             let action_str = "Closure";
             if type_of(r.handler) == "string" {
                 action_str = r.handler;
+            } elif r.route_name != "" {
+                action_str = "Closure [" + r.route_name + "]";
             }
             let a_pad = action_str;
             while a_pad.len() < 30 { a_pad = a_pad + " "; }
@@ -178,10 +248,6 @@ public class ConsoleKernel {
         return 0;
     }
 
-    // Drain queued jobs. Options: --once (a single job), --queue=NAME.
-    // The runtime has no sleep primitive, so the worker is a "drain and
-    // exit" design: it processes until the queue is empty and returns.
-    // Schedule it (cron / Task Scheduler) for continuous processing.
     fn command_queue_work(self, cli_args) -> int {
         let once = false;
         let queue = "";
@@ -218,9 +284,6 @@ public class ConsoleKernel {
     }
 
     fn command_migrate(self) -> int {
-        // Auto-discovery: pick up any hand-written migration files first.
-        // Spid3r imports are compile-time constants, so brand-new files are
-        // registered for the NEXT process; re-run to apply them.
         let new_count = self.sync_migration_registry(false);
         if new_count > 0 {
             println("[Migrate] Detected " + string(new_count) + " new migration file(s). Registry updated.");
@@ -233,21 +296,10 @@ public class ConsoleKernel {
         return 0;
     }
 
-    // ------------------------------------------------------------------
-    // Migration Auto-Discovery (artisan-style)
-    // Spid3r's `import` is a compile-time, string-literal-only construct —
-    // modules cannot be loaded dynamically at runtime. So instead of
-    // runtime require() like PHP's autoloader, the kernel scans
-    // database/migrations/ and generates `registry.matrix`, which the
-    // `magic` entrypoint imports once. `make:migration` and `migrate`
-    // keep the registry in sync automatically.
-    // ------------------------------------------------------------------
-
     fn migrations_dir(self) -> string {
         return self.resolve_root() + "database/migrations";
     }
 
-    // Sorted list of migration filenames (*.matrix, excluding registry)
     fn scan_migration_files(self) {
         let out = [];
         let res = list_dir(self.migrations_dir());
@@ -260,7 +312,6 @@ public class ConsoleKernel {
                 out.push(n);
             }
         }
-        // Insertion sort → deterministic execution order
         let i = 1;
         while i < out.len() {
             let cur = out[i];
@@ -275,9 +326,7 @@ public class ConsoleKernel {
         return out;
     }
 
-    // Pull the migration class name out of a file's source text
     fn extract_class_name(self, content: string) -> string {
-        // Only register classes that extend the Migration base
         if not content.contains("extends Migration") {
             return "";
         }
@@ -293,16 +342,10 @@ public class ConsoleKernel {
         return words[0].trim();
     }
 
-    // Regenerate registry.matrix from all migration files.
-    // Returns the number of newly discovered files (0 = up to date),
-    // or -1 on write failure. Set force=true to rebuild even when the
-    // scan looks up to date (used when migration files were deleted —
-    // see tools/resync.matrix).
     public fn sync_migration_registry(self, verbose: bool, force: bool = false) -> int {
         let files = self.scan_migration_files();
         let reg_path = self.migrations_dir() + "/registry.matrix";
 
-        // How many of the scanned files does the current registry cover?
         let known = 0;
         let stale = 0;
         if file_exists(reg_path) {
@@ -310,12 +353,11 @@ public class ConsoleKernel {
             if res.is_ok() {
                 let content = string(res.unwrap());
                 for f in files {
-                    let mod_name = f.slice(0, f.len() - 7); // strip ".matrix"
+                    let mod_name = f.slice(0, f.len() - 7);
                     if content.contains("\"database/migrations/" + mod_name + "\"") {
                         known = known + 1;
                     }
                 }
-                // Registry entries whose files no longer exist
                 for line in content.split("\n") {
                     let t = line.trim();
                     if t.starts_with("import \"database/migrations/") {
@@ -343,16 +385,13 @@ public class ConsoleKernel {
             if cls == "" {
                 continue;
             }
-            let mod_name = f.slice(0, f.len() - 7); // strip ".matrix"
+            let mod_name = f.slice(0, f.len() - 7);
             imports.push("import \"database/migrations/" + mod_name + "\";");
             calls.push("    kernel.register_migration(new " + cls + "());");
         }
 
         let content = "// database/migrations/registry.matrix
 // AUTO-GENERATED by `spid3r magic migrate:sync` — do not edit by hand.
-// Regenerated automatically by `make:migration` and `migrate` whenever
-// migration files change. Spid3r imports are compile-time constants,
-// so newly created files are picked up on the next CLI invocation.
 
 " + imports.join("\n") + "
 
@@ -421,9 +460,6 @@ public fn register_all_migrations(kernel) {
         return "";
     }
 
-    // Ensure every directory level of a target file path exists.
-    // write_file does not create parent dirs — on a fresh installation
-    // app/Controllers and app/Models may not exist yet.
     fn ensure_parent_dir(self, file_path: string) -> string {
         let parts = string(file_path).split("/");
         if parts.len() < 2 {
@@ -444,9 +480,6 @@ public fn register_all_migrations(kernel) {
         return file_path;
     }
 
-    // Scaffolding names become class names AND file paths. Reject anything
-    // that is not a plain Spid3r identifier so `make:model ../../evil` or
-    // names with separators cannot write outside the target directory.
     fn valid_scaffold_name(self, name: string) -> bool {
         let s = string(name);
         if s.len() == 0 {
@@ -482,7 +515,6 @@ public fn register_all_migrations(kernel) {
 
         let content = "// app/Controllers/" + clean_name + ".matrix
 import \"framework/Controller\";
-import \"framework/Response\";
 
 public class " + clean_name + " extends Controller {
     fn new() {
@@ -490,16 +522,21 @@ public class " + clean_name + " extends Controller {
     }
 
     public fn index(self, req) {
-        // render() merges shared layout data (is_auth, user_name, is_admin,
-        // csrf_token) automatically — no self.shared() juggling needed.
-        return self.render(req, \"" + base_view + ".index\", map(
-            \"title\", \"" + clean_name + "\"
-        ));
+        return self.render(req, \"" + base_view + ".index\", {
+            \"title\": \"" + clean_name + "\"
+        });
     }
 
     public fn show(self, req) {
-        let id = req.param(\"id\");
-        return self.json(map(\"id\", id));
+        let id = req.int(\"id\");
+        return self.ok({\"id\": id});
+    }
+
+    public fn store(self, req) {
+        let data = req.validate_or_fail({
+            \"title\": \"required|min:2\"
+        });
+        return self.created(data);
     }
 }
 ";
@@ -523,42 +560,12 @@ public class " + clean_name + " extends Controller {
 
         let content = "// app/Models/" + name + ".matrix
 import \"framework/Database/Model\";
-import \"framework/Database/DB\";
 
-public class " + name + " extends Model {
-    public let model;
-
-    fn new(attrs = null) {
-        super(\"" + table_name + "\", [], attrs);
-        self.model = self;
-    }
-
-    public static fn find(id) {
-        let _ = self;
-        let row = DB.table(\"" + table_name + "\").where(\"id\", \"=\", id).first();
-        if row != null {
-            return new " + name + "(row);
-        }
-        return null;
-    }
-
-    public static fn create(attrs) {
-        let _ = self;
-        let m = new " + name + "(attrs);
-        m.save();
-        return m;
-    }
-
-    public static fn all() {
-        let _ = self;
-        let rows = DB.table(\"" + table_name + "\").get();
-        let items = [];
-        for r in rows {
-            items.push(new " + name + "(r));
-        }
-        return items;
-    }
-}
+public let " + name + " = define_model(\"" + table_name + "\", {
+    \"fillable\": [],
+    \"hidden\": [],
+    \"casts\": {}
+});
 
 public let " + name + "Model = " + name + ";
 ";
@@ -575,10 +582,111 @@ public let " + name + "Model = " + name + ";
         return 0;
     }
 
+    fn command_make_middleware(self, name: string) -> int {
+        if not self.valid_scaffold_name(name) {
+            println("[Magic Error] Invalid middleware name '" + string(name) + "'.");
+            return 1;
+        }
+        let clean_name = name;
+        if not clean_name.ends_with("Middleware") {
+            clean_name = clean_name + "Middleware";
+        }
+        let file_path = self.resolve_root() + "app/Middleware/" + clean_name + ".matrix";
+        let _ = self.ensure_parent_dir(file_path);
+
+        let content = "// app/Middleware/" + clean_name + ".matrix
+public class " + clean_name + " {
+    fn new() {}
+
+    public fn handle(self, req, next = null) {
+        if next != null {
+            return next(req);
+        }
+        return null;
+    }
+}
+";
+        let res = write_file(file_path, content);
+        if res.is_err() {
+            println("[Magic Error] " + res.unwrap_err());
+            return 1;
+        }
+        println("[Magic] Middleware created successfully: " + file_path);
+        return 0;
+    }
+
+    fn command_make_provider(self, name: string) -> int {
+        if not self.valid_scaffold_name(name) {
+            println("[Magic Error] Invalid provider name '" + string(name) + "'.");
+            return 1;
+        }
+        let clean_name = name;
+        if not clean_name.ends_with("Provider") {
+            clean_name = clean_name + "Provider";
+        }
+        let file_path = self.resolve_root() + "app/Providers/" + clean_name + ".matrix";
+        let _ = self.ensure_parent_dir(file_path);
+
+        let content = "// app/Providers/" + clean_name + ".matrix
+import \"framework/Providers/ServiceProvider\";
+
+public class " + clean_name + " extends ServiceProvider {
+    fn new() {
+        super();
+    }
+
+    public fn register(self, container) {
+        let _ = container;
+    }
+
+    public fn boot(self, container) {
+        let _ = container;
+    }
+}
+";
+        let res = write_file(file_path, content);
+        if res.is_err() {
+            println("[Magic Error] " + res.unwrap_err());
+            return 1;
+        }
+        println("[Magic] Provider created successfully: " + file_path);
+        return 0;
+    }
+
+    fn command_make_test(self, name: string) -> int {
+        if not self.valid_scaffold_name(name) {
+            println("[Magic Error] Invalid test name '" + string(name) + "'.");
+            return 1;
+        }
+        let clean = name.lower();
+        if not clean.starts_with("test_") {
+            clean = "test_" + clean;
+        }
+        let file_path = self.resolve_root() + "tests/" + clean + ".matrix";
+        let _ = self.ensure_parent_dir(file_path);
+
+        let content = "// tests/" + clean + ".matrix
+import \"framework/Web\";
+
+fn main() {
+    let app = web();
+    app.get(\"/ping\", req => {\"pong\": true});
+
+    let client = app.test_client();
+    client.get(\"/ping\").assert_ok().assert_json_path(\"pong\", true);
+    println(\"  [PASS] " + clean + "\");
+}
+";
+        let res = write_file(file_path, content);
+        if res.is_err() {
+            println("[Magic Error] " + res.unwrap_err());
+            return 1;
+        }
+        println("[Magic] Test suite created successfully: " + file_path);
+        return 0;
+    }
+
     fn command_make_migration(self, name: string) -> int {
-        // Migration names become snake_case file names AND class names —
-        // restrict to lowercase words so nothing can escape the
-        // database/migrations/ directory or produce an invalid class name.
         let allowed = "abcdefghijklmnopqrstuvwxyz0123456789_";
         let sn = string(name);
         let name_ok = sn.len() > 0;
@@ -597,8 +705,6 @@ public let " + name + "Model = " + name + ";
         let file_name = ts + "_" + name + ".matrix";
         let file_path = self.resolve_root() + "database/migrations/" + file_name;
 
-        // Derive a readable class name from the migration name:
-        // "create_users_table" -> "CreateUsersTable"
         let words = name.split("_");
         let class_words = [];
         for w in words {
@@ -645,4 +751,3 @@ public class " + class_name + " extends Migration {
         return 0;
     }
 }
-

@@ -12,6 +12,7 @@ public class DatabaseManager {
     public let driver;
     public let conn_config;
     public let tx_depth;
+    private let tx_lock;
 
     fn new() {
         // Re-load .env here (idempotent: OS env wins) so every manager
@@ -20,7 +21,7 @@ public class DatabaseManager {
         let _env_reload = load_env_file(".env");
         self.driver = self.resolve_driver();
         self.db_path = "";
-        self.conn_config = map();
+        self.conn_config = {};
         if self.driver == "sqlite" {
             self.db_path = self.resolve_database_path();
         } else {
@@ -28,6 +29,7 @@ public class DatabaseManager {
         }
         self.db_handle = null;
         self.tx_depth = 0;
+        self.tx_lock = mutex(true);
     }
 
     // Driver selection: SPID3R_DB_DRIVER env var (sqlite|postgres|mysql|mariadb).
@@ -163,21 +165,32 @@ public class DatabaseManager {
     // (they run in the scope of the outer transaction — no savepoints).
     // On error the transaction is rolled back and the original exception
     // is re-thrown; a failed ROLLBACK never masks that original error.
+    // Guarded by tx_lock when starting a top-level transaction so concurrent
+    // tasks never interleave BEGIN/COMMIT/ROLLBACK on the shared connection.
     public fn transaction(self, callback) {
         if self.tx_depth > 0 {
             return callback();
         }
+        let _g = self.tx_lock.lock();
         self.tx_depth = 1;
-        let conn = self.connection();
-        if self.driver == "sqlite" {
-            conn.exec("BEGIN IMMEDIATE");
-        } else {
-            conn.exec("BEGIN");
+        let conn = null;
+        try {
+            conn = self.connection();
+            if self.driver == "sqlite" {
+                conn.exec("BEGIN IMMEDIATE");
+            } else {
+                conn.exec("BEGIN");
+            }
+        } catch (begin_err) {
+            self.tx_depth = 0;
+            self.tx_lock.unlock();
+            throw begin_err;
         }
         try {
             let result = callback();
             conn.exec("COMMIT");
             self.tx_depth = 0;
+            self.tx_lock.unlock();
             return result;
         } catch (e) {
             try {
@@ -186,6 +199,7 @@ public class DatabaseManager {
                 // Rollback failure must not mask the original error.
             }
             self.tx_depth = 0;
+            self.tx_lock.unlock();
             throw e;
         }
     }

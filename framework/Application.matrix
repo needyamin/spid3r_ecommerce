@@ -11,6 +11,7 @@ import "framework/ErrorRenderer";
 import "framework/Container/Container";
 import "framework/Events/Event";
 import "framework/HttpException";
+import "framework/Testing/TestClient";
 
 public class Application {
     public let router;
@@ -59,6 +60,8 @@ public class Application {
         self.middleware_registry["guest"] = fn(_args) { return new GuestMiddleware(); };
         self.middleware_registry["cors"] = fn(_args) { return new CorsMiddleware(); };
         self.middleware_registry["logger"] = fn(_args) { return new LoggerMiddleware(); };
+        self.middleware_registry["etag"] = fn(_args) { return new EtagMiddleware(); };
+        self.middleware_registry["request_id"] = fn(_args) { return new RequestIdMiddleware(); };
         self.middleware_registry["throttle"] = fn(args) {
             let max_attempts = 60;
             let decay_seconds = 60;
@@ -72,9 +75,62 @@ public class Application {
         };
     }
 
+    // ------------------------------------------------------------------------
+    // Express / Fastify-Style Direct Routing Helpers
+    // ------------------------------------------------------------------------
+
+    public fn get(self, path: string, handler) {
+        return self.router.get(path, handler);
+    }
+
+    public fn post(self, path: string, handler) {
+        return self.router.post(path, handler);
+    }
+
+    public fn put(self, path: string, handler) {
+        return self.router.put(path, handler);
+    }
+
+    public fn patch(self, path: string, handler) {
+        return self.router.patch(path, handler);
+    }
+
+    public fn delete(self, path: string, handler) {
+        return self.router.delete(path, handler);
+    }
+
+    public fn options(self, path: string, handler) {
+        return self.router.options(path, handler);
+    }
+
+    public fn any(self, path: string, handler) {
+        return self.router.any(path, handler);
+    }
+
+    public fn match_any(self, methods, path: string, handler) {
+        return self.router.match_any(methods, path, handler);
+    }
+
+    public fn group(self, options, callback) {
+        return self.router.group(options, callback);
+    }
+
+    public fn fallback(self, handler) {
+        return self.router.fallback(handler);
+    }
+
+    public fn mount(self, prefix: string, sub_router) {
+        self.router.mount(prefix, sub_router);
+        return self;
+    }
+
+    public fn test_client(self) {
+        return new TestClient(self);
+    }
+
     // Register a named middleware. The factory receives the parsed argument
     // list from "name:arg1,arg2" route references and returns a middleware
-    // instance with .handle(req).
+    // instance with .handle(req, next) or a closure `(req, next) => ...`.
     public fn middleware(self, name: string, factory) {
         self.middleware_registry[string(name).trim().lower()] = factory;
         return self;
@@ -156,7 +212,7 @@ public class Application {
         return "application/octet-stream";
     }
 
-    fn try_serve_static(self, path: string) {
+    fn try_serve_static(self, path: string, req = null) {
         if self.is_unsafe_path(path) {
             return null;
         }
@@ -172,6 +228,22 @@ public class Application {
 
         for p in candidates {
             if file_exists(p) {
+                // Compute cheap weak ETag from size + mtime before reading file
+                let etag_val = "";
+                let sz_res = file_size(p);
+                let mt_res = file_mtime(p);
+                if sz_res.is_ok() and mt_res.is_ok() {
+                    etag_val = "W/\"" + string(sz_res.unwrap()) + "-" + string(mt_res.unwrap()) + "\"";
+                    if req != null {
+                        let inm = req.header("if-none-match", "");
+                        if inm != "" and inm == etag_val {
+                            let not_mod = response("", 304);
+                            not_mod.header("etag", etag_val);
+                            return not_mod;
+                        }
+                    }
+                }
+
                 // `read_file` decodes text as UTF-8 and fails for most image
                 // bytes. Uploaded assets must use the binary-safe reader and
                 // pass the raw bytes through the HTTP response body unchanged.
@@ -181,6 +253,9 @@ public class Application {
                         let resp = response("", 200);
                         resp.body = binary.unwrap();
                         resp.header("content-type", self.content_type_for(p));
+                        if etag_val != "" {
+                            resp.header("etag", etag_val);
+                        }
                         if self.debug {
                             resp.header("cache-control", "no-cache");
                         } else {
@@ -189,10 +264,14 @@ public class Application {
                         return resp;
                     }
                 }
+
                 let res = read_file(p);
                 if res.is_ok() {
                     let resp = response(res.unwrap(), 200);
                     resp.header("content-type", self.content_type_for(p));
+                    if etag_val != "" {
+                        resp.header("etag", etag_val);
+                    }
                     // Dev (debug): always revalidate so edits show up
                     // immediately. Production: allow an hour of caching.
                     if self.debug {
@@ -218,6 +297,11 @@ public class Application {
         return false;
     }
 
+    // Root-level static files commonly served from public/
+    fn is_root_static_file(self, path: string) -> bool {
+        return path == "/robots.txt" or path == "/sitemap.xml" or path == "/favicon.ico" or path == "/manifest.json" or path == "/site.webmanifest";
+    }
+
     // ------------------------------------------------------------------------
     // HTTP Request Handler
     // ------------------------------------------------------------------------
@@ -225,10 +309,10 @@ public class Application {
         // Providers must be booted before the first request touches them.
         self.boot();
         let req = new Request(raw_req);
-        // Expose the application to handlers: req.app.container.resolve(...),
-        // req.app.router, etc. — route closures stay framework-aware without
-        // importing globals everywhere.
+        // Expose the application and a mutable Response builder to handlers:
+        // req.app.container.resolve(...), (req, res) => res.json(...)
         req.app = self;
+        req.res = new Response();
 
         // Per-request auth state. The global Auth facade is NOT touched
         // during the request lifecycle: with a concurrent server, mutating
@@ -238,6 +322,9 @@ public class Application {
         req.auth = auth;
         if req.session_id != "" {
             auth.authenticate_token(req.session_id);
+        }
+        if auth.check() {
+            req.user_data = auth.user();
         }
 
         // 0a. CSRF defense-in-depth layer 1: state-changing requests must
@@ -263,7 +350,7 @@ public class Application {
         //     to the same handler as GET (body handling is the server's
         //     concern); matches the Router's HEAD→GET route fallback.
         if (req.method == "GET" or req.method == "HEAD") and self.is_static_prefix(req.path) {
-            let static_res = self.try_serve_static(req.path);
+            let static_res = self.try_serve_static(req.path, req);
             if static_res != null {
                 return static_res.to_http();
             }
@@ -272,74 +359,59 @@ public class Application {
             }
         }
 
-        // 2. Global Pipeline (CORS, Logging). App middleware may throw
-        //     typed HTTP exceptions — honor their status instead of a 500.
-        let pipeline = new Pipeline();
-        let early = null;
-        try {
-            early = pipeline.send(req).through(self.global_middleware).then(fn(_r) { return null; });
-        } catch (e) {
-            if is_http_exception(e) {
-                return ErrorRenderer.http_error(req, e);
-            }
-            throw e;
-        }
-        if early != null {
-            return early.to_http();
-        }
-
-        let match_result = self.router.match_route(req.method, req.path);
-
-        if match_result == null {
-            // Check if static root (e.g. /favicon.ico)
-            if req.path == "/favicon.ico" {
-                let icon = response("", 204);
-                icon.header("content-type", "image/x-icon");
-                return icon.to_http();
-            }
-            let allowed = self.router.allowed_methods(req.path);
-            if allowed.len() > 0 {
-                return text_405(allowed.join(", ")).to_http();
-            }
-            // App-defined fallback route (Router.fallback)
-            if self.router.fallback_handler != null {
-                let fb_res = self.router.fallback_handler(req);
-                return self.normalize_response(fb_res);
-            }
-            return ErrorRenderer.not_found(req);
-        }
-
-        let route_entry = match_result["route"];
-        req.params = match_result["params"];
-
-        // 3. Route-specific Middleware Pipeline. Alias resolution failures
-        //     and middleware bodies can raise typed HTTP exceptions too.
-        let route_pipeline = new Pipeline();
-        let mw_instances = null;
-        try {
-            mw_instances = self.resolve_middleware(route_entry.middleware_list);
-        } catch (e) {
-            if is_http_exception(e) {
-                return ErrorRenderer.http_error(req, e);
-            }
-            throw e;
-        }
-        // Middleware bodies run OUTSIDE the destination closure, so their
-        // typed exceptions (401/403/429/...) need their own catch here —
-        // otherwise a guard's `throw unauthorized(...)` escapes the kernel
-        // instead of producing an HTTP response.
+        // 2. Global Onion Pipeline + Route Dispatch.
+        //    Global middleware can short-circuit early (e.g. CORS preflight)
+        //    or wrap downstream execution via `next(req)` (e.g. Logger, ETag,
+        //    RequestId, custom timing/header middleware).
+        let global_pipeline = new Pipeline();
         let final_response = null;
         try {
-            route_pipeline.send(req).through(mw_instances);
-            final_response = route_pipeline.then(fn(r) {
-                try {
-                    return self.router.dispatch(route_entry.handler, r);
-                } catch (e) {
-                    if is_http_exception(e) {
-                        return ErrorRenderer.http_error(r, e);
+            final_response = global_pipeline.send(req).through(self.global_middleware).then(fn(r) {
+                let match_result = self.router.match_route(r.method, r.path);
+
+                if match_result == null {
+                    // Check root-level static files in public/ (e.g. /robots.txt, /favicon.ico)
+                    if (r.method == "GET" or r.method == "HEAD") and self.is_root_static_file(r.path) {
+                        let root_static = self.try_serve_static(r.path, r);
+                        if root_static != null {
+                            return root_static;
+                        }
                     }
-                    return ErrorRenderer.server_error(r, e);
+                    if r.path == "/favicon.ico" {
+                        let icon = response("", 204);
+                        icon.header("content-type", "image/x-icon");
+                        return icon;
+                    }
+                    let allowed = self.router.allowed_methods(r.path);
+                    if allowed.len() > 0 {
+                        return text_405(allowed.join(", "));
+                    }
+                    // App-defined fallback route (Router.fallback)
+                    if self.router.fallback_handler != null {
+                        let fb_res = self.router.fallback_handler(r);
+                        return self.coerce_handler_output(fb_res);
+                    }
+                    return ErrorRenderer.not_found(r);
                 }
+
+                let route_entry = match_result["route"];
+                r.params = match_result["params"];
+
+                // 3. Route-specific Onion Middleware Pipeline.
+                let mw_instances = self.resolve_middleware(route_entry.middleware_list);
+                let route_pipeline = new Pipeline();
+                route_pipeline.send(r).through(mw_instances);
+                return route_pipeline.then(fn(inner_req) {
+                    try {
+                        let raw_out = self.router.dispatch(route_entry.handler, inner_req);
+                        return self.coerce_handler_output(raw_out);
+                    } catch (e) {
+                        if is_http_exception(e) {
+                            return ErrorRenderer.http_error(inner_req, e);
+                        }
+                        return ErrorRenderer.server_error(inner_req, e);
+                    }
+                });
             });
         } catch (e) {
             if is_http_exception(e) {
@@ -351,21 +423,52 @@ public class Application {
         if final_response == null {
             let empty = response("", 200);
             empty.header("content-type", "text/plain");
-            return empty.to_http();
+            return self.finalize_http_response(req, empty.to_http());
         }
 
-        return self.normalize_response(final_response);
+        return self.finalize_http_response(req, self.normalize_response(final_response));
     }
 
-    // Convert handler output (Response object or raw http_response map) into
-    // the raw HTTP map the server expects, applying route-level additions
-    // such as CORS headers on API responses.
+    // Coerce shorthand handler returns (plain maps, lists, strings) into
+    // Response objects so downstream Onion middleware can inspect status/body
+    // and attach headers consistently.
+    fn coerce_handler_output(self, res) {
+        if res == null {
+            let empty = response("", 200);
+            empty.header("content-type", "text/plain");
+            return empty;
+        }
+        let t = type_of(res);
+        if t == "instance" {
+            return res;
+        }
+        if t == "map" {
+            if res.has("status") and res.has("headers") and res.has("body") {
+                return res;
+            }
+            return json(res, 200);
+        }
+        if t == "list" {
+            return json(res, 200);
+        }
+        if t == "string" {
+            return html(res, 200);
+        }
+        let txt = response(string(res), 200);
+        txt.header("content-type", "text/plain; charset=utf-8");
+        return txt;
+    }
+
+    // Convert handler output (Response object, plain map/list/string, or raw
+    // http_response map) into the raw HTTP map the server expects, applying
+    // route-level additions such as CORS headers on API responses.
     fn normalize_response(self, res) {
+        let coerced = self.coerce_handler_output(res);
         let out = null;
-        if type_of(res) == "map" and res.has("status") and res.has("headers") {
-            out = res;
+        if type_of(coerced) == "map" and coerced.has("status") and coerced.has("headers") {
+            out = coerced;
         } else {
-            out = res.to_http();
+            out = coerced.to_http();
         }
         // API responses get CORS headers (same as the previous global
         // default, but scoped so cookie-authenticated HTML pages never
@@ -382,6 +485,14 @@ public class Application {
             }
         }
         return out;
+    }
+
+    // Commit per-request state (such as dirty Session cookies) onto the final HTTP map.
+    fn finalize_http_response(self, req, http_map) {
+        if req.session_store != null and req.session_store.is_dirty() {
+            req.session_store.commit_to_http(http_map);
+        }
+        return http_map;
     }
 
     // Compare an Origin header against the request Host, normalizing scheme
@@ -417,6 +528,10 @@ public class Application {
     fn resolve_middleware(self, mw_names) {
         let resolved = list();
         for name in mw_names {
+            if type_of(name) == "function" or type_of(name) == "instance" {
+                resolved.push(name);
+                continue;
+            }
             let raw = string(name).trim().lower();
             if raw == "" {
                 continue;
@@ -513,4 +628,3 @@ public class Application {
         }, opts, -1);
     }
 }
-

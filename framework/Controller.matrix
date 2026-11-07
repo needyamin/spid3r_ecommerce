@@ -1,8 +1,7 @@
 // framework/Controller.matrix
 // Spid3rWeb Base Controller — the "C" of the MVC triad.
-// Every application controller extends this class and inherits the
-// response/view helpers plus shared view data (auth state) that the
-// global layout template expects on every page.
+// Every application controller extends this class and inherits fluent
+// response/view helpers plus shared view context (auth state, CSRF token).
 
 import "framework/Response";
 import "framework/View/BD";
@@ -15,6 +14,18 @@ public class Controller {
         return json(data, status);
     }
 
+    public fn ok(self, data) {
+        return json(data, 200);
+    }
+
+    public fn created(self, data) {
+        return json(data, 201);
+    }
+
+    public fn no_content(self) {
+        return response("", 204);
+    }
+
     public fn view(self, view_name: string, data = null) {
         if data == null {
             data = map();
@@ -22,9 +33,9 @@ public class Controller {
         return view(view_name, data);
     }
 
-    // Preferred way to render a page: shared data (auth state, csrf token,
-    // admin flag) is merged automatically. Controllers just write:
-    //   return self.render(req, "store.index", map("title", "Hello"));
+    // Preferred way to render a page: shared data (auth state, user, csrf_token)
+    // is merged automatically. Controllers just write:
+    //   return self.render(req, "posts.index", {"posts": posts});
     public fn render(self, req, view_name: string, data = null) {
         if data == null {
             data = map();
@@ -33,7 +44,7 @@ public class Controller {
     }
 
     // Raw body response with an explicit content type — for XML feeds,
-    // plain text, downloads. No header juggling in controllers.
+    // plain text, downloads.
     public fn respond(self, body: string, content_type: string, status: int = 200) {
         let res = response(body, status);
         res.header("content-type", content_type);
@@ -44,16 +55,26 @@ public class Controller {
         return redirect(url, status);
     }
 
+    public fn back(self, req, fallback: string = "/") {
+        let referer = "";
+        if req != null {
+            referer = string(req.header("referer", fallback));
+        }
+        if referer == "" {
+            referer = fallback;
+        }
+        return redirect(referer, 302);
+    }
+
     public fn validate(self, req, rules) {
         return req.validate(rules);
     }
 
-    // ------------------------------------------------------------------
-    // Auth resolution
-    // ------------------------------------------------------------------
-    // Prefer the request-scoped AuthManager (safe under concurrent
-    // requests). Falls back to the global facade when called without a
-    // request (CLI, tests, legacy code paths).
+    public fn validate_or_fail(self, req, rules) {
+        return req.validate_or_fail(rules);
+    }
+
+    // Prefer the request-scoped AuthManager (safe under concurrent requests).
     public fn auth(self, req = null) {
         if req != null and req.auth != null {
             return req.auth;
@@ -61,80 +82,8 @@ public class Controller {
         return Auth;
     }
 
-    // ------------------------------------------------------------------
-    // Developer / test mode demo logins
-    //
-    // The storefront shows the seeded demo accounts (admin + customer) so a
-    // developer can sign in with one click. This is deliberately gated:
-    //   * APP_ENV=production / prod / live  -> never shown
-    //   * SPID3R_SHOW_DEMO_LOGINS=0         -> explicitly hidden
-    //   * SPID3R_ADMIN_EMAIL set            -> hidden (real admin, real
-    //     password must never be printed) unless the flag is forced to 1
-    // Defaults mirror database/seeders/DatabaseSeeder.matrix.
-    // ------------------------------------------------------------------
-    fn env_value(self, key: string) -> string {
-        if env(key).is_some() {
-            return string(env(key).unwrap()).trim();
-        }
-        return "";
-    }
-
-    public fn demo_mode(self) -> bool {
-        let app_env = self.env_value("APP_ENV").lower();
-        if app_env == "" {
-            app_env = "development";
-        }
-        if app_env == "production" or app_env == "prod" or app_env == "live" {
-            return false;
-        }
-
-        let flag = self.env_value("SPID3R_SHOW_DEMO_LOGINS").lower();
-        if flag == "0" or flag == "false" or flag == "no" {
-            return false;
-        }
-        let forced = flag == "1" or flag == "true" or flag == "yes";
-
-        if self.env_value("SPID3R_ADMIN_EMAIL") != "" and not forced {
-            return false;
-        }
-        return true;
-    }
-
-    public fn demo_accounts(self) {
-        if not self.demo_mode() {
-            return list();
-        }
-
-        let admin_email = self.env_value("SPID3R_DEMO_ADMIN_EMAIL");
-        if admin_email == "" {
-            admin_email = "admin@spid3r.test";
-        }
-        let admin_pw = self.env_value("SPID3R_DEMO_ADMIN_PASSWORD");
-        if admin_pw == "" {
-            admin_pw = "secret123";
-        }
-        let customer_email = self.env_value("SPID3R_DEMO_CUSTOMER_EMAIL");
-        if customer_email == "" {
-            customer_email = "ada@example.com";
-        }
-        let customer_pw = self.env_value("SPID3R_DEMO_CUSTOMER_PASSWORD");
-        if customer_pw == "" {
-            customer_pw = "secret123";
-        }
-
-        return list(
-            map("label", "Admin", "hint", "Admin panel access", "email", admin_email, "password", admin_pw),
-            map("label", "Customer", "hint", "Shop and checkout", "email", customer_email, "password", customer_pw)
-        );
-    }
-
-    // ------------------------------------------------------------------
-    // Shared view data
-    // Merges caller data with the auth-state variables the global store
-    // layout renders in the navbar (is_auth, user_name), the CSRF token and
-    // the dev-mode demo accounts. Prefer render(), which calls this for you:
-    //   return self.render(req, "store.index", map(...));
-    // ------------------------------------------------------------------
+    // Merges caller data with auth-state variables (`is_auth`, `user`, `user_name`,
+    // `csrf_token`, `is_admin`).
     public fn shared(self, data = null, req = null) {
         if data == null {
             data = map();
@@ -144,23 +93,20 @@ public class Controller {
 
         let user_name = "";
         let user = auth.user();
+        data["user"] = user;
         if user != null and user.has("name") {
             user_name = string(user["name"]);
         }
         data["user_name"] = user_name;
         data["csrf_token"] = auth.csrf();
 
-        // Admin flag for the navbar link (false for guests/non-admins).
         data["is_admin"] = false;
         if user != null and user.has("is_admin") and user["is_admin"] != null {
-            if string(user["is_admin"]) == "1" {
+            let adm = string(user["is_admin"]).lower();
+            if adm == "1" or adm == "true" {
                 data["is_admin"] = true;
             }
         }
-
-        // Demo credentials are exposed to views ONLY in dev/test mode.
-        data["demo_mode"] = self.demo_mode();
-        data["demo_accounts"] = self.demo_accounts();
         return data;
     }
 }
