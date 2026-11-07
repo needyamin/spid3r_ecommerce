@@ -56,24 +56,27 @@
 
     <div class="col-12 col-lg-4">
       <div class="dz-card p-4">
-        <h2 class="h5 mb-3">Order summary</h2>
-        <div class="total-line"><span>Subtotal</span><span>{{ subtotal_display }}</span></div>
+        <h2 class="h5 mb-3">{{ t.checkout.order_summary }}</h2>
+        <div class="total-line"><span>{{ lbl_subtotal }}</span><span>{{ subtotal_display }}</span></div>
 @if(discount_minor)
-        <div class="total-line text-success"><span>Volume discount</span><span>− {{ discount_display }}</span></div>
+        <div class="total-line text-success"><span>{{ lbl_discount }}</span><span>− {{ discount_display }}</span></div>
 @endif
-        <div class="total-line"><span>Shipping estimate</span><span>{{ shipping_display }}</span></div>
+        <div class="total-line"><span>{{ lbl_shipping }}</span><span>{{ shipping_display }}</span></div>
 @if(free_shipping)
-        <p class="free-shipping mb-1">🚚 You qualify for free shipping.</p>
+        <p class="free-shipping mb-1">🚚 {{ t.cart.free_shipping }}</p>
 @endif
-        <div class="total-line total-grand"><strong>Total</strong><strong>{{ total_display }}</strong></div>
+        <div class="total-line total-grand"><strong>{{ lbl_total }}</strong><strong>{{ total_display }}</strong></div>
+@if(display_currency != base_currency)
+        <p class="small text-muted mt-2 mb-0">{{ t.checkout.billed_in_notice }} {{ base_currency }}</p>
+@endif
         <div class="d-grid gap-2 mt-3">
-          <a class="btn btn-primary" href="/checkout">Proceed to checkout</a>
-          <a class="btn btn-light border" href="/catalog">Continue shopping</a>
+          <a class="btn btn-primary" href="/checkout">{{ t.actions.proceed_to_checkout }}</a>
+          <a class="btn btn-light border" href="/catalog">{{ t.actions.continue_shopping }}</a>
         </div>
       </div>
     </div>
   </div>
 @else
-  <p class="empty-note">Your cart is empty. <a href="/catalog">Browse the catalog</a></p>
+  <p class="empty-note">{{ t.cart.empty }}. <a href="/catalog">{{ t.actions.continue_shopping }}</a></p>
 @endif
 @endsection

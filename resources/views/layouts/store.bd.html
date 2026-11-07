@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="{{ active_locale }}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -19,7 +19,8 @@
 @if(not is_admin_area)
 @if(has_announcement)
   <div class="dz-announcement-strip text-center py-1 small fw-semibold bg-dark text-white border-bottom">
-    <div class="container d-flex justify-content-center align-items-center">
+    <div class="container d-flex justify-content-center align-items-center gap-2">
+      <span class="badge text-bg-warning rounded-pill px-2 py-0 text-uppercase" style="font-size:10px; letter-spacing:0.04em;">Special</span>
       <span>{{ announcement_text }}</span>
     </div>
   </div>
@@ -27,41 +28,46 @@
   <!-- Top strip: currency & language & support contact -->
   @if(currency_options)
   <div class="dz-topbar d-none d-md-block">
-    <div class="container d-flex justify-content-end align-items-center gap-3 py-1">
-      <div class="me-auto text-secondary small d-none d-lg-flex align-items-center gap-3">
+    <div class="container d-flex justify-content-between align-items-center py-1">
+      <div class="text-secondary small d-none d-lg-flex align-items-center gap-3">
 @if(has_support_phone)
-        <span>&#128222; Hotline: <strong>{{ support_phone }}</strong></span>
+        <span class="topbar-contact-item"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="me-1"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path></svg>{{ lbl_hotline }}: <strong>{{ support_phone }}</strong></span>
 @endif
 @if(has_support_email)
-        <span>&#9993; {{ support_email }}</span>
+        <span class="topbar-contact-item"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="me-1"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline></svg>{{ support_email }}</span>
 @endif
       </div>
-      <form class="switcher" method="post" action="/locale">
-        <input type="hidden" name="_csrf" value="{{ csrf }}">
-        <input type="hidden" name="return_to" value="{{ current_path }}">
-        <label for="currency-select">Currency</label>
-        <select id="currency-select" name="currency" class="form-select form-select-sm">
+      <div class="d-flex align-items-center gap-3 ms-auto">
+        <form class="switcher d-flex align-items-center gap-1" method="post" action="/locale">
+          <input type="hidden" name="_csrf" value="{{ csrf }}">
+          <input type="hidden" name="return_to" value="{{ current_path }}">
+          <label for="currency-select" class="text-muted small mb-0">{{ lbl_currency }}</label>
+          <select id="currency-select" name="currency" class="form-select form-select-sm topbar-select" onchange="this.form.submit()">
 @foreach(cur in currency_options)
 @if(cur.selected)
-          <option value="{{ cur.code }}" selected>{{ cur.code }} — {{ cur.name }}</option>
+            <option value="{{ cur.code }}" selected>{{ cur.code }} ({{ cur.name }})</option>
 @else
-          <option value="{{ cur.code }}">{{ cur.code }} — {{ cur.name }}</option>
+            <option value="{{ cur.code }}">{{ cur.code }} ({{ cur.name }})</option>
 @endif
 @endforeach
-        </select>
-        <button class="btn btn-outline-secondary btn-sm" type="submit">Apply</button>
-      </form>
-      <form class="switcher" method="post" action="/locale">
-        <input type="hidden" name="_csrf" value="{{ csrf }}">
-        <input type="hidden" name="return_to" value="{{ current_path }}">
-        <label for="locale-select">Language</label>
-        <select id="locale-select" name="locale" class="form-select form-select-sm">
+          </select>
+        </form>
+        <span class="topbar-divider text-muted opacity-50">|</span>
+        <form class="switcher d-flex align-items-center gap-1" method="post" action="/locale">
+          <input type="hidden" name="_csrf" value="{{ csrf }}">
+          <input type="hidden" name="return_to" value="{{ current_path }}">
+          <label for="locale-select" class="text-muted small mb-0">{{ lbl_language }}</label>
+          <select id="locale-select" name="locale" class="form-select form-select-sm topbar-select" onchange="this.form.submit()">
 @foreach(loc in locale_options)
-          <option value="{{ loc.code }}">{{ loc.label }}</option>
+@if(loc.selected)
+            <option value="{{ loc.code }}" selected>{{ loc.label }}</option>
+@else
+            <option value="{{ loc.code }}">{{ loc.label }}</option>
+@endif
 @endforeach
-        </select>
-        <button class="btn btn-outline-secondary btn-sm" type="submit">Apply</button>
-      </form>
+          </select>
+        </form>
+      </div>
     </div>
   </div>
   @endif
@@ -70,12 +76,12 @@
   <!-- Main header -->
   <header class="dz-header sticky-top">
     <nav class="navbar navbar-expand-lg container">
-      <a class="navbar-brand dz-brand me-2 me-lg-4" href="/"><span class="brand-mark" aria-hidden="true">S</span> {{ store_name }}</a>
+      <a class="navbar-brand dz-brand me-2 me-lg-4" href="/" aria-label="{{ store_name }}"><span class="brand-mark" aria-hidden="true"><svg class="brand-spider-svg" viewBox="0 0 100 100" width="22" height="22" aria-hidden="true"><circle cx="50" cy="34" r="8" fill="currentColor"/><path d="M46 26 L48 20 L50 24 L52 20 L54 26 Z" fill="currentColor"/><path d="M50 44 C41 44 35 54 35 66 C35 78 44 87 50 92 C56 87 65 78 65 66 C65 54 59 44 50 44 Z" fill="currentColor"/><g fill="none" stroke="currentColor" stroke-width="4.8" stroke-linecap="round" stroke-linejoin="round"><path d="M44 32 C35 20 25 12 18 12 C13 12 12 16 14 22 C16 29 20 37 25 41"/><path d="M42 38 C30 30 17 26 11 29 C7 31 7 36 9 42 C12 49 18 57 23 61"/><path d="M42 46 C29 47 16 54 11 62 C8 67 11 71 16 70 C22 68 29 61 33 55"/><path d="M44 53 C33 63 22 74 18 82 C15 87 19 90 23 88 C30 83 38 74 42 64"/><path d="M56 32 C65 20 75 12 82 12 C87 12 88 16 86 22 C84 29 80 37 75 41"/><path d="M58 38 C70 30 83 26 89 29 C93 31 93 36 91 42 C88 49 82 57 77 61"/><path d="M58 46 C71 47 84 54 89 62 C92 67 89 71 84 70 C78 68 71 61 67 55"/><path d="M56 53 C67 63 78 74 82 82 C85 87 81 90 77 88 C70 83 62 74 58 64"/></g></svg></span> {{ store_name }}</a>
 
 @if(not is_admin_area)
       <form class="dz-search input-group my-2 my-lg-0 order-lg-1" method="get" action="/search" role="search">
-        <input type="search" name="q" value="{{ header_search_q }}" class="form-control" placeholder="Search in {{ store_name }}" aria-label="Search products">
-        <button class="btn btn-primary px-3" type="submit" aria-label="Search">Search</button>
+        <input type="search" name="q" value="{{ header_search_q }}" class="form-control" placeholder="{{ lbl_search_placeholder }}" aria-label="{{ lbl_search }}">
+        <button class="btn btn-primary px-3" type="submit" aria-label="{{ lbl_search }}">{{ lbl_search }}</button>
       </form>
 @endif
 
@@ -115,30 +121,32 @@
           <a href="/account">{{ nav_account }}</a>
         </div>
 @if(currency_options)
-        <div class="d-lg-none border-top mt-2 pt-2 d-flex flex-wrap gap-2">
-          <form class="switcher" method="post" action="/locale">
+        <div class="d-lg-none border-top mt-3 pt-3 d-flex flex-wrap gap-2">
+          <form class="switcher flex-fill" method="post" action="/locale">
             <input type="hidden" name="_csrf" value="{{ csrf }}">
             <input type="hidden" name="return_to" value="{{ current_path }}">
-            <select name="currency" class="form-select form-select-sm" aria-label="Currency">
+            <select name="currency" class="form-select form-select-sm" aria-label="Currency" onchange="this.form.submit()">
 @foreach(cur in currency_options)
 @if(cur.selected)
-              <option value="{{ cur.code }}" selected>{{ cur.code }}</option>
+              <option value="{{ cur.code }}" selected>{{ cur.code }} ({{ cur.name }})</option>
 @else
-              <option value="{{ cur.code }}">{{ cur.code }}</option>
+              <option value="{{ cur.code }}">{{ cur.code }} ({{ cur.name }})</option>
 @endif
 @endforeach
             </select>
-            <button class="btn btn-outline-secondary btn-sm" type="submit">Apply</button>
           </form>
-          <form class="switcher" method="post" action="/locale">
+          <form class="switcher flex-fill" method="post" action="/locale">
             <input type="hidden" name="_csrf" value="{{ csrf }}">
             <input type="hidden" name="return_to" value="{{ current_path }}">
-            <select name="locale" class="form-select form-select-sm" aria-label="Language">
+            <select name="locale" class="form-select form-select-sm" aria-label="Language" onchange="this.form.submit()">
 @foreach(loc in locale_options)
+@if(loc.selected)
+              <option value="{{ loc.code }}" selected>{{ loc.label }}</option>
+@else
               <option value="{{ loc.code }}">{{ loc.label }}</option>
+@endif
 @endforeach
             </select>
-            <button class="btn btn-outline-secondary btn-sm" type="submit">Apply</button>
           </form>
         </div>
 @endif
@@ -158,14 +166,16 @@
 
 @if(not is_admin_area)
   <!-- Category strip -->
-  <div class="dz-cats d-none d-md-block overflow-auto">
-    <div class="container d-flex">
-      <a href="/catalog">All Products</a>
+  <div class="dz-cats d-none d-md-block">
+    <div class="container">
+      <div class="dz-cats-nav">
+        <a href="/catalog" class="dz-cat-pill dz-cat-pill-active"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="me-1"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>All Products</a>
 @if(has_footer_categories)
 @foreach(cat in footer_categories)
-      <a href="/category/{{ cat.slug }}">{{ cat.name }}</a>
+        <a href="/category/{{ cat.slug }}" class="dz-cat-pill">{{ cat.name }}</a>
 @endforeach
 @endif
+      </div>
     </div>
   </div>
 @endif
@@ -177,42 +187,70 @@
 @if(not is_admin_area)
   <!-- Footer -->
   <footer class="dz-footer">
-    <div class="container py-4">
-      <div class="row g-4">
-        <div class="col-12 col-md-4">
-          <h6>{{ store_name }}</h6>
+    <div class="container py-5">
+      <div class="row g-4 justify-content-between">
+        <div class="col-12 col-lg-4">
+          <div class="d-flex align-items-center gap-2 mb-3">
+            <span class="brand-mark brand-mark-sm" aria-hidden="true"><svg class="brand-spider-svg" viewBox="0 0 100 100" width="18" height="18" aria-hidden="true"><circle cx="50" cy="34" r="8" fill="currentColor"/><path d="M46 26 L48 20 L50 24 L52 20 L54 26 Z" fill="currentColor"/><path d="M50 44 C41 44 35 54 35 66 C35 78 44 87 50 92 C56 87 65 78 65 66 C65 54 59 44 50 44 Z" fill="currentColor"/><g fill="none" stroke="currentColor" stroke-width="4.8" stroke-linecap="round" stroke-linejoin="round"><path d="M44 32 C35 20 25 12 18 12 C13 12 12 16 14 22 C16 29 20 37 25 41"/><path d="M42 38 C30 30 17 26 11 29 C7 31 7 36 9 42 C12 49 18 57 23 61"/><path d="M42 46 C29 47 16 54 11 62 C8 67 11 71 16 70 C22 68 29 61 33 55"/><path d="M44 53 C33 63 22 74 18 82 C15 87 19 90 23 88 C30 83 38 74 42 64"/><path d="M56 32 C65 20 75 12 82 12 C87 12 88 16 86 22 C84 29 80 37 75 41"/><path d="M58 38 C70 30 83 26 89 29 C93 31 93 36 91 42 C88 49 82 57 77 61"/><path d="M58 46 C71 47 84 54 89 62 C92 67 89 71 84 70 C78 68 71 61 67 55"/><path d="M56 53 C67 63 78 74 82 82 C85 87 81 90 77 88 C70 83 62 74 58 64"/></g></svg></span>
+            <span class="fs-5 fw-bold text-dark">{{ store_name }}</span>
+          </div>
 @if(has_store_tagline)
-          <p class="text-primary-emphasis fw-medium small mb-1">{{ store_tagline }}</p>
+          <p class="text-primary fw-medium small mb-2">{{ store_tagline }}</p>
 @endif
-          <p class="text-secondary mb-0" style="font-size:13.5px;">Quality products, honest prices, fast delivery. Cash on delivery, bKash, Nagad and cards accepted.</p>
+          <p class="text-secondary small mb-3 pe-lg-4" style="line-height: 1.6;">Next-generation modern e-commerce platform offering verified tech gear, authentic electronics, and honest everyday essentials with fast nationwide delivery.</p>
+          <div class="d-flex flex-wrap gap-2 pt-1">
+            <span class="badge bg-light text-secondary border px-2 py-1"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="me-1"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>100% Authentic</span>
+            <span class="badge bg-light text-secondary border px-2 py-1"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="me-1"><rect x="1" y="3" width="15" height="13"></rect><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"></polygon><circle cx="5.5" cy="18.5" r="2.5"></circle><circle cx="18.5" cy="18.5" r="2.5"></circle></svg>Fast Delivery</span>
+          </div>
         </div>
-        <div class="col-6 col-md-2">
-          <h6>Customer Care</h6>
-          <a href="/support">Help Center</a><br>
-          <a href="/track">Track Order</a><br>
-          <a href="/returns">Returns</a><br>
-          <a href="/account">My Account</a>
+        <div class="col-6 col-sm-4 col-lg-2">
+          <h6 class="footer-heading">Customer Care</h6>
+          <ul class="list-unstyled footer-links mb-0">
+            <li><a href="/support">Help Center</a></li>
+            <li><a href="/track">Track Order</a></li>
+            <li><a href="/returns">Returns &amp; Refunds</a></li>
+            <li><a href="/account">My Account</a></li>
+          </ul>
         </div>
-        <div class="col-6 col-md-3">
-          <h6>Shopping</h6>
-          <a href="/catalog">All Products</a><br>
-          <a href="/cart">{{ nav_cart }}</a><br>
-          <a href="/wishlist">{{ nav_wishlist }}</a><br>
-          <a href="/account/rewards">Rewards</a>
+        <div class="col-6 col-sm-4 col-lg-2">
+          <h6 class="footer-heading">Shopping</h6>
+          <ul class="list-unstyled footer-links mb-0">
+            <li><a href="/catalog">All Products</a></li>
+            <li><a href="/cart">{{ nav_cart }}</a></li>
+            <li><a href="/wishlist">{{ nav_wishlist }}</a></li>
+            <li><a href="/account/rewards">Rewards &amp; Points</a></li>
+          </ul>
         </div>
-        <div class="col-12 col-md-3">
-          <h6>Payments</h6>
-          <p class="text-secondary mb-0" style="font-size:13.5px;">Cash on Delivery · bKash · Nagad · Cards</p>
+        <div class="col-12 col-sm-4 col-lg-3">
+          <h6 class="footer-heading">Payment Methods</h6>
+          <p class="text-secondary small mb-3">Safe &amp; encrypted server-verified payment gateways:</p>
+          <div class="d-flex flex-wrap gap-2 payment-chips mb-3">
+            <span class="pay-chip pay-cod">💵 COD</span>
+            <span class="pay-chip pay-bkash">bKash</span>
+            <span class="pay-chip pay-nagad">Nagad</span>
+            <span class="pay-chip pay-card">Cards</span>
+          </div>
+          <div class="small text-muted d-flex align-items-center gap-1">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-success"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+            <span>256-bit SSL Secure Checkout</span>
+          </div>
         </div>
       </div>
     </div>
-    <div class="dz-footer-bottom">
-      <div class="container py-2">
+    <div class="dz-footer-bottom py-3">
+      <div class="container d-flex flex-column flex-md-row justify-content-between align-items-center gap-2">
 @if(display_currency)
-        <span>© 2026 {{ store_name }} · Prices in {{ display_currency }} · Billed in {{ base_currency }}</span>
+        <span class="small">© 2026 {{ store_name }} · All rights reserved · Prices in {{ display_currency }} · Billed in {{ base_currency }}</span>
 @else
-        <span>© 2026 {{ store_name }} · Currency: {{ currency }}</span>
+        <span class="small">© 2026 {{ store_name }} · All rights reserved · Currency: {{ currency }}</span>
 @endif
+        <div class="d-flex gap-3 small footer-sublinks">
+          <a href="/support">Privacy Policy</a>
+          <span class="text-muted opacity-50">·</span>
+          <a href="/support">Terms of Service</a>
+          <span class="text-muted opacity-50">·</span>
+          <a href="/track">Shipping Guide</a>
+        </div>
       </div>
     </div>
   </footer>

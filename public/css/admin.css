@@ -76,6 +76,7 @@ code { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, mo
   display: inline-flex; align-items: center; justify-content: center; font-size: 19px;
   box-shadow: 0 4px 10px rgba(248, 86, 6, 0.35);
 }
+.dz-admin-brand-mark svg { width: 22px; height: 22px; display: block; }
 .dz-admin-brand-text { display: flex; flex-direction: column; line-height: 1.15; font-weight: 700; font-size: 15px; color: #fff; }
 .dz-admin-brand-text small { font-weight: 500; font-size: 11px; color: var(--dz-sidebar-text); margin-top: 2px; letter-spacing: 0.02em; }
 

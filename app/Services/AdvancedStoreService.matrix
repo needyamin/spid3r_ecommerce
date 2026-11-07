@@ -12,6 +12,7 @@
 import "framework/Database/DB";
 import "framework/HttpException";
 import "framework/Queue/Queue";
+import "app/Support/Money" as Money;
 
 public class AdvancedStoreService {
     fn new() {}
@@ -412,15 +413,23 @@ public class AdvancedStoreService {
     fn tracking_view(self, order) {
         let shipments = DB.table("shipments").where("order_id", "=", order["id"]).orderBy("id", "ASC").get();
         let items = DB.table("order_items").where("order_id", "=", order["id"]).get();
+        let curr = string(order["currency"]);
+        if curr == "" {
+            curr = "BDT";
+        }
         let lines = [];
         let i = 0;
         while i < items.len() {
+            let u_minor = int(items[i]["unit_price_minor"]);
+            let l_minor = int(items[i]["line_total_minor"]);
             lines.push({
                 "name": string(items[i]["name_snapshot"]),
                 "sku": string(items[i]["sku_snapshot"]),
                 "quantity": int(items[i]["quantity"]),
-                "unit_price_minor": int(items[i]["unit_price_minor"]),
-                "line_total_minor": int(items[i]["line_total_minor"])
+                "unit_price_minor": u_minor,
+                "line_total_minor": l_minor,
+                "unit_price_display": Money.format(u_minor, curr),
+                "line_total_display": Money.format(l_minor, curr)
             });
             i += 1;
         }
@@ -436,13 +445,15 @@ public class AdvancedStoreService {
             });
             i += 1;
         }
+        let tot_minor = int(order["total_minor"]);
         return {
             "order_number": string(order["order_number"]),
             "status": string(order["status"]),
             "status_label": string(order["status"]).replace("_", " "),
             "placed_at": string(order["placed_at"]),
-            "total_minor": int(order["total_minor"]),
-            "currency": string(order["currency"]),
+            "total_minor": tot_minor,
+            "total_display": Money.format(tot_minor, curr),
+            "currency": curr,
             "items": lines,
             "shipments": parcels
         };

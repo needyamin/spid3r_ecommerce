@@ -61,9 +61,14 @@ public class PaymentController {
         if req.auth != null and req.auth.check() {
             csrf = req.auth.csrf();
         }
+        let pay_cur = "BDT";
+        if order.has("currency") and string(order["currency"]).trim() != "" {
+            pay_cur = string(order["currency"]).trim().upper();
+        }
         return view("payment/index", self.ctx(req, "Choose payment method", {
             "order": order,
-            "total_display": Money.format(int(order["total_minor"]), "BDT"),
+            "currency": pay_cur,
+            "total_display": Money.format(int(order["total_minor"]), pay_cur),
             "providers": self.payments.providers(),
             "csrf": csrf
         }));

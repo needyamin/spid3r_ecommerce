@@ -9,6 +9,7 @@ import "app/Repositories/ProductRepository";
 import "app/Repositories/InventoryRepository";
 import "app/Support/Money" as Money;
 import "app/Support/Images" as Images;
+import "app/Support/Fx" as Fx;
 
 public class CartService {
     public let carts;
@@ -109,9 +110,19 @@ public class CartService {
         return self.carts.remove_item(item_id);
     }
 
+    fn format_amount(self, minor: int, currency: string, fx) -> string {
+        let cur = string(currency).trim().upper();
+        if cur == "" { cur = "BDT"; }
+        if fx != null and fx.has("base") and cur != string(fx["base"]).trim().upper() {
+            let converted = Fx.convert(minor, string(fx["base"]), cur, fx["rates"]);
+            return Fx.format(converted, cur, fx["rates"]);
+        }
+        return Money.format(minor, cur);
+    }
+
     // Server-side totals: subtotal (fresh DB prices), a configurable
     // volume discount, and a flat shipping fee waived above a threshold.
-    public fn summary(self, ident) {
+    public fn summary(self, ident, currency: string = "BDT", fx = null) {
         let cart = self.cart(ident);
         let rows = self.carts.items(cart["id"]);
         let items = [];
@@ -173,8 +184,8 @@ public class CartService {
                 "quantity": int(row["quantity"]),
                 "unit_price_minor": price,
                 "line_total_minor": price * int(row["quantity"]),
-                "price_display": Money.format(price, "BDT"),
-                "line_display": Money.format(price * int(row["quantity"]), "BDT"),
+                "price_display": self.format_amount(price, currency, fx),
+                "line_display": self.format_amount(price * int(row["quantity"]), currency, fx),
                 "available": ok
             });
             i += 1;
@@ -201,14 +212,15 @@ public class CartService {
             "count": items.len(),
             "has_warnings": warnings.len() > 0,
             "warnings": warnings,
+            "currency": currency,
             "subtotal_minor": subtotal,
             "discount_minor": discount,
             "shipping_minor": shipping,
             "total_minor": total,
-            "subtotal_display": Money.format(subtotal, "BDT"),
-            "discount_display": Money.format(discount, "BDT"),
-            "shipping_display": Money.format(shipping, "BDT"),
-            "total_display": Money.format(total, "BDT"),
+            "subtotal_display": self.format_amount(subtotal, currency, fx),
+            "discount_display": self.format_amount(discount, currency, fx),
+            "shipping_display": self.format_amount(shipping, currency, fx),
+            "total_display": self.format_amount(total, currency, fx),
             "free_shipping": free_shipping
         };
     }

@@ -5,48 +5,62 @@
 @if(has_campaign)
   <div class="dz-promo-banner my-3">
     <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
-      <div>
-        <span class="badge text-bg-warning me-2">LIMITED OFFER</span>
+      <div class="d-flex align-items-center gap-2">
+        <span class="badge text-bg-warning rounded-pill px-3 py-1 fw-bold" style="font-size: 11px; letter-spacing: 0.05em;">LIMITED OFFER</span>
         <strong>{{ campaign.name }}</strong>
-        <span class="small ms-1 opacity-75">Automatic discount applied at checkout!</span>
+        <span class="small opacity-75 d-none d-sm-inline">Automatic discount applied at checkout!</span>
       </div>
-      <a href="/catalog" class="btn btn-sm btn-light fw-semibold">Shop Deals →</a>
+      <a href="/catalog" class="btn btn-sm btn-light fw-bold px-3">Shop Deals →</a>
     </div>
   </div>
 @endif
 
-  <section class="dz-hero dz-hero-enhanced">
+  <section class="dz-hero dz-hero-modern my-3">
     <div class="row align-items-center g-4 text-start">
-      <div class="col-12 col-lg-8">
-        <span class="dz-hero-pill">⚡ Fast Nationwide Delivery · Free Over ৳2,000</span>
-        <h1 class="mt-2 mb-2">{{ store_name }}</h1>
-        <p class="mb-4">Quality products, honest prices, fast delivery. Shop verified electronics, desk gear, and everyday essentials with Cash on Delivery, bKash, Nagad, and card support.</p>
-        <div class="d-flex gap-2 flex-wrap">
-          <a class="btn btn-primary btn-lg px-4" href="/catalog">Browse Catalog</a>
-          <a class="btn btn-outline-primary btn-lg px-4" href="/track">Track Order</a>
+      <div class="col-12 col-lg-7">
+        <div class="dz-hero-pill-wrap mb-3">
+          <span class="dz-hero-pill"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="me-1 text-warning"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg> Fast Nationwide Delivery · Free Over ৳2,000</span>
+        </div>
+        <h1 class="dz-hero-title mb-3">Next-Gen Shopping,<br><span class="dz-text-gradient">{{ store_name }}</span></h1>
+        <p class="dz-hero-desc mb-4">Discover verified electronics, desk gear, and everyday essentials at honest prices with fast nationwide delivery and instant server-verified checkout.</p>
+        <div class="d-flex gap-3 flex-wrap">
+          <a class="btn btn-primary btn-lg px-4 dz-hero-btn" href="/catalog">
+            <span>Browse Catalog</span>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="ms-1"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
+          </a>
+          <a class="btn btn-outline-secondary btn-lg px-4" href="/track">Track Order</a>
         </div>
       </div>
-      <div class="col-12 col-lg-4">
-        <div class="dz-hero-perks">
-          <div class="dz-hero-perk">
-            <span class="dz-hero-perk-icon">🏷️</span>
+      <div class="col-12 col-lg-5">
+        <div class="dz-hero-perks-card p-3 p-sm-4">
+          <div class="dz-hero-perk-item mb-3">
+            <div class="dz-perk-icon-wrap bg-primary-subtle text-primary">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"></path><line x1="7" y1="7" x2="7.01" y2="7"></line></svg>
+            </div>
             <div>
-              <strong>5% Volume Discount</strong>
-              <span class="d-block small text-secondary">Automatic on carts over ৳1,000</span>
+              <strong class="d-block text-dark">5% Volume Discount</strong>
+              <span class="small text-secondary">Automatic discount on orders over ৳1,000</span>
             </div>
           </div>
-          <div class="dz-hero-perk">
-            <span class="dz-hero-perk-icon">🎟️</span>
+          <div class="dz-hero-perk-item mb-3">
+            <div class="dz-perk-icon-wrap bg-warning-subtle text-warning-emphasis">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="6" width="20" height="12" rx="2"></rect><circle cx="12" cy="12" r="2"></circle><path d="M6 12h.01M18 12h.01"></path></svg>
+            </div>
             <div>
-              <strong>Welcome Promo: <code>WELCOME10</code></strong>
-              <span class="d-block small text-secondary">10% off orders over ৳1,000 at checkout</span>
+              <div class="d-flex align-items-center gap-2">
+                <strong class="text-dark">Promo Voucher</strong>
+                <code class="dz-code-pill">WELCOME10</code>
+              </div>
+              <span class="small text-secondary">10% off your purchase at checkout</span>
             </div>
           </div>
-          <div class="dz-hero-perk">
-            <span class="dz-hero-perk-icon">🛡️</span>
+          <div class="dz-hero-perk-item">
+            <div class="dz-perk-icon-wrap bg-success-subtle text-success">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+            </div>
             <div>
-              <strong>14-Day Easy Returns</strong>
-              <span class="d-block small text-secondary">Server-verified payments &amp; instant refunds</span>
+              <strong class="d-block text-dark">14-Day Easy Returns</strong>
+              <span class="small text-secondary">Hassle-free return policy with instant refunds</span>
             </div>
           </div>
         </div>
@@ -55,22 +69,24 @@
   </section>
 
 @if(has_footer_categories)
-  <section class="my-4" aria-labelledby="home-categories-heading">
-    <div class="dz-section-heading">
+  <section class="my-5" aria-labelledby="home-categories-heading">
+    <div class="dz-section-heading d-flex justify-content-between align-items-end mb-4">
       <div>
         <span class="dz-eyebrow">Explore departments</span>
         <h2 id="home-categories-heading" class="dz-section-title mb-0">Shop by Category</h2>
       </div>
-      <a href="/catalog" class="small fw-semibold">View all categories →</a>
+      <a href="/catalog" class="text-primary fw-semibold small text-decoration-none">View all categories →</a>
     </div>
     <div class="row g-3 row-cols-2 row-cols-md-3 row-cols-lg-4">
 @foreach(cat in footer_categories)
       <div class="col">
-        <a href="/category/{{ cat.slug }}" class="dz-cat-card">
-          <span class="dz-cat-card-icon" aria-hidden="true">🛍️</span>
-          <div>
-            <strong class="d-block">{{ cat.name }}</strong>
-            <span class="small text-secondary">Explore products →</span>
+        <a href="/category/{{ cat.slug }}" class="dz-cat-card h-100">
+          <div class="dz-cat-card-icon-wrap">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"></path><line x1="3" y1="6" x2="21" y2="6"></line><path d="M16 10a4 4 0 0 1-8 0"></path></svg>
+          </div>
+          <div class="dz-cat-card-info">
+            <strong class="d-block text-dark">{{ cat.name }}</strong>
+            <span class="small text-secondary">Explore collection →</span>
           </div>
         </a>
       </div>
@@ -79,13 +95,13 @@
   </section>
 @endif
 
-  <section class="my-4" aria-labelledby="featured-products-heading">
-    <div class="dz-section-heading">
+  <section class="my-5" aria-labelledby="featured-products-heading">
+    <div class="dz-section-heading d-flex justify-content-between align-items-end mb-4">
       <div>
         <span class="dz-eyebrow">Handpicked for you</span>
         <h2 id="featured-products-heading" class="dz-section-title mb-0">Featured Products</h2>
       </div>
-      <a href="/catalog" class="btn btn-sm btn-outline-primary">See all products</a>
+      <a href="/catalog" class="btn btn-sm btn-outline-primary px-3 rounded-pill">See all products</a>
     </div>
 @if(has_products)
     <div class="row g-3 row-cols-2 row-cols-md-3 row-cols-lg-4">
@@ -100,18 +116,42 @@
 @endif
   </section>
 
-  <section class="row g-3 my-4">
+  <section class="row g-3 my-5 dz-features-grid">
     <div class="col-6 col-lg-3">
-      <div class="dz-feature"><div class="feature-icon">🚚</div><h3>Fast Delivery</h3><p>Nationwide shipping with tracking on every order.</p></div>
+      <div class="dz-feature-card">
+        <div class="dz-feature-icon-badge bg-primary-subtle text-primary">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="3" width="15" height="13"></rect><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"></polygon><circle cx="5.5" cy="18.5" r="2.5"></circle><circle cx="18.5" cy="18.5" r="2.5"></circle></svg>
+        </div>
+        <h3 class="dz-feature-title">Fast Delivery</h3>
+        <p class="dz-feature-text">Nationwide tracked shipping directly to your doorstep.</p>
+      </div>
     </div>
     <div class="col-6 col-lg-3">
-      <div class="dz-feature"><div class="feature-icon">💳</div><h3>Flexible Payment</h3><p>Cash on delivery, bKash, Nagad and cards.</p></div>
+      <div class="dz-feature-card">
+        <div class="dz-feature-icon-badge bg-warning-subtle text-warning-emphasis">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"></rect><line x1="1" y1="10" x2="23" y2="10"></line></svg>
+        </div>
+        <h3 class="dz-feature-title">Flexible Payment</h3>
+        <p class="dz-feature-text">Cash on delivery, bKash, Nagad and card options.</p>
+      </div>
     </div>
     <div class="col-6 col-lg-3">
-      <div class="dz-feature"><div class="feature-icon">↩️</div><h3>Easy Returns</h3><p>Fourteen-day hassle-free return policy.</p></div>
+      <div class="dz-feature-card">
+        <div class="dz-feature-icon-badge bg-info-subtle text-info-emphasis">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"></polyline><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path></svg>
+        </div>
+        <h3 class="dz-feature-title">Easy Returns</h3>
+        <p class="dz-feature-text">14-day hassle-free return policy with quick refunds.</p>
+      </div>
     </div>
     <div class="col-6 col-lg-3">
-      <div class="dz-feature"><div class="feature-icon">🔒</div><h3>Secure Checkout</h3><p>Every transaction verified server-side.</p></div>
+      <div class="dz-feature-card">
+        <div class="dz-feature-icon-badge bg-success-subtle text-success">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+        </div>
+        <h3 class="dz-feature-title">Secure Checkout</h3>
+        <p class="dz-feature-text">Every transaction is encrypted and verified server-side.</p>
+      </div>
     </div>
   </section>
 @endsection

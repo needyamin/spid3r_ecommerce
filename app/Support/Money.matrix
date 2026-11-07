@@ -103,10 +103,19 @@ public fn to_major(minor_units) -> string {
 
 // Thousands-grouped, symbol-prefixed display string.
 public fn format(minor_units, currency) -> string {
-    let symbols = {"BDT": "৳", "USD": "$", "EUR": "€"};
-    let symbol = "৳";
-    if symbols.has(string(currency).upper()) {
-        symbol = symbols[string(currency).upper()];
+    let c = string(currency).trim().upper();
+    if c == "" {
+        c = "BDT";
+    }
+    let symbols = {
+        "BDT": "৳", "USD": "$", "EUR": "€", "GBP": "£",
+        "JPY": "¥", "INR": "₹", "CAD": "CA$", "AUD": "AU$"
+    };
+    let symbol = "";
+    if symbols.has(c) {
+        symbol = symbols[c];
+    } else {
+        symbol = c + " ";
     }
     let v = int(minor_units);
     let neg = "";

@@ -9,14 +9,17 @@ import "framework/HttpException";
 import "app/Services/CartService";
 import "app/Support/CartIdentity" as CartIdentity;
 import "app/Support/StoreChrome" as StoreChrome;
+import "app/Services/CurrencyService";
 
 public class CartController {
     public let cart;
     public let settings;
+    public let currencies;
 
     fn new() {
         self.cart = new CartService();
         self.settings = Container.make("store.settings");
+        self.currencies = new CurrencyService(string(self.settings["currency"]));
     }
 
     fn with_cart_cookie(self, res, ident) {
@@ -43,10 +46,12 @@ public class CartController {
 
     public fn show(self, req) {
         let ident = CartIdentity.cart_identity(req);
-        let summary = self.cart.summary(ident);
+        let display_currency = self.currencies.selected(req);
+        let fx = self.currencies.context();
+        let summary = self.cart.summary(ident, display_currency, fx);
         let ctx = {
             "store_name": self.settings["name"],
-            "currency": self.settings["currency"],
+            "currency": display_currency,
             "title": "Your cart",
             "meta_description": "Review your cart at " + self.settings["name"] + ".",
             "csrf": ""
@@ -94,7 +99,9 @@ public class CartController {
     // JSON snapshot for AJAX clients / checkout (Phase 7).
     public fn summary_json(self, req) {
         let ident = CartIdentity.cart_identity(req);
-        let summary = self.cart.summary(ident);
+        let display_currency = self.currencies.selected(req);
+        let fx = self.currencies.context();
+        let summary = self.cart.summary(ident, display_currency, fx);
         let res = json({"data": summary});
         return self.with_cart_cookie(res, ident);
     }

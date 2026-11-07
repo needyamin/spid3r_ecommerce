@@ -65,15 +65,163 @@ public class LocaleService {
 
     // Switcher-friendly options: each entry carries the code plus a
     // human-readable label, so templates never render raw "bn"/"en".
-    public fn locale_options(self) {
+    public fn locale_options(self, selected_code: string = "") {
         let codes = self.locales();
+        let chosen = string(selected_code).trim().lower();
+        if chosen == "" {
+            chosen = self.default_locale;
+        }
         let out = [];
         let i = 0;
         while i < codes.len() {
-            out.push({"code": codes[i], "label": self.locale_label(string(codes[i]))});
+            let code = string(codes[i]);
+            let flag = 0;
+            if code == chosen {
+                flag = 1;
+            }
+            out.push({
+                "code": code,
+                "label": self.locale_label(code),
+                "selected": flag
+            });
             i += 1;
         }
         return out;
+    }
+
+    fn builtin_dictionary(self) {
+        return {
+            "bn": {
+                "common": {
+                    "search": "অনুসন্ধান",
+                    "search_placeholder": "পণ্য খুঁজুন",
+                    "apply": "প্রয়োগ করুন",
+                    "currency": "মুদ্রা",
+                    "language": "ভাষা",
+                    "hotline": "হটলাইন",
+                    "all_rights_reserved": "সর্বস্বত্ব সংরক্ষিত",
+                    "home": "হোম",
+                    "back": "ফিরে যান"
+                },
+                "nav": {
+                    "catalog": "ক্যাটালগ",
+                    "cart": "কার্ট",
+                    "wishlist": "ইচ্ছেতালিকা",
+                    "track": "অর্ডার ট্র্যাক করুন",
+                    "support": "সাপোর্ট",
+                    "account": "অ্যাকাউন্ট",
+                    "sign_in": "সাইন ইন",
+                    "sign_out": "সাইন আউট",
+                    "register": "রেজিস্টার"
+                },
+                "actions": {
+                    "add_to_cart": "কার্টে যোগ করুন",
+                    "buy_now": "এখনই কিনুন",
+                    "view_details": "বিস্তারিত দেখুন",
+                    "continue_shopping": "কেনাকাটা চালিয়ে যান",
+                    "proceed_to_checkout": "চেকআউট করুন",
+                    "place_order": "অর্ডার সম্পন্ন করুন",
+                    "remove": "মুছুন",
+                    "apply_coupon": "কুপন প্রয়োগ করুন"
+                },
+                "product": {
+                    "in_stock": "স্টকে আছে",
+                    "out_of_stock": "স্টক শেষ",
+                    "low_stock": "সীমিত স্টক",
+                    "sku": "এসকেইউ",
+                    "category": "ক্যাটেগরি",
+                    "brand": "ব্র্যান্ড",
+                    "reviews": "রিভিউ",
+                    "rating": "রেটিং",
+                    "related_products": "সম্পর্কিত পণ্য",
+                    "featured": "বিশেষ পণ্য",
+                    "quantity": "পরিমাণ"
+                },
+                "cart": {
+                    "title": "আপনার শপিং কার্ট",
+                    "empty": "আপনার কার্ট খালি",
+                    "subtotal": "উপমোট",
+                    "discount": "ছাড়",
+                    "shipping": "শিপিং",
+                    "tax": "ভ্যাট/ট্যাক্স",
+                    "total": "সর্বমোট",
+                    "free_shipping": "ফ্রি শিপিং"
+                },
+                "checkout": {
+                    "title": "চেকআউট",
+                    "order_summary": "অর্ডার সারাংশ",
+                    "shipping_address": "ডেলিভারি ঠিকানা",
+                    "payment_method": "পেমেন্ট মাধ্যম",
+                    "cod": "ক্যাশ অন ডেলিভারি",
+                    "billed_in_notice": "অর্ডারটি প্রক্রিয়াজাত হবে"
+                }
+            },
+            "en": {
+                "common": {
+                    "search": "Search",
+                    "search_placeholder": "Search products",
+                    "apply": "Apply",
+                    "currency": "Currency",
+                    "language": "Language",
+                    "hotline": "Hotline",
+                    "all_rights_reserved": "All rights reserved",
+                    "home": "Home",
+                    "back": "Back"
+                },
+                "nav": {
+                    "catalog": "Catalog",
+                    "cart": "Cart",
+                    "wishlist": "Wishlist",
+                    "track": "Track order",
+                    "support": "Support",
+                    "account": "Account",
+                    "sign_in": "Sign in",
+                    "sign_out": "Sign out",
+                    "register": "Register"
+                },
+                "actions": {
+                    "add_to_cart": "Add to Cart",
+                    "buy_now": "Buy Now",
+                    "view_details": "View Details",
+                    "continue_shopping": "Continue Shopping",
+                    "proceed_to_checkout": "Proceed to Checkout",
+                    "place_order": "Place Order",
+                    "remove": "Remove",
+                    "apply_coupon": "Apply Coupon"
+                },
+                "product": {
+                    "in_stock": "In Stock",
+                    "out_of_stock": "Out of Stock",
+                    "low_stock": "Low Stock",
+                    "sku": "SKU",
+                    "category": "Category",
+                    "brand": "Brand",
+                    "reviews": "Reviews",
+                    "rating": "Rating",
+                    "related_products": "Related Products",
+                    "featured": "Featured",
+                    "quantity": "Quantity"
+                },
+                "cart": {
+                    "title": "Your Shopping Cart",
+                    "empty": "Your cart is empty",
+                    "subtotal": "Subtotal",
+                    "discount": "Discount",
+                    "shipping": "Shipping",
+                    "tax": "Tax",
+                    "total": "Total",
+                    "free_shipping": "Free Shipping"
+                },
+                "checkout": {
+                    "title": "Checkout",
+                    "order_summary": "Order Summary",
+                    "shipping_address": "Delivery Address",
+                    "payment_method": "Payment Method",
+                    "cod": "Cash on Delivery",
+                    "billed_in_notice": "Orders are billed in"
+                }
+            }
+        };
     }
 
     fn locale_label(self, code: string) -> string {
@@ -109,8 +257,21 @@ public class LocaleService {
 
     // Whole-locale bundle: namespace -> key -> value.
     public fn bundle(self, locale: string) {
-        let rows = DB.table("translations").where("locale", "=", locale).get();
+        let loc = string(locale).trim().lower();
+        if loc == "" { loc = self.default_locale; }
+        let dict = self.builtin_dictionary();
         let out = {};
+        if dict.has(loc) {
+            let base_ns = dict[loc];
+            for b_ns in base_ns.keys() {
+                let sub = {};
+                for b_k in base_ns[b_ns].keys() {
+                    sub[b_k] = base_ns[b_ns][b_k];
+                }
+                out[b_ns] = sub;
+            }
+        }
+        let rows = DB.table("translations").where("locale", "=", loc).get();
         let i = 0;
         while i < rows.len() {
             let ns = string(rows[i]["namespace"]);
@@ -136,6 +297,13 @@ public class LocaleService {
         if row != null and string(row["value"]) != "" {
             return string(row["value"]);
         }
+        let dict = self.builtin_dictionary();
+        if dict.has(locale) {
+            let loc_dict = dict[locale];
+            if loc_dict.has(namespace) and loc_dict[namespace].has(key) {
+                return string(loc_dict[namespace][key]);
+            }
+        }
         if locale != self.default_locale {
             let fallback_row = DB.table("translations")
                 .where("locale", "=", self.default_locale)
@@ -144,6 +312,12 @@ public class LocaleService {
                 .first();
             if fallback_row != null and string(fallback_row["value"]) != "" {
                 return string(fallback_row["value"]);
+            }
+            if dict.has(self.default_locale) {
+                let def_dict = dict[self.default_locale];
+                if def_dict.has(namespace) and def_dict[namespace].has(key) {
+                    return string(def_dict[namespace][key]);
+                }
             }
         }
         if fallback != "" {

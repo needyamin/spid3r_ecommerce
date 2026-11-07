@@ -3,47 +3,194 @@
 @section('meta_description', meta_description)
 @section("content")
   <nav aria-label="breadcrumb">
-    <ol class="breadcrumb"><li class="breadcrumb-item"><a href="/">Home</a></li><li class="breadcrumb-item active" aria-current="page">Support</li></ol>
+    <ol class="breadcrumb">
+      <li class="breadcrumb-item"><a href="/">Home</a></li>
+      <li class="breadcrumb-item active" aria-current="page">Support</li>
+    </ol>
   </nav>
-  <h1 class="page-title">Customer support</h1>
-  <p class="page-description">Tell us what went wrong. We reply to the address you give us.</p>
 
-  <div class="row g-4">
+  <div class="dz-page-heading mb-4">
+    <div>
+      <span class="dz-eyebrow">Customer Care &amp; Assistance</span>
+      <h1 class="page-title mb-1">How Can We Help You Today?</h1>
+      <p class="text-secondary small mb-0">Submit a support request or contact our dedicated resolution desk. We typically respond within 2 to 4 business hours.</p>
+    </div>
+  </div>
+
+  <!-- Quick Contact Cards -->
+  <div class="row g-3 mb-4">
+    <div class="col-12 col-md-4">
+      <div class="dz-card p-3 h-100 d-flex align-items-center gap-3">
+        <div class="dz-perk-icon-wrap bg-primary-subtle text-primary">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path></svg>
+        </div>
+        <div>
+          <span class="small text-secondary d-block">Official Hotline</span>
+          <strong class="text-dark">+880 1999-888777</strong>
+          <span class="d-block small text-muted" style="font-size: 11.5px;">Sat–Thu: 9:00 AM – 10:00 PM</span>
+        </div>
+      </div>
+    </div>
+    <div class="col-12 col-md-4">
+      <div class="dz-card p-3 h-100 d-flex align-items-center gap-3">
+        <div class="dz-perk-icon-wrap bg-warning-subtle text-warning-emphasis">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline></svg>
+        </div>
+        <div>
+          <span class="small text-secondary d-block">Email Desk</span>
+          <strong class="text-dark">support@spid3r.test</strong>
+          <span class="d-block small text-muted" style="font-size: 11.5px;">24/7 Monitored Inbox</span>
+        </div>
+      </div>
+    </div>
+    <div class="col-12 col-md-4">
+      <div class="dz-card p-3 h-100 d-flex align-items-center gap-3">
+        <div class="dz-perk-icon-wrap bg-success-subtle text-success">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="3" width="15" height="13"></rect><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"></polygon><circle cx="5.5" cy="18.5" r="2.5"></circle><circle cx="18.5" cy="18.5" r="2.5"></circle></svg>
+        </div>
+        <div>
+          <span class="small text-secondary d-block">Self-Service</span>
+          <a href="/track" class="text-primary fw-bold text-decoration-none d-block">Track Your Order →</a>
+          <span class="d-block small text-muted" style="font-size: 11.5px;">Instant live courier updates</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="row g-4 align-items-start">
     <div class="col-12 col-lg-7">
-      <div class="dz-card p-4">
-        <h2 class="h6 mb-3">Open a ticket</h2>
-        <form method="post" action="/support">
+      <div class="dz-card p-4 p-md-5">
+        <div class="d-flex align-items-center gap-3 mb-3">
+          <div class="dz-perk-icon-wrap bg-primary-subtle text-primary">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+          </div>
+          <div>
+            <h2 class="h5 mb-0 fw-bold">Open a Support Ticket</h2>
+            <span class="small text-secondary">Our team will reply directly to your email</span>
+          </div>
+        </div>
+
+        <form method="post" action="/support" class="mt-4">
           <input type="hidden" name="_csrf" value="{{ csrf }}">
-          <div class="mb-2">
-            <label class="form-label small text-secondary mb-1" for="sup-email">Email</label>
-            <input type="email" id="sup-email" name="email" value="{{ email }}" maxlength="255" class="form-control" required>
-          </div>
-          <div class="mb-2">
-            <label class="form-label small text-secondary mb-1" for="sup-subject">Subject</label>
-            <input type="text" id="sup-subject" name="subject" maxlength="160" class="form-control" required>
-          </div>
           <div class="mb-3">
-            <label class="form-label small text-secondary mb-1" for="sup-message">Message</label>
-            <textarea id="sup-message" name="message" rows="6" maxlength="4000" class="form-control" required></textarea>
+            <label class="form-label small fw-semibold text-secondary mb-1" for="sup-email">Email address <span class="text-danger">*</span></label>
+            <input type="email" id="sup-email" name="email" value="{{ email }}" placeholder="name@example.com" maxlength="255" class="form-control" required>
+            <div class="form-text small">We will send ticket confirmations and resolution updates here.</div>
           </div>
-          <button class="btn btn-primary" type="submit">Send request</button>
+
+          <div class="mb-3">
+            <label class="form-label small fw-semibold text-secondary mb-1" for="sup-subject">Subject <span class="text-danger">*</span></label>
+            <input type="text" id="sup-subject" name="subject" placeholder="e.g. Damaged parcel, delivery inquiry, or payment issue" maxlength="160" class="form-control" required>
+          </div>
+
+          <div class="mb-4">
+            <label class="form-label small fw-semibold text-secondary mb-1" for="sup-message">Detailed message <span class="text-danger">*</span></label>
+            <textarea id="sup-message" name="message" rows="6" maxlength="4000" placeholder="Please provide specific details, including order number or product SKU if applicable (minimum 10 characters)..." class="form-control" required></textarea>
+            <div class="form-text small">Include any relevant order or tracking numbers for faster resolution.</div>
+          </div>
+
+          <button class="btn btn-primary btn-lg w-100 d-inline-flex justify-content-center align-items-center gap-2" type="submit">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+            <span>Send Support Request</span>
+          </button>
         </form>
+      </div>
+    </div>
+
+    <div class="col-12 col-lg-5">
+      <div class="dz-card p-4 p-md-4">
+        <h3 class="h6 fw-bold mb-3 d-flex align-items-center gap-2">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-primary"><circle cx="12" cy="12" r="10"></circle><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+          Frequently Asked Questions
+        </h3>
+
+        <div class="accordion accordion-flush" id="dzFaqAccordion">
+          <div class="accordion-item bg-transparent">
+            <h4 class="accordion-header">
+              <button class="accordion-button collapsed px-0 py-2 small fw-bold text-dark bg-transparent" type="button" data-bs-toggle="collapse" data-bs-target="#faq1">
+                How do I request a return or exchange?
+              </button>
+            </h4>
+            <div id="faq1" class="accordion-collapse collapse" data-bs-parent="#dzFaqAccordion">
+              <div class="accordion-body px-0 py-2 small text-secondary">
+                We offer a 14-day hassle-free return policy. Simply open a support ticket with your order number and brief description of the issue. Our logistics team will arrange reverse pickup.
+              </div>
+            </div>
+          </div>
+
+          <div class="accordion-item bg-transparent">
+            <h4 class="accordion-header">
+              <button class="accordion-button collapsed px-0 py-2 small fw-bold text-dark bg-transparent" type="button" data-bs-toggle="collapse" data-bs-target="#faq2">
+                When will my refund be processed?
+              </button>
+            </h4>
+            <div id="faq2" class="accordion-collapse collapse" data-bs-parent="#dzFaqAccordion">
+              <div class="accordion-body px-0 py-2 small text-secondary">
+                For Cash on Delivery, refunds are issued via bKash or Nagad within 24 hours of inspection. For card/online payments, refunds reflect within 3–5 business days.
+              </div>
+            </div>
+          </div>
+
+          <div class="accordion-item bg-transparent">
+            <h4 class="accordion-header">
+              <button class="accordion-button collapsed px-0 py-2 small fw-bold text-dark bg-transparent" type="button" data-bs-toggle="collapse" data-bs-target="#faq3">
+                Can I modify my shipping address?
+              </button>
+            </h4>
+            <div id="faq3" class="accordion-collapse collapse" data-bs-parent="#dzFaqAccordion">
+              <div class="accordion-body px-0 py-2 small text-secondary">
+                Address modifications are supported before parcel dispatch (typically within 2 hours of ordering). Please call our hotline immediately for address updates.
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="border-top mt-4 pt-3 bg-light rounded-3 p-3">
+          <div class="d-flex align-items-center gap-2 mb-1">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-success"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+            <strong class="small text-dark">Verified Response Guarantee</strong>
+          </div>
+          <div class="small text-secondary">Every inquiry is logged server-side and assigned a unique ticket identifier for transparent tracking.</div>
+        </div>
       </div>
     </div>
   </div>
 
 @if(tickets)
-  <div class="dz-card p-4 my-4">
-    <h2 class="h6 mb-3">Your tickets</h2>
+  <div class="dz-card p-4 p-md-5 my-5">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+      <div>
+        <h2 class="h5 fw-bold mb-1">Your Support History</h2>
+        <span class="small text-secondary">Previously submitted tickets under your account</span>
+      </div>
+      <span class="badge bg-light text-secondary border px-3 py-2 font-monospace">Recent Tickets</span>
+    </div>
+
     <div class="table-responsive">
-      <table class="table table-sm table-hover align-middle mb-0">
-        <thead><tr><th>Subject</th><th>Status</th><th>Opened</th></tr></thead>
+      <table class="table table-hover align-middle border rounded-3 overflow-hidden mb-0">
+        <thead class="table-light">
+          <tr>
+            <th>Subject</th>
+            <th class="text-center">Status</th>
+            <th class="text-end">Opened At</th>
+          </tr>
+        </thead>
         <tbody>
 @foreach(ticket in tickets)
           <tr>
-            <td>{{ ticket.subject }}</td>
-            <td>{{ ticket.status }}</td>
-            <td>{{ ticket.created_at }}</td>
+            <td class="fw-semibold text-dark">{{ ticket.subject }}</td>
+            <td class="text-center">
+@if(ticket.status == "open")
+              <span class="badge text-bg-warning px-3 py-1 text-uppercase">Open</span>
+@else
+@if(ticket.status == "resolved")
+              <span class="badge text-bg-success px-3 py-1 text-uppercase">Resolved</span>
+@else
+              <span class="badge text-bg-secondary px-3 py-1 text-uppercase">{{ ticket.status }}</span>
+@endif
+@endif
+            </td>
+            <td class="text-end small text-secondary">{{ ticket.created_at }}</td>
           </tr>
 @endforeach
         </tbody>

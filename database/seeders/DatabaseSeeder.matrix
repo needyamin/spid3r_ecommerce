@@ -155,18 +155,97 @@ fn ensure_translation(locale: string, namespace: string, key: string, value: str
 }
 
 fn seed_translations() {
+    // English
+    ensure_translation("en", "common", "search", "Search");
+    ensure_translation("en", "common", "search_placeholder", "Search products");
+    ensure_translation("en", "common", "apply", "Apply");
+    ensure_translation("en", "common", "currency", "Currency");
+    ensure_translation("en", "common", "language", "Language");
+    ensure_translation("en", "common", "hotline", "Hotline");
+    ensure_translation("en", "common", "all_rights_reserved", "All rights reserved");
+    ensure_translation("en", "common", "home", "Home");
+    ensure_translation("en", "common", "back", "Back");
+
     ensure_translation("en", "nav", "catalog", "Catalog");
     ensure_translation("en", "nav", "cart", "Cart");
     ensure_translation("en", "nav", "wishlist", "Wishlist");
     ensure_translation("en", "nav", "track", "Track order");
     ensure_translation("en", "nav", "support", "Support");
     ensure_translation("en", "nav", "account", "Account");
+    ensure_translation("en", "nav", "sign_in", "Sign in");
+    ensure_translation("en", "nav", "sign_out", "Sign out");
+    ensure_translation("en", "nav", "register", "Register");
+
+    ensure_translation("en", "actions", "add_to_cart", "Add to Cart");
+    ensure_translation("en", "actions", "buy_now", "Buy Now");
+    ensure_translation("en", "actions", "view_details", "View details");
+    ensure_translation("en", "actions", "continue_shopping", "Continue Shopping");
+    ensure_translation("en", "actions", "proceed_to_checkout", "Proceed to Checkout");
+    ensure_translation("en", "actions", "place_order", "Place Order");
+
+    ensure_translation("en", "product", "in_stock", "In stock");
+    ensure_translation("en", "product", "out_of_stock", "Out of stock");
+    ensure_translation("en", "product", "low_stock", "Low stock");
+    ensure_translation("en", "product", "sku", "SKU");
+    ensure_translation("en", "product", "category", "Category");
+    ensure_translation("en", "product", "brand", "Brand");
+    ensure_translation("en", "product", "reviews", "Reviews");
+    ensure_translation("en", "product", "rating", "Rating");
+    ensure_translation("en", "product", "related_products", "Related Products");
+
+    ensure_translation("en", "cart", "title", "Your Shopping Cart");
+    ensure_translation("en", "cart", "empty", "Your cart is empty");
+    ensure_translation("en", "cart", "subtotal", "Subtotal");
+    ensure_translation("en", "cart", "discount", "Discount");
+    ensure_translation("en", "cart", "shipping", "Shipping");
+    ensure_translation("en", "cart", "tax", "Tax");
+    ensure_translation("en", "cart", "total", "Total");
+
+    // Bangla
+    ensure_translation("bn", "common", "search", "অনুসন্ধান");
+    ensure_translation("bn", "common", "search_placeholder", "পণ্য খুঁজুন");
+    ensure_translation("bn", "common", "apply", "প্রয়োগ করুন");
+    ensure_translation("bn", "common", "currency", "মুদ্রা");
+    ensure_translation("bn", "common", "language", "ভাষা");
+    ensure_translation("bn", "common", "hotline", "হটলাইন");
+    ensure_translation("bn", "common", "all_rights_reserved", "সর্বস্বত্ব সংরক্ষিত");
+    ensure_translation("bn", "common", "home", "হোম");
+    ensure_translation("bn", "common", "back", "ফিরে যান");
+
     ensure_translation("bn", "nav", "catalog", "ক্যাটালগ");
     ensure_translation("bn", "nav", "cart", "কার্ট");
     ensure_translation("bn", "nav", "wishlist", "ইচ্ছেতালিকা");
     ensure_translation("bn", "nav", "track", "অর্ডার ট্র্যাক করুন");
     ensure_translation("bn", "nav", "support", "সাপোর্ট");
     ensure_translation("bn", "nav", "account", "অ্যাকাউন্ট");
+    ensure_translation("bn", "nav", "sign_in", "সাইন ইন");
+    ensure_translation("bn", "nav", "sign_out", "সাইন আউট");
+    ensure_translation("bn", "nav", "register", "রেজিস্টার");
+
+    ensure_translation("bn", "actions", "add_to_cart", "কার্টে যোগ করুন");
+    ensure_translation("bn", "actions", "buy_now", "এখনই কিনুন");
+    ensure_translation("bn", "actions", "view_details", "বিস্তারিত দেখুন");
+    ensure_translation("bn", "actions", "continue_shopping", "কেনাকাটা চালিয়ে যান");
+    ensure_translation("bn", "actions", "proceed_to_checkout", "চেকআউট করুন");
+    ensure_translation("bn", "actions", "place_order", "অর্ডার সম্পন্ন করুন");
+
+    ensure_translation("bn", "product", "in_stock", "স্টকে আছে");
+    ensure_translation("bn", "product", "out_of_stock", "স্টক শেষ");
+    ensure_translation("bn", "product", "low_stock", "সীমিত স্টক");
+    ensure_translation("bn", "product", "sku", "এসকেইউ");
+    ensure_translation("bn", "product", "category", "ক্যাটেগরি");
+    ensure_translation("bn", "product", "brand", "ব্র্যান্ড");
+    ensure_translation("bn", "product", "reviews", "রিভিউ");
+    ensure_translation("bn", "product", "rating", "রেটিং");
+    ensure_translation("bn", "product", "related_products", "সম্পর্কিত পণ্য");
+
+    ensure_translation("bn", "cart", "title", "আপনার শপিং কার্ট");
+    ensure_translation("bn", "cart", "empty", "আপনার কার্ট খালি");
+    ensure_translation("bn", "cart", "subtotal", "উপমোট");
+    ensure_translation("bn", "cart", "discount", "ছাড়");
+    ensure_translation("bn", "cart", "shipping", "শিপিং");
+    ensure_translation("bn", "cart", "tax", "ভ্যাট/ট্যাক্স");
+    ensure_translation("bn", "cart", "total", "সর্বমোট");
 }
 
 public fn run_database_seeder() {

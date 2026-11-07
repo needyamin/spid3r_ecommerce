@@ -163,12 +163,16 @@ public class AuthController {
         let i = 0;
         while i < raw_orders.len() {
             let o = raw_orders[i];
+            let o_cur = "BDT";
+            if o.has("currency") and string(o["currency"]).trim() != "" {
+                o_cur = string(o["currency"]).trim().upper();
+            }
             recent_orders.push({
                 "id": o["id"],
                 "order_number": o["order_number"],
                 "status": o["status"],
                 "status_label": string(o["status"]).replace("_", " "),
-                "total_display": Money.format(int(o["total_minor"]), "BDT"),
+                "total_display": Money.format(int(o["total_minor"]), o_cur),
                 "placed_at": o["placed_at"]
             });
             i += 1;

@@ -49,24 +49,29 @@ public class OrderService {
     }
 
     public fn decorate(self, order) {
+        let cur = "BDT";
+        if order != null and order.has("currency") and string(order["currency"]).trim() != "" {
+            cur = string(order["currency"]).trim().upper();
+        }
         let items = self.orders.items_for(order["id"]);
         let out = [];
         let i = 0;
         while i < items.len() {
             let row = items[i];
-            row["unit_display"] = Money.format(int(row["unit_price_minor"]), "BDT");
-            row["line_display"] = Money.format(int(row["line_total_minor"]), "BDT");
+            row["unit_display"] = Money.format(int(row["unit_price_minor"]), cur);
+            row["line_display"] = Money.format(int(row["line_total_minor"]), cur);
             out.push(row);
             i += 1;
         }
         let view = {
             "order": order,
             "items": out,
-            "subtotal_display": Money.format(int(order["subtotal_minor"]), "BDT"),
-            "discount_display": Money.format(int(order["discount_minor"]), "BDT"),
-            "shipping_display": Money.format(int(order["shipping_minor"]), "BDT"),
-            "tax_display": Money.format(int(order["tax_minor"]), "BDT"),
-            "total_display": Money.format(int(order["total_minor"]), "BDT"),
+            "currency": cur,
+            "subtotal_display": Money.format(int(order["subtotal_minor"]), cur),
+            "discount_display": Money.format(int(order["discount_minor"]), cur),
+            "shipping_display": Money.format(int(order["shipping_minor"]), cur),
+            "tax_display": Money.format(int(order["tax_minor"]), cur),
+            "total_display": Money.format(int(order["total_minor"]), cur),
             "status_label": string(order["status"]).replace("_", " ")
         };
         let addr = json_parse(string(order["shipping_address_json"]));

@@ -84,6 +84,20 @@ public class AdminController {
         self.order_statuses = (new OrderService()).statuses();
     }
 
+    fn store_currency(self) -> string {
+        if self.settings != null and self.settings.has("currency") and string(self.settings["currency"]).trim() != "" {
+            return string(self.settings["currency"]).trim().upper();
+        }
+        return "BDT";
+    }
+
+    fn order_currency(self, order) -> string {
+        if order != null and order.has("currency") and string(order["currency"]).trim() != "" {
+            return string(order["currency"]).trim().upper();
+        }
+        return self.store_currency();
+    }
+
     fn ctx(self, req, title: string, page: string, extra) {
         let base = {
             "store_name": self.settings["name"],
@@ -132,7 +146,7 @@ public class AdminController {
             let i = 0;
             while i < data.len() {
                 rows.push([data[i]["id"], data[i]["name"], data[i]["sku"],
-                           Money.format(int(data[i]["price_minor"]), "BDT"), data[i]["status"]]);
+                           Money.format(int(data[i]["price_minor"]), self.store_currency()), data[i]["status"]]);
                 i += 1;
             }
         } elif page == "categories" {
@@ -165,7 +179,7 @@ public class AdminController {
             let i = 0;
             while i < data.len() {
                 rows.push([data[i]["order_number"], data[i]["status"],
-                           Money.format(int(data[i]["total_minor"]), "BDT"), data[i]["placed_at"]]);
+                           Money.format(int(data[i]["total_minor"]), self.order_currency(data[i])), data[i]["placed_at"]]);
                 i += 1;
             }
         } elif page == "customers" {
@@ -248,13 +262,13 @@ public class AdminController {
             row["customer_name"] = customer_name;
             row["item_count"] = DB.table("order_items").where("order_id", "=", o["id"]).count();
             row["status_label"] = string(o["status"]).replace("_", " ");
-            row["total_display"] = Money.format(int(o["total_minor"]), "BDT");
+            row["total_display"] = Money.format(int(o["total_minor"]), self.order_currency(o));
             formatted_recent.push(row);
             i += 1;
         }
         stats["recent_orders"] = formatted_recent;
         let ctx = self.ctx(req, "Dashboard", "dashboard", {
-            "revenue_display": Money.format(int(stats["revenue_minor"]), "BDT"),
+            "revenue_display": Money.format(int(stats["revenue_minor"]), self.store_currency()),
             "csrf": req.auth.csrf()
         });
         for k in stats.keys() {
@@ -373,7 +387,7 @@ public class AdminController {
                     "name": rows[i]["name"],
                     "sku": rows[i]["sku"],
                     "price": Money.to_major(rows[i]["price_minor"]),
-                    "price_display": Money.format(int(rows[i]["price_minor"]), "BDT"),
+                    "price_display": Money.format(int(rows[i]["price_minor"]), self.store_currency()),
                     "status": rows[i]["status"],
                     "status_options": status_options_for(string(rows[i]["status"]), ["draft", "published", "archived"]),
                     "is_published": string(rows[i]["status"]) == "published",
@@ -574,7 +588,7 @@ public class AdminController {
                     "order_number": rows[i]["order_number"],
                     "status": rows[i]["status"],
                     "status_options": status_options_for(string(rows[i]["status"]), self.order_statuses),
-                    "total_display": Money.format(int(rows[i]["total_minor"]), "BDT"),
+                    "total_display": Money.format(int(rows[i]["total_minor"]), self.order_currency(rows[i])),
                     "placed_at": rows[i]["placed_at"]
                 });
                 i += 1;
@@ -715,7 +729,7 @@ public class AdminController {
                 "sku": v["sku"],
                 "name": v["name"],
                 "price": Money.to_major(v["price_minor"]),
-                "price_display": Money.format(int(v["price_minor"]), "BDT"),
+                "price_display": Money.format(int(v["price_minor"]), self.store_currency()),
                 "attributes": v["attributes_json"],
                 "is_active": int(v["is_active"]) == 1,
                 "is_inactive": int(v["is_active"]) != 1
@@ -738,7 +752,7 @@ public class AdminController {
             "csrf": req.auth.csrf(),
             "product": product,
             "product_price": Money.to_major(minor_or_zero(product["price_minor"])),
-            "product_price_display": Money.format(minor_or_zero(product["price_minor"]), "BDT"),
+            "product_price_display": Money.format(minor_or_zero(product["price_minor"]), self.store_currency()),
             "product_cost": Money.to_major(minor_or_zero(product["cost_minor"])),
             "product_compare_at": Money.to_major(minor_or_zero(product["compare_at_minor"])),
             "product_status_options": status_options_for(string(product["status"]), ["draft", "published", "archived"]),
@@ -771,6 +785,7 @@ public class AdminController {
             throw not_found("Order not found.");
         }
         let items = DB.table("order_items").where("order_id", "=", id).get();
+        let ord_cur = self.order_currency(order);
         let decorated = [];
         let i = 0;
         while i < items.len() {
@@ -780,8 +795,8 @@ public class AdminController {
                 "name": it["name_snapshot"],
                 "sku": it["sku_snapshot"],
                 "quantity": it["quantity"],
-                "unit_display": Money.format(int(it["unit_price_minor"]), "BDT"),
-                "line_display": Money.format(int(it["line_total_minor"]), "BDT")
+                "unit_display": Money.format(int(it["unit_price_minor"]), ord_cur),
+                "line_display": Money.format(int(it["line_total_minor"]), ord_cur)
             });
             i += 1;
         }
@@ -816,11 +831,11 @@ public class AdminController {
             "address_name": addr_name,
             "address_line": addr_line,
             "address_city": addr_city,
-            "subtotal_display": Money.format(int(order["subtotal_minor"]), "BDT"),
-            "discount_display": Money.format(int(order["discount_minor"]), "BDT"),
-            "shipping_display": Money.format(int(order["shipping_minor"]), "BDT"),
-            "tax_display": Money.format(int(order["tax_minor"]), "BDT"),
-            "total_display": Money.format(int(order["total_minor"]), "BDT"),
+            "subtotal_display": Money.format(int(order["subtotal_minor"]), ord_cur),
+            "discount_display": Money.format(int(order["discount_minor"]), ord_cur),
+            "shipping_display": Money.format(int(order["shipping_minor"]), ord_cur),
+            "tax_display": Money.format(int(order["tax_minor"]), ord_cur),
+            "total_display": Money.format(int(order["total_minor"]), ord_cur),
             "status_options": status_opts,
             "csrf": req.auth.csrf()
         });
@@ -830,7 +845,7 @@ public class AdminController {
     public fn reports(self, req) {
         let stats = self.admin.dashboard();
         return view("admin/reports", self.ctx(req, "Reports", "reports", {
-            "revenue_display": Money.format(int(stats["revenue_minor"]), "BDT"),
+            "revenue_display": Money.format(int(stats["revenue_minor"]), self.store_currency()),
             "order_count": stats["orders"],
             "settled_rows": self.admin.report_rows().len(),
             "csrf": req.auth.csrf()
@@ -983,7 +998,7 @@ public class AdminController {
         out["cost_major"] = Money.to_major(minor_or_zero(row["cost_minor"]));
         out["tax_percent"] = scaled_display(minor_or_zero(row["tax_rate_bps"]), 2);
         out["weight_kg"] = scaled_display(minor_or_zero(row["weight_grams"]), 3);
-        out["price_display"] = Money.format(int(row["price_minor"]), "BDT");
+        out["price_display"] = Money.format(int(row["price_minor"]), self.store_currency());
         out["is_featured"] = int(row["is_featured"]) == 1;
         out["category_name"] = "";
         out["brand_name"] = "";
@@ -1038,7 +1053,7 @@ public class AdminController {
             "slug": row["slug"],
             "sku": row["sku"],
             "price_minor": int(row["price_minor"]),
-            "price_display": Money.format(int(row["price_minor"]), "BDT"),
+            "price_display": Money.format(int(row["price_minor"]), self.store_currency()),
             "status": string(row["status"]),
             "is_published": string(row["status"]) == "published",
             "is_draft": string(row["status"]) == "draft",
@@ -1076,7 +1091,7 @@ public class AdminController {
                 "item_count": item_count,
                 "status": o["status"],
                 "status_label": string(o["status"]).replace("_", " "),
-                "total_display": Money.format(int(o["total_minor"]), "BDT"),
+                "total_display": Money.format(int(o["total_minor"]), self.order_currency(o)),
                 "placed_at": o["placed_at"]
             });
             i += 1;
@@ -1094,7 +1109,7 @@ public class AdminController {
             "pct_shipped": stats["pct_shipped"],
             "pct_delivered": stats["pct_delivered"],
             "revenue_minor": stats["revenue_minor"],
-            "revenue_display": Money.format(int(stats["revenue_minor"]), "BDT"),
+            "revenue_display": Money.format(int(stats["revenue_minor"]), self.store_currency()),
             "customers": stats["customers"],
             "products": stats["products"],
             "published_products": stats["published_products"],
@@ -1338,7 +1353,7 @@ public class AdminController {
             if product != null {
                 pname = string(product["name"]);
                 pstatus = string(product["status"]);
-                price_display = Money.format(int(product["price_minor"]), "BDT");
+                price_display = Money.format(int(product["price_minor"]), self.store_currency());
             }
             let qty = int(inv["quantity"]);
             let reserved = int(inv["reserved"]);
@@ -1434,7 +1449,7 @@ public class AdminController {
                 "status": o["status"],
                 "status_label": string(o["status"]).replace("_", " "),
                 "total_minor": int(o["total_minor"]),
-                "total_display": Money.format(int(o["total_minor"]), "BDT"),
+                "total_display": Money.format(int(o["total_minor"]), self.order_currency(o)),
                 "currency": o["currency"],
                 "placed_at": o["placed_at"],
                 "customer_name": customer_name,
@@ -1458,6 +1473,7 @@ public class AdminController {
         if order == null {
             throw not_found("Order not found.");
         }
+        let ord_cur = self.order_currency(order);
         let items = DB.table("order_items").where("order_id", "=", id).get();
         let decorated = [];
         let i = 0;
@@ -1469,8 +1485,8 @@ public class AdminController {
                 "name": it["name_snapshot"],
                 "sku": it["sku_snapshot"],
                 "quantity": it["quantity"],
-                "unit_display": Money.format(int(it["unit_price_minor"]), "BDT"),
-                "line_display": Money.format(int(it["line_total_minor"]), "BDT")
+                "unit_display": Money.format(int(it["unit_price_minor"]), ord_cur),
+                "line_display": Money.format(int(it["line_total_minor"]), ord_cur)
             });
             i += 1;
         }
@@ -1487,11 +1503,12 @@ public class AdminController {
             "items": decorated,
             "customer": customer,
             "address": addr,
-            "subtotal_display": Money.format(int(order["subtotal_minor"]), "BDT"),
-            "discount_display": Money.format(int(order["discount_minor"]), "BDT"),
-            "shipping_display": Money.format(int(order["shipping_minor"]), "BDT"),
-            "tax_display": Money.format(int(order["tax_minor"]), "BDT"),
-            "total_display": Money.format(int(order["total_minor"]), "BDT"),
+            "currency": ord_cur,
+            "subtotal_display": Money.format(int(order["subtotal_minor"]), ord_cur),
+            "discount_display": Money.format(int(order["discount_minor"]), ord_cur),
+            "shipping_display": Money.format(int(order["shipping_minor"]), ord_cur),
+            "tax_display": Money.format(int(order["tax_minor"]), ord_cur),
+            "total_display": Money.format(int(order["total_minor"]), ord_cur),
             "status_label": string(order["status"]).replace("_", " "),
             "statuses": self.order_statuses
         }});
@@ -1565,7 +1582,7 @@ public class AdminController {
                 "sku": v["sku"],
                 "name": v["name"],
                 "price_minor": int(v["price_minor"]),
-                "price_display": Money.format(int(v["price_minor"]), "BDT"),
+                "price_display": Money.format(int(v["price_minor"]), self.store_currency()),
                 "is_active": int(v["is_active"]) == 1
             });
             vi += 1;

@@ -17,6 +17,7 @@ import "app/Repositories/InventoryRepository";
 import "app/Repositories/CheckoutRepository";
 import "app/Repositories/ProductRepository";
 import "app/Support/Money" as Money;
+import "app/Support/Fx" as Fx;
 
 public class CheckoutService {
     public let cart;
@@ -56,10 +57,28 @@ public class CheckoutService {
         return self.shipping.quote(address, method, after_discount);
     }
 
+    fn format_amount(self, minor: int, currency: string, fx) -> string {
+        let cur = string(currency).trim().upper();
+        if cur == "" { cur = "BDT"; }
+        if fx != null and fx.has("base") and cur != string(fx["base"]).trim().upper() {
+            let converted = Fx.convert(minor, string(fx["base"]), cur, fx["rates"]);
+            return Fx.format(converted, cur, fx["rates"]);
+        }
+        return Money.format(minor, cur);
+    }
+
     // options: shipping_method (standard|express), coupon_code,
-    //           gift_card_code, address_id
+    //           gift_card_code, address_id, currency, fx
     public fn quote(self, ident, options) {
-        let summary = self.cart.summary(ident);
+        let currency = "BDT";
+        if options.has("currency") and string(options["currency"]).trim() != "" {
+            currency = string(options["currency"]).trim().upper();
+        }
+        let fx = null;
+        if options.has("fx") {
+            fx = options["fx"];
+        }
+        let summary = self.cart.summary(ident, currency, fx);
         let subtotal = int(summary["subtotal_minor"]);
         let volume_discount = int(summary["discount_minor"]);
         let coupon_code = "";
@@ -142,6 +161,7 @@ public class CheckoutService {
             "item_count": summary["count"],
             "has_warnings": summary["has_warnings"],
             "warnings": summary["warnings"],
+            "currency": currency,
             "subtotal_minor": subtotal,
             "volume_discount_minor": volume_discount,
             "coupon_discount_minor": coupon_discount_val,
@@ -161,7 +181,7 @@ public class CheckoutService {
             "is_free_shipping": shipping == 0,
             "free_shipping_threshold_minor": free_threshold,
             "free_shipping_remaining_minor": free_remaining,
-            "free_shipping_remaining_display": Money.format(free_remaining, "BDT"),
+            "free_shipping_remaining_display": self.format_amount(free_remaining, currency, fx),
             "has_free_shipping_progress": free_remaining > 0 and method != "express",
             "shipping_zone": delivery["zone_name"],
             "has_shipping_zone": string(delivery["zone_name"]) != "",
@@ -175,18 +195,18 @@ public class CheckoutService {
             "has_campaign_discount": campaign_discount > 0,
             "has_gift_card_discount": gift_card_discount > 0,
             "has_any_discount": total_discount > 0,
-            "subtotal_display": Money.format(subtotal, "BDT"),
-            "volume_discount_display": Money.format(volume_discount, "BDT"),
-            "coupon_discount_display": Money.format(coupon_discount_val, "BDT"),
-            "campaign_discount_display": Money.format(campaign_discount, "BDT"),
-            "discount_display": Money.format(total_discount, "BDT"),
-            "gift_card_display": Money.format(gift_card_discount, "BDT"),
-            "shipping_display": Money.format(shipping, "BDT"),
-            "tax_display": Money.format(tax, "BDT"),
-            "total_display": Money.format(total, "BDT"),
-            "express_fee_display": Money.format(self.setting("shipping.express_minor", 12000), "BDT"),
-            "standard_fee_display": Money.format(self.setting("shipping.flat_minor", 6000), "BDT"),
-            "free_threshold_display": Money.format(free_threshold, "BDT")
+            "subtotal_display": self.format_amount(subtotal, currency, fx),
+            "volume_discount_display": self.format_amount(volume_discount, currency, fx),
+            "coupon_discount_display": self.format_amount(coupon_discount_val, currency, fx),
+            "campaign_discount_display": self.format_amount(campaign_discount, currency, fx),
+            "discount_display": self.format_amount(total_discount, currency, fx),
+            "gift_card_display": self.format_amount(gift_card_discount, currency, fx),
+            "shipping_display": self.format_amount(shipping, currency, fx),
+            "tax_display": self.format_amount(tax, currency, fx),
+            "total_display": self.format_amount(total, currency, fx),
+            "express_fee_display": self.format_amount(self.setting("shipping.express_minor", 12000), currency, fx),
+            "standard_fee_display": self.format_amount(self.setting("shipping.flat_minor", 6000), currency, fx),
+            "free_threshold_display": self.format_amount(free_threshold, currency, fx)
         };
     }
 

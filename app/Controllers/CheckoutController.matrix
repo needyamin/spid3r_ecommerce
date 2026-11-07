@@ -13,24 +13,28 @@ import "app/Repositories/CheckoutRepository";
 import "app/Support/CartIdentity" as CartIdentity;
 import "app/Support/StoreChrome" as StoreChrome;
 import "app/Validators/CheckoutValidators" as CheckoutValidators;
+import "app/Services/CurrencyService";
 
 public class CheckoutController {
     public let checkout;
     public let payments;
     public let addresses;
     public let settings;
+    public let currencies;
 
     fn new() {
         self.checkout = new CheckoutService();
         self.payments = new PaymentService();
         self.addresses = new AddressRepository();
         self.settings = Container.make("store.settings");
+        self.currencies = new CurrencyService(string(self.settings["currency"]));
     }
 
     fn base(self, req, title: string) {
+        let display_currency = self.currencies.selected(req);
         let ctx = {
             "store_name": self.settings["name"],
-            "currency": self.settings["currency"],
+            "currency": display_currency,
             "title": title,
             "meta_description": title + " — " + self.settings["name"],
             "current_path": string(req.path),
@@ -53,6 +57,8 @@ public class CheckoutController {
                 opts[k2] = req.data[k2];
             }
         }
+        opts["currency"] = self.currencies.selected(req);
+        opts["fx"] = self.currencies.context();
         return opts;
     }
 
@@ -131,6 +137,10 @@ public class CheckoutController {
             ctx["signed_in"] = false;
         }
         let raw_items = DB.table("order_items").where("order_id", "=", order["id"]).get();
+        let order_cur = "BDT";
+        if order.has("currency") and string(order["currency"]).trim() != "" {
+            order_cur = string(order["currency"]).trim().upper();
+        }
         let items = [];
         let i = 0;
         while i < raw_items.len() {
@@ -139,8 +149,8 @@ public class CheckoutController {
                 "name": string(row["name_snapshot"]),
                 "sku": string(row["sku_snapshot"]),
                 "quantity": int(row["quantity"]),
-                "unit_display": Money.format(int(row["unit_price_minor"]), "BDT"),
-                "line_display": Money.format(int(row["line_total_minor"]), "BDT")
+                "unit_display": Money.format(int(row["unit_price_minor"]), order_cur),
+                "line_display": Money.format(int(row["line_total_minor"]), order_cur)
             });
             i += 1;
         }
@@ -169,12 +179,12 @@ public class CheckoutController {
         ctx["payment_provider"] = payment_provider;
         ctx["payment_status"] = payment_status;
         ctx["providers"] = self.payments.providers();
-        ctx["subtotal_display"] = Money.format(int(order["subtotal_minor"]), "BDT");
-        ctx["discount_display"] = Money.format(int(order["discount_minor"]), "BDT");
+        ctx["subtotal_display"] = Money.format(int(order["subtotal_minor"]), order_cur);
+        ctx["discount_display"] = Money.format(int(order["discount_minor"]), order_cur);
         ctx["has_discount"] = int(order["discount_minor"]) > 0;
-        ctx["shipping_display"] = Money.format(int(order["shipping_minor"]), "BDT");
-        ctx["tax_display"] = Money.format(int(order["tax_minor"]), "BDT");
-        ctx["total_display"] = Money.format(int(order["total_minor"]), "BDT");
+        ctx["shipping_display"] = Money.format(int(order["shipping_minor"]), order_cur);
+        ctx["tax_display"] = Money.format(int(order["tax_minor"]), order_cur);
+        ctx["total_display"] = Money.format(int(order["total_minor"]), order_cur);
         return view("checkout/confirmation", ctx);
     }
 

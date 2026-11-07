@@ -51,7 +51,11 @@ public class OrderController {
         let i = 0;
         while i < result["data"].len() {
             let row = result["data"][i];
-            row["total_display"] = Money.format(int(row["total_minor"]), "BDT");
+            let row_cur = "BDT";
+            if row.has("currency") and string(row["currency"]).trim() != "" {
+                row_cur = string(row["currency"]).trim().upper();
+            }
+            row["total_display"] = Money.format(int(row["total_minor"]), row_cur);
             rows.push(row);
             i += 1;
         }
