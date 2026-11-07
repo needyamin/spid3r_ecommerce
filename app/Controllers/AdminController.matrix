@@ -1035,6 +1035,7 @@ public class AdminController {
         return {
             "id": pid,
             "name": row["name"],
+            "slug": row["slug"],
             "sku": row["sku"],
             "price_minor": int(row["price_minor"]),
             "price_display": Money.format(int(row["price_minor"]), "BDT"),

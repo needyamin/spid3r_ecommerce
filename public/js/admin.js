@@ -1047,24 +1047,38 @@
           } },
         { label: "Product", render: function (r) {
             return "<strong>" + ADMIN.esc(r.name) + "</strong>" +
-              (r.is_featured ? ' <span class="badge text-bg-warning">Featured</span>' : "") +
-              '<span class="small text-secondary d-block">' + ADMIN.esc(r.category_name) + "</span>";
+              (r.is_featured ? ' <span class="badge text-bg-warning ms-1">Featured</span>' : "") +
+              '<span class="small text-secondary d-block">' + ADMIN.esc(r.category_name || "Uncategorized") +
+              (r.brand_name ? ' · ' + ADMIN.esc(r.brand_name) : '') + "</span>";
           } },
         { label: "SKU", render: function (r) { return "<code>" + ADMIN.esc(r.sku) + "</code>"; } },
         { label: "Price", render: function (r) { return "<strong>" + ADMIN.esc(r.price_display) + "</strong>"; } },
-        { label: "Stock", render: function (r) { return ADMIN.esc(r.available) + ' <span class="small text-secondary">avail</span>'; } },
+        { label: "Stock", render: function (r) {
+            var low = r.is_low_stock ? ' <span class="badge bg-warning-subtle text-warning border border-warning-subtle ms-1">Low</span>' : '';
+            return '<strong>' + ADMIN.esc(r.available) + '</strong> <span class="small text-secondary">avail</span>' + low;
+          } },
         { label: "Status", render: function (r) { return ADMIN.badge(r.status); } }
       ],
       rowActions: function (row) {
-        return [
-          { label: "Manage", cls: "btn-primary", onClick: function (r) { self.openEditor(r.id); } },
-          { label: "Delete", cls: "btn-outline-danger", danger: true, confirm: "Delete this product? Products tied to orders cannot be deleted.",
-            confirmLabel: "Delete", onClick: function (r, reload) {
-              ADMIN.act("POST", "/admin/api/products/" + r.id + "/delete-form").then(function () {
-                ADMIN.toast("Product deleted.", true); reload();
-              }).catch(function (e) { ADMIN.toast(e.message, false); });
-            } }
+        var acts = [
+          { label: "Manage", cls: "btn-primary", onClick: function (r) { self.openEditor(r.id); } }
         ];
+        if (row && row.slug) {
+          acts.push({
+            label: "View", cls: "btn-light border", onClick: function (r) {
+              window.open("/product/" + r.slug, "_blank");
+            }
+          });
+        }
+        acts.push({
+          label: "Delete", cls: "btn-outline-danger", danger: true, confirm: "Delete this product? Products tied to orders cannot be deleted.",
+          confirmLabel: "Delete", onClick: function (r, reload) {
+            ADMIN.act("POST", "/admin/api/products/" + r.id + "/delete-form").then(function () {
+              ADMIN.toast("Product deleted.", true); reload();
+            }).catch(function (e) { ADMIN.toast(e.message, false); });
+          }
+        });
+        return acts;
       },
       onAdd: function () { self.openCreate(); }
     };
