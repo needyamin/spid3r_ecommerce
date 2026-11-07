@@ -1,0 +1,11 @@
+@extends("layouts.admin")
+@section('title', title)
+@section('meta_description', meta_description)
+@section("content")
+<div class="dz-admin-module" data-module="{{ page }}">
+  <div class="dz-admin-loading" role="status" aria-live="polite">
+    <div class="dz-spinner"></div>
+    <p class="dz-admin-loading-text">Loading {{ title }}…</p>
+  </div>
+</div>
+@endsection

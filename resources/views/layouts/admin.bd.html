@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>@yield("title") · {{ store_name }} Admin</title>
+  <meta name="description" content="@yield("meta_description", "Spid3r store administration")">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="csrf-token" content="{{ csrf }}">
+  <meta name="store-currency" content="{{ currency }}">
+  <meta name="store-name" content="{{ store_name }}">
+  <meta name="admin-module" content="{{ page }}">
+  <link rel="stylesheet" href="/css/bootstrap.min.css">
+  <link rel="stylesheet" href="/css/store.css">
+  <link rel="stylesheet" href="/css/admin.css">
+</head>
+<body class="dz-admin-body">
+  <div class="dz-admin-shell">
+    <!-- Sidebar -->
+    <aside class="dz-admin-sidebar" id="adminSidebar" aria-label="Admin navigation">
+      <div class="dz-admin-brand">
+        <a class="dz-admin-brand-link" href="/admin/dashboard">
+          <span class="dz-admin-brand-mark" aria-hidden="true">S</span>
+          <span class="dz-admin-brand-text">{{ store_name }}<small>Administration</small></span>
+        </a>
+      </div>
+      <nav class="dz-admin-sidebar-nav" aria-label="Modules">
+@foreach(item in admin_navigation)
+@if(item.active)
+        <a class="dz-admin-nav-item is-active" href="{{ item.url }}" aria-current="page">
+          <span class="dz-nav-icon dz-icon-{{ item.icon }}" aria-hidden="true"></span>
+          <span class="dz-admin-nav-label">{{ item.label }}</span>
+        </a>
+@else
+        <a class="dz-admin-nav-item" href="{{ item.url }}">
+          <span class="dz-nav-icon dz-icon-{{ item.icon }}" aria-hidden="true"></span>
+          <span class="dz-admin-nav-label">{{ item.label }}</span>
+        </a>
+@endif
+@endforeach
+      </nav>
+      <div class="dz-admin-sidebar-foot">
+        <div class="dz-admin-user-card mb-2">
+          <div class="dz-user-avatar">A</div>
+          <div class="dz-user-meta">
+            <span class="dz-user-name">Store Admin</span>
+            <span class="dz-user-role"><span class="dz-status-dot me-1"></span>Online</span>
+          </div>
+        </div>
+        <a class="dz-admin-nav-item dz-storefront-link" href="/" target="_blank" rel="noopener">
+          <span class="dz-nav-icon dz-icon-storefront" aria-hidden="true"></span>
+          <span class="dz-admin-nav-label">View storefront</span>
+          <span class="dz-nav-external" aria-hidden="true">&nearr;</span>
+        </a>
+      </div>
+    </aside>
+
+    <!-- Mobile backdrop -->
+    <div class="dz-admin-backdrop" id="adminBackdrop" hidden></div>
+
+    <!-- Main column -->
+    <div class="dz-admin-main">
+      <header class="dz-admin-topbar">
+        <button class="dz-admin-menu-btn" id="adminMenuBtn" type="button" aria-label="Toggle navigation" aria-controls="adminSidebar">
+          <span></span><span></span><span></span>
+        </button>
+        <div class="dz-admin-topbar-breadcrumb d-none d-md-flex align-items-center gap-2">
+          <span class="text-secondary small">Admin</span>
+          <span class="text-secondary small">/</span>
+          <span class="dz-admin-topbar-title" id="adminTopTitle">{{ title }}</span>
+        </div>
+        <div class="dz-admin-topbar-actions ms-auto d-flex align-items-center gap-2">
+          <span class="badge bg-success-subtle text-success border border-success-subtle d-none d-sm-inline-flex align-items-center gap-1">
+            <span class="dz-status-dot"></span> Live Store
+          </span>
+          <a class="btn btn-sm btn-light border d-none d-sm-inline-flex align-items-center gap-1" href="/" target="_blank" rel="noopener">
+            <span>Storefront</span> &nearr;
+          </a>
+          <div class="dz-topbar-divider d-none d-sm-block"></div>
+          <div class="d-flex align-items-center gap-2">
+            <div class="dz-admin-topbar-avatar d-none d-sm-flex" title="Admin">A</div>
+            <form method="post" action="/logout" class="d-inline m-0">
+              <input type="hidden" name="_csrf" value="{{ csrf }}">
+              <button class="btn btn-outline-danger btn-sm" type="submit">Sign out</button>
+            </form>
+          </div>
+        </div>
+      </header>
+      <main class="dz-admin-content" id="adminContent">
+        @yield("content")
+      </main>
+    </div>
+  </div>
+
+  <!-- Shared modal host (CSP-safe: no inline JS; behaviour lives in admin.js) -->
+  <div class="modal fade" id="adminModal" tabindex="-1" aria-labelledby="adminModalTitle" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2 class="modal-title h5" id="adminModalTitle">Dialog</h2>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body" id="adminModalBody"></div>
+        <div class="modal-footer" id="adminModalFooter"></div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/js/bootstrap.bundle.min.js" defer></script>
+  <script src="/js/admin.js" defer></script>
+</body>
+</html>

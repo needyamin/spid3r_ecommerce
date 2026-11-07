@@ -11,6 +11,9 @@
 @endif
   <link rel="stylesheet" href="/css/bootstrap.min.css">
   <link rel="stylesheet" href="/css/store.css">
+@if(is_admin_area)
+  <link rel="stylesheet" href="/css/admin.css">
+@endif
 </head>
 <body>
 @if(not is_admin_area)

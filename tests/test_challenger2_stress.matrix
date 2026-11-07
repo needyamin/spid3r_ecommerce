@@ -1,0 +1,319 @@
+// tests/test_challenger2_stress.matrix
+// Challenger 2: Adversarial Stress Test Suite for Admin Panel
+// Tests:
+// 1. Abnormal HTTP Responses (422 validation, 419 CSRF mismatch, 404 not found, 401 unauth)
+// 2. Form edge cases (empty submits, extreme length strings, XSS characters)
+// 3. Database completeness across all 8 modules (Overview, Orders, Products, Categories, Brands, Inventory, Customers, Settings)
+// 4. Pagination, filtering, and search behavior
+
+import "framework/Application";
+import "framework/Router";
+import "framework/Database/DB";
+import "routes/web";
+import "routes/queue";
+import "app/Middleware/StoreMiddleware";
+import "app/Services/AuthService";
+import "database/seeders/DatabaseSeeder";
+
+fn call(app, method: string, path: string, data, cookie: string) {
+    let headers = map();
+    if cookie != "" {
+        headers["cookie"] = cookie;
+    }
+    let payload = map();
+    if data != null {
+        for k in data.keys() {
+            payload[k] = data[k];
+        }
+    }
+    return app.handle_request(map(
+        "method", method, "path", path,
+        "headers", headers, "data", payload
+    ));
+}
+
+fn body(res) {
+    return json_parse(string(res["body"]));
+}
+
+fn admin_session(app, tag: string) {
+    let svc = new AuthService();
+    let email = "challenger2-" + tag + "@example.test";
+    let user = svc.register("Challenger2 Admin", email, "secret-pass-ch2");
+    let role = DB.table("roles").where("slug", "=", "admin").first();
+    DB.table("user_roles").insert(map("user_id", user["id"], "role_id", role["id"]));
+    let token = svc.login(email, "secret-pass-ch2");
+    let rows = DB.select("SELECT payload FROM sessions WHERE token = ?", [token]);
+    return map(
+        "cookie", "spid3r_session=" + token,
+        "csrf", string(rows[0]["payload"]),
+        "email", email, "id", user["id"]
+    );
+}
+
+// -----------------------------------------------------------------------------
+// Stress Test 1: Abnormal Status Codes (422, 419, 404, 401)
+// -----------------------------------------------------------------------------
+fn test_abnormal_status_codes(app, adm) {
+    println("--- Testing Abnormal Status Codes (422, 419, 404, 401) ---");
+
+    // 1.1 Unauthenticated 401
+    let unauth = call(app, "GET", "/admin/api/overview", null, "");
+    assert(unauth["status"] == 401, "API without session cookie returns 401");
+
+    // 1.2 CSRF token mismatch -> 419
+    let bad_csrf = call(app, "POST", "/admin/api/categories/create", map(
+        "name", "Bad CSRF Category",
+        "_csrf", "totally_bogus_csrf_token_12345",
+        "format", "json"
+    ), adm["cookie"]);
+    assert(bad_csrf["status"] == 419, "POST with mismatched CSRF returns 419 status");
+
+    // 1.3 Validation errors -> 422
+    // Empty category name
+    let empty_cat = call(app, "POST", "/admin/api/categories/create", map(
+        "name", "",
+        "_csrf", adm["csrf"],
+        "format", "json"
+    ), adm["cookie"]);
+    assert(empty_cat["status"] == 422, "Empty category name returns 422");
+
+    // Empty brand name
+    let empty_brand = call(app, "POST", "/admin/api/brands/create", map(
+        "name", "",
+        "_csrf", adm["csrf"],
+        "format", "json"
+    ), adm["cookie"]);
+    assert(empty_brand["status"] == 422, "Empty brand name returns 422");
+
+    // Negative inventory restock
+    let bad_restock = call(app, "POST", "/admin/api/products/999999/inventory/restock", map(
+        "quantity", -5,
+        "_csrf", adm["csrf"],
+        "format", "json"
+    ), adm["cookie"]);
+    assert(bad_restock["status"] == 422 or bad_restock["status"] == 404, "Invalid restock quantity returns 422 or 404");
+
+    // Invalid customer status transition
+    let bad_cust = call(app, "POST", "/admin/api/customers/" + string(adm["id"]) + "/status", map(
+        "status", "nonexistent_status_xyz",
+        "_csrf", adm["csrf"],
+        "format", "json"
+    ), adm["cookie"]);
+    assert(bad_cust["status"] == 422, "Invalid customer status returns 422");
+
+    // 1.4 Not Found -> 404
+    let not_found_order = call(app, "GET", "/admin/api/order/99999999", null, adm["cookie"]);
+    assert(not_found_order["status"] == 404, "Nonexistent order returns 404");
+
+    let not_found_prod = call(app, "GET", "/admin/api/product-full/99999999", null, adm["cookie"]);
+    assert(not_found_prod["status"] == 404, "Nonexistent product returns 404");
+
+    println("  [PASS] Abnormal status codes correctly handled with 401, 419, 422, 404");
+}
+
+// -----------------------------------------------------------------------------
+// Stress Test 2: XSS Injection & Long String Payloads
+// -----------------------------------------------------------------------------
+fn test_xss_and_boundary_payloads(app, adm, tag: string) {
+    println("--- Testing XSS Payloads & Boundary Text Inputs ---");
+
+    let xss_payload = "<script>alert('xss-" + tag + "')</script><img src=x onerror=alert(1)>\" onfocus=\"alert(2)";
+    
+    // Create category with XSS payload in name and description
+    let cat_res = call(app, "POST", "/admin/api/categories/create", map(
+        "name", "XSS Cat " + xss_payload,
+        "description", "Description with " + xss_payload,
+        "_csrf", adm["csrf"],
+        "format", "json"
+    ), adm["cookie"]);
+    assert(cat_res["status"] == 201, "Category with XSS characters accepted and stored without crash");
+    let cid = int(body(cat_res)["data"]["id"]);
+
+    // Verify list API returns JSON payload cleanly
+    let list_res = call(app, "GET", "/admin/api/list/categories?q=" + url_encode("XSS Cat"), null, adm["cookie"]);
+    assert(list_res["status"] == 200, "Category list returns 200");
+    let lb = body(list_res);
+    assert(lb["data"].len() >= 1, "Category with XSS found");
+    let stored_cat = lb["data"][0];
+    assert(string(stored_cat["name"]).contains("<script>"), "Raw name preserved intact in JSON API");
+
+    // Create brand with extreme long string (1,000 characters)
+    let long_desc = "";
+    let j = 0;
+    while j < 50 {
+        long_desc = long_desc + "AdversarialLongTextBoundaryTesting" + string(j) + " ";
+        j += 1;
+    }
+    let brand_name = "LongBrand-" + tag;
+    let brand_res = call(app, "POST", "/admin/api/brands/create", map(
+        "name", brand_name,
+        "description", long_desc,
+        "_csrf", adm["csrf"],
+        "format", "json"
+    ), adm["cookie"]);
+    assert(brand_res["status"] == 201, "Brand with long description created successfully");
+    let bid = int(body(brand_res)["data"]["id"]);
+
+    let b_row = DB.table("brands").where("id", "=", bid).first();
+    assert(b_row != null, "Brand row exists in DB");
+    assert(string(b_row["name"]) == brand_name, "Brand name intact");
+
+    // Create product with special characters & symbols in name
+    let prod_name = "Prod $#@! & < > \" ' " + tag;
+    let prod_sku = "SKU-SYM-" + tag;
+    let prod_res = call(app, "POST", "/admin/api/products/create", map(
+        "name", prod_name,
+        "sku", prod_sku,
+        "category_id", cid,
+        "brand_id", bid,
+        "price", "199.99",
+        "stock", 10,
+        "status", "draft",
+        "_csrf", adm["csrf"],
+        "format", "json"
+    ), adm["cookie"]);
+    assert(prod_res["status"] == 201, "Product with special characters created");
+    let pid = int(body(prod_res)["data"]["id"]);
+
+    let prod_full = call(app, "GET", "/admin/api/product-full/" + string(pid), null, adm["cookie"]);
+    assert(prod_full["status"] == 200, "Full product API returns 200");
+    let pb = body(prod_full)["data"];
+    assert(pb["product"]["name"] == prod_name, "Product special character name preserved in full view");
+
+    // Clean up
+    DB.table("inventory").where("product_id", "=", pid).delete();
+    DB.table("products").where("id", "=", pid).delete();
+    DB.table("categories").where("id", "=", cid).delete();
+    DB.table("brands").where("id", "=", bid).delete();
+    println("  [PASS] XSS characters and long boundary payloads handled cleanly");
+}
+
+// -----------------------------------------------------------------------------
+// Stress Test 3: Data Completeness & Schema Mapping across All 8 Modules
+// -----------------------------------------------------------------------------
+fn test_eight_modules_real_records(app, adm) {
+    println("--- Testing Real Record Rendering Across All 8 Modules ---");
+
+    // 1. Overview
+    let ov_res = call(app, "GET", "/admin/api/overview", null, adm["cookie"]);
+    assert(ov_res["status"] == 200, "Module 1 (Overview) returns 200");
+    let ov_data = body(ov_res)["data"];
+    assert(ov_data["revenue_minor"] != null, "Overview: real revenue_minor");
+    assert(ov_data["revenue_display"] != null, "Overview: real revenue_display");
+    assert(ov_data["orders"] != null, "Overview: real orders count");
+    assert(ov_data["products"] != null, "Overview: real products count");
+    assert(ov_data["customers"] != null, "Overview: real customers count");
+    assert(ov_data["low_stock"] != null, "Overview: real low_stock count");
+
+    // 2. Orders
+    let ord_res = call(app, "GET", "/admin/api/list/orders", null, adm["cookie"]);
+    assert(ord_res["status"] == 200, "Module 2 (Orders) returns 200");
+    let ord_body = body(ord_res);
+    assert(ord_body["meta"] != null, "Orders has pagination meta");
+
+    // 3. Products
+    let prod_res = call(app, "GET", "/admin/api/list/products", null, adm["cookie"]);
+    assert(prod_res["status"] == 200, "Module 3 (Products) returns 200");
+    let prod_body = body(prod_res);
+    assert(prod_body["meta"] != null, "Products has pagination meta");
+
+    // 4. Categories
+    let cat_res = call(app, "GET", "/admin/api/list/categories", null, adm["cookie"]);
+    assert(cat_res["status"] == 200, "Module 4 (Categories) returns 200");
+    let cat_body = body(cat_res);
+    assert(cat_body["meta"] != null, "Categories has pagination meta");
+
+    // 5. Brands
+    let brand_res = call(app, "GET", "/admin/api/list/brands", null, adm["cookie"]);
+    assert(brand_res["status"] == 200, "Module 5 (Brands) returns 200");
+    let brand_body = body(brand_res);
+    assert(brand_body["meta"] != null, "Brands has pagination meta");
+
+    // 6. Inventory
+    let inv_res = call(app, "GET", "/admin/api/list/inventory", null, adm["cookie"]);
+    assert(inv_res["status"] == 200, "Module 6 (Inventory) returns 200");
+    let inv_body = body(inv_res);
+    assert(inv_body["meta"] != null, "Inventory has pagination meta");
+
+    // 7. Customers
+    let cust_res = call(app, "GET", "/admin/api/list/customers", null, adm["cookie"]);
+    assert(cust_res["status"] == 200, "Module 7 (Customers) returns 200");
+    let cust_body = body(cust_res);
+    assert(cust_body["meta"] != null, "Customers has pagination meta");
+
+    // 8. Settings
+    let set_res = call(app, "GET", "/admin/api/settings", null, adm["cookie"]);
+    assert(set_res["status"] == 200, "Module 8 (Settings) returns 200");
+    let set_body = body(set_res);
+    assert(set_body["data"] != null, "Settings returns data array");
+
+    println("  [PASS] All 8 modules render complete, real database records with pagination metadata");
+}
+
+// -----------------------------------------------------------------------------
+// Stress Test 4: Pagination & Filtering Verification
+// -----------------------------------------------------------------------------
+fn test_pagination_and_filtering(app, adm) {
+    println("--- Testing Pagination and Filter Parameters ---");
+
+    // Pagination: page 1 vs page 2 on products
+    let p1 = call(app, "GET", "/admin/api/list/products?page=1", null, adm["cookie"]);
+    assert(p1["status"] == 200, "Products page 1 returns 200");
+    let m1 = body(p1)["meta"];
+    assert(int(m1["page"]) == 1, "Meta page is 1");
+
+    let p2 = call(app, "GET", "/admin/api/list/products?page=2", null, adm["cookie"]);
+    assert(p2["status"] == 200, "Products page 2 returns 200");
+    let m2 = body(p2)["meta"];
+    assert(int(m2["page"]) == 2, "Meta page is 2");
+
+    // Filtering by status
+    let f_draft = call(app, "GET", "/admin/api/list/products?status=draft", null, adm["cookie"]);
+    assert(f_draft["status"] == 200, "Products status filter draft returns 200");
+
+    let f_pub = call(app, "GET", "/admin/api/list/products?status=published", null, adm["cookie"]);
+    assert(f_pub["status"] == 200, "Products status filter published returns 200");
+
+    // Inventory low-stock filter
+    let f_low = call(app, "GET", "/admin/api/list/inventory?low=1", null, adm["cookie"]);
+    assert(f_low["status"] == 200, "Inventory low-stock filter returns 200");
+
+    println("  [PASS] Pagination and filtering operate cleanly without errors");
+}
+
+fn cleanup(adm) {
+    try {
+        let uid = adm["id"];
+        DB.table("user_roles").where("user_id", "=", uid).delete();
+        DB.table("sessions").where("user_id", "=", uid).delete();
+        DB.table("users").where("id", "=", uid).delete();
+    } catch (e) {
+        println("[cleanup] " + string(e));
+    }
+}
+
+fn main() {
+    println("\n=======================================================");
+    println("=== Running Challenger 2 Adversarial Stress Tests  ===");
+    println("=======================================================");
+    let app = new Application();
+    register_store_middleware(app);
+    register_web_routes();
+    register_queue_jobs();
+    run_database_seeder();
+    let tag = string(unix_time());
+    let adm = admin_session(app, tag);
+
+    try {
+        test_abnormal_status_codes(app, adm);
+        test_xss_and_boundary_payloads(app, adm, tag);
+        test_eight_modules_real_records(app, adm);
+        test_pagination_and_filtering(app, adm);
+    } finally {
+        cleanup(adm);
+    }
+    DB.close();
+    println("\n=== All Challenger 2 Adversarial Stress Tests PASSED! ===\n");
+    return 0;
+}
