@@ -450,9 +450,188 @@
     return window.confirm(trigger.getAttribute("data-confirm"));
   }
 
+  function wireProductEnhancements() {
+    document.addEventListener("click", function (e) {
+      var stepBtn = e.target.closest && e.target.closest("[data-qty-step]");
+      if (!stepBtn) return;
+      var group = stepBtn.closest(".dz-qty-stepper") || stepBtn.parentNode;
+      var input = group ? group.querySelector('input[name="quantity"]') : null;
+      if (!input) return;
+      var delta = parseInt(stepBtn.getAttribute("data-qty-step"), 10) || 0;
+      var current = parseInt(input.value, 10) || 1;
+      var min = parseInt(input.getAttribute("min"), 10) || 1;
+      var max = parseInt(input.getAttribute("max"), 10) || 99;
+      var next = current + delta;
+      if (next < min) next = min;
+      if (next > max) next = max;
+      input.value = String(next);
+    });
+
+    document.addEventListener("change", function (e) {
+      var select = e.target;
+      if (!select.matches || !select.matches("[data-variant-select]")) return;
+      var opt = select.options[select.selectedIndex];
+      if (!opt) return;
+      var priceDisplay = opt.getAttribute("data-price-display");
+      var priceEl = document.getElementById("dz-buybox-price");
+      if (priceDisplay && priceEl) {
+        priceEl.textContent = priceDisplay;
+      }
+    });
+  }
+
+  function wireCheckoutLiveQuote() {
+    var form = document.getElementById("dz-checkout-form");
+    if (!form) return;
+
+    function refreshQuote(showFeedbackToast) {
+      var params = new URLSearchParams();
+      var methodEl = document.getElementById("shipping_method");
+      var couponEl = document.getElementById("coupon_code");
+      var giftEl = document.getElementById("gift_card_code");
+      var addrEl = document.getElementById("address_id");
+      var cityEl = document.getElementById("city");
+      var distEl = document.getElementById("district");
+      var countryEl = document.getElementById("country");
+
+      if (methodEl && methodEl.value) params.set("shipping_method", methodEl.value);
+      if (couponEl && couponEl.value.trim()) params.set("coupon_code", couponEl.value.trim());
+      if (giftEl && giftEl.value.trim()) params.set("gift_card_code", giftEl.value.trim());
+      if (addrEl && addrEl.value) params.set("address_id", addrEl.value);
+      if (cityEl && cityEl.value.trim()) params.set("city", cityEl.value.trim());
+      if (distEl && distEl.value.trim()) params.set("district", distEl.value.trim());
+      if (countryEl && countryEl.value.trim()) params.set("country", countryEl.value.trim());
+
+      fetch("/checkout/quote?" + params.toString(), {
+        headers: { "Accept": "application/json" },
+        credentials: "same-origin"
+      }).then(function (res) {
+        return res.json().then(function (body) { return { res: res, body: body }; });
+      }).then(function (out) {
+        var couponFb = document.getElementById("dz-coupon-feedback");
+        var giftFb = document.getElementById("dz-gift-card-feedback");
+        if (!out.res.ok) {
+          var err = errorMessage(out.body) || "Could not apply code.";
+          toast(err, false);
+          if (couponFb && couponEl && couponEl.value.trim()) {
+            couponFb.innerHTML = '<span class="text-danger fw-semibold">' + err + '</span>';
+          }
+          return;
+        }
+        var q = (out.body && out.body.data) ? out.body.data : null;
+        if (!q) return;
+
+        var setTxt = function (id, val) {
+          var el = document.getElementById(id);
+          if (el && typeof val === "string") el.textContent = val;
+        };
+        setTxt("dz-summary-subtotal", q.subtotal_display);
+        setTxt("dz-summary-discount", "\u2212 " + q.discount_display);
+        setTxt("dz-summary-shipping", q.shipping_display);
+        setTxt("dz-summary-shipping-method", q.shipping_method);
+        setTxt("dz-summary-tax", q.tax_display);
+        setTxt("dz-summary-total", q.total_display);
+
+        var volRow = document.getElementById("dz-row-volume-discount");
+        if (volRow) {
+          volRow.classList.toggle("d-none", !(q.volume_discount_minor > 0));
+          setTxt("dz-summary-volume-discount", "\u2212 " + (q.volume_discount_display || ""));
+        }
+
+        var coupRow = document.getElementById("dz-row-coupon-discount");
+        if (coupRow) {
+          var hasCoup = q.coupon_discount_minor > 0;
+          coupRow.classList.toggle("d-none", !hasCoup);
+          setTxt("dz-summary-coupon-code", q.coupon_code || "");
+          setTxt("dz-summary-coupon-discount", "\u2212 " + (q.coupon_discount_display || ""));
+          if (couponFb) {
+            if (hasCoup) {
+              couponFb.innerHTML = '<span class="text-success fw-semibold">\u2713 Coupon ' + (q.coupon_code || "") + ' applied (\u2212' + (q.coupon_discount_display || "") + ')</span>';
+            } else {
+              couponFb.textContent = "Have a promo code? Enter it and click Apply.";
+            }
+          }
+        }
+
+        var campRow = document.getElementById("dz-row-campaign-discount");
+        if (campRow) {
+          campRow.classList.toggle("d-none", !(q.campaign_discount_minor > 0));
+          setTxt("dz-summary-campaign-discount", "\u2212 " + (q.campaign_discount_display || ""));
+        }
+
+        var giftRow = document.getElementById("dz-row-gift-discount");
+        if (giftRow) {
+          var hasGift = q.gift_card_discount_minor > 0;
+          giftRow.classList.toggle("d-none", !hasGift);
+          setTxt("dz-summary-gift-discount", "\u2212 " + (q.gift_card_display || ""));
+          if (giftFb) {
+            if (hasGift) {
+              giftFb.innerHTML = '<span class="text-success fw-semibold">\u2713 Gift card applied (\u2212' + (q.gift_card_display || "") + ')</span>';
+            } else {
+              giftFb.textContent = "Redeem a Spid3r Store gift card against your total.";
+            }
+          }
+        }
+
+        var estEl = document.getElementById("dz-quote-delivery-estimate");
+        if (estEl && q.shipping_days_min && q.shipping_days_max) {
+          var zoneTxt = q.shipping_zone ? " (" + q.shipping_zone + ")" : "";
+          estEl.innerHTML = "Estimated delivery: <strong>" + q.shipping_days_min + "\u2013" + q.shipping_days_max + " business days</strong>" + zoneTxt;
+        }
+        var freeBadge = document.getElementById("dz-quote-free-badge");
+        if (freeBadge) {
+          freeBadge.classList.toggle("d-none", !(q.shipping_minor === 0));
+        }
+
+        if (showFeedbackToast) {
+          toast("Order summary updated", true);
+        }
+      }).catch(function () {});
+    }
+
+    form.addEventListener("change", function (e) {
+      var target = e.target;
+      if (!target || !target.matches) return;
+      if (target.matches("[data-checkout-address-select]")) {
+        var opt = target.options[target.selectedIndex];
+        var reqInputs = form.querySelectorAll("[data-address-required]");
+        if (opt && opt.value) {
+          var setField = function (id, attr) {
+            var input = document.getElementById(id);
+            if (input) input.value = opt.getAttribute(attr) || "";
+          };
+          setField("full_name", "data-full-name");
+          setField("phone", "data-phone");
+          setField("line1", "data-line1");
+          setField("line2", "data-line2");
+          setField("city", "data-city");
+          setField("district", "data-district");
+          setField("postal_code", "data-postal-code");
+          setField("country", "data-country");
+          reqInputs.forEach(function (inp) { inp.removeAttribute("required"); });
+        } else {
+          reqInputs.forEach(function (inp) { inp.setAttribute("required", "required"); });
+        }
+        refreshQuote(true);
+        return;
+      }
+      if (target.matches("[data-checkout-quote-trigger]")) {
+        refreshQuote(false);
+      }
+    });
+
+    form.addEventListener("click", function (e) {
+      var btn = e.target.closest && e.target.closest("[data-checkout-apply-quote]");
+      if (!btn) return;
+      refreshQuote(true);
+    });
+  }
+
   document.addEventListener("submit", function (e) {
     var form = e.target;
     if (!form || !form.hasAttribute || !form.hasAttribute("data-ajax")) return;
+    var submitter = e.submitter || document.activeElement;
+    var isBuyNow = submitter && submitter.getAttribute && submitter.getAttribute("data-buy-now") === "1";
 
     // An image form whose file was not converted yet must not submit.
     var pending = form.querySelector("input[data-base64-target]:not([disabled])");
@@ -501,6 +680,10 @@
       } else if (form.getAttribute("data-ajax") === "admin") {
         handleAdmin(form, out.data);
       } else {
+        if (isBuyNow) {
+          window.location.href = "/checkout";
+          return;
+        }
         handleCart(form, out.data);
       }
       busy(form, false);
@@ -515,4 +698,6 @@
   wireTableFilters();
   wireGalleryThumbnails();
   wireOrderView();
+  wireProductEnhancements();
+  wireCheckoutLiveQuote();
 })();

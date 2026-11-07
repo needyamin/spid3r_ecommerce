@@ -5,7 +5,18 @@
   <nav aria-label="breadcrumb">
     <ol class="breadcrumb"><li class="breadcrumb-item"><a href="/">Home</a></li><li class="breadcrumb-item"><a href="/cart">Cart</a></li><li class="breadcrumb-item active" aria-current="page">Checkout</li></ol>
   </nav>
-  <h1 class="page-title">Checkout</h1>
+
+  <div class="dz-checkout-header mb-4">
+    <div>
+      <span class="dz-eyebrow">Secure Order Placement</span>
+      <h1 class="page-title mb-0">Checkout</h1>
+    </div>
+    <ol class="dz-checkout-steps" aria-label="Checkout progress">
+      <li class="dz-step is-done"><a href="/cart"><span class="dz-step-num">1</span><span>Cart</span></a></li>
+      <li class="dz-step is-active" aria-current="step"><span class="dz-step-num">2</span><span>Delivery &amp; Discounts</span></li>
+      <li class="dz-step"><span class="dz-step-num">3</span><span>Confirmation &amp; Payment</span></li>
+    </ol>
+  </div>
 
 @if(has_warnings)
   <div class="alert alert-danger">
@@ -16,93 +27,292 @@
 @endif
 
 @if(has_items)
-  <form method="post" action="/checkout">
+  <form id="dz-checkout-form" method="post" action="/checkout">
     <input type="hidden" name="_csrf" value="{{ csrf }}">
-    <div class="row g-4">
+    <div class="row g-4 align-items-start">
       <div class="col-12 col-lg-7">
+        <!-- 1. Delivery address -->
         <div class="dz-card p-4 mb-4">
-          <h2 class="h5 mb-3">📍 Delivery address</h2>
+          <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+            <div>
+              <h2 class="h5 mb-0">📍 Delivery address</h2>
+              <p class="small text-secondary mb-0">Where should we deliver your order?</p>
+            </div>
+@if(signed_in)
+            <span class="badge text-bg-light border">Signed in as {{ user_name }}</span>
+@else
+            <span class="small text-secondary">Have an account? <a href="/login">Sign in</a> for saved addresses</span>
+@endif
+          </div>
+
 @if(has_addresses)
-          <div class="mb-3">
-            <label class="form-label small text-secondary mb-1" for="address_id">Saved address (optional)</label>
-            <select id="address_id" name="address_id" class="form-select">
-              <option value="">Enter a new address</option>
+          <div class="mb-3 p-3 rounded border bg-light">
+            <label class="form-label small fw-semibold mb-1" for="address_id">Saved address (optional)</label>
+            <select id="address_id" name="address_id" class="form-select" data-checkout-address-select>
+              <option value="">Enter a new address below</option>
 @foreach(address in addresses)
-              <option value="{{ address.id }}">{{ address.full_name }} — {{ address.city }}</option>
+              <option value="{{ address.id }}"
+                data-full-name="{{ address.full_name }}"
+                data-phone="{{ address.phone }}"
+                data-line1="{{ address.line1 }}"
+                data-line2="{{ address.line2 }}"
+                data-city="{{ address.city }}"
+                data-district="{{ address.district }}"
+                data-postal-code="{{ address.postal_code }}"
+                data-country="{{ address.country }}">{{ address.label }}: {{ address.full_name }} — {{ address.line1 }}, {{ address.city }}</option>
 @endforeach
             </select>
+            <div class="form-text small">Selecting a saved address automatically fills your delivery details below.</div>
           </div>
 @endif
-          <div class="row g-2">
-            <div class="col-12">
-              <label class="form-label small text-secondary mb-1" for="full_name">Full name</label>
-              <input id="full_name" name="full_name" class="form-control" required>
+
+          <div class="row g-3" id="dz-inline-address-fields">
+            <div class="col-12 col-md-6">
+              <label class="form-label small fw-semibold mb-1" for="full_name">Full name <span class="text-danger">*</span></label>
+              <input id="full_name" name="full_name" value="{{ user_name }}" class="form-control" placeholder="e.g. Md. Yamin Hossain" data-address-required required>
             </div>
             <div class="col-12 col-md-6">
-              <label class="form-label small text-secondary mb-1" for="phone">Phone</label>
-              <input id="phone" name="phone" class="form-control" required>
+              <label class="form-label small fw-semibold mb-1" for="phone">Phone number <span class="text-danger">*</span></label>
+              <input id="phone" name="phone" type="tel" class="form-control" placeholder="e.g. 01700000000" data-address-required required>
             </div>
             <div class="col-12">
-              <label class="form-label small text-secondary mb-1" for="line1">Address line 1</label>
-              <input id="line1" name="line1" class="form-control" required>
+              <label class="form-label small fw-semibold mb-1" for="line1">Address line 1 <span class="text-danger">*</span></label>
+              <input id="line1" name="line1" class="form-control" placeholder="House / Plot, Road, Area" data-address-required required>
             </div>
             <div class="col-12">
-              <label class="form-label small text-secondary mb-1" for="line2">Address line 2</label>
-              <input id="line2" name="line2" class="form-control">
+              <label class="form-label small text-secondary mb-1" for="line2">Address line 2 (optional)</label>
+              <input id="line2" name="line2" class="form-control" placeholder="Apartment, suite, unit, landmark">
             </div>
-            <div class="col-12 col-md-5">
-              <label class="form-label small text-secondary mb-1" for="city">City</label>
-              <input id="city" name="city" class="form-control" required>
+            <div class="col-12 col-md-4">
+              <label class="form-label small fw-semibold mb-1" for="city">City <span class="text-danger">*</span></label>
+              <input id="city" name="city" class="form-control" placeholder="e.g. Dhaka" data-address-required data-checkout-quote-trigger required>
             </div>
             <div class="col-6 col-md-4">
               <label class="form-label small text-secondary mb-1" for="district">District</label>
-              <input id="district" name="district" class="form-control">
+              <input id="district" name="district" class="form-control" placeholder="e.g. Dhaka" data-checkout-quote-trigger>
             </div>
-            <div class="col-6 col-md-3">
+            <div class="col-6 col-md-4">
               <label class="form-label small text-secondary mb-1" for="postal_code">Postal code</label>
-              <input id="postal_code" name="postal_code" class="form-control">
+              <input id="postal_code" name="postal_code" class="form-control" placeholder="e.g. 1212">
             </div>
-            <div class="col-12 col-md-5">
+            <div class="col-12 col-md-6">
               <label class="form-label small text-secondary mb-1" for="country">Country</label>
-              <input id="country" name="country" class="form-control" value="Bangladesh">
+              <input id="country" name="country" class="form-control" value="Bangladesh" data-checkout-quote-trigger>
             </div>
           </div>
         </div>
 
-        <div class="dz-card p-4">
-          <h2 class="h5 mb-3">🚚 Delivery &amp; discounts</h2>
+        <!-- 2. Delivery method & Discounts -->
+        <div class="dz-card p-4 mb-4">
+          <h2 class="h5 mb-1">🚚 Delivery &amp; discounts</h2>
+          <p class="small text-secondary mb-3">Choose your delivery speed and apply promo coupons or gift cards.</p>
+
           <div class="mb-3">
-            <label class="form-label small text-secondary mb-1" for="shipping_method">Shipping method</label>
-            <select id="shipping_method" name="shipping_method" class="form-select">
-              <option value="standard">Standard — {{ standard_fee_display }} (free over ৳2,000.00)</option>
-              <option value="express">Express — {{ express_fee_display }}</option>
+            <label class="form-label small fw-semibold mb-1" for="shipping_method">Shipping method</label>
+            <select id="shipping_method" name="shipping_method" class="form-select" data-checkout-quote-trigger>
+@if(is_express)
+              <option value="standard">Standard Delivery (3–7 days) — {{ standard_fee_display }} (free over {{ free_threshold_display }})</option>
+              <option value="express" selected>Express Delivery (1–2 days) — {{ express_fee_display }}</option>
+@else
+              <option value="standard" selected>Standard Delivery (3–7 days) — {{ standard_fee_display }} (free over {{ free_threshold_display }})</option>
+              <option value="express">Express Delivery (1–2 days) — {{ express_fee_display }}</option>
+@endif
             </select>
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mt-2 small text-secondary">
+              <span id="dz-quote-delivery-estimate">Estimated delivery: <strong>{{ shipping_days_min }}–{{ shipping_days_max }} business days</strong>@if(has_shipping_zone) ({{ shipping_zone }})@endif</span>
+@if(is_free_shipping)
+              <span id="dz-quote-free-badge" class="badge text-bg-success">Free Shipping Unlocked</span>
+@else
+              <span id="dz-quote-free-badge" class="badge text-bg-success d-none">Free Shipping Unlocked</span>
+@endif
+            </div>
           </div>
-          <div class="mb-1">
-            <label class="form-label small text-secondary mb-1" for="coupon_code">Coupon code</label>
-            <input id="coupon_code" name="coupon_code" value="{{ coupon_code }}" class="form-control">
+
+          <div class="row g-3 pt-2 border-top">
+            <div class="col-12 col-md-6">
+              <label class="form-label small fw-semibold mb-1" for="coupon_code">Coupon code</label>
+              <div class="input-group">
+                <input id="coupon_code" name="coupon_code" value="{{ coupon_code }}" class="form-control" placeholder="e.g. WELCOME10">
+                <button class="btn btn-outline-primary" type="button" data-checkout-apply-quote>Apply</button>
+              </div>
+              <div class="form-text small" id="dz-coupon-feedback">
+@if(has_coupon_discount)
+                <span class="text-success fw-semibold">✓ Coupon {{ coupon_code }} applied (−{{ coupon_discount_display }})</span>
+@else
+                Have a promo code? Enter it and click Apply.
+@endif
+              </div>
+            </div>
+
+            <div class="col-12 col-md-6">
+              <label class="form-label small fw-semibold mb-1" for="gift_card_code">Gift card code</label>
+              <div class="input-group">
+                <input id="gift_card_code" name="gift_card_code" value="{{ gift_card_code }}" class="form-control" placeholder="e.g. GC-XXXX-XXXX">
+                <button class="btn btn-outline-primary" type="button" data-checkout-apply-quote>Apply</button>
+              </div>
+              <div class="form-text small" id="dz-gift-card-feedback">
+@if(has_gift_card_discount)
+                <span class="text-success fw-semibold">✓ Gift card applied (−{{ gift_card_display }})</span>
+@else
+                Redeem a Spid3r Store gift card against your total.
+@endif
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 3. Payment preference -->
+        <div class="dz-card p-4">
+          <h2 class="h5 mb-1">💳 Payment preference</h2>
+          <p class="small text-secondary mb-3">Choose how you would like to settle your order. Online gateways are verified server-side on the next step.</p>
+          <div class="row g-2">
+            <div class="col-12 col-sm-6">
+              <label class="dz-pay-option">
+                <input type="radio" name="payment_method" value="cod" class="form-check-input" checked>
+                <div>
+                  <strong class="d-block">💵 Cash on Delivery (COD)</strong>
+                  <span class="small text-secondary">Pay in cash when your parcel arrives</span>
+                </div>
+              </label>
+            </div>
+            <div class="col-12 col-sm-6">
+              <label class="dz-pay-option">
+                <input type="radio" name="payment_method" value="online" class="form-check-input">
+                <div>
+                  <strong class="d-block">📱 bKash / Nagad / Card</strong>
+                  <span class="small text-secondary">Select gateway after order confirmation</span>
+                </div>
+              </label>
+            </div>
           </div>
         </div>
       </div>
 
+      <!-- Order Summary Sidebar -->
       <div class="col-12 col-lg-5">
-        <div class="dz-card p-4">
-          <h2 class="h5 mb-3">Order summary</h2>
+        <div class="dz-card p-4 dz-checkout-summary-card">
+          <div class="d-flex justify-content-between align-items-center mb-3">
+            <h2 class="h5 mb-0">Order summary</h2>
+            <a href="/cart" class="small fw-semibold">Edit cart ({{ item_count }})</a>
+          </div>
+
+          <div class="dz-checkout-items mb-3">
 @foreach(item in items)
-          <div class="total-line"><span class="small">{{ item.name }} × {{ item.quantity }}</span><span class="small">{{ item.line_display }}</span></div>
+            <div class="dz-checkout-item">
+@if(item.has_image)
+              <img src="{{ item.image_url }}" alt="{{ item.name }}" class="dz-checkout-item-img" loading="lazy">
+@else
+              <div class="dz-checkout-item-img dz-checkout-item-placeholder" aria-hidden="true">📦</div>
+@endif
+              <div class="dz-checkout-item-info">
+                <a href="{{ item.url }}" class="dz-checkout-item-name">{{ item.name }}</a>
+                <div class="small text-secondary">
+                  Qty: {{ item.quantity }} × {{ item.price_display }}
+@if(item.has_variant)
+                  · <span class="badge text-bg-light border">{{ item.variant_name }}</span>
+@endif
+                </div>
+              </div>
+              <div class="dz-checkout-item-total">{{ item.line_display }}</div>
+            </div>
 @endforeach
-          <div class="total-line mt-2"><span>Subtotal</span><span>{{ subtotal_display }}</span></div>
-          <div class="total-line text-success"><span>Discount</span><span>− {{ discount_display }}</span></div>
-          <div class="total-line"><span>Shipping</span><span>{{ shipping_display }}</span></div>
-          <div class="total-line"><span>Tax</span><span>{{ tax_display }}</span></div>
-          <div class="total-line total-grand"><strong>Total</strong><strong>{{ total_display }}</strong></div>
-          <button class="btn btn-primary w-100 mt-3" type="submit">Place order</button>
-          <p class="small text-secondary mt-2 mb-0">Payment is collected after the order is confirmed — you can review everything before paying.</p>
+          </div>
+
+          <div class="dz-summary-totals border-top pt-3">
+            <div class="total-line">
+              <span>Subtotal</span>
+              <span id="dz-summary-subtotal">{{ subtotal_display }}</span>
+            </div>
+
+@if(has_volume_discount)
+            <div class="total-line text-success" id="dz-row-volume-discount">
+              <span>Volume discount (5% over ৳1,000)</span>
+              <span id="dz-summary-volume-discount">− {{ volume_discount_display }}</span>
+            </div>
+@else
+            <div class="total-line text-success d-none" id="dz-row-volume-discount">
+              <span>Volume discount (5% over ৳1,000)</span>
+              <span id="dz-summary-volume-discount">− ৳0.00</span>
+            </div>
+@endif
+
+@if(has_coupon_discount)
+            <div class="total-line text-success" id="dz-row-coupon-discount">
+              <span>Coupon (<strong id="dz-summary-coupon-code">{{ coupon_code }}</strong>)</span>
+              <span id="dz-summary-coupon-discount">− {{ coupon_discount_display }}</span>
+            </div>
+@else
+            <div class="total-line text-success d-none" id="dz-row-coupon-discount">
+              <span>Coupon (<strong id="dz-summary-coupon-code"></strong>)</span>
+              <span id="dz-summary-coupon-discount">− ৳0.00</span>
+            </div>
+@endif
+
+@if(has_campaign_discount)
+            <div class="total-line text-success" id="dz-row-campaign-discount">
+              <span>Promo campaign ({{ campaign_name }})</span>
+              <span id="dz-summary-campaign-discount">− {{ campaign_discount_display }}</span>
+            </div>
+@else
+            <div class="total-line text-success d-none" id="dz-row-campaign-discount">
+              <span>Promo campaign</span>
+              <span id="dz-summary-campaign-discount">− ৳0.00</span>
+            </div>
+@endif
+
+@if(has_gift_card_discount)
+            <div class="total-line text-success" id="dz-row-gift-discount">
+              <span>Gift card applied</span>
+              <span id="dz-summary-gift-discount">− {{ gift_card_display }}</span>
+            </div>
+@else
+            <div class="total-line text-success d-none" id="dz-row-gift-discount">
+              <span>Gift card applied</span>
+              <span id="dz-summary-gift-discount">− ৳0.00</span>
+            </div>
+@endif
+
+            <div class="total-line text-success">
+              <span>Total discount</span>
+              <span id="dz-summary-discount">− {{ discount_display }}</span>
+            </div>
+
+            <div class="total-line">
+              <span>Shipping (<span id="dz-summary-shipping-method">{{ shipping_method }}</span>)</span>
+              <span id="dz-summary-shipping">{{ shipping_display }}</span>
+            </div>
+
+            <div class="total-line">
+              <span>Estimated tax</span>
+              <span id="dz-summary-tax">{{ tax_display }}</span>
+            </div>
+
+            <div class="total-line total-grand">
+              <strong>Total payable</strong>
+              <strong id="dz-summary-total" class="text-primary fs-5">{{ total_display }}</strong>
+            </div>
+          </div>
+
+          <button class="btn btn-primary btn-lg w-100 mt-3" type="submit">Place order</button>
+
+          <div class="dz-checkout-trust mt-3 pt-3 border-top small text-secondary">
+            <div class="d-flex align-items-center gap-2 mb-1"><span>🔒</span><span>Atomic stock reservation &amp; server-side price verification</span></div>
+            <div class="d-flex align-items-center gap-2 mb-1"><span>↩️</span><span>14-day easy return policy on eligible items</span></div>
+            <div class="d-flex align-items-center gap-2"><span>📦</span><span>Real-time parcel tracking with every order</span></div>
+          </div>
         </div>
       </div>
     </div>
   </form>
 @else
-  <p class="empty-note">Your cart is empty. <a href="/catalog">Browse the catalog</a></p>
+  <div class="dz-card dz-empty-catalog my-4">
+    <div class="dz-empty-mark" aria-hidden="true">🛒</div>
+    <h2 class="h5 mb-2">Your cart is empty</h2>
+    <p class="text-secondary mb-3">Add items to your shopping cart before proceeding to checkout.</p>
+    <div class="d-flex justify-content-center gap-2 flex-wrap">
+      <a class="btn btn-primary px-4" href="/catalog">Browse the catalog</a>
+      <a class="btn btn-outline-secondary px-4" href="/track">Track an existing order</a>
+    </div>
+  </div>
 @endif
 @endsection

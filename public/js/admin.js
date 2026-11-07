@@ -1458,12 +1458,31 @@
       if (!res.ok) { root.innerHTML = ADMIN.errorHTML("Could not load the dashboard."); return; }
       var d = res.data.data;
       var recent = (d.recent_orders || []).map(function (o) {
+        var cust = ADMIN.esc(o.customer_name || "Guest");
+        var itemsTxt = typeof o.item_count === "number" ? ' <span class="text-secondary">(' + o.item_count + ' items)</span>' : "";
         return '<tr><td><a class="fw-semibold text-decoration-none" href="/admin/orders/' + (o.id || '') + '"><code>' + ADMIN.esc(o.order_number) + '</code></a></td>' +
+          '<td class="small">' + cust + itemsTxt + '</td>' +
           '<td>' + ADMIN.badge(o.status) + '</td>' +
           '<td><strong>' + ADMIN.esc(o.total_display) + '</strong></td>' +
-          '<td class="text-secondary small">' + ADMIN.esc(o.placed_at) + '</td>' +
           '<td><a class="btn btn-outline-primary btn-sm" href="/admin/orders/' + (o.id || '') + '">View</a></td></tr>';
       }).join("");
+
+      var lowStockHtml = "";
+      if (d.low_stock_items && d.low_stock_items.length > 0) {
+        lowStockHtml = '<div class="list-group list-group-flush small">' + d.low_stock_items.map(function (item) {
+          return '<div class="list-group-item px-0 d-flex justify-content-between align-items-center">' +
+            '<div><a href="/admin/products/' + item.product_id + '" class="fw-semibold text-decoration-none">' + ADMIN.esc(item.name) + '</a>' +
+            '<div class="text-secondary">SKU: <code>' + ADMIN.esc(item.sku) + '</code> &middot; Min: ' + ADMIN.esc(item.low_stock_threshold) + '</div></div>' +
+            '<span class="badge bg-danger-subtle text-danger border border-danger-subtle">' + ADMIN.esc(item.quantity) + ' left</span></div>';
+        }).join("") + '</div>';
+      } else {
+        lowStockHtml = '<div class="empty-note py-4"><p class="mb-0 text-secondary small">&#10003; All products are stocked above their low-stock threshold.</p></div>';
+      }
+
+      var pctPending = typeof d.pct_pending === "number" ? d.pct_pending : 25;
+      var pctProc = typeof d.pct_processing === "number" ? d.pct_processing : 25;
+      var pctShip = typeof d.pct_shipped === "number" ? d.pct_shipped : 25;
+      var pctDeliv = typeof d.pct_delivered === "number" ? d.pct_delivered : 25;
 
       var kpiCards =
         '<div class="dz-stat-card dz-stat-revenue text-bg-orange">' +
@@ -1474,7 +1493,7 @@
         '<div class="dz-stat-card">' +
           '<div class="dz-stat-top"><span class="dz-stat-title">Total Orders</span><span class="badge bg-primary-subtle text-primary border border-primary-subtle">All time</span></div>' +
           '<strong class="dz-stat-value">' + ADMIN.esc(d.orders) + '</strong>' +
-          '<div class="dz-stat-hint">Processed through checkout</div>' +
+          '<div class="dz-stat-hint">' + ADMIN.esc(d.pipeline_delivered || 0) + ' delivered &middot; ' + ADMIN.esc(d.pipeline_processing || 0) + ' processing</div>' +
         '</div>' +
         '<div class="dz-stat-card">' +
           '<div class="dz-stat-top"><span class="dz-stat-title">Awaiting Payment</span><span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle">Pending</span></div>' +
@@ -1489,7 +1508,7 @@
         '<div class="dz-stat-card">' +
           '<div class="dz-stat-top"><span class="dz-stat-title">Published Products</span><span class="badge bg-success-subtle text-success border border-success-subtle">Live</span></div>' +
           '<strong class="dz-stat-value">' + ADMIN.esc(d.published_products) + ' <small class="text-secondary fw-normal">/ ' + ADMIN.esc(d.products) + '</small></strong>' +
-          '<div class="dz-stat-hint">Active catalog visibility</div>' +
+          '<div class="dz-stat-hint">' + ADMIN.esc(d.categories || 0) + ' categories &middot; ' + ADMIN.esc(d.brands || 0) + ' brands</div>' +
         '</div>' +
         '<div class="dz-stat-card">' +
           '<div class="dz-stat-top"><span class="dz-stat-title">Low Stock Alert</span><span class="badge ' + (d.low_stock > 0 ? 'bg-danger-subtle text-danger border border-danger-subtle' : 'bg-secondary-subtle text-secondary border border-secondary-subtle') + '">Restock</span></div>' +
@@ -1506,18 +1525,18 @@
                 '<span class="badge text-bg-light border">Live status</span>' +
               '</div>' +
               '<div class="dz-pipeline-progress mb-3">' +
-                '<div class="progress" style="height: 10px;">' +
-                  '<div class="progress-bar bg-warning" role="progressbar" style="width: 25%" aria-valuenow="25" aria-valuemin="0" aria-valuemax="100" title="Pending"></div>' +
-                  '<div class="progress-bar bg-primary" role="progressbar" style="width: 35%" aria-valuenow="35" aria-valuemin="0" aria-valuemax="100" title="Processing"></div>' +
-                  '<div class="progress-bar bg-info" role="progressbar" style="width: 20%" aria-valuenow="20" aria-valuemin="0" aria-valuemax="100" title="Shipped"></div>' +
-                  '<div class="progress-bar bg-success" role="progressbar" style="width: 20%" aria-valuenow="20" aria-valuemin="0" aria-valuemax="100" title="Delivered"></div>' +
+                '<div class="progress" style="height: 12px;">' +
+                  '<div class="progress-bar bg-warning" role="progressbar" style="width: ' + pctPending + '%" title="Pending"></div>' +
+                  '<div class="progress-bar bg-primary" role="progressbar" style="width: ' + pctProc + '%" title="Processing"></div>' +
+                  '<div class="progress-bar bg-info" role="progressbar" style="width: ' + pctShip + '%" title="Shipped"></div>' +
+                  '<div class="progress-bar bg-success" role="progressbar" style="width: ' + pctDeliv + '%" title="Delivered"></div>' +
                 '</div>' +
               '</div>' +
-              '<div class="row g-2 text-center small text-secondary">' +
-                '<div class="col-3"><span class="d-inline-block rounded-circle bg-warning me-1" style="width:8px;height:8px;"></span><span>Pending</span></div>' +
-                '<div class="col-3"><span class="d-inline-block rounded-circle bg-primary me-1" style="width:8px;height:8px;"></span><span>Processing</span></div>' +
-                '<div class="col-3"><span class="d-inline-block rounded-circle bg-info me-1" style="width:8px;height:8px;"></span><span>Shipped</span></div>' +
-                '<div class="col-3"><span class="d-inline-block rounded-circle bg-success me-1" style="width:8px;height:8px;"></span><span>Delivered</span></div>' +
+              '<div class="row g-2 text-center small">' +
+                '<div class="col-3"><div class="p-2 rounded bg-light border"><div class="fw-bold text-dark">' + ADMIN.esc(d.pipeline_pending || 0) + '</div><div class="text-secondary"><span class="d-inline-block rounded-circle bg-warning me-1" style="width:8px;height:8px;"></span>Pending</div></div></div>' +
+                '<div class="col-3"><div class="p-2 rounded bg-light border"><div class="fw-bold text-dark">' + ADMIN.esc(d.pipeline_processing || 0) + '</div><div class="text-secondary"><span class="d-inline-block rounded-circle bg-primary me-1" style="width:8px;height:8px;"></span>Processing</div></div></div>' +
+                '<div class="col-3"><div class="p-2 rounded bg-light border"><div class="fw-bold text-dark">' + ADMIN.esc(d.pipeline_shipped || 0) + '</div><div class="text-secondary"><span class="d-inline-block rounded-circle bg-info me-1" style="width:8px;height:8px;"></span>Shipped</div></div></div>' +
+                '<div class="col-3"><div class="p-2 rounded bg-light border"><div class="fw-bold text-dark">' + ADMIN.esc(d.pipeline_delivered || 0) + '</div><div class="text-secondary"><span class="d-inline-block rounded-circle bg-success me-1" style="width:8px;height:8px;"></span>Delivered</div></div></div>' +
               '</div>' +
             '</div>' +
           '</div>' +
@@ -1529,6 +1548,8 @@
                 '<div class="col-6"><a href="/admin/orders" class="dz-quick-link-card"><span class="dz-quick-icon dz-icon-orders"></span><strong>Orders</strong><small class="text-secondary">Process shipping</small></a></div>' +
                 '<div class="col-6"><a href="/admin/inventory" class="dz-quick-link-card"><span class="dz-quick-icon dz-icon-inventory"></span><strong>Inventory</strong><small class="text-secondary">Adjust stock</small></a></div>' +
                 '<div class="col-6"><a href="/admin/settings" class="dz-quick-link-card"><span class="dz-quick-icon dz-icon-settings"></span><strong>Settings</strong><small class="text-secondary">Store config</small></a></div>' +
+                '<div class="col-6"><a href="/admin/shipping" class="dz-quick-link-card"><span class="dz-quick-icon dz-icon-orders"></span><strong>Shipping Zones</strong><small class="text-secondary">Regional rates</small></a></div>' +
+                '<div class="col-6"><a href="/admin/coupons" class="dz-quick-link-card"><span class="dz-quick-icon dz-icon-coupons"></span><strong>Coupons (' + ADMIN.esc(d.coupons || 0) + ')</strong><small class="text-secondary">Promo codes</small></a></div>' +
               '</div>' +
             '</div>' +
           '</div>' +
@@ -1541,79 +1562,316 @@
           '<div class="dz-admin-page-head-actions">' +
             '<a class="btn btn-primary d-inline-flex align-items-center gap-1" href="/admin/products#new-product-name"><span aria-hidden="true">+</span> Add product</a>' +
             '<a class="btn btn-light border d-inline-flex align-items-center gap-1" href="/admin/orders">View orders</a>' +
+            '<a class="btn btn-light border d-inline-flex align-items-center gap-1" href="/admin/settings">Store settings</a>' +
           '</div>' +
         '</div>' +
         '<div class="dz-stat-grid my-3">' + kpiCards + '</div>' +
         analyticsRow +
-        '<div class="dz-card p-3 p-lg-4 my-4">' +
-          '<div class="dz-section-heading mb-3 d-flex justify-content-between align-items-center">' +
-            '<div><h2 class="h6 mb-0 fw-bold">Recent Orders</h2><p class="small text-secondary mb-0">Latest customer orders requiring fulfilment</p></div>' +
-            '<a class="btn btn-light border btn-sm" href="/admin/orders">View all orders &rarr;</a>' +
+        '<div class="row g-3 my-2">' +
+          '<div class="col-12 col-lg-8">' +
+            '<div class="dz-card p-3 p-lg-4 h-100">' +
+              '<div class="dz-section-heading mb-3 d-flex justify-content-between align-items-center">' +
+                '<div><h2 class="h6 mb-0 fw-bold">Recent Orders</h2><p class="small text-secondary mb-0">Latest customer orders requiring fulfilment</p></div>' +
+                '<a class="btn btn-light border btn-sm" href="/admin/orders">View all orders &rarr;</a>' +
+              '</div>' +
+              (d.has_recent
+                ? '<div class="table-responsive"><table class="table dz-admin-table table-hover align-middle mb-0"><thead><tr>' +
+                  '<th>Order #</th><th>Customer</th><th>Status</th><th>Total</th><th>Action</th></tr></thead><tbody>' + recent + '</tbody></table></div>'
+                : '<div class="empty-note py-4"><p class="mb-0 text-secondary">No orders recorded yet. They will appear here automatically when shoppers check out.</p></div>') +
+            '</div>' +
           '</div>' +
-          (d.has_recent
-            ? '<div class="table-responsive"><table class="table dz-admin-table table-hover align-middle mb-0"><thead><tr>' +
-              '<th>Order #</th><th>Status</th><th>Total</th><th>Placed</th><th>Action</th></tr></thead><tbody>' + recent + '</tbody></table></div>'
-            : '<div class="empty-note py-4"><p class="mb-0 text-secondary">No orders recorded yet. They will appear here automatically when shoppers check out.</p></div>') +
+          '<div class="col-12 col-lg-4">' +
+            '<div class="dz-card p-3 p-lg-4 h-100">' +
+              '<div class="d-flex justify-content-between align-items-center mb-3">' +
+                '<div><h2 class="h6 mb-0 fw-bold">Low Stock Watchlist</h2><p class="small text-secondary mb-0">Products at or below threshold</p></div>' +
+                '<a class="btn btn-light border btn-sm" href="/admin/inventory">Inventory &rarr;</a>' +
+              '</div>' +
+              lowStockHtml +
+            '</div>' +
+          '</div>' +
         '</div>';
     }).catch(function () { root.innerHTML = ADMIN.errorHTML("Network error."); });
   }
 
   // ---- Settings ----
+  var SETTING_META = {
+    "store.name": {
+      label: "Store Name",
+      hint: "Displayed in the storefront header, browser titles, invoices, and customer emails.",
+      unit: "text"
+    },
+    "store.currency": {
+      label: "Base Store Currency",
+      hint: "Three-letter ISO currency code (e.g. BDT, USD, EUR) used for catalog pricing.",
+      unit: "text"
+    },
+    "shipping.flat_minor": {
+      label: "Standard Flat Shipping Fee (Minor Units)",
+      hint: "Default standard delivery charge when order is below the free-shipping threshold (100 = 1.00 BDT).",
+      unit: "minor"
+    },
+    "shipping.express_minor": {
+      label: "Express Delivery Fee (Minor Units)",
+      hint: "Priority 24h express delivery charge in minor units (e.g. 12000 = 120.00 BDT).",
+      unit: "minor"
+    },
+    "shipping.free_threshold_minor": {
+      label: "Free Standard Shipping Threshold (Minor Units)",
+      hint: "Orders at or above this subtotal qualify for free standard shipping (e.g. 200000 = 2,000.00 BDT).",
+      unit: "minor"
+    },
+    "returns.window_days": {
+      label: "Return Eligibility Window (Days)",
+      hint: "Number of days after delivery within which a customer can request a return.",
+      unit: "days"
+    },
+    "cart.discount_threshold_minor": {
+      label: "Volume Discount Subtotal Threshold (Minor Units)",
+      hint: "Minimum cart subtotal required to trigger the automatic volume discount (e.g. 100000 = 1,000.00 BDT).",
+      unit: "minor"
+    },
+    "cart.discount_bps": {
+      label: "Volume Discount Rate (Basis Points)",
+      hint: "Automatic percentage discount applied above threshold (100 bps = 1.00%, 500 bps = 5.00%).",
+      unit: "bps"
+    },
+    "store.tax_rate_bps": {
+      label: "Default Store Tax / VAT Rate (Basis Points)",
+      hint: "Fallback tax rate in basis points when a product does not specify its own tax rate (0 = Tax-exempt).",
+      unit: "bps"
+    },
+    "payments.webhook_secret": {
+      label: "Payment Webhook Signing Secret",
+      hint: "Shared HMAC secret used to verify incoming payment gateway webhook callbacks.",
+      unit: "secret"
+    }
+  };
+
+  function formatSettingPreview(key, val) {
+    var meta = SETTING_META[key];
+    if (!meta) return "";
+    var n = parseInt(val, 10);
+    if (meta.unit === "minor" && !isNaN(n)) {
+      return (ADMIN.currency || "BDT") + " " + (n / 100).toFixed(2);
+    }
+    if (meta.unit === "bps" && !isNaN(n)) {
+      return (n / 100).toFixed(2) + "%";
+    }
+    if (meta.unit === "days" && !isNaN(n)) {
+      return n + " days";
+    }
+    return "";
+  }
+
   function SettingsModule(root) {
-    root.innerHTML = ADMIN.loadingHTML;
-    Promise.all([
-      ADMIN.get("/admin/api/settings", { group: "general" }),
-      ADMIN.get("/admin/api/settings", { group: "shipping" }),
-      ADMIN.get("/admin/api/settings", { group: "payments" })
-    ]).then(function (results) {
-      if (results[0].auth) return;
-      var groups = [
-        ["general", "General", (results[0].data && results[0].data.data) || []],
-        ["shipping", "Shipping", (results[1].data && results[1].data.data) || []],
-        ["payments", "Payments", (results[2].data && results[2].data.data) || []]
-      ];
-      var tabs = groups.map(function (g, i) {
-        return '<button class="btn btn-sm ' + (i === 0 ? "btn-primary" : "btn-light border") + '" data-tab="' + g[0] + '">' + g[1] + "</button>";
-      }).join("");
-      var panels = groups.map(function (g, i) {
-        var rows = g[2].map(function (s) {
-          return '<div class="dz-form-group mb-2"><label class="form-label small text-secondary mb-1">' + ADMIN.esc(s.setting_key) + "</label>" +
-            '<input class="form-control form-control-sm" data-setting="' + ADMIN.esc(s.setting_key) + '" data-group="' + ADMIN.esc(s.setting_group) + '" value="' + ADMIN.esc(s.value) + '"></div>';
-        }).join("") || '<p class="text-secondary small">No settings in this group yet.</p>';
-        return '<div class="dz-settings-panel" data-panel="' + g[0] + '"' + (i === 0 ? "" : " hidden") + '><div class="dz-card p-3 p-lg-4">' + rows +
-          '<button class="btn btn-primary btn-sm mt-2" data-save-group="' + g[0] + '">Save changes</button>' +
-          '<span class="dz-form-feedback small text-secondary ms-2" data-fb="' + g[0] + '"></span></div></div>';
-      }).join("");
-      root.innerHTML =
-        '<div class="dz-admin-page-head"><div><span class="dz-eyebrow">Configuration</span><h1 class="page-title">Settings</h1>' +
-        '<p class="page-description">Store, shipping and payment configuration.</p></div></div>' +
-        '<div class="dz-admin-toolbar mb-3">' + tabs + "</div>" + panels;
-      root.querySelectorAll("[data-tab]").forEach(function (t) {
-        t.addEventListener("click", function () {
-          root.querySelectorAll("[data-tab]").forEach(function (x) { x.className = "btn btn-sm btn-light border"; });
-          t.className = "btn btn-sm btn-primary";
-          var name = t.getAttribute("data-tab");
-          root.querySelectorAll("[data-panel]").forEach(function (p) { p.hidden = p.getAttribute("data-panel") !== name; });
+    var activeTab = "general";
+    function loadSettings() {
+      root.innerHTML = ADMIN.loadingHTML;
+      ADMIN.get("/admin/api/settings").then(function (res) {
+        if (res.auth) return;
+        if (!res.ok) { root.innerHTML = ADMIN.errorHTML("Could not load settings."); return; }
+        var all = (res.data && res.data.data) || [];
+        var byGroup = { general: [], shipping: [], promotions: [], tax: [], payments: [] };
+        all.forEach(function (s) {
+          var g = s.setting_group || "general";
+          if (!byGroup[g]) byGroup[g] = [];
+          byGroup[g].push(s);
         });
-      });
-      root.querySelectorAll("[data-save-group]").forEach(function (btn) {
-        btn.addEventListener("click", function () {
-          var group = btn.getAttribute("data-save-group");
-          var panel = root.querySelector('[data-panel="' + group + '"]');
-          var inputs = panel.querySelectorAll("[data-setting]");
-          var fb = panel.querySelector('[data-fb="' + group + '"]');
-          btn.disabled = true; if (fb) fb.textContent = "Saving…";
-          var chain = Promise.resolve();
-          inputs.forEach(function (inp) {
-            chain = chain.then(function () {
-              return ADMIN.act("POST", "/admin/api/settings", null, { setting_key: inp.getAttribute("data-setting"), value: inp.value, group: inp.getAttribute("data-group") });
+
+        var groups = [
+          ["general", "General Store", byGroup.general, "Store identity, branding, and base currency configuration."],
+          ["shipping", "Shipping & Returns", byGroup.shipping, "Standard/express delivery fees, free shipping threshold, and return window."],
+          ["promotions", "Promotions & Cart", byGroup.promotions, "Automatic cart volume discounts and promotional thresholds."],
+          ["tax", "Tax & VAT", byGroup.tax, "Store-wide default tax and VAT calculation rules."],
+          ["payments", "Payments & Webhooks", byGroup.payments, "Gateway webhook verification secrets and payment security."],
+          ["all", "All Keys & Custom", all, "Inspect all raw key-value settings or add a custom configuration key."]
+        ];
+
+        var tabs = groups.map(function (g) {
+          var isAct = g[0] === activeTab;
+          return '<button type="button" class="btn btn-sm ' + (isAct ? "btn-primary" : "btn-light border") + '" data-tab="' + g[0] + '">' +
+            ADMIN.esc(g[1]) + ' <span class="badge text-bg-light border ms-1">' + g[2].length + '</span></button>';
+        }).join("");
+
+        var panels = groups.map(function (g) {
+          var key = g[0];
+          var isAct = key === activeTab;
+          if (key === "all") {
+            var tableRows = all.map(function (s) {
+              var prev = formatSettingPreview(s.setting_key, s.value);
+              return '<tr>' +
+                '<td><code>' + ADMIN.esc(s.setting_key) + '</code></td>' +
+                '<td><span class="badge text-bg-light border">' + ADMIN.esc(s.setting_group) + '</span></td>' +
+                '<td><strong>' + ADMIN.esc(s.value) + '</strong>' + (prev ? ' <span class="badge bg-success-subtle text-success border border-success-subtle ms-1">' + ADMIN.esc(prev) + '</span>' : '') + '</td>' +
+              '</tr>';
+            }).join("");
+            return '<div class="dz-settings-panel" data-panel="all"' + (isAct ? "" : " hidden") + '>' +
+              '<div class="row g-4">' +
+                '<div class="col-12 col-lg-7">' +
+                  '<div class="dz-card p-3 p-lg-4 h-100">' +
+                    '<h2 class="h6 fw-bold mb-1">All Active Configuration Keys</h2>' +
+                    '<p class="small text-secondary mb-3">' + ADMIN.esc(g[3]) + '</p>' +
+                    '<div class="table-responsive"><table class="table table-sm table-hover align-middle mb-0">' +
+                      '<thead><tr><th>Setting Key</th><th>Group</th><th>Current Value</th></tr></thead>' +
+                      '<tbody>' + tableRows + '</tbody>' +
+                    '</table></div>' +
+                  '</div>' +
+                '</div>' +
+                '<div class="col-12 col-lg-5">' +
+                  '<div class="dz-card p-3 p-lg-4 h-100">' +
+                    '<h2 class="h6 fw-bold mb-1">Add or Override Setting Key</h2>' +
+                    '<p class="small text-secondary mb-3">Create a new configuration key or update an existing key directly.</p>' +
+                    '<div class="mb-3">' +
+                      '<label class="form-label small text-secondary mb-1" for="custom-setting-key">Configuration Key *</label>' +
+                      '<input id="custom-setting-key" class="form-control form-control-sm" placeholder="e.g. store.support_email">' +
+                    '</div>' +
+                    '<div class="mb-3">' +
+                      '<label class="form-label small text-secondary mb-1" for="custom-setting-group">Setting Group</label>' +
+                      '<select id="custom-setting-group" class="form-select form-select-sm">' +
+                        '<option value="general">general</option>' +
+                        '<option value="shipping">shipping</option>' +
+                        '<option value="promotions">promotions</option>' +
+                        '<option value="tax">tax</option>' +
+                        '<option value="payments">payments</option>' +
+                      '</select>' +
+                    '</div>' +
+                    '<div class="mb-3">' +
+                      '<label class="form-label small text-secondary mb-1" for="custom-setting-val">Value *</label>' +
+                      '<input id="custom-setting-val" class="form-control form-control-sm" placeholder="Setting value">' +
+                    '</div>' +
+                    '<button type="button" class="btn btn-primary btn-sm" id="custom-setting-save">Save custom setting</button>' +
+                  '</div>' +
+                '</div>' +
+              '</div>' +
+            '</div>';
+          }
+
+          var extraBanner = "";
+          if (key === "shipping") {
+            extraBanner = '<div class="alert alert-light border d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3 py-2 small">' +
+              '<span>Need city/weight-based delivery rates or return approvals?</span>' +
+              '<div class="d-flex gap-2"><a class="btn btn-outline-primary btn-sm py-0 px-2" href="/admin/shipping">Shipping Zones &amp; Rates &rarr;</a>' +
+              '<a class="btn btn-light border btn-sm py-0 px-2" href="/admin/returns">Manage Returns &rarr;</a></div></div>';
+          } else if (key === "promotions") {
+            extraBanner = '<div class="alert alert-light border d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3 py-2 small">' +
+              '<span>Want to create promo codes or flash sale campaigns?</span>' +
+              '<a class="btn btn-outline-primary btn-sm py-0 px-2" href="/admin/coupons">Manage Discount Coupons &rarr;</a></div>';
+          } else if (key === "payments") {
+            extraBanner = '<div class="alert alert-light border d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3 py-2 small">' +
+              '<span>Supported gateways: <strong>Cash on Delivery (COD)</strong>, <strong>SSLCommerz</strong>, <strong>bKash</strong>, <strong>Nagad</strong>, <strong>Stripe</strong>.</span>' +
+              '<span class="badge bg-success-subtle text-success border border-success-subtle">5 Gateways Active</span></div>';
+          }
+
+          var rows = g[2].map(function (s) {
+            var meta = SETTING_META[s.setting_key] || { label: s.setting_key, hint: "Configuration key: " + s.setting_key, unit: "text" };
+            var preview = formatSettingPreview(s.setting_key, s.value);
+            return '<div class="dz-form-group mb-3 pb-3 border-bottom">' +
+              '<div class="d-flex flex-wrap justify-content-between align-items-center mb-1">' +
+                '<label class="form-label fw-semibold mb-0">' + ADMIN.esc(meta.label) + ' <code class="small text-secondary fw-normal ms-1">(' + ADMIN.esc(s.setting_key) + ')</code></label>' +
+                (preview ? '<span class="badge bg-primary-subtle text-primary border border-primary-subtle" data-preview-for="' + ADMIN.esc(s.setting_key) + '">' + ADMIN.esc(preview) + '</span>' : '') +
+              '</div>' +
+              '<p class="small text-secondary mb-2">' + ADMIN.esc(meta.hint) + '</p>' +
+              '<input class="form-control" data-setting="' + ADMIN.esc(s.setting_key) + '" data-group="' + ADMIN.esc(s.setting_group) + '" value="' + ADMIN.esc(s.value) + '">' +
+            '</div>';
+          }).join("") || '<p class="text-secondary small">No settings in this group yet.</p>';
+
+          return '<div class="dz-settings-panel" data-panel="' + key + '"' + (isAct ? "" : " hidden") + '>' +
+            '<div class="dz-card p-3 p-lg-4">' +
+              '<div class="mb-3"><h2 class="h6 fw-bold mb-1">' + ADMIN.esc(g[1]) + '</h2><p class="small text-secondary mb-0">' + ADMIN.esc(g[3]) + '</p></div>' +
+              extraBanner +
+              rows +
+              '<div class="d-flex align-items-center gap-2 mt-2">' +
+                '<button type="button" class="btn btn-primary" data-save-group="' + key + '">Save ' + ADMIN.esc(g[1]) + '</button>' +
+                '<span class="dz-form-feedback small text-secondary" data-fb="' + key + '"></span>' +
+              '</div>' +
+            '</div>' +
+          '</div>';
+        }).join("");
+
+        root.innerHTML =
+          '<div class="dz-admin-page-head">' +
+            '<div><span class="dz-eyebrow">Configuration</span><h1 class="page-title">Store Settings</h1>' +
+            '<p class="page-description">Manage general branding, delivery fees, automatic discounts, tax rules, and payment webhooks.</p></div>' +
+            '<div class="dz-admin-page-head-actions">' +
+              '<a class="btn btn-light border btn-sm" href="/admin/shipping">Shipping Zones</a>' +
+              '<a class="btn btn-light border btn-sm" href="/admin/coupons">Coupons</a>' +
+              '<a class="btn btn-light border btn-sm" href="/admin/roles">Roles &amp; Permissions</a>' +
+            '</div>' +
+          '</div>' +
+          '<div class="dz-admin-toolbar d-flex flex-wrap gap-2 mb-3">' + tabs + '</div>' +
+          panels;
+
+        root.querySelectorAll("[data-tab]").forEach(function (t) {
+          t.addEventListener("click", function () {
+            activeTab = t.getAttribute("data-tab");
+            root.querySelectorAll("[data-tab]").forEach(function (x) { x.className = "btn btn-sm btn-light border"; });
+            t.className = "btn btn-sm btn-primary";
+            root.querySelectorAll("[data-panel]").forEach(function (p) { p.hidden = p.getAttribute("data-panel") !== activeTab; });
+          });
+        });
+
+        root.querySelectorAll("input[data-setting]").forEach(function (inp) {
+          inp.addEventListener("input", function () {
+            var k = inp.getAttribute("data-setting");
+            var badge = root.querySelector('[data-preview-for="' + k + '"]');
+            if (badge) {
+              var pv = formatSettingPreview(k, inp.value);
+              if (pv) badge.textContent = pv;
+            }
+          });
+        });
+
+        root.querySelectorAll("[data-save-group]").forEach(function (btn) {
+          btn.addEventListener("click", function () {
+            var group = btn.getAttribute("data-save-group");
+            var panel = root.querySelector('[data-panel="' + group + '"]');
+            var inputs = panel.querySelectorAll("[data-setting]");
+            var fb = panel.querySelector('[data-fb="' + group + '"]');
+            btn.disabled = true; if (fb) fb.textContent = "Saving…";
+            var chain = Promise.resolve();
+            inputs.forEach(function (inp) {
+              chain = chain.then(function () {
+                return ADMIN.act("POST", "/admin/api/settings", null, {
+                  setting_key: inp.getAttribute("data-setting"),
+                  value: inp.value,
+                  group: inp.getAttribute("data-group")
+                });
+              });
+            });
+            chain.then(function () {
+              btn.disabled = false;
+              if (fb) fb.textContent = "Saved ✓";
+              ADMIN.toast("Settings saved.", true);
+            }).catch(function (e) {
+              btn.disabled = false;
+              if (fb) fb.textContent = "";
+              ADMIN.toast(e.message, false);
             });
           });
-          chain.then(function () { btn.disabled = false; if (fb) fb.textContent = "Saved."; ADMIN.toast("Settings saved.", true); })
-            .catch(function (e) { btn.disabled = false; if (fb) fb.textContent = ""; ADMIN.toast(e.message, false); });
         });
-      });
-    }).catch(function () { root.innerHTML = ADMIN.errorHTML("Network error."); });
+
+        var customBtn = root.querySelector("#custom-setting-save");
+        if (customBtn) {
+          customBtn.addEventListener("click", function () {
+            var k = (root.querySelector("#custom-setting-key").value || "").trim();
+            var g = (root.querySelector("#custom-setting-group").value || "general").trim();
+            var v = root.querySelector("#custom-setting-val").value || "";
+            if (!k) { ADMIN.toast("Please enter a configuration key.", false); return; }
+            customBtn.disabled = true;
+            ADMIN.act("POST", "/admin/api/settings", null, { setting_key: k, value: v, group: g })
+              .then(function () {
+                ADMIN.toast("Setting '" + k + "' saved.", true);
+                loadSettings();
+              })
+              .catch(function (e) {
+                customBtn.disabled = false;
+                ADMIN.toast(e.message, false);
+              });
+          });
+        }
+      }).catch(function () { root.innerHTML = ADMIN.errorHTML("Network error."); });
+    }
+    loadSettings();
   }
 
   // ---- Staff ----

@@ -25,24 +25,93 @@ public class AdminService {
             revenue = revenue + int(order_rows[i]["total_minor"]);
             i += 1;
         }
-        let low_stock = 0;
-        let inventory = DB.table("inventory").get();
+        let all_orders = DB.table("orders").get();
+        let p_pending = 0;
+        let p_processing = 0;
+        let p_shipped = 0;
+        let p_delivered = 0;
+        let p_cancelled = 0;
         i = 0;
-        while i < inventory.len() {
-            if int(inventory[i]["quantity"]) <= int(inventory[i]["low_stock_threshold"]) {
-                low_stock = low_stock + 1;
+        while i < all_orders.len() {
+            let st = string(all_orders[i]["status"]);
+            if st == "pending" or st == "awaiting_payment" {
+                p_pending += 1;
+            } elif st == "paid" or st == "processing" or st == "packed" {
+                p_processing += 1;
+            } elif st == "shipped" {
+                p_shipped += 1;
+            } elif st == "delivered" {
+                p_delivered += 1;
+            } elif st == "cancelled" or st == "refunded" {
+                p_cancelled += 1;
             }
             i += 1;
         }
-        let recent = DB.table("orders").orderBy("id", "DESC").limit(5).get();
+        let active_total = p_pending + p_processing + p_shipped + p_delivered;
+        let pct_pending = 25;
+        let pct_processing = 25;
+        let pct_shipped = 25;
+        let pct_delivered = 25;
+        if active_total > 0 {
+            pct_pending = (p_pending * 100) / active_total;
+            pct_processing = (p_processing * 100) / active_total;
+            pct_shipped = (p_shipped * 100) / active_total;
+            pct_delivered = 100 - pct_pending - pct_processing - pct_shipped;
+            if pct_delivered < 0 {
+                pct_delivered = 0;
+            }
+        }
+        let low_stock = 0;
+        let low_stock_items = [];
+        let inventory = DB.table("inventory").whereNull("variant_id").get();
+        i = 0;
+        while i < inventory.len() {
+            let qty = int(inventory[i]["quantity"]);
+            let thresh = int(inventory[i]["low_stock_threshold"]);
+            if qty <= thresh {
+                low_stock = low_stock + 1;
+                if low_stock_items.len() < 5 {
+                    let pid = int(inventory[i]["product_id"]);
+                    let prod = DB.table("products").where("id", "=", pid).first();
+                    let pname = "Product #" + string(pid);
+                    let psku = "";
+                    if prod != null {
+                        pname = string(prod["name"]);
+                        psku = string(prod["sku"]);
+                    }
+                    low_stock_items.push({
+                        "product_id": pid,
+                        "name": pname,
+                        "sku": psku,
+                        "quantity": qty,
+                        "low_stock_threshold": thresh
+                    });
+                }
+            }
+            i += 1;
+        }
+        let recent = DB.table("orders").orderBy("id", "DESC").limit(6).get();
         return {
             "orders": self.count("orders"),
             "pending_orders": DB.table("orders").where("status", "=", "awaiting_payment").count(),
+            "pipeline_pending": p_pending,
+            "pipeline_processing": p_processing,
+            "pipeline_shipped": p_shipped,
+            "pipeline_delivered": p_delivered,
+            "pipeline_cancelled": p_cancelled,
+            "pct_pending": pct_pending,
+            "pct_processing": pct_processing,
+            "pct_shipped": pct_shipped,
+            "pct_delivered": pct_delivered,
             "revenue_minor": revenue,
             "customers": self.count("users"),
             "products": self.count("products"),
             "published_products": self.count("products", "status", "published"),
+            "categories": self.count("categories"),
+            "brands": self.count("brands"),
             "low_stock": low_stock,
+            "low_stock_items": low_stock_items,
+            "has_low_stock_items": low_stock_items.len() > 0,
             "coupons": self.count("coupons"),
             "recent_orders": recent,
             "has_recent": recent.len() > 0

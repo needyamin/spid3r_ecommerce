@@ -11,6 +11,7 @@ import "framework/HttpException";
 import "app/Services/StorefrontService";
 import "app/Services/AdvancedStoreService";
 import "app/Services/CurrencyService";
+import "app/Services/CampaignService";
 import "app/Repositories/CatalogRepository";
 import "app/Support/CartIdentity" as CartIdentity;
 import "app/Support/StoreChrome" as StoreChrome;
@@ -22,6 +23,7 @@ public class StorefrontController {
     public let brands;
     public let advanced;
     public let currencies;
+    public let campaigns;
 
     fn new() {
         self.service = new StorefrontService();
@@ -30,6 +32,7 @@ public class StorefrontController {
         self.brands = new BrandRepository();
         self.advanced = new AdvancedStoreService();
         self.currencies = new CurrencyService(string(self.settings["currency"]));
+        self.campaigns = new CampaignService();
     }
 
     // The customer's display currency and the conversion context.
@@ -74,9 +77,15 @@ public class StorefrontController {
     public fn home(self, req) {
         let code = self.display_currency(req);
         let featured = self.service.featured(code, 8, self.fx_context());
+        let campaign = self.campaigns.active();
+        let brand_rows = self.brands.all();
         let ctx = {
             "products": featured,
             "has_products": featured.len() > 0,
+            "campaign": campaign,
+            "has_campaign": campaign != null,
+            "brands": brand_rows,
+            "has_brands": brand_rows.len() > 0,
             "meta_description": "Shop " + self.settings["name"] + " — quality products, honest prices, fast delivery."
         };
         return self.render(req, "store/home", self.settings["name"], ctx);

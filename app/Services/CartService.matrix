@@ -8,6 +8,7 @@ import "app/Repositories/CartRepository";
 import "app/Repositories/ProductRepository";
 import "app/Repositories/InventoryRepository";
 import "app/Support/Money" as Money;
+import "app/Support/Images" as Images;
 
 public class CartService {
     public let carts;
@@ -123,16 +124,31 @@ public class CartService {
             let price = 0;
             let name = "Unavailable product";
             let slug = "";
+            let sku = "";
+            let variant_name = "";
+            let image_url = "";
             let ok = false;
             if product != null {
                 name = string(product["name"]);
                 slug = string(product["slug"]);
+                sku = string(product["sku"]);
                 price = int(product["price_minor"]);
                 if row["variant_id"] != null {
                     let variant = DB.table("product_variants").where("id", "=", row["variant_id"]).first();
                     if variant != null {
                         price = int(variant["price_minor"]);
+                        variant_name = string(variant["name"]);
+                        if variant["sku"] != null and string(variant["sku"]) != "" {
+                            sku = string(variant["sku"]);
+                        }
                     }
+                }
+                let img = DB.table("product_images")
+                    .where("product_id", "=", row["product_id"])
+                    .orderBy("sort_order", "ASC")
+                    .first();
+                if img != null {
+                    image_url = Images.public_image_url(img["path"]);
                 }
                 ok = product["status"] == "published"
                     and self.inventory.available(row["product_id"], null, int(row["quantity"]));
@@ -146,7 +162,13 @@ public class CartService {
             items.push({
                 "id": row["id"],
                 "product_id": row["product_id"],
+                "variant_id": row["variant_id"],
+                "variant_name": variant_name,
+                "has_variant": variant_name != "",
                 "name": name,
+                "sku": sku,
+                "image_url": image_url,
+                "has_image": image_url != "",
                 "url": "/product/" + slug,
                 "quantity": int(row["quantity"]),
                 "unit_price_minor": price,

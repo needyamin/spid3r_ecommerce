@@ -3,7 +3,14 @@
 @section('meta_description', meta_description)
 @section("content")
   <nav aria-label="breadcrumb">
-    <ol class="breadcrumb"><li class="breadcrumb-item"><a href="/">Home</a></li><li class="breadcrumb-item"><a href="/catalog">Catalog</a></li><li class="breadcrumb-item active" aria-current="page">{{ product.name }}</li></ol>
+    <ol class="breadcrumb">
+      <li class="breadcrumb-item"><a href="/">Home</a></li>
+      <li class="breadcrumb-item"><a href="/catalog">Catalog</a></li>
+@if(has_category)
+      <li class="breadcrumb-item"><a href="/category/{{ category.slug }}">{{ category.name }}</a></li>
+@endif
+      <li class="breadcrumb-item active" aria-current="page">{{ product.name }}</li>
+    </ol>
   </nav>
 
   <div class="dz-product-page">
@@ -39,47 +46,67 @@
 
       <section class="col-12 col-lg-5" aria-labelledby="product-title">
         <div class="dz-card dz-product-buybox">
-          <div class="dz-product-kicker">SKU {{ product.sku }}</div>
+          <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-1">
+            <div class="dz-product-kicker">SKU {{ product.sku }}</div>
+            <div class="d-flex gap-1 flex-wrap">
+@if(has_category)
+              <a href="/category/{{ category.slug }}" class="badge text-bg-light border text-decoration-none">{{ category.name }}</a>
+@endif
+@if(has_brand)
+              <a href="/brand/{{ brand.slug }}" class="badge text-bg-light border text-decoration-none">Brand: {{ brand.name }}</a>
+@endif
+            </div>
+          </div>
+
           <h1 id="product-title" class="dz-product-title">{{ product.name }}</h1>
+
           <div class="dz-rating-summary" aria-label="{{ rating.average_display }} out of 5 from {{ rating.count }} reviews">
-            <span class="dz-rating-stars" aria-hidden="true">{{ rating.average_display }} / 5</span>
+            <span class="dz-rating-stars" aria-hidden="true">★ {{ rating.average_display }} / 5</span>
             <a href="#customer-reviews">{{ rating.count }} review(s)</a>
           </div>
+
 @if(product.compare_display)
-          <div class="dz-price-line"><span class="dz-product-price">{{ product.price_display }}</span><span class="dz-p-old">{{ product.compare_display }}</span><span class="dz-sale-badge">Sale</span></div>
+          <div class="dz-price-line"><span class="dz-product-price" id="dz-buybox-price">{{ product.price_display }}</span><span class="dz-p-old">{{ product.compare_display }}</span><span class="dz-sale-badge">Sale</span></div>
 @else
-          <div class="dz-price-line"><span class="dz-product-price">{{ product.price_display }}</span></div>
+          <div class="dz-price-line"><span class="dz-product-price" id="dz-buybox-price">{{ product.price_display }}</span></div>
 @endif
+
 @if(in_stock)
-          <div class="dz-stock-line"><span class="stock-badge stock-in">In stock</span><span class="small text-secondary">{{ available_quantity }} available</span></div>
+          <div class="dz-stock-line"><span class="stock-badge stock-in">In stock</span><span class="small text-secondary">{{ available_quantity }} available for immediate dispatch</span></div>
 @else
           <div class="dz-stock-line"><span class="stock-badge stock-out">Out of stock</span><span class="small text-secondary">Please check back later.</span></div>
 @endif
+
 @if(product.short_description)
           <p class="dz-product-short-description">{{ product.short_description }}</p>
-@endif
-@if(has_variants)
-          <div class="dz-variant-note">
-            <h2 class="h6 mb-2">Product options</h2>
-            <ul class="dz-variant-list">
-@foreach(variant in variants)
-              <li><span>{{ variant.name }}</span><code>{{ variant.sku }}</code></li>
-@endforeach
-            </ul>
-            <p class="small text-secondary mb-0">Option pricing is for reference; checkout currently uses the product price shown above.</p>
-          </div>
 @endif
 
           <form method="post" action="/cart/items" data-ajax="cart" class="dz-add-to-cart-form">
             <input type="hidden" name="_csrf" value="{{ csrf }}">
             <input type="hidden" name="product_id" value="{{ product.id }}">
+@if(has_variants)
+            <div class="dz-variant-note mb-3">
+              <label class="form-label small fw-semibold mb-1" for="variant_id">Choose option / variant</label>
+              <select id="variant_id" name="variant_id" class="form-select" data-variant-select>
+                <option value="" data-price-display="{{ product.price_display }}">Standard — {{ product.price_display }} ({{ product.sku }})</option>
+@foreach(variant in variants)
+                <option value="{{ variant.id }}" data-price-display="{{ variant.price_display }}">{{ variant.name }} — {{ variant.price_display }} ({{ variant.sku }})</option>
+@endforeach
+              </select>
+            </div>
+@endif
             <div class="dz-buy-controls">
               <div>
                 <label class="form-label small fw-semibold mb-1" for="add-quantity">Quantity</label>
-                <input type="number" class="form-control dz-qty" id="add-quantity" name="quantity" value="1" min="1" max="{{ available_quantity }}" required>
+                <div class="input-group dz-qty-stepper">
+                  <button class="btn btn-outline-secondary px-2" type="button" data-qty-step="-1" aria-label="Decrease quantity">−</button>
+                  <input type="number" class="form-control dz-qty text-center" id="add-quantity" name="quantity" value="1" min="1" max="{{ available_quantity }}" required>
+                  <button class="btn btn-outline-secondary px-2" type="button" data-qty-step="1" aria-label="Increase quantity">+</button>
+                </div>
               </div>
 @if(in_stock)
               <button class="btn btn-primary dz-add-to-cart" type="submit">Add to cart</button>
+              <button class="btn btn-outline-primary dz-buy-now" type="submit" name="buy_now" value="1" data-buy-now="1">Buy now</button>
 @else
               <button class="btn btn-primary dz-add-to-cart" type="submit" disabled>Out of stock</button>
 @endif
@@ -92,40 +119,81 @@
               <input type="hidden" name="_csrf" value="{{ csrf }}">
               <input type="hidden" name="product_id" value="{{ product.id }}">
 @if(in_wishlist)
-              <button class="btn btn-outline-primary" type="submit">Saved to wishlist</button>
+              <button class="btn btn-outline-primary" type="submit">♥ Saved to wishlist</button>
 @else
-              <button class="btn btn-outline-primary" type="submit">Add to wishlist</button>
+              <button class="btn btn-outline-primary" type="submit">♡ Add to wishlist</button>
 @endif
             </form>
           </div>
+
+          <div class="dz-product-delivery-box mt-3 pt-3 border-top small">
+            <div class="d-flex justify-content-between py-1">
+              <span class="text-secondary">🚚 Standard Delivery (3–7 days)</span>
+              <strong>৳60.00 <span class="text-success">(Free over ৳2,000)</span></strong>
+            </div>
+            <div class="d-flex justify-content-between py-1">
+              <span class="text-secondary">⚡ Express Delivery (1–2 days)</span>
+              <strong>৳120.00</strong>
+            </div>
+            <div class="d-flex justify-content-between py-1">
+              <span class="text-secondary">💵 Cash on Delivery</span>
+              <span class="text-success fw-semibold">Available</span>
+            </div>
+          </div>
+
           <div class="dz-product-assurances">
-            <span>Secure checkout</span><span>Easy returns</span><span>Fast delivery</span>
+            <span>🔒 Secure checkout</span><span>↩️ 14-day easy returns</span><span>⚡ Fast dispatch</span>
           </div>
         </div>
       </section>
     </div>
 
+    <div class="row g-4 my-1">
+      <div class="col-12 col-lg-8">
 @if(product.description)
-    <section class="dz-card dz-description-card my-4" aria-labelledby="product-description-heading">
-      <h2 id="product-description-heading" class="h5">Product description</h2>
-      <div class="dz-description-copy">{{ product.description }}</div>
-    </section>
+        <section class="dz-card dz-description-card h-100" aria-labelledby="product-description-heading">
+          <span class="dz-eyebrow">Overview</span>
+          <h2 id="product-description-heading" class="h5 mb-3">Product description</h2>
+          <div class="dz-description-copy">{{ product.description }}</div>
+        </section>
 @endif
+      </div>
+      <div class="col-12 col-lg-4">
+        <section class="dz-card dz-description-card h-100" aria-labelledby="product-specs-heading">
+          <span class="dz-eyebrow">Details</span>
+          <h2 id="product-specs-heading" class="h5 mb-3">Specifications</h2>
+          <dl class="dz-specs-list mb-0">
+            <div class="dz-spec-row"><dt>SKU</dt><dd><code>{{ product.sku }}</code></dd></div>
+@if(has_category)
+            <div class="dz-spec-row"><dt>Category</dt><dd><a href="/category/{{ category.slug }}">{{ category.name }}</a></dd></div>
+@endif
+@if(has_brand)
+            <div class="dz-spec-row"><dt>Brand</dt><dd><a href="/brand/{{ brand.slug }}">{{ brand.name }}</a></dd></div>
+@endif
+@if(has_weight)
+            <div class="dz-spec-row"><dt>Weight</dt><dd>{{ weight_grams }} g</dd></div>
+@endif
+            <div class="dz-spec-row"><dt>Availability</dt><dd>@if(in_stock){{ available_quantity }} in stock@else Out of stock@endif</dd></div>
+            <div class="dz-spec-row"><dt>Return Window</dt><dd>14 Days Easy Return</dd></div>
+          </dl>
+        </section>
+      </div>
+    </div>
 
     <section id="customer-reviews" class="dz-card dz-reviews-card my-4" aria-labelledby="reviews-heading">
       <div class="dz-section-heading">
         <div><span class="dz-eyebrow">Customer feedback</span><h2 id="reviews-heading" class="h5 mb-0">Customer reviews</h2></div>
-        <p class="mb-0"><strong class="fs-5">{{ rating.average_display }}</strong> / 5 <span class="text-secondary">· {{ rating.count }} review(s)</span></p>
+        <p class="mb-0"><strong class="fs-5">★ {{ rating.average_display }}</strong> / 5 <span class="text-secondary">· {{ rating.count }} review(s)</span></p>
       </div>
 @if(has_reviews)
 @foreach(review in reviews)
       <article class="review">
-        <div class="d-flex flex-wrap justify-content-between gap-2"><h3 class="h6 mb-1">{{ review.title }}</h3><span class="dz-review-score">{{ review.rating }} / 5</span></div>
+        <div class="d-flex flex-wrap justify-content-between gap-2"><h3 class="h6 mb-1">{{ review.title }}</h3><span class="dz-review-score">★ {{ review.rating }} / 5</span></div>
         <p class="mb-0">{{ review.body }}</p>
       </article>
 @endforeach
 @else
-      <p class="empty-note">No reviews yet. Be the first to share your experience.</p>
+      <p class="empty-note">No reviews yet. Be the first to share your experience after purchasing this item.</p>
 @endif
 @if(signed_in)
       <h3 class="h6 mt-4">Write a review</h3>

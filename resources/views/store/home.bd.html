@@ -2,17 +2,91 @@
 @section('title', store_name)
 @section('meta_description', meta_description)
 @section("content")
-  <section class="dz-hero">
-    <h1>{{ store_name }}</h1>
-    <p>Quality products, honest prices, fast delivery.</p>
-    <div class="d-flex gap-2 justify-content-center flex-wrap">
-      <a class="btn btn-primary btn-lg px-4" href="/catalog">Browse Catalog</a>
-      <a class="btn btn-outline-primary btn-lg px-4" href="/track">Track Order</a>
+@if(has_campaign)
+  <div class="dz-promo-banner my-3">
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+      <div>
+        <span class="badge text-bg-warning me-2">LIMITED OFFER</span>
+        <strong>{{ campaign.name }}</strong>
+        <span class="small ms-1 opacity-75">Automatic discount applied at checkout!</span>
+      </div>
+      <a href="/catalog" class="btn btn-sm btn-light fw-semibold">Shop Deals →</a>
+    </div>
+  </div>
+@endif
+
+  <section class="dz-hero dz-hero-enhanced">
+    <div class="row align-items-center g-4 text-start">
+      <div class="col-12 col-lg-8">
+        <span class="dz-hero-pill">⚡ Fast Nationwide Delivery · Free Over ৳2,000</span>
+        <h1 class="mt-2 mb-2">{{ store_name }}</h1>
+        <p class="mb-4">Quality products, honest prices, fast delivery. Shop verified electronics, desk gear, and everyday essentials with Cash on Delivery, bKash, Nagad, and card support.</p>
+        <div class="d-flex gap-2 flex-wrap">
+          <a class="btn btn-primary btn-lg px-4" href="/catalog">Browse Catalog</a>
+          <a class="btn btn-outline-primary btn-lg px-4" href="/track">Track Order</a>
+        </div>
+      </div>
+      <div class="col-12 col-lg-4">
+        <div class="dz-hero-perks">
+          <div class="dz-hero-perk">
+            <span class="dz-hero-perk-icon">🏷️</span>
+            <div>
+              <strong>5% Volume Discount</strong>
+              <span class="d-block small text-secondary">Automatic on carts over ৳1,000</span>
+            </div>
+          </div>
+          <div class="dz-hero-perk">
+            <span class="dz-hero-perk-icon">🎟️</span>
+            <div>
+              <strong>Welcome Promo: <code>WELCOME10</code></strong>
+              <span class="d-block small text-secondary">10% off orders over ৳1,000 at checkout</span>
+            </div>
+          </div>
+          <div class="dz-hero-perk">
+            <span class="dz-hero-perk-icon">🛡️</span>
+            <div>
+              <strong>14-Day Easy Returns</strong>
+              <span class="d-block small text-secondary">Server-verified payments &amp; instant refunds</span>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   </section>
 
-  <section class="my-4">
-    <h2 class="dz-section-title">Featured Products</h2>
+@if(has_footer_categories)
+  <section class="my-4" aria-labelledby="home-categories-heading">
+    <div class="dz-section-heading">
+      <div>
+        <span class="dz-eyebrow">Explore departments</span>
+        <h2 id="home-categories-heading" class="dz-section-title mb-0">Shop by Category</h2>
+      </div>
+      <a href="/catalog" class="small fw-semibold">View all categories →</a>
+    </div>
+    <div class="row g-3 row-cols-2 row-cols-md-3 row-cols-lg-4">
+@foreach(cat in footer_categories)
+      <div class="col">
+        <a href="/category/{{ cat.slug }}" class="dz-cat-card">
+          <span class="dz-cat-card-icon" aria-hidden="true">🛍️</span>
+          <div>
+            <strong class="d-block">{{ cat.name }}</strong>
+            <span class="small text-secondary">Explore products →</span>
+          </div>
+        </a>
+      </div>
+@endforeach
+    </div>
+  </section>
+@endif
+
+  <section class="my-4" aria-labelledby="featured-products-heading">
+    <div class="dz-section-heading">
+      <div>
+        <span class="dz-eyebrow">Handpicked for you</span>
+        <h2 id="featured-products-heading" class="dz-section-title mb-0">Featured Products</h2>
+      </div>
+      <a href="/catalog" class="btn btn-sm btn-outline-primary">See all products</a>
+    </div>
 @if(has_products)
     <div class="row g-3 row-cols-2 row-cols-md-3 row-cols-lg-4">
 @foreach(product in products)
@@ -34,7 +108,7 @@
       <div class="dz-feature"><div class="feature-icon">💳</div><h3>Flexible Payment</h3><p>Cash on delivery, bKash, Nagad and cards.</p></div>
     </div>
     <div class="col-6 col-lg-3">
-      <div class="dz-feature"><div class="feature-icon">↩️</div><h3>Easy Returns</h3><p>Seven-day hassle-free return policy.</p></div>
+      <div class="dz-feature"><div class="feature-icon">↩️</div><h3>Easy Returns</h3><p>Fourteen-day hassle-free return policy.</p></div>
     </div>
     <div class="col-6 col-lg-3">
       <div class="dz-feature"><div class="feature-icon">🔒</div><h3>Secure Checkout</h3><p>Every transaction verified server-side.</p></div>

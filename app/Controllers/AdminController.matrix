@@ -210,7 +210,7 @@ public class AdminController {
             }
         } else {
             headers = ["Key", "Value", "Group"];
-            let group = "general";
+            let group = "";
             if page == "shipping" { group = "shipping"; }
             if page == "payments" { group = "payments"; }
             let data = self.admin.settings(group);
@@ -238,6 +238,16 @@ public class AdminController {
             for k in o.keys() {
                 row[k] = o[k];
             }
+            let customer_name = "Guest";
+            if o["user_id"] != null {
+                let u = DB.table("users").where("id", "=", o["user_id"]).first();
+                if u != null {
+                    customer_name = string(u["name"]);
+                }
+            }
+            row["customer_name"] = customer_name;
+            row["item_count"] = DB.table("order_items").where("order_id", "=", o["id"]).count();
+            row["status_label"] = string(o["status"]).replace("_", " ");
             row["total_display"] = Money.format(int(o["total_minor"]), "BDT");
             formatted_recent.push(row);
             i += 1;
@@ -942,6 +952,12 @@ public class AdminController {
         let value = string(req.input("value", ""));
         let group = string(req.input("group", "general"));
         let ok = self.admin.update_setting(key, value, group);
+        if key == "store.name" and value != "" {
+            self.settings["name"] = value;
+        }
+        if key == "store.currency" and value != "" {
+            self.settings["currency"] = value.trim().upper();
+        }
         self.audit(req, "settings.update", "settings", key, {"value": value});
         if req.input("format", "") != "json" {
             return redirect("/admin/settings");
@@ -1041,8 +1057,19 @@ public class AdminController {
         let i = 0;
         while i < stats["recent_orders"].len() {
             let o = stats["recent_orders"][i];
+            let customer_name = "Guest";
+            if o["user_id"] != null {
+                let u = DB.table("users").where("id", "=", o["user_id"]).first();
+                if u != null {
+                    customer_name = string(u["name"]);
+                }
+            }
+            let item_count = DB.table("order_items").where("order_id", "=", o["id"]).count();
             recent.push({
+                "id": o["id"],
                 "order_number": o["order_number"],
+                "customer_name": customer_name,
+                "item_count": item_count,
                 "status": o["status"],
                 "status_label": string(o["status"]).replace("_", " "),
                 "total_display": Money.format(int(o["total_minor"]), "BDT"),
@@ -1053,12 +1080,25 @@ public class AdminController {
         return json({"data": {
             "orders": stats["orders"],
             "pending_orders": stats["pending_orders"],
+            "pipeline_pending": stats["pipeline_pending"],
+            "pipeline_processing": stats["pipeline_processing"],
+            "pipeline_shipped": stats["pipeline_shipped"],
+            "pipeline_delivered": stats["pipeline_delivered"],
+            "pipeline_cancelled": stats["pipeline_cancelled"],
+            "pct_pending": stats["pct_pending"],
+            "pct_processing": stats["pct_processing"],
+            "pct_shipped": stats["pct_shipped"],
+            "pct_delivered": stats["pct_delivered"],
             "revenue_minor": stats["revenue_minor"],
             "revenue_display": Money.format(int(stats["revenue_minor"]), "BDT"),
             "customers": stats["customers"],
             "products": stats["products"],
             "published_products": stats["published_products"],
+            "categories": stats["categories"],
+            "brands": stats["brands"],
             "low_stock": stats["low_stock"],
+            "low_stock_items": stats["low_stock_items"],
+            "has_low_stock_items": stats["has_low_stock_items"],
             "coupons": stats["coupons"],
             "recent_orders": recent,
             "has_recent": stats["has_recent"]

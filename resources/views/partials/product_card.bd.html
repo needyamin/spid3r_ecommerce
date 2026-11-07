@@ -2,20 +2,28 @@
      url, name, price_display, optionally compare_display,
      has_image and image_url. -->
 <a class="product-card h-100" href="{{ product.url }}">
+  <div class="dz-p-media">
 @if(product.has_image)
-  <img class="dz-p-img" src="{{ product.image_url }}" alt="{{ product.name }}" loading="lazy" decoding="async">
+    <img class="dz-p-img" src="{{ product.image_url }}" alt="{{ product.name }}" loading="lazy" decoding="async">
 @else
-  <div class="dz-p-img-placeholder" aria-hidden="true"><span>No image</span></div>
+    <div class="dz-p-img-placeholder" aria-hidden="true"><span>No image</span></div>
 @endif
+@if(product.compare_display)
+    <span class="dz-sale-badge dz-sale-badge-floating">Sale</span>
+@endif
+  </div>
   <div class="dz-p-body">
-@if(product.compare_display)
-    <span class="dz-sale-badge mb-1">Sale</span>
-@endif
     <div class="dz-p-name">{{ product.name }}</div>
-@if(product.compare_display)
-    <div><span class="dz-p-price">{{ product.price_display }}</span> <span class="dz-p-old">{{ product.compare_display }}</span></div>
-@else
-    <div class="dz-p-price">{{ product.price_display }}</div>
+@if(product.short_description)
+    <div class="dz-p-sub text-secondary small text-truncate mb-1">{{ product.short_description }}</div>
 @endif
+    <div class="dz-p-price-row mt-auto">
+@if(product.compare_display)
+      <div><span class="dz-p-price">{{ product.price_display }}</span> <span class="dz-p-old">{{ product.compare_display }}</span></div>
+@else
+      <div class="dz-p-price">{{ product.price_display }}</div>
+@endif
+      <span class="dz-p-cta">View →</span>
+    </div>
   </div>
 </a>

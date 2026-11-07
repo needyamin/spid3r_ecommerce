@@ -8,6 +8,7 @@ import "framework/Database/DB";
 import "framework/HttpException";
 import "app/Support/Money" as Money;
 import "app/Services/CheckoutService";
+import "app/Services/PaymentService";
 import "app/Repositories/CheckoutRepository";
 import "app/Support/CartIdentity" as CartIdentity;
 import "app/Support/StoreChrome" as StoreChrome;
@@ -15,11 +16,13 @@ import "app/Validators/CheckoutValidators" as CheckoutValidators;
 
 public class CheckoutController {
     public let checkout;
+    public let payments;
     public let addresses;
     public let settings;
 
     fn new() {
         self.checkout = new CheckoutService();
+        self.payments = new PaymentService();
         self.addresses = new AddressRepository();
         self.settings = Container.make("store.settings");
     }
@@ -61,11 +64,21 @@ public class CheckoutController {
             ctx[k] = quote[k];
         }
         let saved = [];
+        let user_name = "";
+        let user_email = "";
         if ident["user_id"] != null {
             saved = self.addresses.for_user(ident["user_id"]);
+            let u = DB.table("users").where("id", "=", ident["user_id"]).first();
+            if u != null {
+                user_name = string(u["name"]);
+                user_email = string(u["email"]);
+            }
         }
         ctx["addresses"] = saved;
         ctx["has_addresses"] = saved.len() > 0;
+        ctx["user_name"] = user_name;
+        ctx["user_email"] = user_email;
+        ctx["signed_in"] = ident["user_id"] != null;
         if req.auth != null and req.auth.check() {
             ctx["csrf"] = req.auth.csrf();
         }
@@ -86,10 +99,18 @@ public class CheckoutController {
         let ident = CartIdentity.cart_identity(req);
         let order = self.checkout.place_order(ident, req.data);
         let number = string(order["order_number"]);
+        // Optional payment method pre-selection on checkout form (only for browser form flows;
+        // JSON API tests expect awaiting_payment untouched unless /payment/initiate is called).
+        let pay_method = string(req.input("payment_method", "")).trim().lower();
         if req.input("format", "") == "json" {
             let res = json({"data": {"order_number": number, "status": order["status"], "total_minor": order["total_minor"]}}, 201);
             res.cookie("cart", ident["key"], "/", 2592000);
             return res;
+        }
+        if pay_method == "cod" {
+            try {
+                self.payments.initiate(number, "cod", ident["user_id"]);
+            } catch (e) {}
         }
         let res = redirect("/checkout/confirmation/" + number);
         res.cookie("cart", ident["key"], "/", 2592000);
@@ -103,7 +124,56 @@ public class CheckoutController {
             throw not_found("Order not found.");
         }
         let ctx = self.base(req, "Order confirmed");
+        if req.auth != null and req.auth.check() {
+            ctx["csrf"] = req.auth.csrf();
+            ctx["signed_in"] = true;
+        } else {
+            ctx["signed_in"] = false;
+        }
+        let raw_items = DB.table("order_items").where("order_id", "=", order["id"]).get();
+        let items = [];
+        let i = 0;
+        while i < raw_items.len() {
+            let row = raw_items[i];
+            items.push({
+                "name": string(row["name_snapshot"]),
+                "sku": string(row["sku_snapshot"]),
+                "quantity": int(row["quantity"]),
+                "unit_display": Money.format(int(row["unit_price_minor"]), "BDT"),
+                "line_display": Money.format(int(row["line_total_minor"]), "BDT")
+            });
+            i += 1;
+        }
+        let addr = {"full_name": "", "phone": "", "line1": "", "line2": "", "city": "", "district": "", "postal_code": "", "country": "Bangladesh"};
+        try {
+            let parsed = json_parse(string(order["shipping_address_json"]));
+            if type_of(parsed) == "map" {
+                for ak in parsed.keys() {
+                    addr[ak] = string(parsed[ak]);
+                }
+            }
+        } catch (e) {}
+        let pay_rows = DB.table("payments").where("order_id", "=", order["id"]).orderBy("id", "DESC").get();
+        let has_payment = pay_rows.len() > 0;
+        let payment_provider = "";
+        let payment_status = "";
+        if has_payment {
+            payment_provider = string(pay_rows[0]["provider"]).upper();
+            payment_status = string(pay_rows[0]["status"]);
+        }
         ctx["order"] = order;
+        ctx["items"] = items;
+        ctx["has_items"] = items.len() > 0;
+        ctx["address"] = addr;
+        ctx["has_payment"] = has_payment;
+        ctx["payment_provider"] = payment_provider;
+        ctx["payment_status"] = payment_status;
+        ctx["providers"] = self.payments.providers();
+        ctx["subtotal_display"] = Money.format(int(order["subtotal_minor"]), "BDT");
+        ctx["discount_display"] = Money.format(int(order["discount_minor"]), "BDT");
+        ctx["has_discount"] = int(order["discount_minor"]) > 0;
+        ctx["shipping_display"] = Money.format(int(order["shipping_minor"]), "BDT");
+        ctx["tax_display"] = Money.format(int(order["tax_minor"]), "BDT");
         ctx["total_display"] = Money.format(int(order["total_minor"]), "BDT");
         return view("checkout/confirmation", ctx);
     }
@@ -124,6 +194,19 @@ public class CheckoutController {
             "country": req.input("country", "Bangladesh"),
             "is_default": 1
         });
+        if req.input("format", "") == "browser" {
+            return redirect("/account?address_added=1#saved-addresses");
+        }
         return json({"data": {"id": id, "created": true}}, 201);
+    }
+
+    public fn delete_address(self, req) {
+        let id = int(req.params["id"]);
+        let uid = req.auth.id();
+        DB.table("addresses").where("id", "=", id).where("user_id", "=", uid).delete();
+        if req.input("format", "") == "json" {
+            return json({"data": {"deleted": true, "id": id}});
+        }
+        return redirect("/account?address_deleted=1#saved-addresses");
     }
 }

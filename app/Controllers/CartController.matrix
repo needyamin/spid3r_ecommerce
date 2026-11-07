@@ -33,7 +33,11 @@ public class CartController {
             let res = json(full);
             return self.with_cart_cookie(res, ident);
         }
-        let res = redirect("/cart");
+        let target = "/cart";
+        if req.input("buy_now", "") == "1" {
+            target = "/checkout";
+        }
+        let res = redirect(target);
         return self.with_cart_cookie(res, ident);
     }
 

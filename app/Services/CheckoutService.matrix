@@ -76,12 +76,16 @@ public class CheckoutService {
         let campaign = self.campaigns.active();
         let campaign_discount = 0;
         let campaign_id = null;
+        let campaign_name = "";
+        let campaign_code = "";
         if campaign != null {
             campaign_discount = self.campaigns.discount(subtotal - total_discount);
             if campaign_discount < 0 {
                 campaign_discount = 0;
             }
             campaign_id = campaign["id"];
+            campaign_name = string(campaign["name"]);
+            campaign_code = string(campaign["code"]);
         }
         total_discount = total_discount + campaign_discount;
         if total_discount > subtotal {
@@ -107,43 +111,82 @@ public class CheckoutService {
             method = string(options["shipping_method"]).trim();
         }
         let taxable = subtotal - total_discount;
-        let delivery = self.shipping_quote(method, taxable, options);
+        let delivery_opts = options;
+        if options.has("address_id") and options["address_id"] != null and string(options["address_id"]) != "" and ident["user_id"] != null {
+            if self.addresses.belongs_to(options["address_id"], ident["user_id"]) {
+                let saved_addr = self.addresses.find(options["address_id"]);
+                if saved_addr != null {
+                    delivery_opts = {
+                        "city": saved_addr["city"],
+                        "district": saved_addr["district"],
+                        "country": saved_addr["country"]
+                    };
+                }
+            }
+        }
+        let delivery = self.shipping_quote(method, taxable, delivery_opts);
         let shipping = int(delivery["fee_minor"]);
         let tax_bps = self.setting("store.tax_rate_bps", 0);
         let tax = int(taxable * tax_bps / 10000);
         let total = taxable + tax + shipping;
+        let free_threshold = self.setting("shipping.free_threshold_minor", 200000);
+        let free_remaining = free_threshold - taxable;
+        if free_remaining < 0 {
+            free_remaining = 0;
+        }
+        let coupon_discount_val = int(coupon["discount_minor"]);
 
         return {
             "items": summary["items"],
             "has_items": summary["has_items"],
+            "item_count": summary["count"],
             "has_warnings": summary["has_warnings"],
             "warnings": summary["warnings"],
             "subtotal_minor": subtotal,
             "volume_discount_minor": volume_discount,
-            "coupon_discount_minor": int(coupon["discount_minor"]),
+            "coupon_discount_minor": coupon_discount_val,
             "campaign_discount_minor": campaign_discount,
             "campaign_id": campaign_id,
+            "campaign_name": campaign_name,
+            "campaign_code": campaign_code,
             "gift_card_discount_minor": gift_card_discount,
             "gift_card_code": gift_card_code,
             "discount_minor": total_discount,
             "coupon_id": coupon["coupon_id"],
             "coupon_code": coupon["code"],
             "shipping_method": method,
+            "is_express": method == "express",
+            "is_standard": method != "express",
             "shipping_minor": shipping,
+            "is_free_shipping": shipping == 0,
+            "free_shipping_threshold_minor": free_threshold,
+            "free_shipping_remaining_minor": free_remaining,
+            "free_shipping_remaining_display": Money.format(free_remaining, "BDT"),
+            "has_free_shipping_progress": free_remaining > 0 and method != "express",
             "shipping_zone": delivery["zone_name"],
+            "has_shipping_zone": string(delivery["zone_name"]) != "",
             "shipping_days_min": delivery["estimated_days_min"],
             "shipping_days_max": delivery["estimated_days_max"],
             "shipping_source": delivery["source"],
             "tax_minor": tax,
             "total_minor": total,
+            "has_volume_discount": volume_discount > 0,
+            "has_coupon_discount": coupon_discount_val > 0,
+            "has_campaign_discount": campaign_discount > 0,
+            "has_gift_card_discount": gift_card_discount > 0,
+            "has_any_discount": total_discount > 0,
             "subtotal_display": Money.format(subtotal, "BDT"),
+            "volume_discount_display": Money.format(volume_discount, "BDT"),
+            "coupon_discount_display": Money.format(coupon_discount_val, "BDT"),
+            "campaign_discount_display": Money.format(campaign_discount, "BDT"),
             "discount_display": Money.format(total_discount, "BDT"),
             "gift_card_display": Money.format(gift_card_discount, "BDT"),
             "shipping_display": Money.format(shipping, "BDT"),
             "tax_display": Money.format(tax, "BDT"),
             "total_display": Money.format(total, "BDT"),
             "express_fee_display": Money.format(self.setting("shipping.express_minor", 12000), "BDT"),
-            "standard_fee_display": Money.format(self.setting("shipping.flat_minor", 6000), "BDT")
+            "standard_fee_display": Money.format(self.setting("shipping.flat_minor", 6000), "BDT"),
+            "free_threshold_display": Money.format(free_threshold, "BDT")
         };
     }
 
@@ -212,6 +255,7 @@ public class CheckoutService {
             while i < rows.len() {
                 let line = rows[i];
                 let pid = line["product_id"];
+                let vid = line["variant_id"];
                 let product_row = DB.table("products").where("id", "=", pid).first();
                 if product_row == null {
                     throw validation_failed({"cart": "A product is no longer available."});
@@ -220,11 +264,22 @@ public class CheckoutService {
                 if not self.inventory.reserve(pid, null, qty, "sale", "checkout", "pending") {
                     throw validation_failed({"cart": "Not enough stock for " + string(product_row["name"]) + "."});
                 }
+                let snap_name = string(product_row["name"]);
+                let snap_sku = string(product_row["sku"]);
+                if vid != null {
+                    let vrow = DB.table("product_variants").where("id", "=", vid).first();
+                    if vrow != null {
+                        snap_name = snap_name + " (" + string(vrow["name"]) + ")";
+                        if vrow["sku"] != null and string(vrow["sku"]) != "" {
+                            snap_sku = string(vrow["sku"]);
+                        }
+                    }
+                }
                 items.push({
                     "product_id": pid,
-                    "variant_id": null,
-                    "name_snapshot": product_row["name"],
-                    "sku_snapshot": product_row["sku"],
+                    "variant_id": vid,
+                    "name_snapshot": snap_name,
+                    "sku_snapshot": snap_sku,
                     "unit_price_minor": int(line["unit_price_minor"]),
                     "quantity": qty,
                     "discount_minor": 0,

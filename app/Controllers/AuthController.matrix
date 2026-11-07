@@ -9,6 +9,9 @@ import "framework/View/BD";
 import "framework/Container/Container";
 import "framework/Database/DB";
 import "app/Services/AuthService";
+import "app/Services/AdvancedStoreService";
+import "app/Policies/AccessPolicy";
+import "app/Support/Money" as Money;
 import "app/Support/StoreChrome" as StoreChrome;
 import "app/Support/CartIdentity" as CartIdentity;
 import "app/Services/CartService";
@@ -139,8 +142,57 @@ public class AuthController {
     }
 
     public fn account(self, req) {
+        let uid = req.auth.id();
+        let user = DB.table("users").where("id", "=", uid).first();
+        if user == null {
+            user = req.auth.user();
+        }
+        let policy = new AccessPolicy();
+        let is_admin = policy.is_admin(uid);
+        let referral_code = "";
+        try {
+            let adv = new AdvancedStoreService();
+            referral_code = adv.ensure_referral_code(uid);
+        } catch (e) {}
+        let points = 0;
+        if user != null and user["loyalty_points"] != null {
+            points = int(user["loyalty_points"]);
+        }
+        let raw_orders = DB.table("orders").where("user_id", "=", uid).orderBy("id", "DESC").limit(5).get();
+        let recent_orders = [];
+        let i = 0;
+        while i < raw_orders.len() {
+            let o = raw_orders[i];
+            recent_orders.push({
+                "id": o["id"],
+                "order_number": o["order_number"],
+                "status": o["status"],
+                "status_label": string(o["status"]).replace("_", " "),
+                "total_display": Money.format(int(o["total_minor"]), "BDT"),
+                "placed_at": o["placed_at"]
+            });
+            i += 1;
+        }
+        let addresses = DB.table("addresses").where("user_id", "=", uid).orderBy("id", "DESC").get();
+        let orders_count = DB.table("orders").where("user_id", "=", uid).count();
+        let wishlist_count = DB.table("wishlists").where("user_id", "=", uid).count();
+        let returns_count = DB.table("returns").where("user_id", "=", uid).count();
         return self.render(req, "account/index", "My account", {
-            "user": req.auth.user(),
+            "user": user,
+            "is_admin": is_admin,
+            "loyalty_points": points,
+            "referral_code": referral_code,
+            "orders_count": orders_count,
+            "wishlist_count": wishlist_count,
+            "addresses_count": addresses.len(),
+            "returns_count": returns_count,
+            "recent_orders": recent_orders,
+            "has_recent_orders": recent_orders.len() > 0,
+            "addresses": addresses,
+            "has_addresses": addresses.len() > 0,
+            "updated": string(req.query("updated", "")) == "1",
+            "address_added": string(req.query("address_added", "")) == "1",
+            "address_deleted": string(req.query("address_deleted", "")) == "1",
             "csrf": req.auth.csrf()
         });
     }

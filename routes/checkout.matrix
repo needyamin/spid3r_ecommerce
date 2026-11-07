@@ -2,6 +2,7 @@
 // Phase 7 — checkout, customer order pages, admin order management.
 
 import "framework/Router";
+import "framework/Response";
 import "app/Controllers/CheckoutController";
 import "app/Controllers/OrderController";
 
@@ -16,7 +17,9 @@ public fn register_checkout_routes() {
     Route.get("/checkout/confirmation/:number", req => checkout.confirmation(req));
 
     // Authenticated customer area.
+    Route.get("/addresses", req => redirect("/account#saved-addresses")).middleware("auth");
     Route.post("/account/addresses", req => checkout.store_address(req)).middleware("auth");
+    Route.post("/account/addresses/:id/delete", req => checkout.delete_address(req)).middleware("auth");
     Route.get("/orders", req => orders.index(req)).middleware("auth");
     Route.get("/orders/:number/invoice", req => orders.invoice(req)).middleware("auth");
     Route.get("/orders/:number", req => orders.show(req)).middleware("auth");

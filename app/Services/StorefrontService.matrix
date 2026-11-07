@@ -343,7 +343,25 @@ public class StorefrontService {
             });
             i += 1;
         }
-        let variants = self.products.variants_for(product["id"]);
+        let variants_raw = self.products.variants_for(product["id"]);
+        let variants = [];
+        let vi = 0;
+        while vi < variants_raw.len() {
+            let v = variants_raw[vi];
+            if int(v["is_active"]) == 1 {
+                v["price_display"] = self.money(int(v["price_minor"]), currency, fx);
+                variants.push(v);
+            }
+            vi += 1;
+        }
+        let category = null;
+        if product["category_id"] != null {
+            category = self.categories.find(product["category_id"]);
+        }
+        let brand = null;
+        if product["brand_id"] != null {
+            brand = DB.table("brands").where("id", "=", product["brand_id"]).first();
+        }
         let related = self.decorate(self.products.related(product, 4), currency, fx);
         let inv = DB.table("inventory")
             .where("product_id", "=", product["id"])
@@ -359,8 +377,18 @@ public class StorefrontService {
         if available < 0 {
             available = 0;
         }
+        let weight_g = 0;
+        if product["weight_grams"] != null {
+            weight_g = int(product["weight_grams"]);
+        }
         return {
             "product": decorated[0],
+            "category": category,
+            "has_category": category != null,
+            "brand": brand,
+            "has_brand": brand != null,
+            "has_weight": weight_g > 0,
+            "weight_grams": weight_g,
             "gallery": gallery,
             "has_gallery": gallery.len() > 0,
             "has_multiple_gallery": gallery.len() > 1,
