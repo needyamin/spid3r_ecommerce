@@ -1140,6 +1140,10 @@ public class AdminController {
         let per_page = 12;
         let q = string(req.input("q", "")).trim();
         let status = string(req.input("status", "")).trim();
+        let cat_id = string(req.input("category_id", "")).trim();
+        let stock_status = string(req.input("stock_status", "")).trim();
+        let sort = string(req.input("sort", "newest")).trim();
+
         let query = DB.table("products");
         if q != "" {
             let needle = "%" + q + "%";
@@ -1150,21 +1154,78 @@ public class AdminController {
         if status != "" {
             query.where("status", "=", status);
         }
-        let page_result = query.orderBy("id", "DESC").paginate(page, per_page);
+        if cat_id != "" and int(cat_id) > 0 {
+            query.where("category_id", "=", int(cat_id));
+        }
+
+        if sort == "price_asc" {
+            query.orderBy("price_minor", "ASC");
+        } elif sort == "price_desc" {
+            query.orderBy("price_minor", "DESC");
+        } elif sort == "name_asc" {
+            query.orderBy("name", "ASC");
+        } else {
+            query.orderBy("id", "DESC");
+        }
+
+        let page_result = query.paginate(page, per_page);
         let rows = page_result["data"];
         let data = [];
         let i = 0;
         while i < rows.len() {
-            data.push(self.build_product_list_row(rows[i]));
+            let r = self.build_product_list_row(rows[i]);
+            let keep = true;
+            if stock_status == "low" and not r["is_low_stock"] {
+                keep = false;
+            } elif stock_status == "out" and r["stock"] > 0 {
+                keep = false;
+            } elif stock_status == "in" and r["stock"] <= 0 {
+                keep = false;
+            }
+            if keep {
+                data.push(r);
+            }
             i += 1;
         }
+
+        let inv_rows = DB.table("inventory").whereNull("variant_id").get();
+        let low_count = 0;
+        let out_count = 0;
+        let ii = 0;
+        while ii < inv_rows.len() {
+            let qty = int(inv_rows[ii]["quantity"]);
+            let th = int(inv_rows[ii]["low_stock_threshold"]);
+            if qty <= 0 {
+                out_count = out_count + 1;
+            } elif qty <= th {
+                low_count = low_count + 1;
+            }
+            ii += 1;
+        }
+
+        let cats = DB.table("categories").orderBy("name", "ASC").get();
+        let cat_list = [];
+        let ci = 0;
+        while ci < cats.len() {
+            cat_list.push({"id": cats[ci]["id"], "name": cats[ci]["name"]});
+            ci += 1;
+        }
+
         return json({"data": data, "meta": {
             "count": data.len(),
             "total": int(page_result["total"]),
             "page": int(page_result["page"]),
             "per_page": int(page_result["per_page"]),
             "last_page": int(page_result["last_page"]),
-            "has_more": page_result["has_more"]
+            "has_more": page_result["has_more"],
+            "stats": {
+                "total": DB.table("products").count(),
+                "published": DB.table("products").where("status", "=", "published").count(),
+                "draft": DB.table("products").where("status", "=", "draft").count(),
+                "low_stock": low_count,
+                "out_of_stock": out_count
+            },
+            "categories": cat_list
         }});
     }
 

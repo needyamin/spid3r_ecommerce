@@ -199,6 +199,21 @@
     </form>
   </section>
 
+  <div class="dz-stat-grid mb-3">
+    <div class="dz-card dz-stat-card">
+      <div class="dz-stat-value">{{ all_products_count }}</div>
+      <div class="dz-stat-label">Total Products</div>
+    </div>
+    <div class="dz-card dz-stat-card">
+      <div class="dz-stat-value text-success">{{ published_products }}</div>
+      <div class="dz-stat-label">Published</div>
+    </div>
+    <div class="dz-card dz-stat-card">
+      <div class="dz-stat-value text-secondary">{{ draft_products }}</div>
+      <div class="dz-stat-label">Drafts</div>
+    </div>
+  </div>
+
   <section class="dz-card dz-table-card p-3 p-lg-4 my-3" aria-labelledby="products-table-heading">
     <div class="dz-table-toolbar mb-3">
       <div><span class="dz-eyebrow">Catalog</span><h2 id="products-table-heading" class="h5 mb-0">Products</h2><p class="small text-secondary mb-0">{{ total_products }} matching product(s)</p></div>
@@ -250,7 +265,10 @@
             </td>
             <td data-label="Actions">
               <div class="dz-row-actions">
-                <a class="btn btn-primary btn-sm" href="/admin/products/{{ p.id }}">Manage product</a>
+                <a class="btn btn-primary btn-sm" href="/admin/products/{{ p.id }}">Manage</a>
+@if(p.slug)
+                <a class="btn btn-light border btn-sm" href="/product/{{ p.slug }}" target="_blank" rel="noopener">View</a>
+@endif
               </div>
               <details class="dz-row-details">
                 <summary>Edit and actions</summary>

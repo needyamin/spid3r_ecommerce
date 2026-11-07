@@ -1032,32 +1032,54 @@
   function ProductsModule(root) {
     var self = new ListModule(root, {});
     self.module = "products";
+    self.cachedCategories = [];
     var cfg = {
       module: "products", title: "Products", eyebrow: "Catalog",
-      description: "Create products, manage visibility, stock, media and variants.",
-      endpoint: "/admin/api/list/products", searchPlaceholder: "Search name or SKU",
+      description: "Create products, manage visibility, stock inventory, media and variants.",
+      endpoint: "/admin/api/list/products", searchPlaceholder: "Search product name or SKU",
       addLabel: "Add product", emptyText: "No products yet — add your first one.",
       filters: [{ key: "status", label: "Status", options: [
         { value: "draft", label: "Draft" }, { value: "published", label: "Published" }, { value: "archived", label: "Archived" }
       ] }],
       columns: [
         { label: "Image", render: function (r) {
-            return r.has_thumb ? '<img class="dz-admin-thumb" src="' + ADMIN.esc(r.thumb) + '" alt="">'
-              : '<span class="dz-admin-thumb dz-admin-thumb-empty">—</span>';
+            return '<div class="dz-product-thumb-wrap">' +
+              (r.has_thumb ? '<img src="' + ADMIN.esc(r.thumb) + '" alt="' + ADMIN.esc(r.name) + '" loading="lazy">'
+                : '<span class="text-secondary small">📷</span>') +
+              '</div>';
           } },
         { label: "Product", render: function (r) {
-            return "<strong>" + ADMIN.esc(r.name) + "</strong>" +
+            return "<div><strong>" + ADMIN.esc(r.name) + "</strong>" +
               (r.is_featured ? ' <span class="badge text-bg-warning ms-1">Featured</span>' : "") +
-              '<span class="small text-secondary d-block">' + ADMIN.esc(r.category_name || "Uncategorized") +
-              (r.brand_name ? ' · ' + ADMIN.esc(r.brand_name) : '') + "</span>";
+              '<div class="small text-secondary mt-1">' +
+              '<span class="badge bg-light text-dark border me-1">' + ADMIN.esc(r.category_name || "Uncategorized") + '</span>' +
+              (r.brand_name ? '<span class="text-secondary me-1">· ' + ADMIN.esc(r.brand_name) + '</span>' : '') +
+              '</div></div>';
           } },
-        { label: "SKU", render: function (r) { return "<code>" + ADMIN.esc(r.sku) + "</code>"; } },
+        { label: "SKU", render: function (r) { return '<code class="fw-semibold">' + ADMIN.esc(r.sku) + "</code>"; } },
         { label: "Price", render: function (r) { return "<strong>" + ADMIN.esc(r.price_display) + "</strong>"; } },
         { label: "Stock", render: function (r) {
-            var low = r.is_low_stock ? ' <span class="badge bg-warning-subtle text-warning border border-warning-subtle ms-1">Low</span>' : '';
-            return '<strong>' + ADMIN.esc(r.available) + '</strong> <span class="small text-secondary">avail</span>' + low;
+            var badge = '';
+            if (r.stock <= 0) {
+              badge = '<span class="badge text-bg-danger ms-1">Out of Stock</span>';
+            } else if (r.is_low_stock) {
+              badge = '<span class="badge bg-warning-subtle text-warning border border-warning-subtle ms-1">Low (' + ADMIN.esc(r.available) + ' left)</span>';
+            } else {
+              badge = '<span class="badge bg-success-subtle text-success border border-success-subtle ms-1">In Stock</span>';
+            }
+            return '<div class="d-flex align-items-center gap-1 flex-wrap"><strong>' + ADMIN.esc(r.available) + '</strong> <span class="small text-secondary">avail</span> ' + badge +
+              ' <button class="btn btn-light border btn-sm py-0 px-2 ms-1 text-primary fw-medium" data-quick-restock="' + r.id + '" title="Quick Restock">+Stock</button></div>';
           } },
-        { label: "Status", render: function (r) { return ADMIN.badge(r.status); } }
+        { label: "Status", render: function (r) {
+            if (r.status === "published") {
+              return '<button class="btn btn-sm btn-outline-success py-0 px-2 d-inline-flex align-items-center gap-1" data-toggle-status="' + r.id + '" data-current-status="published" title="Click to unpublish (switch to draft)">' +
+                '<span class="badge bg-success p-1 rounded-circle"></span> Published <span class="small opacity-50 ms-1">✕</span></button>';
+            } else if (r.status === "draft") {
+              return '<button class="btn btn-sm btn-outline-secondary py-0 px-2 d-inline-flex align-items-center gap-1" data-toggle-status="' + r.id + '" data-current-status="draft" title="Click to publish live">' +
+                '<span class="badge bg-secondary p-1 rounded-circle"></span> Draft <span class="small text-primary fw-bold ms-1">↑ Publish</span></button>';
+            }
+            return ADMIN.badge(r.status);
+          } }
       ],
       rowActions: function (row) {
         var acts = [
@@ -1083,6 +1105,276 @@
       onAdd: function () { self.openCreate(); }
     };
     self.applyConfig(cfg);
+
+    self.renderShell = function () {
+      self.root.innerHTML =
+        '<div class="dz-admin-page-head mb-3">' +
+          '<div>' +
+            '<span class="dz-eyebrow">Catalog</span>' +
+            '<h1 class="page-title mb-1">Products</h1>' +
+            '<p class="page-description mb-0">Create products, manage visibility, stock inventory, media and variants.</p>' +
+          '</div>' +
+          '<div class="dz-admin-page-head-actions">' +
+            '<button class="btn btn-primary" id="btn-add-product">' +
+              '<span class="me-1">＋</span> Add product' +
+            '</button>' +
+          '</div>' +
+        '</div>' +
+        '<div class="dz-admin-stats-host mb-3" id="products-stats"></div>' +
+        '<div class="dz-admin-toolbar mb-3" id="products-toolbar"></div>' +
+        '<div class="dz-admin-list-wrap" id="products-list"></div>';
+
+      var addBtn = self.root.querySelector("#btn-add-product");
+      if (addBtn) addBtn.addEventListener("click", function () { self.openCreate(); });
+      self.renderToolbar();
+    };
+
+    self.renderStats = function (stats) {
+      var host = self.root.querySelector("#products-stats");
+      if (!host || !stats) return;
+      var curStatus = self.state.filters.status || "";
+      var curStock = self.state.filters.stock_status || "";
+      var isAllActive = curStatus === "" && curStock === "";
+
+      host.innerHTML =
+        '<div class="dz-stat-grid">' +
+          '<div class="dz-card dz-stat-card is-clickable' + (isAllActive ? " is-active" : "") + '" data-stat-filter="all" title="View all products">' +
+            '<div class="dz-stat-value">' + ADMIN.esc(stats.total || 0) + '</div>' +
+            '<div class="dz-stat-label">Total Products</div>' +
+          '</div>' +
+          '<div class="dz-card dz-stat-card is-clickable' + (curStatus === "published" ? " is-active" : "") + '" data-stat-filter="published" title="Filter published products">' +
+            '<div class="dz-stat-value text-success">' + ADMIN.esc(stats.published || 0) + '</div>' +
+            '<div class="dz-stat-label">Published</div>' +
+          '</div>' +
+          '<div class="dz-card dz-stat-card is-clickable' + (curStatus === "draft" ? " is-active" : "") + '" data-stat-filter="draft" title="Filter draft products">' +
+            '<div class="dz-stat-value text-secondary">' + ADMIN.esc(stats.draft || 0) + '</div>' +
+            '<div class="dz-stat-label">Drafts</div>' +
+          '</div>' +
+          '<div class="dz-card dz-stat-card is-clickable' + (curStock === "low" ? " is-active" : "") + '" data-stat-filter="low_stock" title="Filter low stock items">' +
+            '<div class="dz-stat-value text-warning">' + ADMIN.esc(stats.low_stock || 0) + '</div>' +
+            '<div class="dz-stat-label">Low Stock</div>' +
+          '</div>' +
+          '<div class="dz-card dz-stat-card is-clickable' + (curStock === "out" ? " is-active" : "") + '" data-stat-filter="out_of_stock" title="Filter out of stock items">' +
+            '<div class="dz-stat-value text-danger">' + ADMIN.esc(stats.out_of_stock || 0) + '</div>' +
+            '<div class="dz-stat-label">Out of Stock</div>' +
+          '</div>' +
+        '</div>';
+
+      host.querySelectorAll("[data-stat-filter]").forEach(function (card) {
+        card.addEventListener("click", function () {
+          var type = card.getAttribute("data-stat-filter");
+          if (type === "all") {
+            delete self.state.filters.status;
+            delete self.state.filters.stock_status;
+          } else if (type === "published") {
+            self.state.filters.status = "published";
+            delete self.state.filters.stock_status;
+          } else if (type === "draft") {
+            self.state.filters.status = "draft";
+            delete self.state.filters.stock_status;
+          } else if (type === "low_stock") {
+            delete self.state.filters.status;
+            self.state.filters.stock_status = "low";
+          } else if (type === "out_of_stock") {
+            delete self.state.filters.status;
+            self.state.filters.stock_status = "out";
+          }
+          self.state.page = 1;
+          self.renderToolbar();
+          self.load();
+        });
+      });
+    };
+
+    self.renderToolbar = function (categories) {
+      var tb = self.root.querySelector("#products-toolbar");
+      if (!tb) return;
+      var catList = categories || self.cachedCategories || [];
+      var catOptions = catList.map(function (c) {
+        return '<option value="' + c.id + '"' + (String(self.state.filters.category_id) === String(c.id) ? " selected" : "") + '>' + ADMIN.esc(c.name) + '</option>';
+      }).join("");
+
+      var html =
+        '<div class="dz-admin-search">' +
+          '<span class="dz-admin-search-icon" aria-hidden="true">🔍</span>' +
+          '<input type="search" class="form-control form-control-sm" id="products-search" placeholder="Search product name or SKU…" value="' + ADMIN.esc(self.state.q || "") + '">' +
+        '</div>' +
+        '<select class="form-select form-select-sm dz-admin-filter" data-filter="category_id">' +
+          '<option value="">All Categories</option>' +
+          catOptions +
+        '</select>' +
+        '<select class="form-select form-select-sm dz-admin-filter" data-filter="status">' +
+          '<option value="">All Statuses</option>' +
+          '<option value="published"' + (self.state.filters.status === "published" ? " selected" : "") + '>Published</option>' +
+          '<option value="draft"' + (self.state.filters.status === "draft" ? " selected" : "") + '>Draft</option>' +
+          '<option value="archived"' + (self.state.filters.status === "archived" ? " selected" : "") + '>Archived</option>' +
+        '</select>' +
+        '<select class="form-select form-select-sm dz-admin-filter" data-filter="stock_status">' +
+          '<option value="">All Stock Levels</option>' +
+          '<option value="in"' + (self.state.filters.stock_status === "in" ? " selected" : "") + '>In Stock</option>' +
+          '<option value="low"' + (self.state.filters.stock_status === "low" ? " selected" : "") + '>Low Stock</option>' +
+          '<option value="out"' + (self.state.filters.stock_status === "out" ? " selected" : "") + '>Out of Stock</option>' +
+        '</select>' +
+        '<select class="form-select form-select-sm dz-admin-filter" data-filter="sort">' +
+          '<option value="newest"' + (self.state.filters.sort === "newest" || !self.state.filters.sort ? " selected" : "") + '>Sort: Newest</option>' +
+          '<option value="price_asc"' + (self.state.filters.sort === "price_asc" ? " selected" : "") + '>Sort: Price (Low → High)</option>' +
+          '<option value="price_desc"' + (self.state.filters.sort === "price_desc" ? " selected" : "") + '>Sort: Price (High → Low)</option>' +
+          '<option value="name_asc"' + (self.state.filters.sort === "name_asc" ? " selected" : "") + '>Sort: Name (A → Z)</option>' +
+        '</select>' +
+        '<button class="btn btn-light border btn-sm" data-admin-refresh type="button" title="Refresh list">Refresh</button>';
+
+      var hasFilters = self.state.q || Object.keys(self.state.filters).some(function (k) { return self.state.filters[k]; });
+      if (hasFilters) {
+        html += '<button class="btn btn-outline-secondary btn-sm" id="products-clear-filters" type="button">Clear</button>';
+      }
+      tb.innerHTML = html;
+
+      var search = tb.querySelector("#products-search");
+      var t;
+      search.addEventListener("input", function () {
+        clearTimeout(t);
+        t = setTimeout(function () {
+          self.state.q = search.value.trim();
+          self.state.page = 1;
+          self.load();
+        }, 300);
+      });
+
+      tb.querySelectorAll("[data-filter]").forEach(function (sel) {
+        sel.addEventListener("change", function () {
+          var k = sel.getAttribute("data-filter");
+          if (sel.value) self.state.filters[k] = sel.value;
+          else delete self.state.filters[k];
+          self.state.page = 1;
+          self.load();
+        });
+      });
+
+      tb.querySelector("[data-admin-refresh]").addEventListener("click", function () { self.load(); });
+      var clearBtn = tb.querySelector("#products-clear-filters");
+      if (clearBtn) {
+        clearBtn.addEventListener("click", function () {
+          self.state.q = "";
+          self.state.filters = {};
+          self.state.page = 1;
+          self.renderToolbar();
+          self.load();
+        });
+      }
+    };
+
+    self.load = function (page) {
+      if (page != null) self.state.page = page;
+      var list = self.root.querySelector("#products-list");
+      list.innerHTML = ADMIN.loadingHTML;
+      var params = { page: self.state.page, q: self.state.q };
+      for (var k in self.state.filters) params[k] = self.state.filters[k];
+      ADMIN.get(self.cfg.endpoint, params).then(function (res) {
+        if (res.auth) return;
+        if (!res.ok) { list.innerHTML = ADMIN.errorHTML("Could not load products."); return; }
+        var body = res.data || {};
+        var meta = body.meta || {};
+        var rows = body.data || [];
+        self.rowsById = {};
+
+        if (meta.categories && meta.categories.length) {
+          self.cachedCategories = meta.categories;
+        }
+        if (meta.stats) {
+          self.renderStats(meta.stats);
+        }
+
+        var filtered = self.state.q !== "" || Object.keys(self.state.filters).some(function (key) { return self.state.filters[key] !== ""; });
+        if (rows.length === 0) {
+          list.innerHTML = ADMIN.emptyHTML(filtered ? "No products match your search or filter criteria." : self.cfg.emptyText);
+          return;
+        }
+
+        rows.forEach(function (r) { self.rowsById[String(r.id)] = r; });
+        var thead = "<thead><tr>" + self.cfg.columns.map(function (c) {
+          return "<th>" + ADMIN.esc(c.label) + "</th>";
+        }).join("") + '<th style="min-width:180px;">Actions</th></tr></thead>';
+        var tbody = "<tbody>" + rows.map(function (row) { return self.renderRow(row); }).join("") + "</tbody>";
+        list.innerHTML =
+          '<div class="dz-card p-0 dz-table-card"><div class="table-responsive"><table class="table dz-admin-table align-middle mb-0">' +
+          thead + tbody + "</table></div>" + ADMIN.paginationHTML(meta) + "</div>";
+        self.bindTable(list);
+        self.bindCustomProductActions(list);
+      }).catch(function () {
+        list.innerHTML = ADMIN.errorHTML("Network error while loading products.");
+      });
+    };
+
+    self.bindCustomProductActions = function (list) {
+      list.querySelectorAll("[data-toggle-status]").forEach(function (btn) {
+        btn.addEventListener("click", function (e) {
+          e.stopPropagation();
+          var pid = btn.getAttribute("data-toggle-status");
+          var currentStatus = btn.getAttribute("data-current-status");
+          var nextAction = currentStatus === "published" ? "unpublish-form" : "publish-form";
+          btn.disabled = true;
+          ADMIN.act("POST", "/admin/api/products/" + pid + "/" + nextAction)
+            .then(function () {
+              ADMIN.toast(currentStatus === "published" ? "Product unpublished (draft)." : "Product published live.", true);
+              self.load(self.state.page);
+            })
+            .catch(function (err) {
+              btn.disabled = false;
+              ADMIN.toast(err.message, false);
+            });
+        });
+      });
+
+      list.querySelectorAll("[data-quick-restock]").forEach(function (btn) {
+        btn.addEventListener("click", function (e) {
+          e.stopPropagation();
+          var pid = btn.getAttribute("data-quick-restock");
+          var row = self.rowsById[String(pid)];
+          if (!row) return;
+          self.openQuickRestockModal(row);
+        });
+      });
+    };
+
+    self.openQuickRestockModal = function (row) {
+      ADMIN.ensureModalHost();
+      var body =
+        '<p class="mb-3">Quick restock for <strong>' + ADMIN.esc(row.name) + '</strong> (SKU: <code>' + ADMIN.esc(row.sku) + '</code>)</p>' +
+        '<div class="d-flex align-items-center gap-3 p-3 bg-light rounded border mb-3">' +
+          '<div><span class="small text-secondary d-block">Current Stock</span><span class="fs-5 fw-bold">' + ADMIN.esc(row.stock) + '</span></div>' +
+          '<div><span class="small text-secondary d-block">Available</span><span class="fs-5 fw-bold text-success">' + ADMIN.esc(row.available) + '</span></div>' +
+          '<div><span class="small text-secondary d-block">Low-stock Alert</span><span class="fs-5 fw-bold text-warning">' + ADMIN.esc(row.low_stock_threshold) + '</span></div>' +
+        '</div>' +
+        '<form id="quickRestockForm">' +
+          '<div class="mb-3">' +
+            '<label class="form-label small fw-medium">Quantity units to add to inventory</label>' +
+            '<input type="number" name="quantity" class="form-control" min="1" value="10" required>' +
+          '</div>' +
+        '</form>';
+      var footer =
+        '<button class="btn btn-light border" data-cc>Cancel</button>' +
+        '<button class="btn btn-primary" id="btn-save-quick-restock">Add to stock</button>';
+      ADMIN.modal.open("Quick Restock", body, footer);
+      var modalEl = document.getElementById("adminModal");
+      var saveBtn = modalEl.querySelector("#btn-save-quick-restock");
+      if (saveBtn) {
+        saveBtn.addEventListener("click", function () {
+          var qty = parseInt(modalEl.querySelector('[name="quantity"]').value, 10);
+          if (!qty || qty < 1) { ADMIN.toast("Please enter 1 or more units.", false); return; }
+          saveBtn.disabled = true;
+          ADMIN.act("POST", "/admin/api/products/" + row.id + "/inventory/restock", null, { quantity: qty })
+            .then(function () {
+              ADMIN.modal.close();
+              ADMIN.toast("Added " + qty + " units to stock.", true);
+              self.load(self.state.page);
+            })
+            .catch(function (err) {
+              saveBtn.disabled = false;
+              ADMIN.toast(err.message, false);
+            });
+        });
+      }
+    };
 
     self.openCreate = function () {
       ADMIN.loadOptions().then(function (opt) {
@@ -1129,21 +1421,64 @@
       }).catch(function () { list.innerHTML = ADMIN.errorHTML("Network error."); });
     };
 
+    self.renderGalleryHTML = function (images, productId) {
+      if (!images || images.length === 0) {
+        return '<p class="empty-note w-100">No images yet — upload photos below.</p>';
+      }
+      return images.map(function (img, i) {
+        return '<figure class="dz-gallery-item' + (img.is_primary ? " is-cover" : "") + '" data-id="' + img.id + '">' +
+          '<img class="dz-gallery-thumb" src="' + ADMIN.esc(img.url) + '" alt="' + ADMIN.esc(img.alt_text) + '">' +
+          '<figcaption class="small">' +
+          (img.is_primary ? '<span class="badge text-bg-primary">Cover Photo</span>' : '<span class="text-secondary small">Photo #' + (i + 1) + '</span>') +
+          (img.alt_text ? '<span class="text-truncate small text-secondary" title="' + ADMIN.esc(img.alt_text) + '">' + ADMIN.esc(img.alt_text) + '</span>' : '') +
+          '<div class="d-flex flex-wrap gap-1 mt-1">' +
+          (img.is_primary ? "" : '<button class="btn btn-light border btn-sm py-0 px-2" type="button" data-act="img-cover" data-id="' + img.id + '" title="Set as cover photo">Cover</button>') +
+          '<button class="btn btn-light border btn-sm py-0 px-2" type="button" data-act="img-alt" data-id="' + img.id + '" title="Edit alt text">Alt</button>' +
+          (i > 0 ? '<button class="btn btn-light border btn-sm py-0 px-1" type="button" data-act="img-up" data-id="' + img.id + '" title="Move up">↑</button>' : "") +
+          (i < images.length - 1 ? '<button class="btn btn-light border btn-sm py-0 px-1" type="button" data-act="img-down" data-id="' + img.id + '" title="Move down">↓</button>' : "") +
+          '<button class="btn btn-outline-danger btn-sm py-0 px-2" type="button" data-act="img-del" data-id="' + img.id + '" title="Delete photo">Delete</button>' +
+          '</div>' +
+          "</figcaption></figure>";
+      }).join("");
+    };
+
+    self.refreshGallery = function (id) {
+      var section = document.getElementById("product-gallery-section");
+      var grid = (section && section.querySelector(".dz-gallery-grid"));
+      if (!grid) return Promise.resolve();
+      return ADMIN.get("/admin/api/products/" + id + "/images").then(function (res) {
+        if (!res.ok) return;
+        var images = res.data && res.data.data ? res.data.data : [];
+        grid.innerHTML = self.renderGalleryHTML(images, id);
+        // Reset upload form inside gallery section
+        var uploadForm = section ? section.querySelector('[data-form="upload"]') : null;
+        if (uploadForm) {
+          uploadForm.reset();
+          var hidden = uploadForm.querySelector("#p-img-b64");
+          if (hidden) hidden.value = "";
+          var prev = uploadForm.querySelector("#p-img-preview");
+          if (prev) prev.innerHTML = "";
+          var fileInp = uploadForm.querySelector('input[type="file"]');
+          if (fileInp) fileInp.value = "";
+          var submitBtn = uploadForm.querySelector('button[type="submit"]');
+          if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.textContent = "Upload";
+          }
+        }
+        var dropzone = section.querySelector("#gallery-dropzone");
+        if (dropzone) dropzone.classList.remove("is-dragover");
+        if (section) {
+          section.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        }
+      });
+    };
+
     self.renderEditor = function (d, list) {
       var p = d.product;
       var inv = d.inventory || { quantity: 0, reserved: 0, low_stock_threshold: 0 };
       var avail = inv.quantity - inv.reserved; if (avail < 0) avail = 0;
-      var gallery = (d.images || []).map(function (img, i) {
-        return '<figure class="dz-gallery-item' + (img.is_primary ? " is-cover" : "") + '" data-id="' + img.id + '">' +
-          '<img class="dz-gallery-thumb" src="' + ADMIN.esc(img.url) + '" alt="' + ADMIN.esc(img.alt_text) + '">' +
-          '<figcaption class="small">' + (img.is_primary ? '<span class="badge text-bg-primary">Cover</span>' : "") +
-          ' <button class="btn btn-light border btn-sm mt-1" data-act="img-alt" data-id="' + img.id + '">Alt</button>' +
-          (img.is_primary ? "" : '<button class="btn btn-light border btn-sm mt-1" data-act="img-cover" data-id="' + img.id + '">Cover</button>') +
-          (i > 0 ? '<button class="btn btn-light border btn-sm mt-1" data-act="img-up" data-id="' + img.id + '">↑</button>' : "") +
-          (i < d.images.length - 1 ? '<button class="btn btn-light border btn-sm mt-1" data-act="img-down" data-id="' + img.id + '">↓</button>' : "") +
-          '<button class="btn btn-outline-danger btn-sm mt-1" data-act="img-del" data-id="' + img.id + '">Delete</button>' +
-          "</figcaption></figure>";
-      }).join("");
+      var gallery = self.renderGalleryHTML(d.images, p.id);
       var variants = (d.variants || []).map(function (v) {
         return "<tr data-vid=\"" + v.id + "\">" +
           "<td><input class=\"form-control form-control-sm\" data-vf=\"name\" value=\"" + ADMIN.esc(v.name) + "\"></td>" +
@@ -1162,11 +1497,27 @@
         return '<option value="' + s + '"' + (s === p.status ? " selected" : "") + ">" + s + "</option>";
       }).join("");
 
-      list.innerHTML = self.panelHead("Product editor") +
-        '<div class="dz-editor-breadcrumb mb-2"><code>' + ADMIN.esc(p.sku) + "</code> · " + ADMIN.esc(p.slug) + "</div>" +
+      var isPub = p.status === "published";
+      var pubBtn = isPub
+        ? '<button class="btn btn-light border btn-sm" data-act="toggle-publish" data-action="unpublish-form">Unpublish</button>'
+        : '<button class="btn btn-primary btn-sm" data-act="toggle-publish" data-action="publish-form">Publish</button>';
+
+      list.innerHTML =
+        '<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">' +
+          '<div class="d-flex align-items-center gap-2">' +
+            '<button class="btn btn-light border btn-sm" data-admin-back>&larr; Back to list</button>' +
+            '<h2 class="h5 mb-0 fw-bold">' + ADMIN.esc(p.name) + '</h2>' +
+            ADMIN.badge(p.status) +
+          '</div>' +
+          '<div class="d-flex align-items-center gap-2">' +
+            (p.slug ? '<a class="btn btn-outline-secondary btn-sm" href="/product/' + ADMIN.esc(p.slug) + '" target="_blank">View storefront ↗</a>' : '') +
+            pubBtn +
+          '</div>' +
+        '</div>' +
+        '<div class="dz-editor-breadcrumb small text-secondary mb-3">SKU <code>' + ADMIN.esc(p.sku) + "</code> · Slug <code>" + ADMIN.esc(p.slug) + "</code></div>" +
         '<div class="row g-3">' +
           '<div class="col-12 col-lg-7">' +
-            '<div class="dz-card p-3 p-lg-4 mb-3"><h3 class="h6">Product details</h3>' +
+            '<div class="dz-card p-3 p-lg-4 mb-3"><h3 class="h6 fw-bold mb-3">Product details</h3>' +
               '<form data-form="details">' +
                 '<div class="row g-2">' +
                   field("name", "Name", "text", p.name, true) +
@@ -1183,21 +1534,30 @@
                 "</div>" +
                 textfield("short_description", "Short description", p.short_description, 2) +
                 textfield("description", "Description", p.description, 4) +
-                '<button class="btn btn-primary mt-2" type="submit">Save details</button>' +
+                '<button class="btn btn-primary mt-3" type="submit">Save details</button>' +
               "</form></div>" +
-            '<div class="dz-card p-3 p-lg-4 mb-3"><div class="d-flex justify-content-between align-items-center mb-2"><h3 class="h6 mb-0">Gallery</h3><button class="btn btn-outline-primary btn-sm" type="button" data-act="upload-modal">Upload in modal</button></div>' +
-              '<div class="dz-gallery-grid mb-3">' + (gallery || '<p class="empty-note">No images yet.</p>') + "</div>" +
+            '<div class="dz-card p-3 p-lg-4 mb-3" id="product-gallery-section">' +
+              '<div class="d-flex justify-content-between align-items-center mb-2">' +
+                '<div><h3 class="h6 fw-bold mb-0">Gallery</h3><span class="small text-secondary">Manage photos, reorder, or set cover photo.</span></div>' +
+                '<button class="btn btn-outline-primary btn-sm" type="button" data-act="upload-modal">Upload in modal</button>' +
+              '</div>' +
+              '<div class="dz-gallery-grid mb-3" id="p-gallery-grid">' + gallery + "</div>" +
               '<form data-form="upload" class="dz-upload-form">' +
+                '<div class="dz-upload-dropzone mb-2" id="gallery-dropzone">' +
+                  '<input type="file" accept="image/png,image/jpeg,image/gif,image/webp" data-base64-target="p-img-b64" data-preview-target="p-img-preview" id="p-gallery-file-input">' +
+                  '<div class="dz-upload-dropzone-icon">📷</div>' +
+                  '<div class="fw-medium small text-dark">Drag & drop product photo here, or click to browse</div>' +
+                  '<div class="small text-secondary">PNG, JPEG, GIF or WEBP · max 2 MB</div>' +
+                '</div>' +
                 '<div class="row g-2 align-items-end">' +
-                  '<div class="col-12 col-lg-5"><label class="form-label small">Image file</label><input type="file" accept="image/png,image/jpeg,image/gif,image/webp" class="form-control" data-base64-target="p-img-b64" data-preview-target="p-img-preview"></div>' +
-                  '<div class="col-12 col-lg-4"><label class="form-label small">Alt text</label><input name="alt_text" class="form-control" placeholder="Describe the photo"></div>' +
-                  '<div class="col-6 col-lg-2"><div class="form-check"><input class="form-check-input" type="checkbox" name="is_primary" value="1" id="p-img-primary"><label class="form-check-label small" for="p-img-primary">Make cover</label></div></div>' +
-                  '<div class="col-6 col-lg-1"><button class="btn btn-primary w-100" type="submit">Upload</button></div>' +
+                  '<div class="col-12 col-lg-7"><label class="form-label small">Alt text</label><input name="alt_text" class="form-control" placeholder="Describe the photo for SEO"></div>' +
+                  '<div class="col-6 col-lg-3"><div class="form-check mt-3"><input class="form-check-input" type="checkbox" name="is_primary" value="1" id="p-img-primary"><label class="form-check-label small" for="p-img-primary">Make cover photo</label></div></div>' +
+                  '<div class="col-6 col-lg-2"><button class="btn btn-primary w-100" type="submit">Upload</button></div>' +
                 "</div>" +
                 '<input type="hidden" name="image" id="p-img-b64" value="">' +
                 '<div id="p-img-preview" class="dz-preview mt-2"></div>' +
               "</form></div>" +
-            '<div class="dz-card p-3 p-lg-4"><div class="d-flex justify-content-between align-items-center mb-2"><h3 class="h6 mb-0">Variants</h3><button class="btn btn-outline-primary btn-sm" type="button" data-act="var-add-modal">Add in modal</button></div>' +
+            '<div class="dz-card p-3 p-lg-4"><div class="d-flex justify-content-between align-items-center mb-2"><h3 class="h6 fw-bold mb-0">Variants</h3><button class="btn btn-outline-primary btn-sm" type="button" data-act="var-add-modal">Add in modal</button></div>' +
               '<div class="table-responsive"><table class="table dz-admin-table mb-2"><thead><tr><th>Name</th><th>SKU</th><th>Price</th><th>State</th><th>Actions</th></tr></thead><tbody>' +
               (variants || '<tr><td colspan="5" class="text-secondary">No variants.</td></tr>') + "</tbody></table></div>" +
               '<form data-form="var-add" class="row g-2 align-items-end">' +
@@ -1209,23 +1569,23 @@
               "</form></div>" +
           "</div>" +
           '<div class="col-12 col-lg-5">' +
-            '<div class="dz-card p-3 p-lg-4 mb-3"><h3 class="h6">Inventory</h3>' +
+            '<div class="dz-card p-3 p-lg-4 mb-3"><h3 class="h6 fw-bold">Inventory</h3>' +
               '<div class="dz-stats-row mb-3">' +
                 statBox("On hand", inv.quantity) + statBox("Available", avail) + statBox("Reserved", inv.reserved) + statBox("Low at", inv.low_stock_threshold) +
               "</div>" +
-              (inv.low_stock ? '<p class="alert alert-warning py-2 small">Low stock.</p>' : "") +
+              (inv.low_stock ? '<p class="alert alert-warning py-2 small">Low stock alert.</p>' : "") +
               '<form data-form="restock" class="dz-inv-row"><input name="quantity" type="number" min="1" value="1" class="form-control form-control-sm"><button class="btn btn-primary btn-sm" type="submit">Restock</button></form>' +
               '<form data-form="set-exact" class="dz-inv-row"><input name="quantity" type="number" min="0" value="' + inv.quantity + '" class="form-control form-control-sm"><input name="low_stock_threshold" type="number" min="0" value="' + inv.low_stock_threshold + '" class="form-control form-control-sm"><button class="btn btn-light border btn-sm" type="submit">Set exact</button></form>' +
               '<form data-form="threshold" class="dz-inv-row"><input name="low_stock_threshold" type="number" min="0" value="' + inv.low_stock_threshold + '" class="form-control form-control-sm"><button class="btn btn-light border btn-sm" type="submit">Threshold</button></form>' +
               '<div class="dz-form-feedback small text-secondary mt-2" data-feedback></div>' +
             "</div>" +
-            '<div class="dz-card p-3 p-lg-4 mb-3"><h3 class="h6">Search listing (SEO)</h3>' +
+            '<div class="dz-card p-3 p-lg-4 mb-3"><h3 class="h6 fw-bold">Search listing (SEO)</h3>' +
               '<form data-form="seo">' +
                 field("meta_title", "Meta title", "text", p.meta_title) +
                 textfield("meta_description", "Meta description", p.meta_description, 3) +
                 '<button class="btn btn-primary mt-2" type="submit">Save SEO</button>' +
               "</form></div>" +
-            '<div class="dz-card p-3 p-lg-4"><h3 class="h6">More actions</h3>' +
+            '<div class="dz-card p-3 p-lg-4"><h3 class="h6 fw-bold">More actions</h3>' +
               '<button class="btn btn-light border mb-2" data-act="featured">Toggle featured</button> ' +
               '<button class="btn btn-outline-danger" data-act="delete-product">Delete product</button></div>' +
           "</div>" +
@@ -1256,11 +1616,26 @@
         var aid = b.getAttribute("data-id");
         var vid = b.getAttribute("data-vid");
         var reload = function () { self2.openEditor(id); };
-        if (act === "img-cover") self2.imgAction(id, aid, "primary-form", reload);
-        else if (act === "img-up") self2.imgAction(id, aid, "move-form", { direction: -1 }, reload);
-        else if (act === "img-down") self2.imgAction(id, aid, "move-form", { direction: 1 }, reload);
-        else if (act === "img-del") ADMIN.confirm({ title: "Delete image", message: "Remove this image from the gallery?", confirmLabel: "Delete", danger: true }).then(function (yes) { if (yes) self2.imgAction(id, aid, "delete-form", {}, reload); });
+        var refreshGallery = function () { self2.refreshGallery(id); };
+
+        if (act === "img-cover") self2.imgAction(id, aid, "primary-form", refreshGallery);
+        else if (act === "img-up") self2.imgAction(id, aid, "move-form", { direction: -1 }, refreshGallery);
+        else if (act === "img-down") self2.imgAction(id, aid, "move-form", { direction: 1 }, refreshGallery);
+        else if (act === "img-del") ADMIN.confirm({ title: "Delete image", message: "Remove this image from the gallery?", confirmLabel: "Delete", danger: true }).then(function (yes) { if (yes) self2.imgAction(id, aid, "delete-form", {}, refreshGallery); });
         else if (act === "img-alt") self2.imgAlt(id, aid);
+        else if (act === "toggle-publish") {
+          var actionUrl = b.getAttribute("data-action");
+          b.disabled = true;
+          ADMIN.act("POST", "/admin/api/products/" + id + "/" + actionUrl)
+            .then(function () {
+              ADMIN.toast("Product visibility updated.", true);
+              self2.openEditor(id);
+            })
+            .catch(function (err) {
+              b.disabled = false;
+              ADMIN.toast(err.message, false);
+            });
+        }
         else if (act === "var-save") self2.varSave(id, vid, b);
         else if (act === "var-del") ADMIN.confirm({ title: "Delete variant", message: "Delete this variant?", confirmLabel: "Delete", danger: true }).then(function (yes) { if (yes) self2.varAction(id, vid, "delete-form", {}, reload); });
         else if (act === "featured") self2.productAction(id, "featured-form", {}, reload);
@@ -1268,6 +1643,46 @@
         else if (act === "var-add-modal") self2.varModal(id);
         else if (act === "delete-product") ADMIN.confirm({ title: "Delete product", message: "Delete this product? Products linked to orders cannot be deleted.", confirmLabel: "Delete", danger: true }).then(function (yes) { if (yes) self2.productAction(id, "delete-form", {}, function () { self2.showList(); }); });
       });
+
+      // drag & drop for gallery dropzone
+      var dropzone = list.querySelector("#gallery-dropzone");
+      if (dropzone) {
+        ["dragenter", "dragover"].forEach(function (evtName) {
+          dropzone.addEventListener(evtName, function (e) {
+            e.preventDefault();
+            e.stopPropagation();
+            dropzone.classList.add("is-dragover");
+          });
+        });
+        ["dragleave", "drop"].forEach(function (evtName) {
+          dropzone.addEventListener(evtName, function (e) {
+            e.preventDefault();
+            e.stopPropagation();
+            dropzone.classList.remove("is-dragover");
+          });
+        });
+        dropzone.addEventListener("drop", function (e) {
+          var files = e.dataTransfer && e.dataTransfer.files;
+          if (files && files.length > 0) {
+            var file = files[0];
+            if (file.size > 2 * 1024 * 1024) {
+              ADMIN.toast("Image is larger than 2 MB.", false);
+              return;
+            }
+            var reader = new FileReader();
+            reader.onload = function (ev) {
+              var hidden = list.querySelector("#p-img-b64");
+              if (hidden) hidden.value = String(ev.target.result);
+              var prev = list.querySelector("#p-img-preview");
+              if (prev) {
+                prev.innerHTML = '<div class="d-flex align-items-center gap-2 p-2 bg-light rounded border"><img src="' + ev.target.result + '" alt="preview" style="max-height:54px;border-radius:6px;"><div class="small"><strong>' + ADMIN.esc(file.name) + '</strong> (' + Math.round(file.size / 1024) + ' KB)<div class="text-success small">Ready to upload</div></div></div>';
+              }
+            };
+            reader.readAsDataURL(file);
+          }
+        });
+      }
+
       // delegated submits
       list.addEventListener("submit", function (e) {
         var form = e.target.closest("[data-form]");
@@ -1303,15 +1718,18 @@
           var hidden = list.querySelector("#" + target);
           if (hidden) hidden.value = String(ev.target.result);
           var prev = list.querySelector("#" + input.getAttribute("data-preview-target"));
-          if (prev) { prev.innerHTML = '<img src="' + ev.target.result + '" alt="preview">'; }
+          if (prev) {
+            prev.innerHTML = '<div class="d-flex align-items-center gap-2 p-2 bg-light rounded border"><img src="' + ev.target.result + '" alt="preview" style="max-height:54px;border-radius:6px;"><div class="small"><strong>' + ADMIN.esc(file.name) + '</strong> (' + Math.round(file.size / 1024) + ' KB)<div class="text-success small">Ready to upload</div></div></div>';
+          }
         };
         reader.readAsDataURL(file);
       });
     };
 
     self.imgAction = function (id, imgId, suffix, extra, reload) {
+      if (typeof extra === "function") { reload = extra; extra = {}; }
       ADMIN.act("POST", "/admin/api/images/" + imgId + "/" + suffix, null, Object.assign({ product_id: id }, extra || {}))
-        .then(function () { ADMIN.toast("Gallery updated.", true); reload(); })
+        .then(function () { ADMIN.toast("Gallery updated.", true); if (reload) reload(); })
         .catch(function (e) { ADMIN.toast(e.message, false); });
     };
     self.productAction = function (id, suffix, extra, done) {
@@ -1331,26 +1749,45 @@
       self.varAction(id, vid, "update-form", data, function () { self.openEditor(id); });
     };
     self.imgAlt = function (id, imgId) {
-      ADMIN.get("/admin/api/product-full/" + id).then(function (res) {
+      ADMIN.get("/admin/api/products/" + id + "/images").then(function (res) {
         if (!res.ok) return;
-        var img = (res.data.data.images || []).filter(function (x) { return String(x.id) === String(imgId); })[0];
+        var images = res.data && res.data.data ? res.data.data : [];
+        var img = images.filter(function (x) { return String(x.id) === String(imgId); })[0];
         if (!img) return;
-        var body = '<form id="altForm"><label class="form-label small">Alt text</label><input name="alt_text" class="form-control" value="' + ADMIN.esc(img.alt_text) + '"></form>';
-        var footer = '<button class="btn btn-light border" data-cc>Cancel</button><button class="btn btn-primary" data-cy>Save</button>';
+        var body = '<form id="altForm"><label class="form-label small">Alt text (descriptive photo text for SEO and accessibility)</label><input name="alt_text" class="form-control" value="' + ADMIN.esc(img.alt_text || "") + '" placeholder="e.g. Front view of product"></form>';
+        var footer = '<button class="btn btn-light border" data-cc>Cancel</button><button class="btn btn-primary" data-cy>Save alt text</button>';
         ADMIN.modal.open("Edit alt text", body, footer);
         var modalEl = document.getElementById("adminModal");
         modalEl.querySelector("[data-cy]").onclick = function () {
           var val = modalEl.querySelector('[name="alt_text"]').value;
-          self.imgAction(id, imgId, "update-form", { alt_text: val }, function () { ADMIN.modal.close(); self.openEditor(id); });
+          self.imgAction(id, imgId, "update-form", { alt_text: val }, function () {
+            ADMIN.modal.close();
+            self.refreshGallery(id);
+          });
         };
       });
     };
     self.uploadImage = function (id, form, fb) {
       var hidden = form.querySelector("#p-img-b64");
-      if (!hidden || hidden.value === "") { ADMIN.toast("Pick an image file first.", false); return; }
+      if (!hidden || hidden.value === "") { ADMIN.toast("Pick or drop an image file first.", false); return; }
+      var submitBtn = form.querySelector('button[type="submit"]');
+      if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.textContent = "Uploading…";
+      }
       ADMIN.act("POST", "/admin/api/products/" + id + "/images-form", null, serialize(form))
-        .then(function () { ADMIN.toast("Image uploaded.", true); self.openEditor(id); })
-        .catch(function (e) { if (fb) fb.textContent = ""; ADMIN.toast(e.message, false); });
+        .then(function () {
+          ADMIN.toast("Image uploaded successfully.", true);
+          self.refreshGallery(id);
+        })
+        .catch(function (e) {
+          if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.textContent = "Upload";
+          }
+          if (fb) fb.textContent = "";
+          ADMIN.toast(e.message, false);
+        });
     };
     self.uploadModal = function (id) {
       ADMIN.ensureModalHost();
@@ -1395,13 +1832,18 @@
         var alt = modalEl.querySelector("#modalImgAlt").value;
         var cover = modalEl.querySelector("#modalImgCover").checked ? 1 : 0;
         var payload = { image: b64Input.value, alt_text: alt, is_primary: cover };
+        var btn = modalEl.querySelector("#modalUploadBtn");
+        btn.disabled = true;
+        btn.textContent = "Uploading…";
         ADMIN.act("POST", "/admin/api/products/" + id + "/images-form", null, payload)
           .then(function () {
             ADMIN.toast("Image uploaded.", true);
             ADMIN.modal.close();
-            self.openEditor(id);
+            self.refreshGallery(id);
           })
           .catch(function (e) {
+            btn.disabled = false;
+            btn.textContent = "Upload";
             ADMIN.toast(e.message, false);
           });
       };
@@ -2514,12 +2956,51 @@
           var prevSel = prevTarget.charAt(0) !== "#" ? "#" + prevTarget : prevTarget;
           var preview = form.querySelector(prevSel);
           if (preview) {
-            preview.innerHTML = '<img src="' + ev.target.result + '" alt="preview" style="max-height:100px;border-radius:8px;border:1px solid #e6e9ef;">';
+            preview.innerHTML = '<div class="d-flex align-items-center gap-2 p-2 bg-light rounded border"><img src="' + ev.target.result + '" alt="preview" style="max-height:54px;border-radius:6px;"><div class="small"><strong>' + ADMIN.esc(file.name) + '</strong> (' + Math.round(file.size / 1024) + ' KB)<div class="text-success small">Ready to upload</div></div></div>';
           }
         }
       };
       reader.readAsDataURL(file);
     });
+
+    // drag & drop for standalone gallery dropzone
+    var standaloneDropzone = document.getElementById("standalone-gallery-dropzone");
+    if (standaloneDropzone) {
+      ["dragenter", "dragover"].forEach(function (evtName) {
+        standaloneDropzone.addEventListener(evtName, function (e) {
+          e.preventDefault();
+          e.stopPropagation();
+          standaloneDropzone.classList.add("is-dragover");
+        });
+      });
+      ["dragleave", "drop"].forEach(function (evtName) {
+        standaloneDropzone.addEventListener(evtName, function (e) {
+          e.preventDefault();
+          e.stopPropagation();
+          standaloneDropzone.classList.remove("is-dragover");
+        });
+      });
+      standaloneDropzone.addEventListener("drop", function (e) {
+        var files = e.dataTransfer && e.dataTransfer.files;
+        if (files && files.length > 0) {
+          var file = files[0];
+          if (file.size > 2 * 1024 * 1024) {
+            ADMIN.toast("Image is larger than 2 MB.", false);
+            return;
+          }
+          var reader = new FileReader();
+          reader.onload = function (ev) {
+            var hidden = document.getElementById("p-image-b64");
+            if (hidden) hidden.value = String(ev.target.result);
+            var prev = document.getElementById("p-image-preview");
+            if (prev) {
+              prev.innerHTML = '<div class="d-flex align-items-center gap-2 p-2 bg-light rounded border"><img src="' + ev.target.result + '" alt="preview" style="max-height:54px;border-radius:6px;"><div class="small"><strong>' + ADMIN.esc(file.name) + '</strong> (' + Math.round(file.size / 1024) + ' KB)<div class="text-success small">Ready to upload</div></div></div>';
+            }
+          };
+          reader.readAsDataURL(file);
+        }
+      });
+    }
 
     // generic data-ajax="admin" form submits
     document.addEventListener("submit", function (e) {
@@ -2569,7 +3050,45 @@
           ADMIN.activeModule.refresh();
         }
         var action = form.getAttribute("action") || "";
-        if (action.includes("/delete-form")) {
+        var isImageAction = action.includes("/images-form") || action.includes("/api/images/");
+        var gallerySec = document.getElementById("product-gallery-section");
+        if (isImageAction && gallerySec) {
+          var pid = gallerySec.getAttribute("data-product-id") || (form.querySelector('[name="product_id"]') && form.querySelector('[name="product_id"]').value);
+          if (pid) {
+            ADMIN.get("/admin/api/products/" + pid + "/images").then(function (imRes) {
+              if (!imRes.ok) return;
+              var images = imRes.data && imRes.data.data ? imRes.data.data : [];
+              var grid = gallerySec.querySelector(".dz-gallery-grid");
+              if (grid) {
+                if (images.length === 0) {
+                  grid.innerHTML = '<p class="empty-note w-100">No images yet — upload photos below.</p>';
+                } else {
+                  grid.innerHTML = images.map(function (img, i) {
+                    return '<figure class="dz-gallery-item' + (img.is_primary ? " is-cover" : "") + '" data-id="' + img.id + '">' +
+                      '<img class="dz-gallery-thumb" src="' + ADMIN.esc(img.url) + '" alt="' + ADMIN.esc(img.alt_text) + '">' +
+                      '<figcaption class="small">' +
+                      (img.is_primary ? '<span class="badge text-bg-primary">Cover Photo</span>' : '<span class="text-secondary small">Photo #' + (i + 1) + '</span>') +
+                      (img.alt_text ? '<span class="text-truncate small text-secondary" title="' + ADMIN.esc(img.alt_text) + '">' + ADMIN.esc(img.alt_text) + '</span>' : '') +
+                      '<div class="d-flex flex-wrap gap-1 mt-1">' +
+                      (img.is_primary ? "" : '<form method="post" action="/admin/api/images/' + img.id + '/primary-form" data-ajax="admin" class="d-inline"><input type="hidden" name="_csrf" value="' + ADMIN.csrf + '"><input type="hidden" name="product_id" value="' + pid + '"><button class="btn btn-light border btn-sm py-0 px-2" type="submit">Cover</button></form>') +
+                      (i > 0 ? '<form method="post" action="/admin/api/images/' + img.id + '/move-form" data-ajax="admin" class="d-inline"><input type="hidden" name="_csrf" value="' + ADMIN.csrf + '"><input type="hidden" name="product_id" value="' + pid + '"><input type="hidden" name="direction" value="-1"><button class="btn btn-light border btn-sm py-0 px-1" type="submit">↑</button></form>' : '') +
+                      (i < images.length - 1 ? '<form method="post" action="/admin/api/images/' + img.id + '/move-form" data-ajax="admin" class="d-inline"><input type="hidden" name="_csrf" value="' + ADMIN.csrf + '"><input type="hidden" name="product_id" value="' + pid + '"><input type="hidden" name="direction" value="1"><button class="btn btn-light border btn-sm py-0 px-1" type="submit">↓</button></form>' : '') +
+                      '<form method="post" action="/admin/api/images/' + img.id + '/delete-form" data-ajax="admin" class="d-inline" data-confirm="Remove this image from gallery?"><input type="hidden" name="_csrf" value="' + ADMIN.csrf + '"><input type="hidden" name="product_id" value="' + pid + '"><button class="btn btn-outline-danger btn-sm py-0 px-2" type="submit">Delete</button></form>' +
+                      '</div></figcaption></figure>';
+                  }).join("");
+                }
+              }
+              // Reset file input & previews
+              var b64Inp = gallerySec.querySelector("#p-image-b64");
+              if (b64Inp) b64Inp.value = "";
+              var fInp = gallerySec.querySelector("#p-image-file");
+              if (fInp) fInp.value = "";
+              var prevInp = gallerySec.querySelector("#p-image-preview");
+              if (prevInp) prevInp.innerHTML = "";
+              gallerySec.scrollIntoView({ behavior: "smooth", block: "nearest" });
+            });
+          }
+        } else if (action.includes("/delete-form")) {
           var rowOrCard = form.closest("tr, .dz-gallery-item, .dz-card");
           if (rowOrCard) rowOrCard.remove();
         } else if (!action.includes("/update") && !action.includes("/status") && !action.includes("/set-form")) {
