@@ -13,25 +13,25 @@
 //
 // TTL convention: seconds > 0 expire after N seconds; 0/null = forever.
 
-public let config_cache = map(
-    "default", "memory",
-    "driver_env", "SPID3R_CACHE_DRIVER",
-    "stores", map(
-        "memory", map(
-            "driver", "memory",
-            "persistent", false
-        ),
-        "file", map(
-            "driver", "file",
-            "path", "storage/framework/cache",
-            "persistent", true
-        ),
-        "database", map(
-            "driver", "database",
-            "table", "cache",
-            "persistent", true,
-            "shared", true,
-            "engines", "sqlite | postgres | mysql | mariadb"
-        )
-    )
-);
+public let config_cache = {
+    "default": "memory",
+    "driver_env": "SPID3R_CACHE_DRIVER",
+    "stores": {
+        "memory": {
+            "driver": "memory",
+            "persistent": false
+        },
+        "file": {
+            "driver": "file",
+            "path": "storage/framework/cache",
+            "persistent": true
+        },
+        "database": {
+            "driver": "database",
+            "table": "cache",
+            "persistent": true,
+            "shared": true,
+            "engines": "sqlite | postgres | mysql | mariadb"
+        }
+    }
+};

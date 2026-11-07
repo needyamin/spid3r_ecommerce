@@ -77,20 +77,20 @@ public class CampaignService {
     public fn save(self, code: string, name: string, kind: string, value_minor: int, min_order_minor: int, is_active: int) {
         let key = string(code).trim().upper();
         if key == "" {
-            throw validation_failed(map("code", "A campaign code is required."));
+            throw validation_failed({"code": "A campaign code is required."});
         }
         if kind != "percent" and kind != "fixed" {
-            throw validation_failed(map("type", "Campaign type must be percent or fixed."));
+            throw validation_failed({"type": "Campaign type must be percent or fixed."});
         }
         let existing = DB.table("campaigns").where("code", "=", key).first();
-        let data = map(
-            "code", key,
-            "name", string(name),
-            "type", kind,
-            "value_minor", value_minor,
-            "min_order_minor", min_order_minor,
-            "is_active", is_active
-        );
+        let data = {
+            "code": key,
+            "name": string(name),
+            "type": kind,
+            "value_minor": value_minor,
+            "min_order_minor": min_order_minor,
+            "is_active": is_active
+        };
         if existing != null {
             DB.table("campaigns").where("id", "=", existing["id"]).update(data);
             return existing["id"];

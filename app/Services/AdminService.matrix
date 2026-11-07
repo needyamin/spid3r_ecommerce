@@ -35,24 +35,24 @@ public class AdminService {
             i += 1;
         }
         let recent = DB.table("orders").orderBy("id", "DESC").limit(5).get();
-        return map(
-            "orders", self.count("orders"),
-            "pending_orders", DB.table("orders").where("status", "=", "awaiting_payment").count(),
-            "revenue_minor", revenue,
-            "customers", self.count("users"),
-            "products", self.count("products"),
-            "published_products", self.count("products", "status", "published"),
-            "low_stock", low_stock,
-            "coupons", self.count("coupons"),
-            "recent_orders", recent,
-            "has_recent", recent.len() > 0
-        );
+        return {
+            "orders": self.count("orders"),
+            "pending_orders": DB.table("orders").where("status", "=", "awaiting_payment").count(),
+            "revenue_minor": revenue,
+            "customers": self.count("users"),
+            "products": self.count("products"),
+            "published_products": self.count("products", "status", "published"),
+            "low_stock": low_stock,
+            "coupons": self.count("coupons"),
+            "recent_orders": recent,
+            "has_recent": recent.len() > 0
+        };
     }
 
     // SECURITY: never return raw user rows — they carry the password hash.
     // Lists select an explicit column whitelist.
     public fn customers(self, query: string = "") {
-        let q = DB.table("users").select(list("id", "name", "email", "phone", "status", "loyalty_points", "created_at")).orderBy("id", "DESC");
+        let q = DB.table("users").select(["id", "name", "email", "phone", "status", "loyalty_points", "created_at"]).orderBy("id", "DESC");
         if query != "" {
             q.where("email", "LIKE", "%" + query + "%");
         }
@@ -61,13 +61,13 @@ public class AdminService {
 
     public fn set_customer_status(self, user_id, status: string) -> bool {
         if status != "active" and status != "suspended" {
-            throw validation_failed(map("status", "Invalid account status."));
+            throw validation_failed({"status": "Invalid account status."});
         }
         let user = DB.table("users").where("id", "=", user_id).first();
         if user == null {
             throw not_found("Customer not found.");
         }
-        return DB.table("users").where("id", "=", user_id).update(map("status", status)) > 0;
+        return DB.table("users").where("id", "=", user_id).update({"status": status}) > 0;
     }
 
     // Staff = users holding at least one non-customer role. Each row carries
@@ -82,7 +82,7 @@ public class AdminService {
             if role != null and role["slug"] != "customer" {
                 let uid = int(links[i]["user_id"]);
                 if not by_user.has(uid) {
-                    by_user[uid] = map("slug", string(role["slug"]), "name", string(role["name"]));
+                    by_user[uid] = {"slug": string(role["slug"]), "name": string(role["name"])};
                 }
             }
             i += 1;
@@ -91,7 +91,7 @@ public class AdminService {
         if ids.len() == 0 {
             return [];
         }
-        let users = DB.table("users").select(list("id", "name", "email", "status", "created_at")).whereIn("id", ids).orderBy("id", "ASC").limit(200).get();
+        let users = DB.table("users").select(["id", "name", "email", "status", "created_at"]).whereIn("id", ids).orderBy("id", "ASC").limit(200).get();
         let needle = string(query).trim().lower();
         let out = [];
         i = 0;
@@ -133,7 +133,7 @@ public class AdminService {
         if exists > 0 {
             return false;
         }
-        DB.table("user_roles").insert(map("user_id", user_id, "role_id", role["id"]));
+        DB.table("user_roles").insert({"user_id": user_id, "role_id": role["id"]});
         return true;
     }
 
@@ -153,12 +153,12 @@ public class AdminService {
             .where("user_id", "=", user_id)
             .where("role_id", "=", role["id"]);
         if link.count() == 0 {
-            throw validation_failed(map("role", "This user does not hold the " + role_slug + " role."));
+            throw validation_failed({"role": "This user does not hold the " + role_slug + " role."});
         }
         if role_slug == "admin" {
             let admins = DB.table("user_roles").where("role_id", "=", role["id"]).get();
             if admins.len() <= 1 {
-                throw validation_failed(map("role", "Cannot remove the last admin — promote another admin first."));
+                throw validation_failed({"role": "Cannot remove the last admin — promote another admin first."});
             }
         }
         return link.delete() > 0;
@@ -210,7 +210,7 @@ public class AdminService {
             if link.count() > 0 {
                 return false;
             }
-            DB.table("role_permissions").insert(map("role_id", role_id, "permission_id", perm["id"]));
+            DB.table("role_permissions").insert({"role_id": role_id, "permission_id": perm["id"]});
             return true;
         }
         return link.delete() > 0;
@@ -228,27 +228,27 @@ public class AdminService {
     public fn save_coupon(self, data, coupon_id) {
         let code = string(data["code"]).trim().upper();
         if code == "" {
-            throw validation_failed(map("code", "A coupon code is required."));
+            throw validation_failed({"code": "A coupon code is required."});
         }
         // Format whitelist (audit F-5): codes feed URLs, lookups and CSV
         // exports — keep them short and alphanumeric.
         if not regex_match("^[A-Z0-9_-]{1,32}$", code) {
-            throw validation_failed(map("code", "Codes are 1-32 chars: letters, numbers, dash or underscore."));
+            throw validation_failed({"code": "Codes are 1-32 chars: letters, numbers, dash or underscore."});
         }
         let kind = string(data["type"]).trim();
         if kind != "fixed" and kind != "percent" {
-            throw validation_failed(map("type", "Type must be fixed or percent."));
+            throw validation_failed({"type": "Type must be fixed or percent."});
         }
         // Percent codes are stored in basis points — cap at 100% (audit F-4).
         if kind == "percent" and int(data["value_minor"]) > 10000 {
-            throw validation_failed(map("value_minor", "A percent discount cannot exceed 100%."));
+            throw validation_failed({"value_minor": "A percent discount cannot exceed 100%."});
         }
         let clash = DB.table("coupons").where("code", "=", code);
         if coupon_id != null {
             clash.where("id", "!=", coupon_id);
         }
         if clash.count() > 0 {
-            throw validation_failed(map("code", "That coupon code already exists."));
+            throw validation_failed({"code": "That coupon code already exists."});
         }
         // On create a coupon starts active. On update, keep the stored
         // active state unless the caller explicitly passes is_active —
@@ -271,16 +271,16 @@ public class AdminService {
                 active = int(existing["is_active"]);
             }
         }
-        let values = map(
-            "code", code,
-            "type", kind,
-            "value_minor", int(data["value_minor"]),
-            "min_order_minor", int(data["min_order_minor"]),
-            "max_uses", int(data["max_uses"]),
-            "is_active", active
-        );
+        let values = {
+            "code": code,
+            "type": kind,
+            "value_minor": int(data["value_minor"]),
+            "min_order_minor": int(data["min_order_minor"]),
+            "max_uses": int(data["max_uses"]),
+            "is_active": active
+        };
         if int(values["value_minor"]) < 0 or int(values["min_order_minor"]) < 0 or int(values["max_uses"]) < 0 {
-            throw validation_failed(map("value_minor", "Coupon values cannot be negative."));
+            throw validation_failed({"value_minor": "Coupon values cannot be negative."});
         }
         if coupon_id == null {
             let id = DB.table("coupons").insert(values);
@@ -300,7 +300,7 @@ public class AdminService {
         if active == true {
             flag = 1;
         }
-        return DB.table("coupons").where("id", "=", coupon_id).update(map("is_active", flag)) > 0;
+        return DB.table("coupons").where("id", "=", coupon_id).update({"is_active": flag}) > 0;
     }
 
     public fn delete_coupon(self, coupon_id) -> bool {
@@ -308,7 +308,7 @@ public class AdminService {
             throw not_found("Coupon not found.");
         }
         if DB.table("coupon_usages").where("coupon_id", "=", coupon_id).count() > 0 {
-            throw validation_failed(map("id", "Used coupons cannot be deleted; deactivate them instead."));
+            throw validation_failed({"id": "Used coupons cannot be deleted; deactivate them instead."});
         }
         return DB.table("coupons").where("id", "=", coupon_id).delete() > 0;
     }
@@ -325,30 +325,30 @@ public class AdminService {
     public fn update_setting(self, key: string, value: string, group: string = "general") -> bool {
         let clean = string(key).trim();
         if clean == "" {
-            throw validation_failed(map("key", "A setting key is required."));
+            throw validation_failed({"key": "A setting key is required."});
         }
         let existing = DB.table("settings").where("setting_key", "=", clean).first();
         if existing == null {
-            DB.table("settings").insert(map(
-                "setting_key", clean, "value", value, "setting_group", group
-            ));
+            DB.table("settings").insert({
+                "setting_key": clean, "value": value, "setting_group": group
+            });
             return true;
         }
-        return DB.table("settings").where("setting_key", "=", clean).update(map(
-            "value", value, "setting_group", group
-        )) > 0;
+        return DB.table("settings").where("setting_key", "=", clean).update({
+            "value": value, "setting_group": group
+        }) > 0;
     }
 
     // ---- audit log ----
     public fn log(self, user_id, action: string, entity_type: string, entity_id, payload) {
-        return DB.table("audit_logs").insert(map(
-            "user_id", user_id,
-            "action", action,
-            "entity_type", entity_type,
-            "entity_id", string(entity_id),
-            "payload_json", json_write(payload),
-            "created_at", string(unix_time())
-        ));
+        return DB.table("audit_logs").insert({
+            "user_id": user_id,
+            "action": action,
+            "entity_type": entity_type,
+            "entity_id": string(entity_id),
+            "payload_json": json_write(payload),
+            "created_at": string(unix_time())
+        });
     }
 
     public fn audit(self, limit_count: int = 50) {
@@ -363,12 +363,12 @@ public class AdminService {
         let i = 0;
         while i < rows.len() {
             let r = rows[i];
-            out.push(map(
-                "order_number", r["order_number"],
-                "status", r["status"],
-                "total_minor", int(r["total_minor"]),
-                "placed_at", r["placed_at"]
-            ));
+            out.push({
+                "order_number": r["order_number"],
+                "status": r["status"],
+                "total_minor": int(r["total_minor"]),
+                "placed_at": r["placed_at"]
+            });
             i += 1;
         }
         return out;

@@ -68,7 +68,7 @@ public class AuthService {
     }
 
     public fn set_status(self, user_id, status: string) -> bool {
-        return DB.table("users").where("id", "=", user_id).update(map("status", status)) > 0;
+        return DB.table("users").where("id", "=", user_id).update({"status": status}) > 0;
     }
 
     // Password reset: returns the RAW token for the queued email; the DB
@@ -83,14 +83,14 @@ public class AuthService {
         let now = unix_time();
         DB.transaction(fn() {
             DB.table("password_resets").where("user_id", "=", user["id"]).delete();
-            DB.table("password_resets").insert(map(
-                "user_id", user["id"],
-                "token_hash", Hash.make(token),
-                "expires_at", string(now + 3600)
-            ));
+            DB.table("password_resets").insert({
+                "user_id": user["id"],
+                "token_hash": Hash.make(token),
+                "expires_at": string(now + 3600)
+            });
             return true;
         });
-        Queue.push("store.password_reset", map("email", clean, "token", token));
+        Queue.push("store.password_reset", {"email": clean, "token": token});
         return token;
     }
 
@@ -112,13 +112,13 @@ public class AuthService {
             return false;
         }
         return DB.transaction(fn() {
-            DB.table("users").where("id", "=", match_row["user_id"]).update(map(
-                "password", Hash.make(new_password),
-                "updated_at", string(unix_time())
-            ));
-            DB.table("password_resets").where("id", "=", match_row["id"]).update(map(
-                "used_at", string(unix_time())
-            ));
+            DB.table("users").where("id", "=", match_row["user_id"]).update({
+                "password": Hash.make(new_password),
+                "updated_at": string(unix_time())
+            });
+            DB.table("password_resets").where("id", "=", match_row["id"]).update({
+                "used_at": string(unix_time())
+            });
             return true;
         });
     }
@@ -127,14 +127,14 @@ public class AuthService {
     public fn issue_email_verification(self, user_id) {
         let token = self.fresh_token();
         DB.table("email_verifications").where("user_id", "=", user_id).delete();
-        DB.table("email_verifications").insert(map(
-            "user_id", user_id,
-            "token_hash", Hash.make(token),
-            "expires_at", string(unix_time() + 86400)
-        ));
+        DB.table("email_verifications").insert({
+            "user_id": user_id,
+            "token_hash": Hash.make(token),
+            "expires_at": string(unix_time() + 86400)
+        });
         let user = DB.table("users").where("id", "=", user_id).first();
         if user != null {
-            Queue.push("store.email_verification", map("email", user["email"], "token", token));
+            Queue.push("store.email_verification", {"email": user["email"], "token": token});
         }
         return token;
     }
@@ -157,12 +157,12 @@ public class AuthService {
             return false;
         }
         return DB.transaction(fn() {
-            DB.table("users").where("id", "=", match_row["user_id"]).update(map(
-                "email_verified_at", string(unix_time())
-            ));
-            DB.table("email_verifications").where("id", "=", match_row["id"]).update(map(
-                "verified_at", string(unix_time())
-            ));
+            DB.table("users").where("id", "=", match_row["user_id"]).update({
+                "email_verified_at": string(unix_time())
+            });
+            DB.table("email_verifications").where("id", "=", match_row["id"]).update({
+                "verified_at": string(unix_time())
+            });
             return true;
         });
     }

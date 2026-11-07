@@ -2,23 +2,23 @@
 // Phase 7 — address / checkout rule maps.
 
 public fn address_rules() {
-    return map(
-        "label", "nullable|max:64",
-        "full_name", "required|min:2|max:128",
-        "phone", "required|min:6|max:32",
-        "line1", "required|min:3|max:255",
-        "line2", "nullable|max:255",
-        "city", "required|min:2|max:96",
-        "district", "nullable|max:96",
-        "postal_code", "nullable|max:24",
-        "country", "nullable|max:64"
-    );
+    return {
+        "label": "nullable|max:64",
+        "full_name": "required|min:2|max:128",
+        "phone": "required|min:6|max:32",
+        "line1": "required|min:3|max:255",
+        "line2": "nullable|max:255",
+        "city": "required|min:2|max:96",
+        "district": "nullable|max:96",
+        "postal_code": "nullable|max:24",
+        "country": "nullable|max:64"
+    };
 }
 
 public fn place_rules() {
-    return map(
-        "shipping_method", "required|in:standard,express",
-        "coupon_code", "nullable|max:48",
-        "gift_card_code", "nullable|max:64"
-    );
+    return {
+        "shipping_method": "required|in:standard,express",
+        "coupon_code": "nullable|max:48",
+        "gift_card_code": "nullable|max:64"
+    };
 }

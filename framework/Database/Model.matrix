@@ -138,6 +138,16 @@ public class Model {
         return false;
     }
 
+    public fn get_dirty(self) {
+        let dirty = {};
+        for k in self.attributes.keys() {
+            if not self.original.has(k) or string(self.attributes[k]) != string(self.original[k]) {
+                dirty[k] = self.attributes[k];
+            }
+        }
+        return dirty;
+    }
+
     public fn get(self, key: string, default_val = null) {
         if self.attributes.has(key) {
             let raw = self.attributes[key];
@@ -501,11 +511,25 @@ public class ModelRepository {
         return m.delete();
     }
 
-    public fn where(self, column: string, op: string, val = null) {
+    public fn where(self, column: string, op, val = null) {
+        if val == null {
+            let s = string(op);
+            if s != "=" and s != "!=" and s != "<>" and s != ">" and s != "<" and s != ">=" and s != "<=" and s != "LIKE" and s != "NOT LIKE" {
+                return self.query().where(column, "=", op);
+            }
+        }
+        return self.query().where(column, string(op), val);
+    }
+
+    public fn where_op(self, column: string, op: string, val) {
         return self.query().where(column, op, val);
     }
 
     public fn whereIn(self, column: string, values_list) {
+        return self.query().whereIn(column, values_list);
+    }
+
+    public fn where_in(self, column: string, values_list) {
         return self.query().whereIn(column, values_list);
     }
 

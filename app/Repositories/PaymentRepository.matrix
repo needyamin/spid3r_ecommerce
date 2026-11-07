@@ -15,15 +15,15 @@ public class PaymentRepository {
         if existing != null {
             return existing;
         }
-        let id = DB.table("payments").insert(map(
-            "order_id", order_id,
-            "provider", provider,
-            "amount_minor", int(amount_minor),
-            "currency", "BDT",
-            "status", "initiated",
-            "idempotency_key", idempotency_key,
-            "payload_json", "{}"
-        ));
+        let id = DB.table("payments").insert({
+            "order_id": order_id,
+            "provider": provider,
+            "amount_minor": int(amount_minor),
+            "currency": "BDT",
+            "status": "initiated",
+            "idempotency_key": idempotency_key,
+            "payload_json": "{}"
+        });
         return DB.table("payments").where("id", "=", id).first();
     }
 
@@ -41,12 +41,12 @@ public class PaymentRepository {
             let changes = DB.table("payments")
                 .where("id", "=", payment_id)
                 .where("status", "!=", "paid")
-                .update(map(
-                    "status", "paid",
-                    "gateway_transaction_id", gateway_transaction_id,
-                    "payload_json", payload_json,
-                    "verified_at", string(unix_time())
-                ));
+                .update({
+                    "status": "paid",
+                    "gateway_transaction_id": gateway_transaction_id,
+                    "payload_json": payload_json,
+                    "verified_at": string(unix_time())
+                });
             return changes > 0;
         });
     }

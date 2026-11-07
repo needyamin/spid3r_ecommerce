@@ -47,24 +47,24 @@ public class CodGateway {
     // No external call: the order is marked paid-on-delivery after staff
     // confirm collection through the authenticated admin verification route.
     public fn initiate(self, payment, order) {
-        return map(
-            "status", "pending_cod",
-            "redirect_url", "/payment/" + string(order["order_number"]) + "/return",
-            "instructions", "Pay in cash when your order is delivered."
-        );
+        return {
+            "status": "pending_cod",
+            "redirect_url": "/payment/" + string(order["order_number"]) + "/return",
+            "instructions": "Pay in cash when your order is delivered."
+        };
     }
 
     public fn verify(self, payment) {
         // COD has no external API: verification is the staff action itself.
-        return map(
-            "verified", true,
-            "transaction_id", "COD-" + string(payment["order_id"]),
-            "payload", "{\"method\":\"cash_on_delivery\"}"
-        );
+        return {
+            "verified": true,
+            "transaction_id": "COD-" + string(payment["order_id"]),
+            "payload": "{\"method\":\"cash_on_delivery\"}"
+        };
     }
 
     public fn refund(self, payment, amount_minor: int) {
-        return map("ok", true, "reference", "COD-REFUND-" + string(payment["id"]));
+        return {"ok": true, "reference": "COD-REFUND-" + string(payment["id"])};
     }
 
     public fn webhook_secret(self) -> string {
@@ -108,7 +108,7 @@ public class HttpsGateway {
         if key == "" {
             throw bad_request(self.name + " gateway is not configured (missing API key).");
         }
-        return map("content-type", "application/json", "authorization", "Bearer " + key);
+        return {"content-type": "application/json", "authorization": "Bearer " + key};
     }
 
     fn post(self, url: string, payload) {
@@ -137,14 +137,14 @@ public class HttpsGateway {
     }
 
     public fn initiate(self, payment, order) {
-        let response = self.post(self.url_for("INIT", ""), map(
-            "order_number", order["order_number"],
-            "amount_minor", int(order["total_minor"]),
-            "currency", order["currency"],
-            "payment_id", payment["id"],
-            "idempotency_key", payment["idempotency_key"],
-            "callback_url", env_value("STORE_URL", "http://localhost:8000") + "/webhooks/payments/" + self.name
-        ));
+        let response = self.post(self.url_for("INIT", ""), {
+            "order_number": order["order_number"],
+            "amount_minor": int(order["total_minor"]),
+            "currency": order["currency"],
+            "payment_id": payment["id"],
+            "idempotency_key": payment["idempotency_key"],
+            "callback_url": env_value("STORE_URL", "http://localhost:8000") + "/webhooks/payments/" + self.name
+        });
         let redirect = "";
         if response.has("redirect_url") {
             redirect = string(response["redirect_url"]);
@@ -153,22 +153,22 @@ public class HttpsGateway {
         if response.has("transaction_id") {
             txn = string(response["transaction_id"]);
         }
-        return map(
-            "status", "pending",
-            "redirect_url", redirect,
-            "gateway_transaction_id", txn,
-            "instructions", "Complete payment with " + self.name + "."
-        );
+        return {
+            "status": "pending",
+            "redirect_url": redirect,
+            "gateway_transaction_id": txn,
+            "instructions": "Complete payment with " + self.name + "."
+        };
     }
 
     // Server-to-server verification: query the gateway with OUR payment id
     // and reject anything whose amount or status does not match.
     public fn verify(self, payment) {
-        let response = self.post(self.url_for("VERIFY", ""), map(
-            "payment_id", payment["id"],
-            "idempotency_key", payment["idempotency_key"],
-            "gateway_transaction_id", payment["gateway_transaction_id"]
-        ));
+        let response = self.post(self.url_for("VERIFY", ""), {
+            "payment_id": payment["id"],
+            "idempotency_key": payment["idempotency_key"],
+            "gateway_transaction_id": payment["gateway_transaction_id"]
+        });
         let state = "";
         if response.has("status") {
             state = string(response["status"]).lower();
@@ -183,19 +183,19 @@ public class HttpsGateway {
         if response.has("transaction_id") {
             txn = string(response["transaction_id"]);
         }
-        return map(
-            "verified", ok,
-            "transaction_id", txn,
-            "payload", json_write(response)
-        );
+        return {
+            "verified": ok,
+            "transaction_id": txn,
+            "payload": json_write(response)
+        };
     }
 
     public fn refund(self, payment, amount_minor: int) {
-        let response = self.post(self.url_for("REFUND", ""), map(
-            "payment_id", payment["id"],
-            "amount_minor", amount_minor,
-            "gateway_transaction_id", payment["gateway_transaction_id"]
-        ));
+        let response = self.post(self.url_for("REFUND", ""), {
+            "payment_id": payment["id"],
+            "amount_minor": amount_minor,
+            "gateway_transaction_id": payment["gateway_transaction_id"]
+        });
         let ok = false;
         if response.has("status") and string(response["status"]).lower() == "ok" {
             ok = true;
@@ -204,7 +204,7 @@ public class HttpsGateway {
         if response.has("refund_id") {
             ref_id = string(response["refund_id"]);
         }
-        return map("ok", ok, "reference", ref_id);
+        return {"ok": ok, "reference": ref_id};
     }
 }
 
@@ -226,7 +226,7 @@ public class GatewayRegistry {
             i += 1;
         }
         if i == all.len() {
-            throw validation_failed(map("provider", "Unknown payment provider."));
+            throw validation_failed({"provider": "Unknown payment provider."});
         }
         if p == "cod" {
             return new CodGateway();

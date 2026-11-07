@@ -1,29 +1,29 @@
 // app/Validators/AuthValidators.matrix
 // Phase 3 — rule maps for every account form. Controllers pass these to
-// req.validate(rules) and throw validation_failed(v.error_messages()).
+// req.validate_or_fail(rules).
 
 public fn registration_rules() {
-    return map(
-        "name", "required|min:2|max:128",
-        "email", "required|email|max:255",
-        "password", "required|min:8|confirmed"
-    );
+    return {
+        "name": "required|min:2|max:128",
+        "email": "required|email|max:255",
+        "password": "required|min:8|confirmed"
+    };
 }
 
 public fn login_rules() {
-    return map(
-        "email", "required|email",
-        "password", "required|min:8"
-    );
+    return {
+        "email": "required|email",
+        "password": "required|min:8"
+    };
 }
 
 public fn forgot_rules() {
-    return map("email", "required|email");
+    return {"email": "required|email"};
 }
 
 public fn reset_rules() {
-    return map(
-        "token", "required|min:16",
-        "password", "required|min:8|confirmed"
-    );
+    return {
+        "token": "required|min:16",
+        "password": "required|min:8|confirmed"
+    };
 }

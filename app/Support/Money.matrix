@@ -103,7 +103,7 @@ public fn to_major(minor_units) -> string {
 
 // Thousands-grouped, symbol-prefixed display string.
 public fn format(minor_units, currency) -> string {
-    let symbols = map("BDT", "৳", "USD", "$", "EUR", "€");
+    let symbols = {"BDT": "৳", "USD": "$", "EUR": "€"};
     let symbol = "৳";
     if symbols.has(string(currency).upper()) {
         symbol = symbols[string(currency).upper()];

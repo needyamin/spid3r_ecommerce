@@ -70,7 +70,7 @@ public class LocaleService {
         let out = [];
         let i = 0;
         while i < codes.len() {
-            out.push(map("code", codes[i], "label", self.locale_label(string(codes[i]))));
+            out.push({"code": codes[i], "label": self.locale_label(string(codes[i]))});
             i += 1;
         }
         return out;
@@ -110,12 +110,12 @@ public class LocaleService {
     // Whole-locale bundle: namespace -> key -> value.
     public fn bundle(self, locale: string) {
         let rows = DB.table("translations").where("locale", "=", locale).get();
-        let out = map();
+        let out = {};
         let i = 0;
         while i < rows.len() {
             let ns = string(rows[i]["namespace"]);
             let key = string(rows[i]["translation_key"]);
-            let ns_map = map();
+            let ns_map = {};
             if out.has(ns) {
                 ns_map = out[ns];
             }
@@ -158,7 +158,7 @@ public class LocaleService {
         let ns = string(namespace).trim();
         let k = string(key).trim();
         if loc == "" or ns == "" or k == "" {
-            throw validation_failed(map("key", "Locale, namespace and key are required."));
+            throw validation_failed({"key": "Locale, namespace and key are required."});
         }
         let existing = DB.table("translations")
             .where("locale", "=", loc)
@@ -166,11 +166,11 @@ public class LocaleService {
             .where("translation_key", "=", k)
             .first();
         if existing != null {
-            return DB.table("translations").where("id", "=", existing["id"]).update(map("value", value)) > 0;
+            return DB.table("translations").where("id", "=", existing["id"]).update({"value": value}) > 0;
         }
-        DB.table("translations").insert(map(
-            "locale", loc, "namespace", ns, "translation_key", k, "value", value
-        ));
+        DB.table("translations").insert({
+            "locale": loc, "namespace": ns, "translation_key": k, "value": value
+        });
         return true;
     }
 

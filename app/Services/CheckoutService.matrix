@@ -113,63 +113,65 @@ public class CheckoutService {
         let tax = int(taxable * tax_bps / 10000);
         let total = taxable + tax + shipping;
 
-        return map(
-            "items", summary["items"],
-            "has_items", summary["has_items"],
-            "has_warnings", summary["has_warnings"],
-            "warnings", summary["warnings"],
-            "subtotal_minor", subtotal,
-            "volume_discount_minor", volume_discount,
-            "coupon_discount_minor", int(coupon["discount_minor"]),
-            "campaign_discount_minor", campaign_discount,
-            "campaign_id", campaign_id,
-            "gift_card_discount_minor", gift_card_discount,
-            "gift_card_code", gift_card_code,
-            "discount_minor", total_discount,
-            "coupon_id", coupon["coupon_id"],
-            "coupon_code", coupon["code"],
-            "shipping_method", method,
-            "shipping_minor", shipping,
-            "shipping_zone", delivery["zone_name"],
-            "shipping_days_min", delivery["estimated_days_min"],
-            "shipping_days_max", delivery["estimated_days_max"],
-            "shipping_source", delivery["source"],
-            "tax_minor", tax,
-            "total_minor", total,
-            "subtotal_display", Money.format(subtotal, "BDT"),
-            "discount_display", Money.format(total_discount, "BDT"),
-            "gift_card_display", Money.format(gift_card_discount, "BDT"),
-            "shipping_display", Money.format(shipping, "BDT"),
-            "tax_display", Money.format(tax, "BDT"),
-            "total_display", Money.format(total, "BDT"),
-            "express_fee_display", Money.format(self.setting("shipping.express_minor", 12000), "BDT"),
-            "standard_fee_display", Money.format(self.setting("shipping.flat_minor", 6000), "BDT")
-        );
+        return {
+            "items": summary["items"],
+            "has_items": summary["has_items"],
+            "has_warnings": summary["has_warnings"],
+            "warnings": summary["warnings"],
+            "subtotal_minor": subtotal,
+            "volume_discount_minor": volume_discount,
+            "coupon_discount_minor": int(coupon["discount_minor"]),
+            "campaign_discount_minor": campaign_discount,
+            "campaign_id": campaign_id,
+            "gift_card_discount_minor": gift_card_discount,
+            "gift_card_code": gift_card_code,
+            "discount_minor": total_discount,
+            "coupon_id": coupon["coupon_id"],
+            "coupon_code": coupon["code"],
+            "shipping_method": method,
+            "shipping_minor": shipping,
+            "shipping_zone": delivery["zone_name"],
+            "shipping_days_min": delivery["estimated_days_min"],
+            "shipping_days_max": delivery["estimated_days_max"],
+            "shipping_source": delivery["source"],
+            "tax_minor": tax,
+            "total_minor": total,
+            "subtotal_display": Money.format(subtotal, "BDT"),
+            "discount_display": Money.format(total_discount, "BDT"),
+            "gift_card_display": Money.format(gift_card_discount, "BDT"),
+            "shipping_display": Money.format(shipping, "BDT"),
+            "tax_display": Money.format(tax, "BDT"),
+            "total_display": Money.format(total, "BDT"),
+            "express_fee_display": Money.format(self.setting("shipping.express_minor", 12000), "BDT"),
+            "standard_fee_display": Money.format(self.setting("shipping.flat_minor", 6000), "BDT")
+        };
     }
 
     fn resolve_address(self, ident, data) -> string {
         // Saved address (authenticated customers only).
         if data.has("address_id") and data["address_id"] != null and string(data["address_id"]) != "" {
             if ident["user_id"] == null {
-                throw validation_failed(map("address_id", "Sign in to use a saved address."));
+                throw validation_failed({"address_id": "Sign in to use a saved address."});
             }
             if not self.addresses.belongs_to(data["address_id"], ident["user_id"]) {
                 throw not_found("Address not found.");
             }
             let row = self.addresses.find(data["address_id"]);
-            return json_write(map(
-                "full_name", row["full_name"], "phone", row["phone"],
-                "line1", row["line1"], "line2", row["line2"],
-                "city", row["city"], "district", row["district"],
-                "postal_code", row["postal_code"], "country", row["country"]
-            ));
+            return json_write({
+                "full_name": row["full_name"], "phone": row["phone"],
+                "line1": row["line1"], "line2": row["line2"],
+                "city": row["city"], "district": row["district"],
+                "postal_code": row["postal_code"], "country": row["country"]
+            });
         }
         // Inline address (guests and customers alike).
         let required = ["full_name", "phone", "line1", "city"];
         let i = 0;
         while i < required.len() {
             if not data.has(required[i]) or string(data[required[i]]).trim() == "" {
-                throw validation_failed(map(required[i], "This address field is required."));
+                let err = {};
+                err[required[i]] = "This address field is required.";
+                throw validation_failed(err);
             }
             i += 1;
         }
@@ -183,12 +185,12 @@ public class CheckoutService {
         if data.has("country") and string(data["country"]).trim() != "" {
             country = string(data["country"]);
         }
-        return json_write(map(
-            "full_name", data["full_name"], "phone", data["phone"],
-            "line1", data["line1"], "line2", line2,
-            "city", data["city"], "district", district,
-            "postal_code", postal_code, "country", country
-        ));
+        return json_write({
+            "full_name": data["full_name"], "phone": data["phone"],
+            "line1": data["line1"], "line2": line2,
+            "city": data["city"], "district": district,
+            "postal_code": postal_code, "country": country
+        });
     }
 
     // `data`: address fields (or address_id), shipping_method, coupon_code.
@@ -196,10 +198,10 @@ public class CheckoutService {
         return DB.transaction(fn() {
             let quote = self.quote(ident, data);
             if not quote["has_items"] {
-                throw validation_failed(map("cart", "Your cart is empty."));
+                throw validation_failed({"cart": "Your cart is empty."});
             }
             if quote["has_warnings"] {
-                throw validation_failed(map("cart", "Some items are no longer available."));
+                throw validation_failed({"cart": "Some items are no longer available."});
             }
             let address_json = self.resolve_address(ident, data);
 
@@ -212,38 +214,38 @@ public class CheckoutService {
                 let pid = line["product_id"];
                 let product_row = DB.table("products").where("id", "=", pid).first();
                 if product_row == null {
-                    throw validation_failed(map("cart", "A product is no longer available."));
+                    throw validation_failed({"cart": "A product is no longer available."});
                 }
                 let qty = int(line["quantity"]);
                 if not self.inventory.reserve(pid, null, qty, "sale", "checkout", "pending") {
-                    throw validation_failed(map("cart", "Not enough stock for " + string(product_row["name"]) + "."));
+                    throw validation_failed({"cart": "Not enough stock for " + string(product_row["name"]) + "."});
                 }
-                items.push(map(
-                    "product_id", pid,
-                    "variant_id", null,
-                    "name_snapshot", product_row["name"],
-                    "sku_snapshot", product_row["sku"],
-                    "unit_price_minor", int(line["unit_price_minor"]),
-                    "quantity", qty,
-                    "discount_minor", 0,
-                    "tax_minor", 0,
-                    "line_total_minor", int(line["line_total_minor"])
-                ));
+                items.push({
+                    "product_id": pid,
+                    "variant_id": null,
+                    "name_snapshot": product_row["name"],
+                    "sku_snapshot": product_row["sku"],
+                    "unit_price_minor": int(line["unit_price_minor"]),
+                    "quantity": qty,
+                    "discount_minor": 0,
+                    "tax_minor": 0,
+                    "line_total_minor": int(line["line_total_minor"])
+                });
                 i += 1;
             }
 
-            let order_data = map(
-                "user_id", ident["user_id"],
-                "status", "awaiting_payment",
-                "coupon_id", quote["coupon_id"],
-                "shipping_method", quote["shipping_method"],
-                "shipping_minor", quote["shipping_minor"],
-                "shipping_address_json", address_json,
-                "billing_address_json", address_json,
-                "placed_at", string(unix_time()),
-                "order_discount_minor", quote["discount_minor"],
-                "order_tax_minor", quote["tax_minor"]
-            );
+            let order_data = {
+                "user_id": ident["user_id"],
+                "status": "awaiting_payment",
+                "coupon_id": quote["coupon_id"],
+                "shipping_method": quote["shipping_method"],
+                "shipping_minor": quote["shipping_minor"],
+                "shipping_address_json": address_json,
+                "billing_address_json": address_json,
+                "placed_at": string(unix_time()),
+                "order_discount_minor": quote["discount_minor"],
+                "order_tax_minor": quote["tax_minor"]
+            };
             let order = self.orders.create(order_data, items);
 
             if quote["coupon_id"] != null {
@@ -265,7 +267,7 @@ public class CheckoutService {
             if gift_code != "" {
                 let applied = self.gift_cards.redeem(gift_code, int(quote["gift_card_discount_minor"]), order["id"]);
                 if applied != int(quote["gift_card_discount_minor"]) {
-                    throw validation_failed(map("gift_card", "The gift card balance changed. Please review your cart and try again."));
+                    throw validation_failed({"gift_card": "The gift card balance changed. Please review your cart and try again."});
                 }
             }
 

@@ -53,15 +53,15 @@ public class ImageService {
             b64 = b64.slice(comma + 1, len(b64));
         }
         if len(b64) > 2800000 {
-            throw validation_failed(map("image", "Image exceeds the 2 MiB limit."));
+            throw validation_failed({"image": "Image exceeds the 2 MiB limit."});
         }
         let bytes = base64_decode(b64);
         if len(bytes) < 8 or len(bytes) > 2097152 {
-            throw validation_failed(map("image", "Image exceeds the 2 MiB limit or is empty."));
+            throw validation_failed({"image": "Image exceeds the 2 MiB limit or is empty."});
         }
         let ext = self.detect_type(bytes);
         if ext == "" {
-            throw validation_failed(map("image", "Only PNG, JPEG, GIF and WEBP images are allowed."));
+            throw validation_failed({"image": "Only PNG, JPEG, GIF and WEBP images are allowed."});
         }
 
         let rel = "products/" + string(product_id) + "/"
@@ -80,13 +80,13 @@ public class ImageService {
         CatalogCache.bump_catalog_version();
 
         return DB.transaction(fn() {
-            let id = self.images.create(map(
-                "product_id", product_id,
-                "path", rel,
-                "alt_text", alt_text,
-                "sort_order", self.images.next_sort(product_id),
-                "is_primary", 0
-            ));
+            let id = self.images.create({
+                "product_id": product_id,
+                "path": rel,
+                "alt_text": alt_text,
+                "sort_order": self.images.next_sort(product_id),
+                "is_primary": 0
+            });
             if is_primary {
                 // Reuse the cover logic so the image also moves to the
                 // FRONT of the gallery — the storefront picks the card
@@ -119,9 +119,9 @@ public class ImageService {
         let other = siblings[target];
         // Swap the two sort orders.
         DB.table("product_images").where("id", "=", image_id)
-            .update(map("sort_order", int(other["sort_order"])));
+            .update({"sort_order": int(other["sort_order"])});
         DB.table("product_images").where("id", "=", other["id"])
-            .update(map("sort_order", int(row["sort_order"])));
+            .update({"sort_order": int(row["sort_order"])});
         // The storefront chooses the lowest sort_order; keep its chosen
         // image and the admin cover badge in sync after every reorder.
         let reordered = self.images.for_product(row["product_id"]);
@@ -139,13 +139,13 @@ public class ImageService {
         let i = 0;
         while i < rows.len() {
             let row = rows[i];
-            out.push(map(
-                "id", row["id"],
-                "url", Images.public_image_url(row["path"]),
-                "alt_text", row["alt_text"],
-                "sort_order", row["sort_order"],
-                "is_primary", row["is_primary"] == 1 or row["is_primary"] == true
-            ));
+            out.push({
+                "id": row["id"],
+                "url": Images.public_image_url(row["path"]),
+                "alt_text": row["alt_text"],
+                "sort_order": row["sort_order"],
+                "is_primary": row["is_primary"] == 1 or row["is_primary"] == true
+            });
             i += 1;
         }
         return out;
@@ -165,7 +165,7 @@ public class ImageService {
         self.images.clear_primary(row["product_id"]);
         let ok = DB.table("product_images")
             .where("id", "=", image_id)
-            .update(map("is_primary", 1, "sort_order", 0)) > 0;
+            .update({"is_primary": 1, "sort_order": 0}) > 0;
         // Keep the remaining gallery images in a stable order behind it.
         let others = DB.table("product_images")
             .where("product_id", "=", row["product_id"])
@@ -176,7 +176,7 @@ public class ImageService {
         while i < others.len() {
             DB.table("product_images")
                 .where("id", "=", others[i]["id"])
-                .update(map("sort_order", i + 1));
+                .update({"sort_order": i + 1});
             i += 1;
         }
         CatalogCache.bump_catalog_version();
@@ -191,7 +191,7 @@ public class ImageService {
         }
         let ok = DB.table("product_images")
             .where("id", "=", image_id)
-            .update(map("alt_text", alt_text)) > 0;
+            .update({"alt_text": alt_text}) > 0;
         CatalogCache.bump_catalog_version();
         return ok;
     }

@@ -10,6 +10,7 @@ import "framework/Container/Container";
 import "framework/Database/DB";
 import "app/Services/AuthService";
 import "app/Support/StoreChrome" as StoreChrome;
+import "app/Support/CartIdentity" as CartIdentity;
 import "app/Services/CartService";
 import "app/Validators/AuthValidators" as AuthValidators;
 
@@ -25,29 +26,29 @@ public class AuthController {
     // Base view context: layout needs store_name/currency; @yield("title")
     // and the optional meta description keep pages SEO-friendly.
     fn render(self, req, view_name: string, title: string, extra) {
-        let ctx = map(
-            "store_name", self.settings["name"],
-            "currency", self.settings["currency"],
-            "title", title,
-            "meta_description", title + " — " + self.settings["name"],
-            "csrf", ""
-        );
+        let ctx = {
+            "store_name": self.settings["name"],
+            "currency": self.settings["currency"],
+            "title": title,
+            "meta_description": title + " — " + self.settings["name"],
+            "csrf": ""
+        };
         // Dev builds only: surface the seeded demo accounts so evaluators
         // can sign in with different roles. Production never sets
         // SPID3R_ENV=dev, so the hint box never renders there.
         let demo_accounts = [];
         let env_flag = env("SPID3R_ENV");
         if env_flag.is_some() and string(env_flag.unwrap()).trim().lower() == "dev" {
-            demo_accounts.push(map(
-                "role", "Admin",
-                "email", "admin@spid3r.test",
-                "password", "secret123"
-            ));
-            demo_accounts.push(map(
-                "role", "Customer",
-                "email", "shopper@spid3r.test",
-                "password", "secret123"
-            ));
+            demo_accounts.push({
+                "role": "Admin",
+                "email": "admin@spid3r.test",
+                "password": "secret123"
+            });
+            demo_accounts.push({
+                "role": "Customer",
+                "email": "shopper@spid3r.test",
+                "password": "secret123"
+            });
         }
         ctx["demo_accounts"] = demo_accounts;
         ctx["has_demo_accounts"] = demo_accounts.len() > 0;
@@ -69,18 +70,7 @@ public class AuthController {
 
     // Phase 6 — merge the guest cart after a successful login.
     fn merge_guest_cart(self, req, email: string) -> bool {
-        let key = "";
-        if req.headers.has("cookie") {
-            let parts = string(req.headers["cookie"]).split(";");
-            let i = 0;
-            while i < parts.len() {
-                let pair = parts[i].trim().split("=");
-                if pair.len() > 1 and pair[0] == "cart" {
-                    key = pair[1];
-                }
-                i += 1;
-            }
-        }
+        let key = CartIdentity.cookie_value(req, "cart");
         if key == "" {
             return false;
         }
@@ -93,20 +83,17 @@ public class AuthController {
     }
 
     public fn show_login(self, req) {
-        return self.render(req, "auth/login", "Sign in", map("error", "", "csrf", req.auth.csrf()));
+        return self.render(req, "auth/login", "Sign in", {"error": "", "csrf": req.auth.csrf()});
     }
 
     public fn login(self, req) {
-        let v = req.validate(AuthValidators.login_rules());
-        if v.fails() {
-            throw validation_failed(v.error_messages());
-        }
+        req.validate_or_fail(AuthValidators.login_rules());
         let token = self.auth.login(req.input("email", ""), req.input("password", ""));
         if token == null {
-            let res = self.render(req, "auth/login", "Sign in", map(
-                "error", "Invalid credentials or inactive account.",
-                "csrf", req.auth.csrf()
-            ));
+            let res = self.render(req, "auth/login", "Sign in", {
+                "error": "Invalid credentials or inactive account.",
+                "csrf": req.auth.csrf()
+            });
             res.status(401);
             return res;
         }
@@ -118,35 +105,29 @@ public class AuthController {
     }
 
     public fn show_register(self, req) {
-        return self.render(req, "auth/register", "Create account", map("error", "", "csrf", req.auth.csrf()));
+        return self.render(req, "auth/register", "Create account", {"error": "", "csrf": req.auth.csrf()});
     }
 
     public fn register(self, req) {
-        let v = req.validate(AuthValidators.registration_rules());
-        if v.fails() {
-            throw validation_failed(v.error_messages());
-        }
+        req.validate_or_fail(AuthValidators.registration_rules());
         let user = self.auth.register(
             req.input("name", ""),
             req.input("email", ""),
             req.input("password", "")
         );
         if user == null {
-            throw validation_failed(map("email", "That email is already registered."));
+            throw validation_failed({"email": "That email is already registered."});
         }
         // Never auto-login: email verification is required first.
         return redirect("/login?registered=1");
     }
 
     public fn update_profile(self, req) {
-        let v = req.validate(map("name", "required|min:2|max:128"));
-        if v.fails() {
-            throw validation_failed(v.error_messages());
-        }
-        DB.table("users").where("id", "=", req.auth.id()).update(map(
-            "name", req.input("name", ""),
-            "updated_at", string(unix_time())
-        ));
+        req.validate_or_fail({"name": "required|min:2|max:128"});
+        DB.table("users").where("id", "=", req.auth.id()).update({
+            "name": req.input("name", ""),
+            "updated_at": string(unix_time())
+        });
         return redirect("/account?updated=1");
     }
 
@@ -158,46 +139,37 @@ public class AuthController {
     }
 
     public fn account(self, req) {
-        return self.render(req, "account/index", "My account", map(
-            "user", req.auth.user(),
-            "csrf", req.auth.csrf()
-        ));
+        return self.render(req, "account/index", "My account", {
+            "user": req.auth.user(),
+            "csrf": req.auth.csrf()
+        });
     }
 
     public fn show_forgot(self, req) {
-        return self.render(req, "auth/forgot", "Reset password", map("csrf", req.auth.csrf()));
+        return self.render(req, "auth/forgot", "Reset password", {"csrf": req.auth.csrf()});
     }
 
     public fn forgot(self, req) {
-        let v = req.validate(AuthValidators.forgot_rules());
-        if v.fails() {
-            throw validation_failed(v.error_messages());
-        }
+        req.validate_or_fail(AuthValidators.forgot_rules());
         // Deliberately identical response for known/unknown addresses —
         // prevents account enumeration.
         self.auth.request_password_reset(req.input("email", ""));
-        return self.render(req, "auth/forgot", "Reset password", map(
-            "sent", true,
-            "csrf", req.auth.csrf()
-        ));
+        return self.render(req, "auth/forgot", "Reset password", {
+            "sent": true,
+            "csrf": req.auth.csrf()
+        });
     }
 
     public fn show_reset(self, req) {
-        let token = "";
-        if req.query_params.has("token") {
-            token = string(req.query_params["token"]);
-        }
-        return self.render(req, "auth/reset", "Choose a new password", map(
-            "token", token,
-            "csrf", req.auth.csrf()
-        ));
+        let token = string(req.query("token", ""));
+        return self.render(req, "auth/reset", "Choose a new password", {
+            "token": token,
+            "csrf": req.auth.csrf()
+        });
     }
 
     public fn reset(self, req) {
-        let v = req.validate(AuthValidators.reset_rules());
-        if v.fails() {
-            throw validation_failed(v.error_messages());
-        }
+        req.validate_or_fail(AuthValidators.reset_rules());
         if not self.auth.reset_password(req.input("token", ""), req.input("password", "")) {
             throw bad_request("This reset link is invalid or has expired.");
         }
@@ -205,10 +177,7 @@ public class AuthController {
     }
 
     public fn verify_email(self, req) {
-        let token = "";
-        if req.params.has("token") {
-            token = string(req.params["token"]);
-        }
+        let token = string(req.param("token", ""));
         if not self.auth.verify_email(token) {
             throw bad_request("This verification link is invalid or has expired.");
         }

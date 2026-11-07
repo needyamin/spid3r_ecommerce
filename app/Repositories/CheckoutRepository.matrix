@@ -38,12 +38,12 @@ public class CouponRepository {
     }
 
     public fn record_usage(self, coupon_id, order_id, user_id, discount_minor: int) {
-        return DB.table("coupon_usages").insert(map(
-            "coupon_id", coupon_id,
-            "order_id", order_id,
-            "user_id", user_id,
-            "discount_minor", discount_minor
-        ));
+        return DB.table("coupon_usages").insert({
+            "coupon_id": coupon_id,
+            "order_id": order_id,
+            "user_id": user_id,
+            "discount_minor": discount_minor
+        });
     }
 
     public fn increment_uses(self, coupon_id) -> bool {

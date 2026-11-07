@@ -55,10 +55,10 @@ public class SmsGateway {
     public fn send(self, to: string, message: string) -> bool {
         let number = string(to).trim();
         if number == "" {
-            throw validation_failed(map("phone", "A phone number is required."));
+            throw validation_failed({"phone": "A phone number is required."});
         }
         if len(string(message).trim()) == 0 {
-            throw validation_failed(map("message", "The message body is empty."));
+            throw validation_failed({"message": "The message body is empty."});
         }
         if self.driver == "log" {
             Log.info("[sms] to=" + number + " body=" + string(message));
@@ -72,15 +72,15 @@ public class SmsGateway {
         if key == "" {
             throw bad_request("SMS gateway is not configured (missing SMS_API_KEY).");
         }
-        let headers = map(
-            "content-type", "application/json",
-            "authorization", "Bearer " + key
-        );
-        let payload = map(
-            "to", number,
-            "message", string(message),
-            "sender_id", self.sender_id
-        );
+        let headers = {
+            "content-type": "application/json",
+            "authorization": "Bearer " + key
+        };
+        let payload = {
+            "to": number,
+            "message": string(message),
+            "sender_id": self.sender_id
+        };
         let res = http_fetch("POST", url, headers, json_write(payload));
         if res.is_err() {
             throw bad_request("SMS gateway request failed: " + string(res.unwrap_err()));

@@ -6,9 +6,7 @@ import "framework/Router";
 
 public fn register_api_routes() {
     // Add JSON endpoints here, for example:
-    // Route.group(map("prefix", "/api/v1"), fn() {
-    //     Route.get("/status", fn(_req) {
-    //         return json(map("status", "healthy", "framework", "Spid3rWeb"));
-    //     });
+    // Route.group({"prefix": "/api/v1"}, fn() {
+    //     Route.get("/status", _req => json({"status": "healthy", "framework": "Spid3rWeb"}));
     // });
 }

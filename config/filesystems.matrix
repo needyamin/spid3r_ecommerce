@@ -6,26 +6,26 @@
 // The "public" disk is web-servable: files land under public/uploads and
 // are reachable at /uploads/<path>.
 
-public let config_filesystems = map(
-    "default", "local",
-    "disks", map(
-        "local", map(
-            "driver", "local",
-            "root", "storage/app",
-            "visibility", "private",
-            "url", ""
-        ),
-        "public", map(
-            "driver", "local",
-            "root", "public/uploads",
-            "visibility", "public",
-            "url", "/uploads"
-        ),
-        "logs", map(
-            "driver", "local",
-            "root", "storage/logs",
-            "visibility", "private",
-            "url", ""
-        )
-    )
-);
+public let config_filesystems = {
+    "default": "local",
+    "disks": {
+        "local": {
+            "driver": "local",
+            "root": "storage/app",
+            "visibility": "private",
+            "url": ""
+        },
+        "public": {
+            "driver": "local",
+            "root": "public/uploads",
+            "visibility": "public",
+            "url": "/uploads"
+        },
+        "logs": {
+            "driver": "local",
+            "root": "storage/logs",
+            "visibility": "private",
+            "url": ""
+        }
+    }
+};

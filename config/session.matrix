@@ -5,19 +5,19 @@
 // `sessions` table) and framework/Request.matrix (cookie name). Cookie
 // flags/lifetime are applied by framework/Response.matrix.
 
-public let config_session = map(
+public let config_session = {
     // "database" — sessions table (the only driver in this build)
-    "driver", "database",
-    "table", "sessions",
+    "driver": "database",
+    "table": "sessions",
     // Seconds of inactivity before a session expires server-side
-    "lifetime", 86400,
+    "lifetime": 86400,
     // Browser cookie settings (name overridable via env)
-    "cookie_env", "SPID3R_SESSION_COOKIE",
-    "cookie", "spid3r_session",
-    "path", "/",
-    "secure", false,          // true behind HTTPS
-    "httponly", true,
-    "same_site", "Lax",
+    "cookie_env": "SPID3R_SESSION_COOKIE",
+    "cookie": "spid3r_session",
+    "path": "/",
+    "secure": false,          // true behind HTTPS
+    "httponly": true,
+    "same_site": "Lax",
     // 1-in-N requests opportunistically purge expired session rows
-    "gc_chance", 100
-);
+    "gc_chance": 100
+};

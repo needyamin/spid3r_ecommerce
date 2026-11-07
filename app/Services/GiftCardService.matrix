@@ -32,21 +32,21 @@ public class GiftCardService {
     // Issue a new card. Returns the RAW code — show it once, never store it.
     public fn issue(self, initial_minor: int, currency: string = "BDT", recipient_email: string = "") -> string {
         if initial_minor <= 0 {
-            throw validation_failed(map("amount", "Gift card amount must be positive."));
+            throw validation_failed({"amount": "Gift card amount must be positive."});
         }
         let raw = hex_encode(random_bytes(16).unwrap()).upper();
-        let id = DB.table("gift_cards").insert(map(
-            "code_hash", self.hash_of(raw),
-            "initial_minor", initial_minor,
-            "balance_minor", initial_minor,
-            "currency", string(currency).trim().upper(),
-            "recipient_email", recipient_email,
-            "status", "active"
-        ));
-        DB.table("gift_card_transactions").insert(map(
-            "gift_card_id", id, "order_id", null,
-            "amount_minor", initial_minor, "kind", "issue"
-        ));
+        let id = DB.table("gift_cards").insert({
+            "code_hash": self.hash_of(raw),
+            "initial_minor": initial_minor,
+            "balance_minor": initial_minor,
+            "currency": string(currency).trim().upper(),
+            "recipient_email": recipient_email,
+            "status": "active"
+        });
+        DB.table("gift_card_transactions").insert({
+            "gift_card_id": id, "order_id": null,
+            "amount_minor": initial_minor, "kind": "issue"
+        });
         return raw;
     }
 
@@ -80,11 +80,11 @@ public class GiftCardService {
     // `order_id` may be null for a standalone redemption.
     public fn redeem(self, code: string, amount_minor: int, order_id = null) -> int {
         if amount_minor <= 0 {
-            throw validation_failed(map("amount", "Charge amount must be positive."));
+            throw validation_failed({"amount": "Charge amount must be positive."});
         }
         let card = self.card_by_code(code);
         if card == null or string(card["status"]) != "active" {
-            throw validation_failed(map("gift_card", "Gift card is invalid or inactive."));
+            throw validation_failed({"gift_card": "Gift card is invalid or inactive."});
         }
         let balance = int(card["balance_minor"]);
         let applied = amount_minor;
@@ -92,7 +92,7 @@ public class GiftCardService {
             applied = balance;
         }
         if applied <= 0 {
-            throw validation_failed(map("gift_card", "Gift card has no balance."));
+            throw validation_failed({"gift_card": "Gift card has no balance."});
         }
         // ATOMIC conditional decrement: if another transaction already spent
         // the balance, this changes 0 rows and nothing is applied.
@@ -104,12 +104,12 @@ public class GiftCardService {
             return 0;
         }
         if balance - applied <= 0 {
-            DB.table("gift_cards").where("id", "=", card["id"]).update(map("status", "redeemed"));
+            DB.table("gift_cards").where("id", "=", card["id"]).update({"status": "redeemed"});
         }
-        DB.table("gift_card_transactions").insert(map(
-            "gift_card_id", card["id"], "order_id", order_id,
-            "amount_minor", applied, "kind", "redeem"
-        ));
+        DB.table("gift_card_transactions").insert({
+            "gift_card_id": card["id"], "order_id": order_id,
+            "amount_minor": applied, "kind": "redeem"
+        });
         return applied;
     }
 

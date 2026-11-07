@@ -12,7 +12,7 @@ import "app/Support/StoreChrome" as StoreChrome;
 import "app/Repositories/OrderRepository";
 import "app/Support/Money" as Money;
 
-let identity = fn(row) { return row; };
+let identity = row => row;
 
 public class PaymentController {
     public let payments;
@@ -26,13 +26,13 @@ public class PaymentController {
     }
 
     fn ctx(self, req, title: string, extra) {
-        let base = map(
-            "store_name", self.settings["name"],
-            "currency", self.settings["currency"],
-            "title", title,
-            "meta_description", title + " — " + self.settings["name"],
-            "csrf", ""
-        );
+        let base = {
+            "store_name": self.settings["name"],
+            "currency": self.settings["currency"],
+            "title": title,
+            "meta_description": title + " — " + self.settings["name"],
+            "csrf": ""
+        };
         let chrome = StoreChrome.build(req, self.settings);
         for ck in chrome.keys() {
             base[ck] = chrome[ck];
@@ -61,28 +61,28 @@ public class PaymentController {
         if req.auth != null and req.auth.check() {
             csrf = req.auth.csrf();
         }
-        return view("payment/index", self.ctx(req, "Choose payment method", map(
-            "order", order,
-            "total_display", Money.format(int(order["total_minor"]), "BDT"),
-            "providers", self.payments.providers(),
-            "csrf", csrf
-        )));
+        return view("payment/index", self.ctx(req, "Choose payment method", {
+            "order": order,
+            "total_display": Money.format(int(order["total_minor"]), "BDT"),
+            "providers": self.payments.providers(),
+            "csrf": csrf
+        }));
     }
 
     public fn initiate(self, req) {
         let number = string(req.input("order_number", ""));
         let provider = string(req.input("provider", ""));
         if number == "" or provider == "" {
-            throw validation_failed(map("provider", "Choose an order and payment method."));
+            throw validation_failed({"provider": "Choose an order and payment method."});
         }
         let result = self.payments.initiate(number, provider, self.user_id(req));
         if req.input("format", "") == "json" {
-            return json(map("data", map(
-                "payment_id", result["payment"]["id"],
-                "status", result["payment"]["status"],
-                "redirect_url", result["redirect_url"],
-                "instructions", result["instructions"]
-            )), 201);
+            return json({"data": {
+                "payment_id": result["payment"]["id"],
+                "status": result["payment"]["status"],
+                "redirect_url": result["redirect_url"],
+                "instructions": result["instructions"]
+            }}, 201);
         }
         let target = result["redirect_url"];
         if target == "" {
@@ -97,10 +97,10 @@ public class PaymentController {
         if order == null {
             throw not_found("Order not found.");
         }
-        return view("payment/return", self.ctx(req, "Payment status", map(
-            "order", order,
-            "status", order["status"]
-        )));
+        return view("payment/return", self.ctx(req, "Payment status", {
+            "order": order,
+            "status": order["status"]
+        }));
     }
 
     // Gateway webhook: raw body + HMAC signature header.
@@ -112,7 +112,7 @@ public class PaymentController {
         let result = self.payments.handle_webhook(
             string(req.params["provider"]), string(req.body), signature
         );
-        return json(map("data", result));
+        return json({"data": result});
     }
 
     public fn customer_history(self, req) {
@@ -129,17 +129,17 @@ public class PaymentController {
     // ---- admin ----
     public fn admin_verify(self, req) {
         let result = self.payments.verify(req.params["id"]);
-        return json(map("data", result));
+        return json({"data": result});
     }
 
     public fn admin_refund(self, req) {
         let amount = int(req.input("amount_minor", 0));
         let reason = string(req.input("reason", "Customer refund"));
         let result = self.payments.refund(req.params["id"], amount, reason);
-        return json(map("data", result));
+        return json({"data": result});
     }
 
     public fn admin_reconciliation(self, req) {
-        return json(map("data", self.payments.reconciliation()));
+        return json({"data": self.payments.reconciliation()});
     }
 }

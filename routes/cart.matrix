@@ -9,12 +9,12 @@ import "app/Controllers/CartController";
 public fn register_cart_routes() {
     let ctl = new CartController();
 
-    Route.get("/cart", fn(req) { return ctl.show(req); }).name("cart");
-    Route.get("/cart/summary", fn(req) { return ctl.summary_json(req); }).name("cart.summary");
-    Route.post("/cart/items", fn(req) { return ctl.add(req); }).name("cart.add");
+    Route.get("/cart", req => ctl.show(req)).name("cart");
+    Route.get("/cart/summary", req => ctl.summary_json(req)).name("cart.summary");
+    Route.post("/cart/items", req => ctl.add(req)).name("cart.add");
 
-    Route.put("/cart/items/:id", fn(req) { return ctl.update(req); });
-    Route.post("/cart/items/:id/quantity", fn(req) { return ctl.update(req); });
-    Route.delete("/cart/items/:id", fn(req) { return ctl.remove(req); });
-    Route.post("/cart/items/:id/remove", fn(req) { return ctl.remove(req); });
+    Route.put("/cart/items/:id", req => ctl.update(req));
+    Route.post("/cart/items/:id/quantity", req => ctl.update(req));
+    Route.delete("/cart/items/:id", req => ctl.remove(req));
+    Route.post("/cart/items/:id/remove", req => ctl.remove(req));
 }

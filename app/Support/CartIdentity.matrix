@@ -3,7 +3,13 @@
 // Controllers own cookie parsing; services receive a plain map.
 
 public fn cookie_value(req, name: string) -> string {
-    if not req.headers.has("cookie") {
+    if req == null {
+        return "";
+    }
+    if type_of(req) == "object" and req.cookies != null and req.cookies.has(name) {
+        return string(req.cookies[name]);
+    }
+    if req.headers == null or not req.headers.has("cookie") {
         return "";
     }
     let parts = string(req.headers["cookie"]).split(";");
@@ -24,8 +30,8 @@ public fn cart_identity(req) {
         key = "cart-" + hex_encode(random_bytes(16).unwrap());
     }
     let uid = null;
-    if req.auth != null and req.auth.check() {
+    if req != null and req.auth != null and req.auth.check() {
         uid = req.auth.id();
     }
-    return map("user_id", uid, "key", key);
+    return {"user_id": uid, "key": key};
 }

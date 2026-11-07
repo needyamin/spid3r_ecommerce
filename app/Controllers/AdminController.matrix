@@ -17,7 +17,7 @@ import "app/Repositories/OrderRepository";
 import "app/Repositories/CatalogRepository";
 import "app/Support/Money" as Money;
 
-let identity = fn(row) { return row; };
+let identity = row => row;
 
 // Format an integer with a fixed number of decimals WITHOUT floats
 // (tax percent, weight in kg).
@@ -61,7 +61,7 @@ let status_options_for = fn(current: string, allowed) {
     let i = 0;
     while i < allowed.len() {
         let v = string(allowed[i]);
-        out.push(map("value", v, "label", v, "selected", v == string(current)));
+        out.push({"value": v, "label": v, "selected": v == string(current)});
         i += 1;
     }
     return out;
@@ -85,32 +85,32 @@ public class AdminController {
     }
 
     fn ctx(self, req, title: string, page: string, extra) {
-        let base = map(
-            "store_name", self.settings["name"],
-            "currency", self.settings["currency"],
-            "title", title,
-            "meta_description", "Store administration — " + title,
-            "page", page,
-            "is_admin_area", true,
-            "admin_active_products", page == "products",
-            "admin_active_inventory", page == "inventory",
-            "admin_active_dashboard", page == "dashboard",
-            "csrf", ""
-        );
-        base["admin_navigation"] = list(
-            map("label", "Overview", "url", "/admin/dashboard", "active", page == "dashboard", "icon", "dashboard"),
-            map("label", "Orders", "url", "/admin/orders", "active", page == "orders", "icon", "orders"),
-            map("label", "Products", "url", "/admin/products", "active", page == "products", "icon", "products"),
-            map("label", "Categories", "url", "/admin/categories", "active", page == "categories", "icon", "categories"),
-            map("label", "Brands", "url", "/admin/brands", "active", page == "brands", "icon", "brands"),
-            map("label", "Inventory", "url", "/admin/inventory", "active", page == "inventory", "icon", "inventory"),
-            map("label", "Customers", "url", "/admin/customers", "active", page == "customers", "icon", "customers"),
-            map("label", "Staff", "url", "/admin/staff", "active", page == "staff", "icon", "staff"),
-            map("label", "Roles", "url", "/admin/roles", "active", page == "roles", "icon", "roles"),
-            map("label", "Coupons", "url", "/admin/coupons", "active", page == "coupons", "icon", "coupons"),
-            map("label", "Reports", "url", "/admin/reports", "active", page == "reports", "icon", "reports"),
-            map("label", "Settings", "url", "/admin/settings", "active", page == "settings", "icon", "settings")
-        );
+        let base = {
+            "store_name": self.settings["name"],
+            "currency": self.settings["currency"],
+            "title": title,
+            "meta_description": "Store administration — " + title,
+            "page": page,
+            "is_admin_area": true,
+            "admin_active_products": page == "products",
+            "admin_active_inventory": page == "inventory",
+            "admin_active_dashboard": page == "dashboard",
+            "csrf": ""
+        };
+        base["admin_navigation"] = [
+            {"label": "Overview", "url": "/admin/dashboard", "active": page == "dashboard", "icon": "dashboard"},
+            {"label": "Orders", "url": "/admin/orders", "active": page == "orders", "icon": "orders"},
+            {"label": "Products", "url": "/admin/products", "active": page == "products", "icon": "products"},
+            {"label": "Categories", "url": "/admin/categories", "active": page == "categories", "icon": "categories"},
+            {"label": "Brands", "url": "/admin/brands", "active": page == "brands", "icon": "brands"},
+            {"label": "Inventory", "url": "/admin/inventory", "active": page == "inventory", "icon": "inventory"},
+            {"label": "Customers", "url": "/admin/customers", "active": page == "customers", "icon": "customers"},
+            {"label": "Staff", "url": "/admin/staff", "active": page == "staff", "icon": "staff"},
+            {"label": "Roles", "url": "/admin/roles", "active": page == "roles", "icon": "roles"},
+            {"label": "Coupons", "url": "/admin/coupons", "active": page == "coupons", "icon": "coupons"},
+            {"label": "Reports", "url": "/admin/reports", "active": page == "reports", "icon": "reports"},
+            {"label": "Settings", "url": "/admin/settings", "active": page == "settings", "icon": "settings"}
+        ];
         let chrome = StoreChrome.build(req, self.settings);
         for ck in chrome.keys() {
             base[ck] = chrome[ck];
@@ -220,7 +220,7 @@ public class AdminController {
                 i += 1;
             }
         }
-        return map("headers", headers, "rows", rows, "has_rows", rows.len() > 0);
+        return {"headers": headers, "rows": rows, "has_rows": rows.len() > 0};
     }
 
     fn audit(self, req, action: string, entity: string, entity_id, payload) {
@@ -234,7 +234,7 @@ public class AdminController {
         let i = 0;
         while i < stats["recent_orders"].len() {
             let o = stats["recent_orders"][i];
-            let row = map();
+            let row = {};
             for k in o.keys() {
                 row[k] = o[k];
             }
@@ -243,10 +243,10 @@ public class AdminController {
             i += 1;
         }
         stats["recent_orders"] = formatted_recent;
-        let ctx = self.ctx(req, "Dashboard", "dashboard", map(
-            "revenue_display", Money.format(int(stats["revenue_minor"]), "BDT"),
-            "csrf", req.auth.csrf()
-        ));
+        let ctx = self.ctx(req, "Dashboard", "dashboard", {
+            "revenue_display": Money.format(int(stats["revenue_minor"]), "BDT"),
+            "csrf": req.auth.csrf()
+        });
         for k in stats.keys() {
             ctx[k] = stats[k];
         }
@@ -257,21 +257,21 @@ public class AdminController {
     // the option lists the forms need (categories, brands, roles,
     // permissions, order statuses).
     fn page_extras(self, name: string, req = null) {
-        let extra = map();
+        let extra = {};
 
         if name == "products" {
             let cats = self.categories.all();
             let cat_opts = [];
             let ci = 0;
             while ci < cats.len() {
-                cat_opts.push(map("value", cats[ci]["id"], "label", cats[ci]["name"]));
+                cat_opts.push({"value": cats[ci]["id"], "label": cats[ci]["name"]});
                 ci += 1;
             }
             let brands = self.brands.all();
             let brand_opts = [];
             let bi = 0;
             while bi < brands.len() {
-                brand_opts.push(map("value", brands[bi]["id"], "label", brands[bi]["name"]));
+                brand_opts.push({"value": brands[bi]["id"], "label": brands[bi]["name"]});
                 bi += 1;
             }
             let product_q = "";
@@ -319,7 +319,7 @@ public class AdminController {
                 ids.push(rows[ri]["id"]);
                 ri += 1;
             }
-            let thumbs = map();
+            let thumbs = {};
             if ids.len() > 0 {
                 let imgs = DB.table("product_images")
                     .whereIn("product_id", ids)
@@ -358,25 +358,25 @@ public class AdminController {
                 if thumbs.has(pid) {
                     thumb = string(thumbs[pid]);
                 }
-                list.push(map(
-                    "id", rows[i]["id"],
-                    "name", rows[i]["name"],
-                    "sku", rows[i]["sku"],
-                    "price", Money.to_major(rows[i]["price_minor"]),
-                    "price_display", Money.format(int(rows[i]["price_minor"]), "BDT"),
-                    "status", rows[i]["status"],
-                    "status_options", status_options_for(string(rows[i]["status"]), ["draft", "published", "archived"]),
-                    "is_published", string(rows[i]["status"]) == "published",
-                    "is_featured", int(rows[i]["is_featured"]) == 1,
-                    "stock", qty,
-                    "available", available,
-                    "reserved", reserved,
-                    "low_stock_threshold", threshold,
-                    "is_low_stock", qty <= threshold,
-                    "thumb", thumb,
-                    "has_thumb", thumb != "",
-                    "category_id", rows[i]["category_id"]
-                ));
+                list.push({
+                    "id": rows[i]["id"],
+                    "name": rows[i]["name"],
+                    "sku": rows[i]["sku"],
+                    "price": Money.to_major(rows[i]["price_minor"]),
+                    "price_display": Money.format(int(rows[i]["price_minor"]), "BDT"),
+                    "status": rows[i]["status"],
+                    "status_options": status_options_for(string(rows[i]["status"]), ["draft", "published", "archived"]),
+                    "is_published": string(rows[i]["status"]) == "published",
+                    "is_featured": int(rows[i]["is_featured"]) == 1,
+                    "stock": qty,
+                    "available": available,
+                    "reserved": reserved,
+                    "low_stock_threshold": threshold,
+                    "is_low_stock": qty <= threshold,
+                    "thumb": thumb,
+                    "has_thumb": thumb != "",
+                    "category_id": rows[i]["category_id"]
+                });
                 i += 1;
             }
             let product_prev_url = "";
@@ -416,13 +416,13 @@ public class AdminController {
             let opts = [];
             let i = 0;
             while i < rows.len() {
-                list.push(map(
-                    "id", rows[i]["id"],
-                    "name", rows[i]["name"],
-                    "slug", rows[i]["slug"],
-                    "description", rows[i]["description"]
-                ));
-                opts.push(map("value", rows[i]["id"], "label", rows[i]["name"]));
+                list.push({
+                    "id": rows[i]["id"],
+                    "name": rows[i]["name"],
+                    "slug": rows[i]["slug"],
+                    "description": rows[i]["description"]
+                });
+                opts.push({"value": rows[i]["id"], "label": rows[i]["name"]});
                 i += 1;
             }
             extra["category_rows"] = list;
@@ -434,11 +434,11 @@ public class AdminController {
             let list = [];
             let i = 0;
             while i < rows.len() {
-                list.push(map(
-                    "id", rows[i]["id"],
-                    "name", rows[i]["name"],
-                    "slug", rows[i]["slug"]
-                ));
+                list.push({
+                    "id": rows[i]["id"],
+                    "name": rows[i]["name"],
+                    "slug": rows[i]["slug"]
+                });
                 i += 1;
             }
             extra["brand_rows"] = list;
@@ -455,10 +455,10 @@ public class AdminController {
                 if product != null {
                     pname = string(product["name"]);
                 }
-            let product_status = "missing";
-            if product != null {
-                product_status = string(product["status"]);
-            }
+                let product_status = "missing";
+                if product != null {
+                    product_status = string(product["status"]);
+                }
                 let qty = int(rows[i]["quantity"]);
                 let reserved = int(rows[i]["reserved"]);
                 let available = qty - reserved;
@@ -474,19 +474,19 @@ public class AdminController {
                 if primary != null {
                     thumb = Images.public_image_url(primary["path"]);
                 }
-                list.push(map(
-                    "product_id", rows[i]["product_id"],
-                    "product_name", pname,
-                    "product_url", "/admin/products/" + string(rows[i]["product_id"]),
-                    "product_status", product_status,
-                    "quantity", qty,
-                    "available", available,
-                    "reserved", reserved,
-                    "low_stock_threshold", threshold,
-                    "is_low_stock", qty <= threshold,
-                    "thumb", thumb,
-                    "has_thumb", thumb != ""
-                ));
+                list.push({
+                    "product_id": rows[i]["product_id"],
+                    "product_name": pname,
+                    "product_url": "/admin/products/" + string(rows[i]["product_id"]),
+                    "product_status": product_status,
+                    "quantity": qty,
+                    "available": available,
+                    "reserved": reserved,
+                    "low_stock_threshold": threshold,
+                    "is_low_stock": qty <= threshold,
+                    "thumb": thumb,
+                    "has_thumb": thumb != ""
+                });
                 i += 1;
             }
             extra["inventory_rows"] = list;
@@ -496,13 +496,13 @@ public class AdminController {
             let list = [];
             let i = 0;
             while i < rows.len() {
-                list.push(map(
-                    "id", rows[i]["id"],
-                    "name", rows[i]["name"],
-                    "email", rows[i]["email"],
-                    "status", rows[i]["status"],
-                    "status_options", status_options_for(string(rows[i]["status"]), ["active", "suspended"])
-                ));
+                list.push({
+                    "id": rows[i]["id"],
+                    "name": rows[i]["name"],
+                    "email": rows[i]["email"],
+                    "status": rows[i]["status"],
+                    "status_options": status_options_for(string(rows[i]["status"]), ["active", "suspended"])
+                });
                 i += 1;
             }
             extra["customer_rows"] = list;
@@ -512,18 +512,18 @@ public class AdminController {
             let list = [];
             let i = 0;
             while i < rows.len() {
-                list.push(map(
-                    "id", rows[i]["id"],
-                    "name", rows[i]["name"],
-                    "email", rows[i]["email"]
-                ));
+                list.push({
+                    "id": rows[i]["id"],
+                    "name": rows[i]["name"],
+                    "email": rows[i]["email"]
+                });
                 i += 1;
             }
             let roles = self.admin.roles();
             let role_opts = [];
             let ri = 0;
             while ri < roles.len() {
-                role_opts.push(map("value", roles[ri]["slug"], "label", roles[ri]["name"]));
+                role_opts.push({"value": roles[ri]["slug"], "label": roles[ri]["name"]});
                 ri += 1;
             }
             extra["staff_rows"] = list;
@@ -535,19 +535,19 @@ public class AdminController {
             let list = [];
             let i = 0;
             while i < rows.len() {
-                list.push(map(
-                    "id", rows[i]["id"],
-                    "name", rows[i]["name"],
-                    "slug", rows[i]["slug"],
-                    "permission_count", rows[i]["permission_count"]
-                ));
+                list.push({
+                    "id": rows[i]["id"],
+                    "name": rows[i]["name"],
+                    "slug": rows[i]["slug"],
+                    "permission_count": rows[i]["permission_count"]
+                });
                 i += 1;
             }
             let perms = self.admin.permissions();
             let perm_opts = [];
             let pi = 0;
             while pi < perms.len() {
-                perm_opts.push(map("value", perms[pi]["slug"], "label", perms[pi]["name"]));
+                perm_opts.push({"value": perms[pi]["slug"], "label": perms[pi]["name"]});
                 pi += 1;
             }
             extra["role_rows"] = list;
@@ -559,14 +559,14 @@ public class AdminController {
             let list = [];
             let i = 0;
             while i < rows.len() {
-                list.push(map(
-                    "id", rows[i]["id"],
-                    "order_number", rows[i]["order_number"],
-                    "status", rows[i]["status"],
-                    "status_options", status_options_for(string(rows[i]["status"]), self.order_statuses),
-                    "total_display", Money.format(int(rows[i]["total_minor"]), "BDT"),
-                    "placed_at", rows[i]["placed_at"]
-                ));
+                list.push({
+                    "id": rows[i]["id"],
+                    "order_number": rows[i]["order_number"],
+                    "status": rows[i]["status"],
+                    "status_options": status_options_for(string(rows[i]["status"]), self.order_statuses),
+                    "total_display": Money.format(int(rows[i]["total_minor"]), "BDT"),
+                    "placed_at": rows[i]["placed_at"]
+                });
                 i += 1;
             }
             extra["order_rows"] = list;
@@ -576,13 +576,13 @@ public class AdminController {
     }
 
     public fn page(self, req, name: string) {
-        let titles = map(
-            "products", "Products", "categories", "Categories", "brands", "Brands",
-            "inventory", "Inventory", "orders", "Orders", "customers", "Customers",
-            "staff", "Staff", "roles", "Roles", "coupons", "Coupons",
-            "settings", "Store settings", "shipping", "Shipping configuration",
-            "payments", "Payment configuration", "audit", "Audit logs"
-        );
+        let titles = {
+            "products": "Products", "categories": "Categories", "brands": "Brands",
+            "inventory": "Inventory", "orders": "Orders", "customers": "Customers",
+            "staff": "Staff", "roles": "Roles", "coupons": "Coupons",
+            "settings": "Store settings", "shipping": "Shipping configuration",
+            "payments": "Payment configuration", "audit": "Audit logs"
+        };
         let title = name;
         if titles.has(name) {
             title = titles[name];
@@ -603,23 +603,23 @@ public class AdminController {
         let has_own_ui = flag_products or flag_categories or flag_brands
             or flag_inventory or flag_customers or flag_staff
             or flag_roles or flag_orders;
-        let ctx = self.ctx(req, title, name, map(
-            "headers", data["headers"],
-            "rows", data["rows"],
-            "has_rows", data["has_rows"],
-            "is_settings", is_settings,
-            "is_coupons", is_coupons,
-            "is_products", flag_products,
-            "is_categories", flag_categories,
-            "is_brands", flag_brands,
-            "is_inventory", flag_inventory,
-            "is_customers", flag_customers,
-            "is_staff", flag_staff,
-            "is_roles", flag_roles,
-            "is_orders", flag_orders,
-            "show_generic_table", not has_own_ui,
-            "csrf", req.auth.csrf()
-        ));
+        let ctx = self.ctx(req, title, name, {
+            "headers": data["headers"],
+            "rows": data["rows"],
+            "has_rows": data["has_rows"],
+            "is_settings": is_settings,
+            "is_coupons": is_coupons,
+            "is_products": flag_products,
+            "is_categories": flag_categories,
+            "is_brands": flag_brands,
+            "is_inventory": flag_inventory,
+            "is_customers": flag_customers,
+            "is_staff": flag_staff,
+            "is_roles": flag_roles,
+            "is_orders": flag_orders,
+            "show_generic_table": not has_own_ui,
+            "csrf": req.auth.csrf()
+        });
         let extras = self.page_extras(name, req);
         for k in extras.keys() {
             ctx[k] = extras[k];
@@ -656,15 +656,15 @@ public class AdminController {
                 }
                 label = string(n) + suffix;
             }
-            gallery_rows.push(map(
-                "id", img["id"],
-                "url", img["url"],
-                "alt_text", img["alt_text"],
-                "is_primary", img["is_primary"],
-                "position_label", label,
-                "is_first", gi == 0,
-                "is_last", gi == gallery.len() - 1
-            ));
+            gallery_rows.push({
+                "id": img["id"],
+                "url": img["url"],
+                "alt_text": img["alt_text"],
+                "is_primary": img["is_primary"],
+                "position_label": label,
+                "is_first": gi == 0,
+                "is_last": gi == gallery.len() - 1
+            });
             gi += 1;
         }
         let variants = variants_repo.for_product(pid);
@@ -676,22 +676,22 @@ public class AdminController {
         let cat_opts = [];
         let ci = 0;
         while ci < cats.len() {
-            cat_opts.push(map(
-                "value", cats[ci]["id"],
-                "label", cats[ci]["name"],
-                "selected", int(cats[ci]["id"]) == int(product["category_id"])
-            ));
+            cat_opts.push({
+                "value": cats[ci]["id"],
+                "label": cats[ci]["name"],
+                "selected": int(cats[ci]["id"]) == int(product["category_id"])
+            });
             ci += 1;
         }
         let brands = self.brands.all();
         let brand_opts = [];
         let bi = 0;
         while bi < brands.len() {
-            brand_opts.push(map(
-                "value", brands[bi]["id"],
-                "label", brands[bi]["name"],
-                "selected", product["brand_id"] != null and int(brands[bi]["id"]) == int(product["brand_id"])
-            ));
+            brand_opts.push({
+                "value": brands[bi]["id"],
+                "label": brands[bi]["name"],
+                "selected": product["brand_id"] != null and int(brands[bi]["id"]) == int(product["brand_id"])
+            });
             bi += 1;
         }
 
@@ -700,56 +700,56 @@ public class AdminController {
         let vi = 0;
         while vi < variants.len() {
             let v = variants[vi];
-            variant_rows.push(map(
-                "id", v["id"],
-                "sku", v["sku"],
-                "name", v["name"],
-                "price", Money.to_major(v["price_minor"]),
-                "price_display", Money.format(int(v["price_minor"]), "BDT"),
-                "attributes", v["attributes_json"],
-                "is_active", int(v["is_active"]) == 1,
-                "is_inactive", int(v["is_active"]) != 1
-            ));
+            variant_rows.push({
+                "id": v["id"],
+                "sku": v["sku"],
+                "name": v["name"],
+                "price": Money.to_major(v["price_minor"]),
+                "price_display": Money.format(int(v["price_minor"]), "BDT"),
+                "attributes": v["attributes_json"],
+                "is_active": int(v["is_active"]) == 1,
+                "is_inactive": int(v["is_active"]) != 1
+            });
             vi += 1;
         }
 
         let movement_rows = [];
         let mi = 0;
         while mi < movements.len() {
-            movement_rows.push(map(
-                "delta", movements[mi]["delta"],
-                "reason", movements[mi]["reason"],
-                "created_at", movements[mi]["created_at"]
-            ));
+            movement_rows.push({
+                "delta": movements[mi]["delta"],
+                "reason": movements[mi]["reason"],
+                "created_at": movements[mi]["created_at"]
+            });
             mi += 1;
         }
 
-        let ctx = self.ctx(req, string(product["name"]), "products", map(
-            "csrf", req.auth.csrf(),
-            "product", product,
-            "product_price", Money.to_major(minor_or_zero(product["price_minor"])),
-            "product_price_display", Money.format(minor_or_zero(product["price_minor"]), "BDT"),
-            "product_cost", Money.to_major(minor_or_zero(product["cost_minor"])),
-            "product_compare_at", Money.to_major(minor_or_zero(product["compare_at_minor"])),
-            "product_status_options", status_options_for(string(product["status"]), ["draft", "published", "archived"]),
-            "product_is_published", string(product["status"]) == "published",
-            "product_featured", int(product["is_featured"]) == 1,
-            "product_not_featured", int(product["is_featured"]) != 1,
-            "product_tax_percent", scaled_display(minor_or_zero(product["tax_rate_bps"]), 2),
-            "product_weight_kg", scaled_display(minor_or_zero(product["weight_grams"]), 3),
-            "stock_available", int(stock["quantity"]) - int(stock["reserved"]),
-            "category_options", cat_opts,
-            "has_category_options", cat_opts.len() > 0,
-            "brand_options", brand_opts,
-            "has_brand_options", brand_opts.len() > 0,
-            "gallery", gallery_rows,
-            "has_gallery", gallery_rows.len() > 0,
-            "variants", variant_rows,
-            "has_variants", variant_rows.len() > 0,
-            "stock", stock,
-            "movements", movement_rows,
-            "has_movements", movement_rows.len() > 0
-        ));
+        let ctx = self.ctx(req, string(product["name"]), "products", {
+            "csrf": req.auth.csrf(),
+            "product": product,
+            "product_price": Money.to_major(minor_or_zero(product["price_minor"])),
+            "product_price_display": Money.format(minor_or_zero(product["price_minor"]), "BDT"),
+            "product_cost": Money.to_major(minor_or_zero(product["cost_minor"])),
+            "product_compare_at": Money.to_major(minor_or_zero(product["compare_at_minor"])),
+            "product_status_options": status_options_for(string(product["status"]), ["draft", "published", "archived"]),
+            "product_is_published": string(product["status"]) == "published",
+            "product_featured": int(product["is_featured"]) == 1,
+            "product_not_featured": int(product["is_featured"]) != 1,
+            "product_tax_percent": scaled_display(minor_or_zero(product["tax_rate_bps"]), 2),
+            "product_weight_kg": scaled_display(minor_or_zero(product["weight_grams"]), 3),
+            "stock_available": int(stock["quantity"]) - int(stock["reserved"]),
+            "category_options": cat_opts,
+            "has_category_options": cat_opts.len() > 0,
+            "brand_options": brand_opts,
+            "has_brand_options": brand_opts.len() > 0,
+            "gallery": gallery_rows,
+            "has_gallery": gallery_rows.len() > 0,
+            "variants": variant_rows,
+            "has_variants": variant_rows.len() > 0,
+            "stock": stock,
+            "movements": movement_rows,
+            "has_movements": movement_rows.len() > 0
+        });
         return view("admin/product", ctx);
     }
 
@@ -765,14 +765,14 @@ public class AdminController {
         let i = 0;
         while i < items.len() {
             let it = items[i];
-            decorated.push(map(
-                "id", it["id"],
-                "name", it["name_snapshot"],
-                "sku", it["sku_snapshot"],
-                "quantity", it["quantity"],
-                "unit_display", Money.format(int(it["unit_price_minor"]), "BDT"),
-                "line_display", Money.format(int(it["line_total_minor"]), "BDT")
-            ));
+            decorated.push({
+                "id": it["id"],
+                "name": it["name_snapshot"],
+                "sku": it["sku_snapshot"],
+                "quantity": it["quantity"],
+                "unit_display": Money.format(int(it["unit_price_minor"]), "BDT"),
+                "line_display": Money.format(int(it["line_total_minor"]), "BDT")
+            });
             i += 1;
         }
         let customer = null;
@@ -781,13 +781,13 @@ public class AdminController {
         }
         let addr = json_parse(string(order["shipping_address_json"]));
         if type_of(addr) != "map" {
-            addr = map();
+            addr = {};
         }
         let status_opts = [];
         let si = 0;
         while si < self.order_statuses.len() {
             let s = self.order_statuses[si];
-            status_opts.push(map("value", s, "label", s.replace("_", " "), "selected", s == string(order["status"])));
+            status_opts.push({"value": s, "label": s.replace("_", " "), "selected": s == string(order["status"])});
             si += 1;
         }
         let addr_name = "";
@@ -797,43 +797,40 @@ public class AdminController {
         let addr_city = "";
         if addr["city"] != null { addr_city = string(addr["city"]); }
 
-        let ctx = self.ctx(req, "Order " + string(order["order_number"]), "orders", map(
-            "order", order,
-            "items", decorated,
-            "item_count", decorated.len(),
-            "customer", customer,
-            "has_customer", customer != null,
-            "address_name", addr_name,
-            "address_line", addr_line,
-            "address_city", addr_city,
-            "subtotal_display", Money.format(int(order["subtotal_minor"]), "BDT"),
-            "discount_display", Money.format(int(order["discount_minor"]), "BDT"),
-            "shipping_display", Money.format(int(order["shipping_minor"]), "BDT"),
-            "tax_display", Money.format(int(order["tax_minor"]), "BDT"),
-            "total_display", Money.format(int(order["total_minor"]), "BDT"),
-            "status_options", status_opts,
-            "csrf", req.auth.csrf()
-        ));
+        let ctx = self.ctx(req, "Order " + string(order["order_number"]), "orders", {
+            "order": order,
+            "items": decorated,
+            "item_count": decorated.len(),
+            "customer": customer,
+            "has_customer": customer != null,
+            "address_name": addr_name,
+            "address_line": addr_line,
+            "address_city": addr_city,
+            "subtotal_display": Money.format(int(order["subtotal_minor"]), "BDT"),
+            "discount_display": Money.format(int(order["discount_minor"]), "BDT"),
+            "shipping_display": Money.format(int(order["shipping_minor"]), "BDT"),
+            "tax_display": Money.format(int(order["tax_minor"]), "BDT"),
+            "total_display": Money.format(int(order["total_minor"]), "BDT"),
+            "status_options": status_opts,
+            "csrf": req.auth.csrf()
+        });
         return view("admin/order", ctx);
     }
 
     public fn reports(self, req) {
         let stats = self.admin.dashboard();
-        return view("admin/reports", self.ctx(req, "Reports", "reports", map(
-            "revenue_display", Money.format(int(stats["revenue_minor"]), "BDT"),
-            "order_count", stats["orders"],
-            "settled_rows", self.admin.report_rows().len(),
-            "csrf", req.auth.csrf()
-        )));
+        return view("admin/reports", self.ctx(req, "Reports", "reports", {
+            "revenue_display": Money.format(int(stats["revenue_minor"]), "BDT"),
+            "order_count": stats["orders"],
+            "settled_rows": self.admin.report_rows().len(),
+            "csrf": req.auth.csrf()
+        }));
     }
 
     public fn export(self, req) {
-        let format = "csv";
-        if req.query_params.has("format") {
-            format = string(req.query_params["format"]);
-        }
+        let format = string(req.query("format", "csv"));
         if format == "json" {
-            return json(map("data", self.admin.report_rows()));
+            return json({"data": self.admin.report_rows()});
         }
         let res = response(self.admin.csv_export(), 200);
         res.header("content-type", "text/csv; charset=utf-8");
@@ -849,8 +846,8 @@ public class AdminController {
     public fn api_customer_status(self, req) {
         let status = string(req.input("status", ""));
         let ok = self.admin.set_customer_status(req.params["id"], status);
-        self.audit(req, "customer.status", "users", req.params["id"], map("status", status));
-        return json(map("data", map("updated", ok, "status", status)));
+        self.audit(req, "customer.status", "users", req.params["id"], {"status": status});
+        return json({"data": {"updated": ok, "status": status}});
     }
 
     public fn api_staff(self, req) {
@@ -865,7 +862,7 @@ public class AdminController {
         if user_id == null or string(user_id) == "" {
             let email = string(req.input("email", "")).trim().lower();
             if email == "" {
-                throw validation_failed(map("email", "Provide a user ID or an email address."));
+                throw validation_failed({"email": "Provide a user ID or an email address."});
             }
             let user = DB.table("users").where("email", "=", email).first();
             if user == null {
@@ -874,19 +871,19 @@ public class AdminController {
             user_id = user["id"];
         }
         let ok = self.admin.assign_role(user_id, slug);
-        self.audit(req, "staff.role", "users", user_id, map("role", slug));
-        return json(map("data", map("assigned", ok, "user_id", user_id, "role", slug)));
+        self.audit(req, "staff.role", "users", user_id, {"role": slug});
+        return json({"data": {"assigned": ok, "user_id": user_id, "role": slug}});
     }
 
     public fn api_remove_role(self, req) {
         let slug = string(req.input("role", ""));
         let ok = self.admin.remove_role(req.input("user_id", null), slug);
-        self.audit(req, "staff.role.remove", "users", req.input("user_id", ""), map("role", slug));
-        return json(map("data", map("removed", ok)));
+        self.audit(req, "staff.role.remove", "users", req.input("user_id", ""), {"role": slug});
+        return json({"data": {"removed": ok}});
     }
 
     public fn api_roles(self, req) {
-        return json(map("data", map("roles", self.admin.roles(), "permissions", self.admin.permissions())));
+        return json({"data": {"roles": self.admin.roles(), "permissions": self.admin.permissions()}});
     }
 
     public fn api_toggle_permission(self, req) {
@@ -895,8 +892,8 @@ public class AdminController {
         let raw = string(req.input("enabled", "0")).trim().lower();
         let enabled = raw == "1" or raw == "true";
         let ok = self.admin.toggle_permission(req.params["id"], string(req.input("permission", "")), enabled);
-        self.audit(req, "role.permission", "roles", req.params["id"], map("permission", req.input("permission", ""), "enabled", enabled));
-        return json(map("data", map("updated", ok)));
+        self.audit(req, "role.permission", "roles", req.params["id"], {"permission": req.input("permission", ""), "enabled": enabled});
+        return json({"data": {"updated": ok}});
     }
 
     public fn api_coupons(self, req) {
@@ -905,7 +902,7 @@ public class AdminController {
 
     public fn api_coupon_save(self, req) {
         let row = self.admin.save_coupon(req.data, null);
-        self.audit(req, "coupon.create", "coupons", row["id"], map("code", row["code"]));
+        self.audit(req, "coupon.create", "coupons", row["id"], {"code": row["code"]});
         if req.input("format", "") != "json" {
             return redirect("/admin/coupons");
         }
@@ -914,14 +911,14 @@ public class AdminController {
 
     public fn api_coupon_update(self, req) {
         let row = self.admin.save_coupon(req.data, req.params["id"]);
-        self.audit(req, "coupon.update", "coupons", row["id"], map("code", row["code"]));
+        self.audit(req, "coupon.update", "coupons", row["id"], {"code": row["code"]});
         return json(resource_item(row, identity));
     }
 
     public fn api_coupon_delete(self, req) {
         self.admin.delete_coupon(req.params["id"]);
-        self.audit(req, "coupon.delete", "coupons", req.params["id"], map());
-        return json(map("data", map("deleted", true)));
+        self.audit(req, "coupon.delete", "coupons", req.params["id"], {});
+        return json({"data": {"deleted": true}});
     }
 
     // Activate / deactivate toggle for the admin SPA. Deactivation is the
@@ -932,8 +929,8 @@ public class AdminController {
         let raw = string(req.input("active", "0")).trim().lower();
         let active = raw == "1" or raw == "true";
         let ok = self.admin.set_coupon_active(req.params["id"], active);
-        self.audit(req, "coupon.toggle", "coupons", req.params["id"], map("active", active));
-        return json(map("data", map("updated", ok, "is_active", active)));
+        self.audit(req, "coupon.toggle", "coupons", req.params["id"], {"active": active});
+        return json({"data": {"updated": ok, "is_active": active}});
     }
 
     public fn api_settings(self, req) {
@@ -945,11 +942,11 @@ public class AdminController {
         let value = string(req.input("value", ""));
         let group = string(req.input("group", "general"));
         let ok = self.admin.update_setting(key, value, group);
-        self.audit(req, "settings.update", "settings", key, map("value", value));
+        self.audit(req, "settings.update", "settings", key, {"value": value});
         if req.input("format", "") != "json" {
             return redirect("/admin/settings");
         }
-        return json(map("data", map("updated", ok, "setting_key", key)));
+        return json({"data": {"updated": ok, "setting_key": key}});
     }
 
     public fn api_audit(self, req) {
@@ -1016,26 +1013,26 @@ public class AdminController {
                 brand_name = string(brand["name"]);
             }
         }
-        return map(
-            "id", pid,
-            "name", row["name"],
-            "sku", row["sku"],
-            "price_minor", int(row["price_minor"]),
-            "price_display", Money.format(int(row["price_minor"]), "BDT"),
-            "status", string(row["status"]),
-            "is_published", string(row["status"]) == "published",
-            "is_draft", string(row["status"]) == "draft",
-            "is_featured", int(row["is_featured"]) == 1,
-            "category_name", cat_name,
-            "brand_name", brand_name,
-            "stock", qty,
-            "available", available,
-            "reserved", reserved,
-            "low_stock_threshold", threshold,
-            "is_low_stock", qty <= threshold,
-            "thumb", thumb,
-            "has_thumb", thumb != ""
-        );
+        return {
+            "id": pid,
+            "name": row["name"],
+            "sku": row["sku"],
+            "price_minor": int(row["price_minor"]),
+            "price_display": Money.format(int(row["price_minor"]), "BDT"),
+            "status": string(row["status"]),
+            "is_published": string(row["status"]) == "published",
+            "is_draft": string(row["status"]) == "draft",
+            "is_featured": int(row["is_featured"]) == 1,
+            "category_name": cat_name,
+            "brand_name": brand_name,
+            "stock": qty,
+            "available": available,
+            "reserved": reserved,
+            "low_stock_threshold": threshold,
+            "is_low_stock": qty <= threshold,
+            "thumb": thumb,
+            "has_thumb": thumb != ""
+        };
     }
 
     public fn api_overview(self, req) {
@@ -1044,28 +1041,28 @@ public class AdminController {
         let i = 0;
         while i < stats["recent_orders"].len() {
             let o = stats["recent_orders"][i];
-            recent.push(map(
-                "order_number", o["order_number"],
-                "status", o["status"],
-                "status_label", string(o["status"]).replace("_", " "),
-                "total_display", Money.format(int(o["total_minor"]), "BDT"),
-                "placed_at", o["placed_at"]
-            ));
+            recent.push({
+                "order_number": o["order_number"],
+                "status": o["status"],
+                "status_label": string(o["status"]).replace("_", " "),
+                "total_display": Money.format(int(o["total_minor"]), "BDT"),
+                "placed_at": o["placed_at"]
+            });
             i += 1;
         }
-        return json(map("data", map(
-            "orders", stats["orders"],
-            "pending_orders", stats["pending_orders"],
-            "revenue_minor", stats["revenue_minor"],
-            "revenue_display", Money.format(int(stats["revenue_minor"]), "BDT"),
-            "customers", stats["customers"],
-            "products", stats["products"],
-            "published_products", stats["published_products"],
-            "low_stock", stats["low_stock"],
-            "coupons", stats["coupons"],
-            "recent_orders", recent,
-            "has_recent", stats["has_recent"]
-        )));
+        return json({"data": {
+            "orders": stats["orders"],
+            "pending_orders": stats["pending_orders"],
+            "revenue_minor": stats["revenue_minor"],
+            "revenue_display": Money.format(int(stats["revenue_minor"]), "BDT"),
+            "customers": stats["customers"],
+            "products": stats["products"],
+            "published_products": stats["published_products"],
+            "low_stock": stats["low_stock"],
+            "coupons": stats["coupons"],
+            "recent_orders": recent,
+            "has_recent": stats["has_recent"]
+        }});
     }
 
     public fn api_options(self, req) {
@@ -1073,22 +1070,22 @@ public class AdminController {
         let cat_opts = [];
         let i = 0;
         while i < cats.len() {
-            cat_opts.push(map("id", cats[i]["id"], "name", cats[i]["name"]));
+            cat_opts.push({"id": cats[i]["id"], "name": cats[i]["name"]});
             i += 1;
         }
         let brands = DB.table("brands").orderBy("name", "ASC").get();
         let brand_opts = [];
         let j = 0;
         while j < brands.len() {
-            brand_opts.push(map("id", brands[j]["id"], "name", brands[j]["name"]));
+            brand_opts.push({"id": brands[j]["id"], "name": brands[j]["name"]});
             j += 1;
         }
-        return json(map("data", map(
-            "categories", cat_opts,
-            "brands", brand_opts,
-            "order_statuses", self.order_statuses,
-            "product_statuses", ["draft", "published", "archived"]
-        )));
+        return json({"data": {
+            "categories": cat_opts,
+            "brands": brand_opts,
+            "order_statuses": self.order_statuses,
+            "product_statuses": ["draft", "published", "archived"]
+        }});
     }
 
     public fn api_products_list(self, req) {
@@ -1117,14 +1114,14 @@ public class AdminController {
             data.push(self.build_product_list_row(rows[i]));
             i += 1;
         }
-        return json(map("data", data, "meta", map(
-            "count", data.len(),
-            "total", int(page_result["total"]),
-            "page", int(page_result["page"]),
-            "per_page", int(page_result["per_page"]),
-            "last_page", int(page_result["last_page"]),
-            "has_more", page_result["has_more"]
-        )));
+        return json({"data": data, "meta": {
+            "count": data.len(),
+            "total": int(page_result["total"]),
+            "page": int(page_result["page"]),
+            "per_page": int(page_result["per_page"]),
+            "last_page": int(page_result["last_page"]),
+            "has_more": page_result["has_more"]
+        }});
     }
 
     public fn api_categories_list(self, req) {
@@ -1145,25 +1142,25 @@ public class AdminController {
         while i < rows.len() {
             let c = rows[i];
             let product_count = DB.table("products").where("category_id", "=", c["id"]).count();
-            data.push(map(
-                "id", c["id"],
-                "name", c["name"],
-                "slug", c["slug"],
-                "description", c["description"],
-                "parent_id", c["parent_id"],
-                "product_count", product_count,
-                "created_at", c["created_at"]
-            ));
+            data.push({
+                "id": c["id"],
+                "name": c["name"],
+                "slug": c["slug"],
+                "description": c["description"],
+                "parent_id": c["parent_id"],
+                "product_count": product_count,
+                "created_at": c["created_at"]
+            });
             i += 1;
         }
-        return json(map("data", data, "meta", map(
-            "count", data.len(),
-            "total", int(page_result["total"]),
-            "page", int(page_result["page"]),
-            "per_page", int(page_result["per_page"]),
-            "last_page", int(page_result["last_page"]),
-            "has_more", page_result["has_more"]
-        )));
+        return json({"data": data, "meta": {
+            "count": data.len(),
+            "total": int(page_result["total"]),
+            "page": int(page_result["page"]),
+            "per_page": int(page_result["per_page"]),
+            "last_page": int(page_result["last_page"]),
+            "has_more": page_result["has_more"]
+        }});
     }
 
     public fn api_brands_list(self, req) {
@@ -1187,30 +1184,30 @@ public class AdminController {
             if b["id"] != null {
                 product_count = DB.table("products").where("brand_id", "=", b["id"]).count();
             }
-            data.push(map(
-                "id", b["id"],
-                "name", b["name"],
-                "slug", b["slug"],
-                "description", b["description"],
-                "product_count", product_count,
-                "created_at", b["created_at"]
-            ));
+            data.push({
+                "id": b["id"],
+                "name": b["name"],
+                "slug": b["slug"],
+                "description": b["description"],
+                "product_count": product_count,
+                "created_at": b["created_at"]
+            });
             i += 1;
         }
-        return json(map("data", data, "meta", map(
-            "count", data.len(),
-            "total", int(page_result["total"]),
-            "page", int(page_result["page"]),
-            "per_page", int(page_result["per_page"]),
-            "last_page", int(page_result["last_page"]),
-            "has_more", page_result["has_more"]
-        )));
+        return json({"data": data, "meta": {
+            "count": data.len(),
+            "total": int(page_result["total"]),
+            "page": int(page_result["page"]),
+            "per_page": int(page_result["per_page"]),
+            "last_page": int(page_result["last_page"]),
+            "has_more": page_result["has_more"]
+        }});
     }
 
     public fn api_inventory_list(self, req) {
         let q = string(req.input("q", "")).trim();
         let low = string(req.input("low", "")).trim();
-        let pid_map = map();
+        let pid_map = {};
         if q != "" {
             let matched = DB.table("products").where("name", "LIKE", "%" + q + "%").get();
             let mi = 0;
@@ -1255,19 +1252,19 @@ public class AdminController {
             if primary != null {
                 thumb = Images.public_image_url(primary["path"]);
             }
-            data.push(map(
-                "product_id", pid,
-                "product_name", pname,
-                "product_status", pstatus,
-                "quantity", qty,
-                "available", available,
-                "reserved", reserved,
-                "low_stock_threshold", threshold,
-                "is_low_stock", is_low,
-                "thumb", thumb,
-                "has_thumb", thumb != "",
-                "price_display", price_display
-            ));
+            data.push({
+                "product_id": pid,
+                "product_name": pname,
+                "product_status": pstatus,
+                "quantity": qty,
+                "available": available,
+                "reserved": reserved,
+                "low_stock_threshold": threshold,
+                "is_low_stock": is_low,
+                "thumb": thumb,
+                "has_thumb": thumb != "",
+                "price_display": price_display
+            });
             i += 1;
         }
         let per_page = 15;
@@ -1287,14 +1284,14 @@ public class AdminController {
         if total > 0 {
             last_page = (total + per_page - 1) / per_page;
         }
-        return json(map("data", sliced, "meta", map(
-            "count", sliced.len(),
-            "total", total,
-            "page", page,
-            "per_page", per_page,
-            "last_page", last_page,
-            "has_more", page < last_page
-        )));
+        return json({"data": sliced, "meta": {
+            "count": sliced.len(),
+            "total": total,
+            "page": page,
+            "per_page": per_page,
+            "last_page": last_page,
+            "has_more": page < last_page
+        }});
     }
 
     public fn api_orders_list(self, req) {
@@ -1326,28 +1323,28 @@ public class AdminController {
                 }
             }
             let items_count = DB.table("order_items").where("order_id", "=", o["id"]).count();
-            data.push(map(
-                "id", o["id"],
-                "order_number", o["order_number"],
-                "status", o["status"],
-                "status_label", string(o["status"]).replace("_", " "),
-                "total_minor", int(o["total_minor"]),
-                "total_display", Money.format(int(o["total_minor"]), "BDT"),
-                "currency", o["currency"],
-                "placed_at", o["placed_at"],
-                "customer_name", customer_name,
-                "item_count", items_count
-            ));
+            data.push({
+                "id": o["id"],
+                "order_number": o["order_number"],
+                "status": o["status"],
+                "status_label": string(o["status"]).replace("_", " "),
+                "total_minor": int(o["total_minor"]),
+                "total_display": Money.format(int(o["total_minor"]), "BDT"),
+                "currency": o["currency"],
+                "placed_at": o["placed_at"],
+                "customer_name": customer_name,
+                "item_count": items_count
+            });
             i += 1;
         }
-        return json(map("data", data, "meta", map(
-            "count", data.len(),
-            "total", int(page_result["total"]),
-            "page", int(page_result["page"]),
-            "per_page", int(page_result["per_page"]),
-            "last_page", int(page_result["last_page"]),
-            "has_more", page_result["has_more"]
-        )));
+        return json({"data": data, "meta": {
+            "count": data.len(),
+            "total": int(page_result["total"]),
+            "page": int(page_result["page"]),
+            "per_page": int(page_result["per_page"]),
+            "last_page": int(page_result["last_page"]),
+            "has_more": page_result["has_more"]
+        }});
     }
 
     public fn api_order_show(self, req) {
@@ -1361,15 +1358,15 @@ public class AdminController {
         let i = 0;
         while i < items.len() {
             let it = items[i];
-            decorated.push(map(
-                "id", it["id"],
-                "product_id", it["product_id"],
-                "name", it["name_snapshot"],
-                "sku", it["sku_snapshot"],
-                "quantity", it["quantity"],
-                "unit_display", Money.format(int(it["unit_price_minor"]), "BDT"),
-                "line_display", Money.format(int(it["line_total_minor"]), "BDT")
-            ));
+            decorated.push({
+                "id": it["id"],
+                "product_id": it["product_id"],
+                "name": it["name_snapshot"],
+                "sku": it["sku_snapshot"],
+                "quantity": it["quantity"],
+                "unit_display": Money.format(int(it["unit_price_minor"]), "BDT"),
+                "line_display": Money.format(int(it["line_total_minor"]), "BDT")
+            });
             i += 1;
         }
         let customer = null;
@@ -1378,21 +1375,21 @@ public class AdminController {
         }
         let addr = json_parse(string(order["shipping_address_json"]));
         if type_of(addr) != "map" {
-            addr = map();
+            addr = {};
         }
-        return json(map("data", map(
-            "order", order,
-            "items", decorated,
-            "customer", customer,
-            "address", addr,
-            "subtotal_display", Money.format(int(order["subtotal_minor"]), "BDT"),
-            "discount_display", Money.format(int(order["discount_minor"]), "BDT"),
-            "shipping_display", Money.format(int(order["shipping_minor"]), "BDT"),
-            "tax_display", Money.format(int(order["tax_minor"]), "BDT"),
-            "total_display", Money.format(int(order["total_minor"]), "BDT"),
-            "status_label", string(order["status"]).replace("_", " "),
-            "statuses", self.order_statuses
-        )));
+        return json({"data": {
+            "order": order,
+            "items": decorated,
+            "customer": customer,
+            "address": addr,
+            "subtotal_display": Money.format(int(order["subtotal_minor"]), "BDT"),
+            "discount_display": Money.format(int(order["discount_minor"]), "BDT"),
+            "shipping_display": Money.format(int(order["shipping_minor"]), "BDT"),
+            "tax_display": Money.format(int(order["tax_minor"]), "BDT"),
+            "total_display": Money.format(int(order["total_minor"]), "BDT"),
+            "status_label": string(order["status"]).replace("_", " "),
+            "statuses": self.order_statuses
+        }});
     }
 
     public fn api_order_status(self, req) {
@@ -1408,18 +1405,18 @@ public class AdminController {
             i += 1;
         }
         if not valid {
-            throw validation_failed(map("status", "Invalid order status."));
+            throw validation_failed({"status": "Invalid order status."});
         }
         let order = DB.table("orders").where("id", "=", id).first();
         if order == null {
             throw not_found("Order not found.");
         }
-        let ok = DB.table("orders").where("id", "=", id).update(map("status", status)) > 0;
-        return json(map("data", map(
-            "updated", ok,
-            "status", status,
-            "status_label", status.replace("_", " ")
-        )));
+        let ok = DB.table("orders").where("id", "=", id).update({"status": status}) > 0;
+        return json({"data": {
+            "updated": ok,
+            "status": status,
+            "status_label": status.replace("_", " ")
+        }});
     }
 
     public fn api_product_full(self, req) {
@@ -1431,26 +1428,26 @@ public class AdminController {
         let inv_row = DB.table("inventory").where("product_id", "=", pid).whereNull("variant_id").first();
         let inv;
         if inv_row == null {
-            inv = map("quantity", 0, "reserved", 0, "low_stock_threshold", 0, "low_stock", false);
+            inv = {"quantity": 0, "reserved": 0, "low_stock_threshold": 0, "low_stock": false};
         } else {
-            inv = map(
-                "quantity", int(inv_row["quantity"]),
-                "reserved", int(inv_row["reserved"]),
-                "low_stock_threshold", int(inv_row["low_stock_threshold"]),
-                "low_stock", int(inv_row["quantity"]) <= int(inv_row["low_stock_threshold"])
-            );
+            inv = {
+                "quantity": int(inv_row["quantity"]),
+                "reserved": int(inv_row["reserved"]),
+                "low_stock_threshold": int(inv_row["low_stock_threshold"]),
+                "low_stock": int(inv_row["quantity"]) <= int(inv_row["low_stock_threshold"])
+            };
         }
         let imgs = DB.table("product_images").where("product_id", "=", pid).orderBy("sort_order", "ASC").get();
         let gallery = [];
         let gi = 0;
         while gi < imgs.len() {
             let img = imgs[gi];
-            gallery.push(map(
-                "id", img["id"],
-                "url", Images.public_image_url(img["path"]),
-                "alt_text", img["alt_text"],
-                "is_primary", int(img["is_primary"]) == 1
-            ));
+            gallery.push({
+                "id": img["id"],
+                "url": Images.public_image_url(img["path"]),
+                "alt_text": img["alt_text"],
+                "is_primary": int(img["is_primary"]) == 1
+            });
             gi += 1;
         }
         let variants = DB.table("product_variants").where("product_id", "=", pid).orderBy("id", "ASC").get();
@@ -1458,59 +1455,59 @@ public class AdminController {
         let vi = 0;
         while vi < variants.len() {
             let v = variants[vi];
-            variant_rows.push(map(
-                "id", v["id"],
-                "sku", v["sku"],
-                "name", v["name"],
-                "price_minor", int(v["price_minor"]),
-                "price_display", Money.format(int(v["price_minor"]), "BDT"),
-                "is_active", int(v["is_active"]) == 1
-            ));
+            variant_rows.push({
+                "id": v["id"],
+                "sku": v["sku"],
+                "name": v["name"],
+                "price_minor": int(v["price_minor"]),
+                "price_display": Money.format(int(v["price_minor"]), "BDT"),
+                "is_active": int(v["is_active"]) == 1
+            });
             vi += 1;
         }
         let cats = DB.table("categories").orderBy("name", "ASC").get();
         let cat_opts = [];
         let ci = 0;
         while ci < cats.len() {
-            cat_opts.push(map("id", cats[ci]["id"], "name", cats[ci]["name"]));
+            cat_opts.push({"id": cats[ci]["id"], "name": cats[ci]["name"]});
             ci += 1;
         }
         let brands = DB.table("brands").orderBy("name", "ASC").get();
         let brand_opts = [];
         let bi = 0;
         while bi < brands.len() {
-            brand_opts.push(map("id", brands[bi]["id"], "name", brands[bi]["name"]));
+            brand_opts.push({"id": brands[bi]["id"], "name": brands[bi]["name"]});
             bi += 1;
         }
         let decorated = self.decorate_product(product);
-        return json(map("data", map(
-            "product", decorated,
-            "inventory", inv,
-            "images", gallery,
-            "variants", variant_rows,
-            "categories", cat_opts,
-            "brands", brand_opts
-        )));
+        return json({"data": {
+            "product": decorated,
+            "inventory": inv,
+            "images": gallery,
+            "variants": variant_rows,
+            "categories": cat_opts,
+            "brands": brand_opts
+        }});
     }
 
     public fn category_delete_form(self, req) {
         let id = int(req.params["id"]);
         self.categories.delete(id);
-        self.audit(req, "category.delete", "categories", id, map());
+        self.audit(req, "category.delete", "categories", id, {});
         if req.input("format", "") != "json" {
             return redirect("/admin/categories");
         }
-        return json(map("data", map("deleted", true, "id", id)));
+        return json({"data": {"deleted": true, "id": id}});
     }
 
     public fn brand_delete_form(self, req) {
         let id = int(req.params["id"]);
         self.brands.delete(id);
-        self.audit(req, "brand.delete", "brands", id, map());
+        self.audit(req, "brand.delete", "brands", id, {});
         if req.input("format", "") != "json" {
             return redirect("/admin/brands");
         }
-        return json(map("data", map("deleted", true, "id", id)));
+        return json({"data": {"deleted": true, "id": id}});
     }
 
     public fn api_customers_list(self, req) {
@@ -1532,22 +1529,22 @@ public class AdminController {
         let i = 0;
         while i < rows.len() {
             let u = rows[i];
-            data.push(map(
-                "id", u["id"],
-                "name", u["name"],
-                "email", u["email"],
-                "status", string(u["status"]),
-                "created_at", u["created_at"]
-            ));
+            data.push({
+                "id": u["id"],
+                "name": u["name"],
+                "email": u["email"],
+                "status": string(u["status"]),
+                "created_at": u["created_at"]
+            });
             i += 1;
         }
-        return json(map("data", data, "meta", map(
-            "count", data.len(),
-            "total", int(page_result["total"]),
-            "page", int(page_result["page"]),
-            "per_page", int(page_result["per_page"]),
-            "last_page", int(page_result["last_page"]),
-            "has_more", page_result["has_more"]
-        )));
+        return json({"data": data, "meta": {
+            "count": data.len(),
+            "total": int(page_result["total"]),
+            "page": int(page_result["page"]),
+            "per_page": int(page_result["per_page"]),
+            "last_page": int(page_result["last_page"]),
+            "has_more": page_result["has_more"]
+        }});
     }
 }

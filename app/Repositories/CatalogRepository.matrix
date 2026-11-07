@@ -139,7 +139,7 @@ public class ImageRepository {
     public fn clear_primary(self, product_id) {
         return DB.table("product_images")
             .where("product_id", "=", product_id)
-            .update(map("is_primary", 0));
+            .update({"is_primary": 0});
     }
 
     public fn create(self, data) {

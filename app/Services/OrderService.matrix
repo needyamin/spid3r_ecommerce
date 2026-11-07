@@ -59,21 +59,21 @@ public class OrderService {
             out.push(row);
             i += 1;
         }
-        let view = map(
-            "order", order,
-            "items", out,
-            "subtotal_display", Money.format(int(order["subtotal_minor"]), "BDT"),
-            "discount_display", Money.format(int(order["discount_minor"]), "BDT"),
-            "shipping_display", Money.format(int(order["shipping_minor"]), "BDT"),
-            "tax_display", Money.format(int(order["tax_minor"]), "BDT"),
-            "total_display", Money.format(int(order["total_minor"]), "BDT"),
-            "status_label", string(order["status"]).replace("_", " ")
-        );
+        let view = {
+            "order": order,
+            "items": out,
+            "subtotal_display": Money.format(int(order["subtotal_minor"]), "BDT"),
+            "discount_display": Money.format(int(order["discount_minor"]), "BDT"),
+            "shipping_display": Money.format(int(order["shipping_minor"]), "BDT"),
+            "tax_display": Money.format(int(order["tax_minor"]), "BDT"),
+            "total_display": Money.format(int(order["total_minor"]), "BDT"),
+            "status_label": string(order["status"]).replace("_", " ")
+        };
         let addr = json_parse(string(order["shipping_address_json"]));
         if type_of(addr) == "map" {
             view["address"] = addr;
         } else {
-            view["address"] = map();
+            view["address"] = {};
         }
         return view;
     }
@@ -94,10 +94,10 @@ public class OrderService {
             let order = self.for_customer(number, user_id);
             let status = string(order["status"]);
             if status == "cancelled" or status == "refunded" {
-                throw validation_failed(map("status", "This order is already closed."));
+                throw validation_failed({"status": "This order is already closed."});
             }
             if status == "packed" or status == "shipped" or status == "delivered" {
-                throw validation_failed(map("status", "Contact support to cancel a shipped order."));
+                throw validation_failed({"status": "Contact support to cancel a shipped order."});
             }
             self.release_stock(order["id"]);
             self.orders.set_status(order["id"], "cancelled");
@@ -109,7 +109,7 @@ public class OrderService {
     // exactly once; shipping creates a shipment tracking row.
     public fn set_status(self, order_id, new_status: string) {
         if not self.valid_status(new_status) {
-            throw validation_failed(map("status", "Unknown order status."));
+            throw validation_failed({"status": "Unknown order status."});
         }
         return DB.transaction(fn() {
             let order = self.orders.find(order_id);
@@ -122,12 +122,12 @@ public class OrderService {
                 self.release_stock(order_id);
             }
             if new_status == "shipped" and DB.table("shipments").where("order_id", "=", order_id).count() == 0 {
-                DB.table("shipments").insert(map(
-                    "order_id", order_id,
-                    "status", "shipped",
-                    "shipped_at", string(unix_time()),
-                    "tracking_number", "SP-" + string(order_id)
-                ));
+                DB.table("shipments").insert({
+                    "order_id": order_id,
+                    "status": "shipped",
+                    "shipped_at": string(unix_time()),
+                    "tracking_number": "SP-" + string(order_id)
+                });
             }
             self.orders.set_status(order_id, new_status);
             // Settle the customer rewards exactly when an order becomes

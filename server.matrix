@@ -1,7 +1,7 @@
 // server.matrix
 // Spid3rWeb Production & Development HTTP Application Server
 
-import "framework/Application";
+import "framework/Web";
 import "routes/web";
 import "routes/api";
 import "routes/queue";
@@ -13,7 +13,7 @@ fn main() {
     println("==================================================================");
 
     // 1. Initialize Application Kernel + store middleware aliases
-    let app = new Application();
+    let app = web();
     register_store_middleware(app);
 
     // 2. Register Web and API Routes (plus queue job handlers so

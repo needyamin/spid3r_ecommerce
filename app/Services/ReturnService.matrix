@@ -81,13 +81,13 @@ public class ReturnService {
     // Customer request. `order_item_id` may be null for a whole-order return.
     public fn request(self, number: string, user_id, order_item_id, quantity: int, reason: string, kind: string) {
         if len(string(reason).trim()) < 10 {
-            throw validation_failed(map("reason", "Please describe the problem in at least 10 characters."));
+            throw validation_failed({"reason": "Please describe the problem in at least 10 characters."});
         }
         if string(kind).trim() != "return" and string(kind).trim() != "exchange" {
-            throw validation_failed(map("kind", "Choose return or exchange."));
+            throw validation_failed({"kind": "Choose return or exchange."});
         }
         if quantity <= 0 {
-            throw validation_failed(map("quantity", "The quantity must be positive."));
+            throw validation_failed({"quantity": "The quantity must be positive."});
         }
         return DB.transaction(fn() {
             let order = self.orders.find_by_number(number);
@@ -95,13 +95,13 @@ public class ReturnService {
                 throw not_found("Order not found.");
             }
             if string(order["status"]) != "delivered" {
-                throw validation_failed(map("order", "Only delivered orders can be returned."));
+                throw validation_failed({"order": "Only delivered orders can be returned."});
             }
             let delivered_at = self.delivered_at_for(order["id"]);
             if delivered_at != null {
                 let deadline = int(delivered_at) + self.window_days() * 86400;
                 if unix_time() > deadline {
-                    throw validation_failed(map("order", "The return window has closed."));
+                    throw validation_failed({"order": "The return window has closed."});
                 }
             }
             let item = null;
@@ -112,27 +112,27 @@ public class ReturnService {
                     throw not_found("Order item not found.");
                 }
                 if quantity > int(item["quantity"]) {
-                    throw validation_failed(map("quantity", "You cannot return more than you bought."));
+                    throw validation_failed({"quantity": "You cannot return more than you bought."});
                 }
                 item_ref = item["id"];
             }
-            return DB.table("returns").insert(map(
-                "order_id", order["id"],
-                "user_id", user_id,
-                "order_item_id", item_ref,
-                "quantity", quantity,
-                "kind", string(kind).trim(),
-                "reason", string(reason).trim(),
-                "status", "requested"
-            ));
+            return DB.table("returns").insert({
+                "order_id": order["id"],
+                "user_id": user_id,
+                "order_item_id": item_ref,
+                "quantity": quantity,
+                "kind": string(kind).trim(),
+                "reason": string(reason).trim(),
+                "status": "requested"
+            });
         });
     }
 
     // Administrator decision. Returns the updated row.
     public fn resolve(self, return_id, new_status: string, refund_minor: int) {
-        let allowed = map("approved", 1, "rejected", 1, "received", 1, "refunded", 1);
+        let allowed = {"approved": 1, "rejected": 1, "received": 1, "refunded": 1};
         if not allowed.has(new_status) {
-            throw validation_failed(map("status", "Unknown return decision."));
+            throw validation_failed({"status": "Unknown return decision."});
         }
         return DB.transaction(fn() {
             let row = DB.table("returns").where("id", "=", return_id).first();
@@ -149,7 +149,7 @@ public class ReturnService {
                 ok = new_status == "refunded";
             }
             if not ok {
-                throw validation_failed(map("status", "A return cannot move from " + current + " to " + new_status + "."));
+                throw validation_failed({"status": "A return cannot move from " + current + " to " + new_status + "."});
             }
 
             let amount = int(row["refund_minor"]);
@@ -159,11 +159,11 @@ public class ReturnService {
                 self.restock(row);
                 self.record_refund(row, amount);
             }
-            DB.table("returns").where("id", "=", return_id).update(map(
-                "status", new_status,
-                "refund_minor", amount,
-                "resolved_at", string(unix_time())
-            ));
+            DB.table("returns").where("id", "=", return_id).update({
+                "status": new_status,
+                "refund_minor": amount,
+                "resolved_at": string(unix_time())
+            });
             return DB.table("returns").where("id", "=", return_id).first();
         });
     }
@@ -218,12 +218,12 @@ public class ReturnService {
         if pays.len() == 0 {
             return false;
         }
-        DB.table("refunds").insert(map(
-            "payment_id", pays[0]["id"],
-            "amount_minor", amount_minor,
-            "reason", "Return " + string(row["id"]),
-            "status", "pending"
-        ));
+        DB.table("refunds").insert({
+            "payment_id": pays[0]["id"],
+            "amount_minor": amount_minor,
+            "reason": "Return " + string(row["id"]),
+            "status": "pending"
+        });
         return true;
     }
 }

@@ -9,12 +9,12 @@ import "app/Controllers/StorefrontController";
 public fn register_storefront_routes() {
     let ctl = new StorefrontController();
 
-    Route.get("/catalog", fn(req) { return ctl.catalog(req); }).name("catalog");
-    Route.get("/search", fn(req) { return ctl.search(req); }).name("search");
-    Route.get("/sitemap.xml", fn(req) { return ctl.sitemap(req); }).name("sitemap");
-    Route.get("/robots.txt", fn(req) { return ctl.robots(req); }).name("robots");
+    Route.get("/catalog", req => ctl.catalog(req)).name("catalog");
+    Route.get("/search", req => ctl.search(req)).name("search");
+    Route.get("/sitemap.xml", req => ctl.sitemap(req)).name("sitemap");
+    Route.get("/robots.txt", req => ctl.robots(req)).name("robots");
 
-    Route.get("/category/:slug", fn(req) { return ctl.category(req); }).name("category");
-    Route.get("/brand/:slug", fn(req) { return ctl.brand(req); }).name("brand");
-    Route.get("/product/:slug", fn(req) { return ctl.product(req); }).name("product");
+    Route.get("/category/:slug", req => ctl.category(req)).name("category");
+    Route.get("/brand/:slug", req => ctl.brand(req)).name("brand");
+    Route.get("/product/:slug", req => ctl.product(req)).name("product");
 }

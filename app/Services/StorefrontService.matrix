@@ -188,7 +188,7 @@ public class StorefrontService {
     }
 
     fn build_catalog_context(self, params, path: string, currency: string, fx = null) {
-        let filters = map();
+        let filters = {};
         if params.has("q") and string(params["q"]).trim() != "" {
             filters["q"] = string(params["q"]).trim();
         }
@@ -220,12 +220,12 @@ public class StorefrontService {
             sort = "newest";
         }
         filters["sort"] = sort;
-        let sort_options = list(
-            map("value", "newest", "label", "Newest", "selected", sort == "newest"),
-            map("value", "price_asc", "label", "Price: low to high", "selected", sort == "price_asc"),
-            map("value", "price_desc", "label", "Price: high to low", "selected", sort == "price_desc"),
-            map("value", "name", "label", "Name", "selected", sort == "name")
-        );
+        let sort_options = [
+            {"value": "newest", "label": "Newest", "selected": sort == "newest"},
+            {"value": "price_asc", "label": "Price: low to high", "selected": sort == "price_asc"},
+            {"value": "price_desc", "label": "Price: high to low", "selected": sort == "price_desc"},
+            {"value": "name", "label": "Name", "selected": sort == "name"}
+        ];
         let page = 1;
         if params.has("page") {
             page = int(string(params["page"]));
@@ -269,27 +269,27 @@ public class StorefrontService {
         if params.has("brand") {
             brand_val = string(params["brand"]);
         }
-        return map(
-            "products", rows,
-            "total", result["total"],
-            "page", page,
-            "per_page", result["per_page"],
-            "last_page", result["last_page"],
-            "from", result["from"],
-            "to", result["to"],
-            "has_prev", page > 1,
-            "has_next", result["has_more"],
-            "prev_url", prev_url,
-            "next_url", next_url,
-            "has_products", rows.len() > 0,
-            "q", q_val,
-            "min_price", min_val,
-            "max_price", max_val,
-            "sort", sort,
-            "sort_options", sort_options,
-            "category_slug", cat_val,
-            "brand_slug", brand_val
-        );
+        return {
+            "products": rows,
+            "total": result["total"],
+            "page": page,
+            "per_page": result["per_page"],
+            "last_page": result["last_page"],
+            "from": result["from"],
+            "to": result["to"],
+            "has_prev": page > 1,
+            "has_next": result["has_more"],
+            "prev_url": prev_url,
+            "next_url": next_url,
+            "has_products": rows.len() > 0,
+            "q": q_val,
+            "min_price": min_val,
+            "max_price": max_val,
+            "sort": sort,
+            "sort_options": sort_options,
+            "category_slug": cat_val,
+            "brand_slug": brand_val
+        };
     }
 
     public fn featured(self, currency: string, limit_count: int, fx = null) {
@@ -336,11 +336,11 @@ public class StorefrontService {
             if alt_text == "" {
                 alt_text = string(product["name"]) + " product photo " + string(i + 1);
             }
-            gallery.push(map(
-                "url", Images.public_image_url(gallery_rows[i]["path"]),
-                "alt_text", alt_text,
-                "is_first", i == 0
-            ));
+            gallery.push({
+                "url": Images.public_image_url(gallery_rows[i]["path"]),
+                "alt_text": alt_text,
+                "is_first": i == 0
+            });
             i += 1;
         }
         let variants = self.products.variants_for(product["id"]);
@@ -359,19 +359,19 @@ public class StorefrontService {
         if available < 0 {
             available = 0;
         }
-        return map(
-            "product", decorated[0],
-            "gallery", gallery,
-            "has_gallery", gallery.len() > 0,
-            "has_multiple_gallery", gallery.len() > 1,
-            "variants", variants,
-            "has_variants", variants.len() > 0,
-            "related", related,
-            "has_related", related.len() > 0,
-            "in_stock", available > 0,
-            "available_quantity", available,
-            "meta_description", string(product["meta_description"])
-        );
+        return {
+            "product": decorated[0],
+            "gallery": gallery,
+            "has_gallery": gallery.len() > 0,
+            "has_multiple_gallery": gallery.len() > 1,
+            "variants": variants,
+            "has_variants": variants.len() > 0,
+            "related": related,
+            "has_related": related.len() > 0,
+            "in_stock": available > 0,
+            "available_quantity": available,
+            "meta_description": string(product["meta_description"])
+        };
     }
 
     public fn sitemap_xml(self) -> string {

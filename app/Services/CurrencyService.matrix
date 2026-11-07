@@ -31,32 +31,32 @@ public class CurrencyService {
     // rate regardless of what the table says.
     public fn rates(self) {
         let rows = DB.table("currencies").where("is_active", "=", 1).get();
-        let out = map();
+        let out = {};
         let i = 0;
         while i < rows.len() {
             let code = string(rows[i]["code"]).trim().upper();
             if code != "" {
-                out[code] = map(
-                    "digits", int(rows[i]["minor_digits"]),
-                    "rate_bps", int(rows[i]["rate_to_base_bps"]),
-                    "symbol", string(rows[i]["symbol"]),
-                    "name", string(rows[i]["name"])
-                );
+                out[code] = {
+                    "digits": int(rows[i]["minor_digits"]),
+                    "rate_bps": int(rows[i]["rate_to_base_bps"]),
+                    "symbol": string(rows[i]["symbol"]),
+                    "name": string(rows[i]["name"])
+                };
             }
             i += 1;
         }
         // Rebuild the base entry explicitly: the base currency is always
         // 1:1 with itself, whatever rate the table happens to hold.
         let bkey = self.base_code;
-        let base_meta = map("digits", 2, "rate_bps", 10000, "symbol", "", "name", bkey);
+        let base_meta = {"digits": 2, "rate_bps": 10000, "symbol": "", "name": bkey};
         if out.has(bkey) {
             let existing = out[bkey];
-            base_meta = map(
-                "digits", int(existing["digits"]),
-                "rate_bps", 10000,
-                "symbol", string(existing["symbol"]),
-                "name", string(existing["name"])
-            );
+            base_meta = {
+                "digits": int(existing["digits"]),
+                "rate_bps": 10000,
+                "symbol": string(existing["symbol"]),
+                "name": string(existing["name"])
+            };
         }
         out[bkey] = base_meta;
         return out;
@@ -80,28 +80,28 @@ public class CurrencyService {
                 if code == chosen {
                     flag = 1;
                 }
-                out.push(map(
-                    "code", code,
-                    "name", string(rows[i]["name"]),
-                    "symbol", string(rows[i]["symbol"]),
-                    "selected", flag
-                ));
+                out.push({
+                    "code": code,
+                    "name": string(rows[i]["name"]),
+                    "symbol": string(rows[i]["symbol"]),
+                    "selected": flag
+                });
             }
             i += 1;
         }
         if base_row == null {
-            base_row = map("code", bkey, "name", bkey, "symbol", "");
+            base_row = {"code": bkey, "name": bkey, "symbol": ""};
         }
         let base_flag = 0;
         if chosen == "" or chosen == bkey {
             base_flag = 1;
         }
-        let head = map(
-            "code", bkey,
-            "name", string(base_row["name"]),
-            "symbol", string(base_row["symbol"]),
-            "selected", base_flag
-        );
+        let head = {
+            "code": bkey,
+            "name": string(base_row["name"]),
+            "symbol": string(base_row["symbol"]),
+            "selected": base_flag
+        };
         let merged = [head];
         let j = 0;
         while j < out.len() {
@@ -139,7 +139,7 @@ public class CurrencyService {
         if rates.len() <= 1 {
             return null;
         }
-        return map("base", self.base_code, "rates", rates);
+        return {"base": self.base_code, "rates": rates};
     }
 
     // Convert base-currency minor units into `code` minor units.

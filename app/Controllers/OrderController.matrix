@@ -11,7 +11,7 @@ import "app/Services/OrderService";
 import "app/Support/StoreChrome" as StoreChrome;
 import "app/Repositories/OrderRepository";
 
-let identity = fn(row) { return row; };
+let identity = row => row;
 
 public class OrderController {
     public let service;
@@ -25,13 +25,13 @@ public class OrderController {
     }
 
     fn ctx(self, req, title: string, extra) {
-        let base = map(
-            "store_name", self.settings["name"],
-            "currency", self.settings["currency"],
-            "title", title,
-            "meta_description", title + " — " + self.settings["name"],
-            "csrf", ""
-        );
+        let base = {
+            "store_name": self.settings["name"],
+            "currency": self.settings["currency"],
+            "title": title,
+            "meta_description": title + " — " + self.settings["name"],
+            "csrf": ""
+        };
         let chrome = StoreChrome.build(req, self.settings);
         for ck in chrome.keys() {
             base[ck] = chrome[ck];
@@ -45,10 +45,7 @@ public class OrderController {
     }
 
     public fn index(self, req) {
-        let page = 1;
-        if req.query_params.has("page") {
-            page = int(req.query_params["page"]);
-        }
+        let page = req.page();
         let result = self.orders.for_user(req.auth.id(), page, 15);
         let rows = [];
         let i = 0;
@@ -59,15 +56,15 @@ public class OrderController {
             i += 1;
         }
         result["data"] = rows;
-        return view("orders/index", self.ctx(req, "Order history", map(
-            "orders", rows,
-            "has_orders", rows.len() > 0,
-            "has_prev", page > 1,
-            "has_next", result["has_more"],
-            "prev_url", "/orders?page=" + string(page - 1),
-            "next_url", "/orders?page=" + string(page + 1),
-            "csrf", req.auth.csrf()
-        )));
+        return view("orders/index", self.ctx(req, "Order history", {
+            "orders": rows,
+            "has_orders": rows.len() > 0,
+            "has_prev": page > 1,
+            "has_next": result["has_more"],
+            "prev_url": "/orders?page=" + string(page - 1),
+            "next_url": "/orders?page=" + string(page + 1),
+            "csrf": req.auth.csrf()
+        }));
     }
 
     public fn show(self, req) {
@@ -89,17 +86,14 @@ public class OrderController {
 
     // ---- admin API (permission-gated in routes) ----
     public fn admin_index(self, req) {
-        let page = 1;
-        if req.query_params.has("page") {
-            page = int(req.query_params["page"]);
-        }
+        let page = req.page();
         return json(resource_paginated(self.orders.admin_list(page, 20), identity));
     }
 
     public fn admin_status(self, req) {
         let status = string(req.input("status", "")).trim();
         if status == "" {
-            throw validation_failed(map("status", "A status is required."));
+            throw validation_failed({"status": "A status is required."});
         }
         let order = self.service.set_status(req.params["id"], status);
         return json(resource_item(order, identity));
@@ -110,7 +104,7 @@ public class OrderController {
     public fn admin_status_form(self, req) {
         let status = string(req.input("status", "")).trim();
         if status == "" {
-            throw validation_failed(map("status", "A status is required."));
+            throw validation_failed({"status": "A status is required."});
         }
         let order = self.service.set_status(req.params["id"], status);
         if req.input("format", "") != "json" {
@@ -125,7 +119,7 @@ public class OrderController {
         let all = self.service.statuses();
         let i = 0;
         while i < all.len() {
-            out.push(map("value", all[i], "label", all[i]));
+            out.push({"value": all[i], "label": all[i]});
             i += 1;
         }
         return out;

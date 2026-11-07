@@ -36,7 +36,7 @@ public class CartService {
                 throw not_found("Variant not found for this product.");
             }
             if int(variant["is_active"]) != 1 {
-                throw validation_failed(map("variant_id", "This variant is not available."));
+                throw validation_failed({"variant_id": "This variant is not available."});
             }
             return int(variant["price_minor"]);
         }
@@ -45,17 +45,17 @@ public class CartService {
             throw not_found("Product not found.");
         }
         if product["status"] != "published" {
-            throw validation_failed(map("product_id", "This product is not available."));
+            throw validation_failed({"product_id": "This product is not available."});
         }
         return int(product["price_minor"]);
     }
 
     fn assert_available(self, product_id, variant_id, qty: int) {
         if qty <= 0 or qty > 99 {
-            throw validation_failed(map("quantity", "Quantity must be between 1 and 99."));
+            throw validation_failed({"quantity": "Quantity must be between 1 and 99."});
         }
         if not self.inventory.available(product_id, null, qty) {
-            throw validation_failed(map("quantity", "Not enough stock available."));
+            throw validation_failed({"quantity": "Not enough stock available."});
         }
     }
 
@@ -143,18 +143,18 @@ public class CartService {
             } else {
                 warnings.push("A cart item references a deleted product.");
             }
-            items.push(map(
-                "id", row["id"],
-                "product_id", row["product_id"],
-                "name", name,
-                "url", "/product/" + slug,
-                "quantity", int(row["quantity"]),
-                "unit_price_minor", price,
-                "line_total_minor", price * int(row["quantity"]),
-                "price_display", Money.format(price, "BDT"),
-                "line_display", Money.format(price * int(row["quantity"]), "BDT"),
-                "available", ok
-            ));
+            items.push({
+                "id": row["id"],
+                "product_id": row["product_id"],
+                "name": name,
+                "url": "/product/" + slug,
+                "quantity": int(row["quantity"]),
+                "unit_price_minor": price,
+                "line_total_minor": price * int(row["quantity"]),
+                "price_display": Money.format(price, "BDT"),
+                "line_display": Money.format(price * int(row["quantity"]), "BDT"),
+                "available": ok
+            });
             i += 1;
         }
 
@@ -173,22 +173,22 @@ public class CartService {
         }
         let total = subtotal - discount + shipping;
 
-        return map(
-            "items", items,
-            "has_items", items.len() > 0,
-            "count", items.len(),
-            "has_warnings", warnings.len() > 0,
-            "warnings", warnings,
-            "subtotal_minor", subtotal,
-            "discount_minor", discount,
-            "shipping_minor", shipping,
-            "total_minor", total,
-            "subtotal_display", Money.format(subtotal, "BDT"),
-            "discount_display", Money.format(discount, "BDT"),
-            "shipping_display", Money.format(shipping, "BDT"),
-            "total_display", Money.format(total, "BDT"),
-            "free_shipping", free_shipping
-        );
+        return {
+            "items": items,
+            "has_items": items.len() > 0,
+            "count": items.len(),
+            "has_warnings": warnings.len() > 0,
+            "warnings": warnings,
+            "subtotal_minor": subtotal,
+            "discount_minor": discount,
+            "shipping_minor": shipping,
+            "total_minor": total,
+            "subtotal_display": Money.format(subtotal, "BDT"),
+            "discount_display": Money.format(discount, "BDT"),
+            "shipping_display": Money.format(shipping, "BDT"),
+            "total_display": Money.format(total, "BDT"),
+            "free_shipping": free_shipping
+        };
     }
 
     // Lightweight badge count: total quantity across items, WITHOUT

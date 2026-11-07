@@ -57,7 +57,24 @@ public fn abort(status: int, message: string = "", errors = null) {
     abort_http(status, message, errors);
 }
 
-public fn test_client(app) {
+public fn abort_if(condition: bool, status: int, message: string = "", errors = null) {
+    if condition {
+        abort_http(status, message, errors);
+    }
+}
+
+public fn validate(data, rules) {
+    let v = Validator.make(data, rules);
+    if v.fails() {
+        throw validation_failed(v.error_messages(), v.first());
+    }
+    return v.validated();
+}
+
+public fn test_client(app = null) {
+    if app == null {
+        app = new Application();
+    }
     return new TestClient(app);
 }
 
@@ -69,11 +86,23 @@ public fn send_json(data, status: int = 200) {
     return json(data, status);
 }
 
+public fn json_out(data, status: int = 200) {
+    return json(data, status);
+}
+
 public fn send_html(content: string, status: int = 200) {
     return html(content, status);
 }
 
+public fn html_out(content: string, status: int = 200) {
+    return html(content, status);
+}
+
 public fn send_text(content: string, status: int = 200) {
+    return text(content, status);
+}
+
+public fn text_out(content: string, status: int = 200) {
     return text(content, status);
 }
 

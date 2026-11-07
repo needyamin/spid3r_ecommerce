@@ -13,17 +13,17 @@ public class UserRepository {
         if existing != null {
             return null;   // caller turns this into a 422
         }
-        let id = DB.table("users").insert(map(
-            "name", name,
-            "email", clean,
-            "password", Hash.make(plain_password),
-            "status", "active",
-            "created_at", string(unix_time()),
-            "updated_at", string(unix_time())
-        ));
+        let id = DB.table("users").insert({
+            "name": name,
+            "email": clean,
+            "password": Hash.make(plain_password),
+            "status": "active",
+            "created_at": string(unix_time()),
+            "updated_at": string(unix_time())
+        });
         let role = DB.table("roles").where("slug", "=", "customer").first();
         if role != null {
-            DB.table("user_roles").insert(map("user_id", id, "role_id", role["id"]));
+            DB.table("user_roles").insert({"user_id": id, "role_id": role["id"]});
         }
         return DB.table("users").where("id", "=", id).first();
     }

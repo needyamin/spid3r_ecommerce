@@ -11,27 +11,27 @@
 //          clear runtime error until the language gains socket support.
 //          Keep SPID3R_MAIL_MAILER=log in all environments for now.
 
-public let config_mail = map(
-    "default", "log",
-    "mailer_env", "SPID3R_MAIL_MAILER",
-    "from", map(
-        "address", "hello@spid3r.test",
-        "name", "Spid3r Bazaar"
-    ),
-    "mailers", map(
-        "log", map(
-            "driver", "log",
-            "channel", "mail"
-        ),
-        "smtp", map(
-            "driver", "smtp",
-            "host_env", "SPID3R_MAIL_HOST",
-            "host", "127.0.0.1",
-            "port_env", "SPID3R_MAIL_PORT",
-            "port", 1025,
-            "username_env", "SPID3R_MAIL_USERNAME",
-            "password_env", "SPID3R_MAIL_PASSWORD",
-            "encryption", "none"
-        )
-    )
-);
+public let config_mail = {
+    "default": "log",
+    "mailer_env": "SPID3R_MAIL_MAILER",
+    "from": {
+        "address": "hello@spid3r.test",
+        "name": "Spid3r Bazaar"
+    },
+    "mailers": {
+        "log": {
+            "driver": "log",
+            "channel": "mail"
+        },
+        "smtp": {
+            "driver": "smtp",
+            "host_env": "SPID3R_MAIL_HOST",
+            "host": "127.0.0.1",
+            "port_env": "SPID3R_MAIL_PORT",
+            "port": 1025,
+            "username_env": "SPID3R_MAIL_USERNAME",
+            "password_env": "SPID3R_MAIL_PASSWORD",
+            "encryption": "none"
+        }
+    }
+};

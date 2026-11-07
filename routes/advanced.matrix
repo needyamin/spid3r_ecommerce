@@ -13,52 +13,52 @@ public fn register_advanced_routes() {
     let ctl = new AdvancedController();
 
     // ---- wishlist (signed-in customers) ----
-    Route.get("/wishlist", fn(req) { return ctl.wishlist_page(req); }).name("wishlist").middleware("auth");
-    Route.post("/wishlist/add", fn(req) { return ctl.wishlist_add(req); }).middleware("auth");
-    Route.post("/wishlist/remove", fn(req) { return ctl.wishlist_remove(req); }).middleware("auth");
+    Route.get("/wishlist", req => ctl.wishlist_page(req)).name("wishlist").middleware("auth");
+    Route.post("/wishlist/add", req => ctl.wishlist_add(req)).middleware("auth");
+    Route.post("/wishlist/remove", req => ctl.wishlist_remove(req)).middleware("auth");
 
     // ---- reviews & ratings ----
-    Route.post("/reviews", fn(req) { return ctl.review_store(req); }).middleware("auth");
-    Route.get("/reviews/:product_id", fn(req) { return ctl.review_index(req); }).name("reviews.index");
+    Route.post("/reviews", req => ctl.review_store(req)).middleware("auth");
+    Route.get("/reviews/:product_id", req => ctl.review_index(req)).name("reviews.index");
     // SEO-friendly slug variants of the numeric review/recommendation
     // endpoints — human-readable, crawlable, no raw ids in URLs.
-    Route.get("/product/:slug/reviews", fn(req) { return ctl.product_reviews(req); }).name("product.reviews");
-    Route.get("/product/:slug/recommendations", fn(req) { return ctl.product_recommendations(req); }).name("product.recommendations");
+    Route.get("/product/:slug/reviews", req => ctl.product_reviews(req)).name("product.reviews");
+    Route.get("/product/:slug/recommendations", req => ctl.product_recommendations(req)).name("product.recommendations");
 
     // ---- recommendations & recently viewed ----
-    Route.get("/recommendations/:product_id", fn(req) { return ctl.recommendations(req); });
-    Route.get("/recently-viewed", fn(req) { return ctl.recently_viewed(req); });
+    Route.get("/recommendations/:product_id", req => ctl.recommendations(req));
+    Route.get("/recently-viewed", req => ctl.recently_viewed(req));
 
     // ---- loyalty points & referrals ----
-    Route.get("/account/rewards", fn(req) { return ctl.rewards_page(req); }).name("account.rewards").middleware("auth");
-    Route.post("/account/rewards/redeem", fn(req) { return ctl.redeem_points(req); }).middleware("auth");
-    Route.post("/account/referral", fn(req) { return ctl.apply_referral(req); }).middleware("auth");
+    Route.get("/account/rewards", req => ctl.rewards_page(req)).name("account.rewards").middleware("auth");
+    Route.post("/account/rewards/redeem", req => ctl.redeem_points(req)).middleware("auth");
+    Route.post("/account/referral", req => ctl.apply_referral(req)).middleware("auth");
 
     // ---- gift cards ----
-    Route.post("/gift-card/balance", fn(req) { return ctl.gift_card_balance(req); }).middleware("throttle:20,60");
+    Route.post("/gift-card/balance", req => ctl.gift_card_balance(req)).middleware("throttle:20,60");
 
     // ---- customer support ----
-    Route.get("/support", fn(req) { return ctl.support_page(req); }).name("support");
-    Route.post("/support", fn(req) { return ctl.support_store(req); }).middleware("throttle:5,60");
+    Route.get("/support", req => ctl.support_page(req)).name("support");
+    Route.post("/support", req => ctl.support_store(req)).middleware("throttle:5,60");
 
     // ---- order tracking ----
-    Route.get("/track", fn(req) { return ctl.track_page(req); }).name("track");
-    Route.post("/track", fn(req) { return ctl.track_lookup(req); });
+    Route.get("/track", req => ctl.track_page(req)).name("track");
+    Route.post("/track", req => ctl.track_lookup(req));
 
     // ---- display currency & language preference ----
-    Route.post("/locale", fn(req) { return ctl.set_locale(req); });
+    Route.post("/locale", req => ctl.set_locale(req));
 
     // ---- administration (Phase 10 areas) ----
-    Route.get("/admin/reviews", fn(req) { return ctl.admin_reviews(req); }).name("admin.reviews").middleware("role:admin");
-    Route.post("/admin/reviews/:id", fn(req) { return ctl.admin_review_update(req); }).middleware("permission:catalog.manage");
-    Route.get("/admin/api/campaigns", fn(req) { return ctl.admin_campaigns(req); }).middleware("permission:catalog.manage");
-    Route.post("/admin/api/campaigns", fn(req) { return ctl.admin_campaign_store(req); }).middleware("permission:catalog.manage");
-    Route.get("/admin/api/currencies", fn(req) { return ctl.admin_currencies(req); }).middleware("permission:settings.manage");
-    Route.post("/admin/api/currencies", fn(req) { return ctl.admin_currency_store(req); }).middleware("permission:settings.manage");
-    Route.get("/admin/api/translations", fn(req) { return ctl.admin_translations(req); }).middleware("permission:settings.manage");
-    Route.post("/admin/api/translations", fn(req) { return ctl.admin_translation_store(req); }).middleware("permission:settings.manage");
-    Route.get("/admin/api/gift-cards", fn(req) { return ctl.admin_gift_cards(req); }).middleware("permission:settings.manage");
-    Route.post("/admin/api/gift-cards", fn(req) { return ctl.admin_gift_card_issue(req); }).middleware("permission:settings.manage");
-    Route.get("/admin/api/support-tickets", fn(req) { return ctl.admin_support_tickets(req); }).middleware("permission:customers.manage");
-    Route.post("/admin/api/support-tickets/:id", fn(req) { return ctl.admin_support_ticket_update(req); }).middleware("permission:customers.manage");
+    Route.get("/admin/reviews", req => ctl.admin_reviews(req)).name("admin.reviews").middleware("role:admin");
+    Route.post("/admin/reviews/:id", req => ctl.admin_review_update(req)).middleware("permission:catalog.manage");
+    Route.get("/admin/api/campaigns", req => ctl.admin_campaigns(req)).middleware("permission:catalog.manage");
+    Route.post("/admin/api/campaigns", req => ctl.admin_campaign_store(req)).middleware("permission:catalog.manage");
+    Route.get("/admin/api/currencies", req => ctl.admin_currencies(req)).middleware("permission:settings.manage");
+    Route.post("/admin/api/currencies", req => ctl.admin_currency_store(req)).middleware("permission:settings.manage");
+    Route.get("/admin/api/translations", req => ctl.admin_translations(req)).middleware("permission:settings.manage");
+    Route.post("/admin/api/translations", req => ctl.admin_translation_store(req)).middleware("permission:settings.manage");
+    Route.get("/admin/api/gift-cards", req => ctl.admin_gift_cards(req)).middleware("permission:settings.manage");
+    Route.post("/admin/api/gift-cards", req => ctl.admin_gift_card_issue(req)).middleware("permission:settings.manage");
+    Route.get("/admin/api/support-tickets", req => ctl.admin_support_tickets(req)).middleware("permission:customers.manage");
+    Route.post("/admin/api/support-tickets/:id", req => ctl.admin_support_ticket_update(req)).middleware("permission:customers.manage");
 }

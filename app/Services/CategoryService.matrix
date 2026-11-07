@@ -23,21 +23,21 @@ public class CategoryService {
         let parent = data["parent_id"];
         if parent != null {
             if self.categories.find(parent) == null {
-                throw validation_failed(map("parent_id", "Parent category does not exist."));
+                throw validation_failed({"parent_id": "Parent category does not exist."});
             }
         }
         let svc = self;
-        let slug = Slug.unique(name, fn(s) { return svc.slug_taken(s); });
-        let id = self.categories.create(map(
-            "parent_id", parent,
-            "name", name,
-            "slug", slug,
-            "description", string(data["description"]),
-            "sort_order", int(data["sort_order"]),
-            "is_active", 1,
-            "meta_title", string(data["meta_title"]),
-            "meta_description", string(data["meta_description"])
-        ));
+        let slug = Slug.unique(name, s => svc.slug_taken(s));
+        let id = self.categories.create({
+            "parent_id": parent,
+            "name": name,
+            "slug": slug,
+            "description": string(data["description"]),
+            "sort_order": int(data["sort_order"]),
+            "is_active": 1,
+            "meta_title": string(data["meta_title"]),
+            "meta_description": string(data["meta_description"])
+        });
         CatalogCache.bump_catalog_version();
         return self.categories.find(id);
     }
@@ -47,7 +47,7 @@ public class CategoryService {
         if row == null {
             throw not_found("Category not found.");
         }
-        let changes = map();
+        let changes = {};
         let keys = ["name", "description", "sort_order", "is_active", "meta_title", "meta_description"];
         let i = 0;
         while i < keys.len() {
@@ -60,10 +60,10 @@ public class CategoryService {
             let parent = data["parent_id"];
             if parent != null {
                 if int(parent) == int(id) or self.is_descendant(id, parent) {
-                    throw validation_failed(map("parent_id", "A category cannot be its own ancestor."));
+                    throw validation_failed({"parent_id": "A category cannot be its own ancestor."});
                 }
                 if self.categories.find(parent) == null {
-                    throw validation_failed(map("parent_id", "Parent category does not exist."));
+                    throw validation_failed({"parent_id": "Parent category does not exist."});
                 }
             }
             changes["parent_id"] = parent;
@@ -105,10 +105,10 @@ public class CategoryService {
             throw not_found("Category not found.");
         }
         if self.categories.children(id).len() > 0 {
-            throw validation_failed(map("id", "Remove or move child categories first."));
+            throw validation_failed({"id": "Remove or move child categories first."});
         }
         if self.categories.product_count(id) > 0 {
-            throw validation_failed(map("id", "Category still has products."));
+            throw validation_failed({"id": "Category still has products."});
         }
         let removed = self.categories.delete(id);
         CatalogCache.bump_catalog_version();
@@ -125,12 +125,12 @@ public class CategoryService {
         let out = [];
         let i = 0;
         while i < rows.len() {
-            out.push(map(
-                "id", rows[i]["id"],
-                "name", rows[i]["name"],
-                "slug", rows[i]["slug"],
-                "children", self.subtree(rows[i]["id"])
-            ));
+            out.push({
+                "id": rows[i]["id"],
+                "name": rows[i]["name"],
+                "slug": rows[i]["slug"],
+                "children": self.subtree(rows[i]["id"])
+            });
             i += 1;
         }
         return out;

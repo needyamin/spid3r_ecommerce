@@ -44,14 +44,14 @@ public class AdvancedController {
     // ---- shared plumbing ----
 
     fn ctx(self, req, title: string, extra) {
-        let base = map(
-            "store_name", self.settings["name"],
-            "currency", self.settings["currency"],
-            "title", title,
-            "meta_description", title + " — " + self.settings["name"],
-            "current_path", string(req.path),
-            "csrf", ""
-        );
+        let base = {
+            "store_name": self.settings["name"],
+            "currency": self.settings["currency"],
+            "title": title,
+            "meta_description": title + " — " + self.settings["name"],
+            "current_path": string(req.path),
+            "csrf": ""
+        };
         if req.auth != null and req.auth.check() {
             base["csrf"] = req.auth.csrf();
         }
@@ -108,10 +108,10 @@ public class AdvancedController {
         let uid = self.user_id(req);
         let code = self.currencies.selected(req);
         let items = self.storefront.decorate(self.advanced.wishlist(uid), code, self.currencies.context());
-        let ctx = self.ctx(req, "Your wishlist", map(
-            "items", items,
-            "has_items", items.len() > 0
-        ));
+        let ctx = self.ctx(req, "Your wishlist", {
+            "items": items,
+            "has_items": items.len() > 0
+        });
         return view("account/wishlist", ctx);
     }
 
@@ -119,37 +119,34 @@ public class AdvancedController {
         let uid = self.user_id(req);
         let product_id = int(self.param_or_input(req, "product_id"));
         if product_id <= 0 {
-            throw validation_failed(map("product_id", "Choose a product."));
+            throw validation_failed({"product_id": "Choose a product."});
         }
         let added = self.advanced.wishlist_add(uid, product_id);
-        return self.respond(req, map(
-            "ok", true,
-            "added", added,
-            "count", self.advanced.wishlist_count(uid)
-        ), "/wishlist");
+        return self.respond(req, {
+            "ok": true,
+            "added": added,
+            "count": self.advanced.wishlist_count(uid)
+        }, "/wishlist");
     }
 
     public fn wishlist_remove(self, req) {
         let uid = self.user_id(req);
         let product_id = int(self.param_or_input(req, "product_id"));
         if product_id <= 0 {
-            throw validation_failed(map("product_id", "Choose a product."));
+            throw validation_failed({"product_id": "Choose a product."});
         }
         let removed = self.advanced.wishlist_remove(uid, product_id);
-        return self.respond(req, map(
-            "ok", true,
-            "removed", removed,
-            "count", self.advanced.wishlist_count(uid)
-        ), "/wishlist");
+        return self.respond(req, {
+            "ok": true,
+            "removed": removed,
+            "count": self.advanced.wishlist_count(uid)
+        }, "/wishlist");
     }
 
     // ---- reviews & ratings ----
 
     public fn review_store(self, req) {
-        let v = req.validate(AdvancedValidators.review_rules());
-        if v.fails() {
-            throw validation_failed(v.error_messages());
-        }
+        req.validate_or_fail(AdvancedValidators.review_rules());
         let uid = self.user_id(req);
         let review = self.advanced.review(
             uid,
@@ -158,7 +155,7 @@ public class AdvancedController {
             string(req.input("title", "")),
             string(req.input("body", ""))
         );
-        return self.respond(req, map("ok", true, "review", review), "/account");
+        return self.respond(req, {"ok": true, "review": review}, "/account");
     }
 
     // Approved reviews + rating summary for a product (public).
@@ -166,7 +163,7 @@ public class AdvancedController {
         let product_id = int(req.params["product_id"]);
         let reviews = self.advanced.approved_reviews(product_id);
         let summary = self.advanced.rating_summary(product_id);
-        return json(map("data", map("reviews", reviews, "rating", summary)));
+        return json({"data": {"reviews": reviews, "rating": summary}});
     }
 
     // SEO-friendly slugs: /product/{slug}/reviews and
@@ -198,7 +195,7 @@ public class AdvancedController {
     public fn recommendations(self, req) {
         let product_id = int(req.params["product_id"]);
         let items = self.advanced.recommendations(product_id, 4);
-        return json(map("data", items));
+        return json({"data": items});
     }
 
     // ---- recently viewed ----
@@ -206,7 +203,7 @@ public class AdvancedController {
     public fn recently_viewed(self, req) {
         let key = CartIdentity.cookie_value(req, "rv");
         let items = self.advanced.recently_viewed(key);
-        return json(map("data", items));
+        return json({"data": items});
     }
 
     // ---- loyalty & referrals ----
@@ -214,46 +211,37 @@ public class AdvancedController {
     public fn rewards_page(self, req) {
         let uid = self.user_id(req);
         let code = self.advanced.ensure_referral_code(uid);
-        let ctx = self.ctx(req, "Your rewards", map(
-            "points", self.advanced.loyalty_balance(uid),
-            "history", self.advanced.loyalty_history(uid),
-            "referral_code", code,
-            "referral_link", "/register?ref=" + code
-        ));
+        let ctx = self.ctx(req, "Your rewards", {
+            "points": self.advanced.loyalty_balance(uid),
+            "history": self.advanced.loyalty_history(uid),
+            "referral_code": code,
+            "referral_link": "/register?ref=" + code
+        });
         return view("account/rewards", ctx);
     }
 
     public fn redeem_points(self, req) {
-        let v = req.validate(AdvancedValidators.loyalty_rules());
-        if v.fails() {
-            throw validation_failed(v.error_messages());
-        }
+        req.validate_or_fail(AdvancedValidators.loyalty_rules());
         let uid = self.user_id(req);
         self.advanced.redeem_loyalty(uid, int(req.input("points", 0)), null);
-        return self.respond(req, map("ok", true), "/account/rewards");
+        return self.respond(req, {"ok": true}, "/account/rewards");
     }
 
     public fn apply_referral(self, req) {
-        let v = req.validate(AdvancedValidators.referral_rules());
-        if v.fails() {
-            throw validation_failed(v.error_messages());
-        }
+        req.validate_or_fail(AdvancedValidators.referral_rules());
         let uid = self.user_id(req);
         self.advanced.apply_referral(uid, string(req.input("code", "")));
-        return self.respond(req, map("ok", true), "/account/rewards");
+        return self.respond(req, {"ok": true}, "/account/rewards");
     }
 
     // ---- gift cards ----
 
     // Balance of a gift card code (public: the code itself is the secret).
     public fn gift_card_balance(self, req) {
-        let v = req.validate(AdvancedValidators.gift_card_rules());
-        if v.fails() {
-            throw validation_failed(v.error_messages());
-        }
+        req.validate_or_fail(AdvancedValidators.gift_card_rules());
         let code = string(req.input("code", ""));
         let balance = self.gift_cards.balance(code);
-        return json(map("data", map("balance_minor", balance, "valid", balance > 0)));
+        return json({"data": {"balance_minor": balance, "valid": balance > 0}});
     }
 
     // ---- customer support ----
@@ -263,10 +251,10 @@ public class AdvancedController {
         if req.auth != null and req.auth.check() {
             uid = req.auth.id();
         }
-        let ctx = self.ctx(req, "Customer support", map(
-            "tickets", self.advanced.support_tickets(uid),
-            "email", ""
-        ));
+        let ctx = self.ctx(req, "Customer support", {
+            "tickets": self.advanced.support_tickets(uid),
+            "email": ""
+        });
         if req.auth != null and req.auth.check() {
             let user = DB.table("users").where("id", "=", uid).first();
             if user != null {
@@ -277,10 +265,7 @@ public class AdvancedController {
     }
 
     public fn support_store(self, req) {
-        let v = req.validate(AdvancedValidators.support_rules());
-        if v.fails() {
-            throw validation_failed(v.error_messages());
-        }
+        req.validate_or_fail(AdvancedValidators.support_rules());
         let uid = null;
         if req.auth != null and req.auth.check() {
             uid = req.auth.id();
@@ -291,25 +276,22 @@ public class AdvancedController {
             string(req.input("subject", "")),
             string(req.input("message", ""))
         );
-        return self.respond(req, map("ok", true, "ticket_id", id), "/support");
+        return self.respond(req, {"ok": true, "ticket_id": id}, "/support");
     }
 
     // ---- order tracking ----
 
     public fn track_page(self, req) {
-        let ctx = self.ctx(req, "Track your order", map(
-            "result", null,
-            "has_result", false,
-            "order_number", string(req.query("order_number", ""))
-        ));
+        let ctx = self.ctx(req, "Track your order", {
+            "result": null,
+            "has_result": false,
+            "order_number": string(req.query("order_number", ""))
+        });
         return view("track/index", ctx);
     }
 
     public fn track_lookup(self, req) {
-        let v = req.validate(AdvancedValidators.tracking_rules());
-        if v.fails() {
-            throw validation_failed(v.error_messages());
-        }
+        req.validate_or_fail(AdvancedValidators.tracking_rules());
         let uid = null;
         if req.auth != null and req.auth.check() {
             uid = req.auth.id();
@@ -324,13 +306,13 @@ public class AdvancedController {
             throw not_found("We could not find that order. Check the order number and the contact details you entered.");
         }
         if req.input("format", "") == "json" {
-            return json(map("data", result));
+            return json({"data": result});
         }
-        let ctx = self.ctx(req, "Track your order", map(
-            "result", result,
-            "has_result", true,
-            "order_number", string(req.input("order_number", ""))
-        ));
+        let ctx = self.ctx(req, "Track your order", {
+            "result": result,
+            "has_result": true,
+            "order_number": string(req.input("order_number", ""))
+        });
         return view("track/index", ctx);
     }
 
@@ -342,7 +324,7 @@ public class AdvancedController {
         if currency != "" {
             let rates = self.currencies.rates();
             if not rates.has(currency) {
-                throw validation_failed(map("currency", "That currency is not available."));
+                throw validation_failed({"currency": "That currency is not available."});
             }
         }
         let locale = string(req.input("locale", "")).trim().lower();
@@ -358,7 +340,7 @@ public class AdvancedController {
                 i += 1;
             }
             if not found {
-                throw validation_failed(map("locale", "That language is not available."));
+                throw validation_failed({"locale": "That language is not available."});
             }
         }
         let target = self.safe_return(req);
@@ -376,29 +358,26 @@ public class AdvancedController {
 
     public fn admin_reviews(self, req) {
         let reviews = self.advanced.pending_reviews();
-        let ctx = self.ctx(req, "Review moderation", map(
-            "reviews", reviews,
-            "has_reviews", reviews.len() > 0,
-            "page", "reviews"
-        ));
+        let ctx = self.ctx(req, "Review moderation", {
+            "reviews": reviews,
+            "has_reviews": reviews.len() > 0,
+            "page": "reviews"
+        });
         return view("admin/reviews", ctx);
     }
 
     public fn admin_review_update(self, req) {
         let status = string(req.input("status", "")).trim().lower();
         self.advanced.moderate_review(req.params["id"], status);
-        return self.respond(req, map("ok", true), "/admin/reviews");
+        return self.respond(req, {"ok": true}, "/admin/reviews");
     }
 
     public fn admin_campaigns(self, req) {
-        return json(map("data", self.campaigns.list()));
+        return json({"data": self.campaigns.list()});
     }
 
     public fn admin_campaign_store(self, req) {
-        let v = req.validate(AdvancedValidators.campaign_rules());
-        if v.fails() {
-            throw validation_failed(v.error_messages());
-        }
+        req.validate_or_fail(AdvancedValidators.campaign_rules());
         let id = self.campaigns.save(
             string(req.input("code", "")),
             string(req.input("name", "")),
@@ -407,79 +386,70 @@ public class AdvancedController {
             int(req.input("min_order_minor", 0)),
             int(req.input("is_active", 0))
         );
-        return json(map("data", map("id", id, "saved", true)), 201);
+        return json({"data": {"id": id, "saved": true}}, 201);
     }
 
     public fn admin_currencies(self, req) {
-        return json(map("data", self.currencies.catalog(self.currencies.selected(req))));
+        return json({"data": self.currencies.catalog(self.currencies.selected(req))});
     }
 
     public fn admin_currency_store(self, req) {
-        let v = req.validate(AdvancedValidators.currency_rules());
-        if v.fails() {
-            throw validation_failed(v.error_messages());
-        }
+        req.validate_or_fail(AdvancedValidators.currency_rules());
         let code = string(req.input("code", "")).trim().upper();
         let digits = int(req.input("minor_digits", 2));
         let existing = DB.table("currencies").where("code", "=", code).first();
-        let data = map(
-            "code", code,
-            "name", string(req.input("name", "")),
-            "symbol", string(req.input("symbol", "")),
-            "minor_digits", digits,
-            "rate_to_base_bps", int(req.input("rate_to_base_bps", 10000)),
-            "is_active", int(req.input("is_active", 1))
-        );
+        let data = {
+            "code": code,
+            "name": string(req.input("name", "")),
+            "symbol": string(req.input("symbol", "")),
+            "minor_digits": digits,
+            "rate_to_base_bps": int(req.input("rate_to_base_bps", 10000)),
+            "is_active": int(req.input("is_active", 1))
+        };
         if existing != null {
             DB.table("currencies").where("id", "=", existing["id"]).update(data);
         } else {
             DB.table("currencies").insert(data);
         }
         CatalogCache.bump_catalog_version();
-        return json(map("data", map("code", code, "saved", true)), 201);
+        return json({"data": {"code": code, "saved": true}}, 201);
     }
 
     public fn admin_translations(self, req) {
         let locale = string(req.query("locale", self.locales.default_locale)).trim().lower();
-        return json(map("data", self.locales.bundle(locale)));
+        return json({"data": self.locales.bundle(locale)});
     }
 
     public fn admin_translation_store(self, req) {
-        let v = req.validate(AdvancedValidators.translation_rules());
-        if v.fails() {
-            throw validation_failed(v.error_messages());
-        }
+        req.validate_or_fail(AdvancedValidators.translation_rules());
         self.locales.set(
             string(req.input("locale", "")),
             string(req.input("namespace", "")),
             string(req.input("key", "")),
             string(req.input("value", ""))
         );
-        return json(map("data", map("saved", true)));
+        return json({"data": {"saved": true}});
     }
 
     public fn admin_gift_cards(self, req) {
-        return json(map("data", self.gift_cards.list()));
+        return json({"data": self.gift_cards.list()});
     }
 
     public fn admin_gift_card_issue(self, req) {
-        let v = req.validate(AdvancedValidators.gift_card_issue_rules());
-        if v.fails() {
-            throw validation_failed(v.error_messages());
-        }
+        req.validate_or_fail(AdvancedValidators.gift_card_issue_rules());
         let amount = int(req.input("amount_minor", 0));
         let code = self.gift_cards.issue(amount, string(self.settings["currency"]), string(req.input("recipient_email", "")));
         // The raw code is returned ONCE — only its hash is stored.
-        return json(map("data", map("code", code, "amount_minor", amount)), 201);
+        return json({"data": {"code": code, "amount_minor": amount}}, 201);
     }
 
     public fn admin_support_tickets(self, req) {
-        return json(map("data", self.advanced.all_support_tickets()));
+        return json({"data": self.advanced.all_support_tickets()});
     }
 
     public fn admin_support_ticket_update(self, req) {
         let status = string(req.input("status", "")).trim().lower();
         self.advanced.resolve_support_ticket(req.params["id"], status);
-        return json(map("data", map("ok", true)));
+        return json({"data": {"ok": true}});
     }
 }

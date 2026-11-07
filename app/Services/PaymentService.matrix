@@ -40,7 +40,7 @@ public class PaymentService {
         }
         let status = string(order["status"]);
         if status == "cancelled" or status == "refunded" or status == "delivered" {
-            throw validation_failed(map("order", "This order cannot be paid."));
+            throw validation_failed({"order": "This order cannot be paid."});
         }
         return order;
     }
@@ -55,7 +55,7 @@ public class PaymentService {
             order["id"], string(gateway.name), int(order["total_minor"]), key
         );
         if payment["status"] == "paid" {
-            return map("payment", payment, "redirect_url", "", "already_paid", true);
+            return {"payment": payment, "redirect_url": "", "already_paid": true};
         }
         if payment["status"] != "initiated" {
             // Never call a gateway twice for the same payment row.
@@ -64,26 +64,26 @@ public class PaymentService {
             if type_of(stored) == "map" and stored.has("redirect_url") {
                 resume_url = string(stored["redirect_url"]);
             }
-            return map(
-                "payment", payment,
-                "redirect_url", resume_url,
-                "instructions", "Resume your existing payment.",
-                "already_paid", false,
-                "already_initiated", true
-            );
+            return {
+                "payment": payment,
+                "redirect_url": resume_url,
+                "instructions": "Resume your existing payment.",
+                "already_paid": false,
+                "already_initiated": true
+            };
         }
         let result = gateway.initiate(payment, order);
-        DB.table("payments").where("id", "=", payment["id"]).update(map(
-            "status", result["status"],
-            "payload_json", json_write(result)
-        ));
+        DB.table("payments").where("id", "=", payment["id"]).update({
+            "status": result["status"],
+            "payload_json": json_write(result)
+        });
         let fresh = DB.table("payments").where("id", "=", payment["id"]).first();
-        return map(
-            "payment", fresh,
-            "redirect_url", result["redirect_url"],
-            "instructions", result["instructions"],
-            "already_paid", false
-        );
+        return {
+            "payment": fresh,
+            "redirect_url": result["redirect_url"],
+            "instructions": result["instructions"],
+            "already_paid": false
+        };
     }
 
     // Called by the admin route (staff confirms COD) or a gateway polling
@@ -94,7 +94,7 @@ public class PaymentService {
             throw not_found("Payment not found.");
         }
         if payment["status"] == "paid" {
-            return map("verified", false, "duplicate", true, "payment", payment);
+            return {"verified": false, "duplicate": true, "payment": payment};
         }
         let gateway = self.gateways.resolve(string(payment["provider"]));
         let result = gateway.verify(payment);
@@ -105,11 +105,11 @@ public class PaymentService {
         if changed {
             self.order_service.set_status(payment["order_id"], "paid");
         }
-        return map(
-            "verified", changed,
-            "duplicate", not changed,
-            "payment", DB.table("payments").where("id", "=", payment_id).first()
-        );
+        return {
+            "verified": changed,
+            "duplicate": not changed,
+            "payment": DB.table("payments").where("id", "=", payment_id).first()
+        };
     }
 
     // Webhook: HMAC-SHA256 over the RAW body, then amount/provider/status
@@ -145,7 +145,7 @@ public class PaymentService {
             state = string(event["status"]).lower();
         }
         if not (state == "paid" or state == "success" or state == "completed") {
-            return map("ignored", true, "reason", "non-success event");
+            return {"ignored": true, "reason": "non-success event"};
         }
         if event.has("amount_minor") and int(event["amount_minor"]) != int(payment["amount_minor"]) {
             throw bad_request("Webhook amount does not match the payment.");
@@ -162,25 +162,25 @@ public class PaymentService {
         if changed {
             self.order_service.set_status(payment["order_id"], "paid");
         }
-        return map("verified", changed, "duplicate", not changed, "payment_id", payment["id"]);
+        return {"verified": changed, "duplicate": not changed, "payment_id": payment["id"]};
     }
 
     public fn refund(self, payment_id, amount_minor: int, reason: string) {
         if amount_minor <= 0 {
-            throw validation_failed(map("amount_minor", "Refund amount must be positive."));
+            throw validation_failed({"amount_minor": "Refund amount must be positive."});
         }
         let payment = DB.table("payments").where("id", "=", payment_id).first();
         if payment == null {
             throw not_found("Payment not found.");
         }
         if payment["status"] == "refunded" {
-            return map("duplicate", true, "payment", payment);
+            return {"duplicate": true, "payment": payment};
         }
         if payment["status"] != "paid" {
-            throw validation_failed(map("payment", "Only paid payments can be refunded."));
+            throw validation_failed({"payment": "Only paid payments can be refunded."});
         }
         if amount_minor > int(payment["amount_minor"]) {
-            throw validation_failed(map("amount_minor", "Refund exceeds the payment amount."));
+            throw validation_failed({"amount_minor": "Refund exceeds the payment amount."});
         }
         let gateway = self.gateways.resolve(string(payment["provider"]));
         let result = gateway.refund(payment, amount_minor);
@@ -188,20 +188,20 @@ public class PaymentService {
             throw bad_request("Gateway refused the refund.");
         }
         return DB.transaction(fn() {
-            DB.table("refunds").insert(map(
-                "payment_id", payment_id,
-                "amount_minor", amount_minor,
-                "reason", reason,
-                "status", "completed",
-                "gateway_refund_id", result["reference"]
-            ));
-            DB.table("payments").where("id", "=", payment_id).update(map("status", "refunded"));
+            DB.table("refunds").insert({
+                "payment_id": payment_id,
+                "amount_minor": amount_minor,
+                "reason": reason,
+                "status": "completed",
+                "gateway_refund_id": result["reference"]
+            });
+            DB.table("payments").where("id", "=", payment_id).update({"status": "refunded"});
             self.order_service.set_status(payment["order_id"], "refunded");
-            return map(
-                "refunded", true,
-                "duplicate", false,
-                "payment", DB.table("payments").where("id", "=", payment_id).first()
-            );
+            return {
+                "refunded": true,
+                "duplicate": false,
+                "payment": DB.table("payments").where("id", "=", payment_id).first()
+            };
         });
     }
 
@@ -219,23 +219,23 @@ public class PaymentService {
             let p = paid[i];
             let order = self.orders.find(p["order_id"]);
             if order == null {
-                mismatches.push(map("payment_id", p["id"], "issue", "order missing"));
+                mismatches.push({"payment_id": p["id"], "issue": "order missing"});
             } elif int(order["total_minor"]) != int(p["amount_minor"]) {
-                mismatches.push(map("payment_id", p["id"], "issue", "amount mismatch"));
+                mismatches.push({"payment_id": p["id"], "issue": "amount mismatch"});
             } else {
                 let st = string(order["status"]);
                 if st != "paid" and st != "processing" and st != "packed" and st != "shipped" and st != "delivered" {
-                    mismatches.push(map("payment_id", p["id"], "issue", "order status " + st));
+                    mismatches.push({"payment_id": p["id"], "issue": "order status " + st});
                 }
             }
             i += 1;
         }
-        return map(
-            "paid_payments", paid.len(),
-            "initiated_payments", DB.table("payments").where("status", "=", "initiated").count(),
-            "refunded_payments", DB.table("payments").where("status", "=", "refunded").count(),
-            "mismatches", mismatches,
-            "healthy", mismatches.len() == 0
-        );
+        return {
+            "paid_payments": paid.len(),
+            "initiated_payments": DB.table("payments").where("status", "=", "initiated").count(),
+            "refunded_payments": DB.table("payments").where("status", "=", "refunded").count(),
+            "mismatches": mismatches,
+            "healthy": mismatches.len() == 0
+        };
     }
 }

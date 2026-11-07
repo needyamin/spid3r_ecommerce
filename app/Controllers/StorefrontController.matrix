@@ -48,14 +48,14 @@ public class StorefrontController {
 
     fn render(self, req, view_name: string, title: string, extra) {
         let code = self.display_currency(req);
-        let ctx = map(
-            "store_name", self.settings["name"],
-            "currency", code,
-            "title", title,
-            "meta_description", title + " — " + self.settings["name"],
-            "current_path", string(req.path),
-            "csrf", ""
-        );
+        let ctx = {
+            "store_name": self.settings["name"],
+            "currency": code,
+            "title": title,
+            "meta_description": title + " — " + self.settings["name"],
+            "current_path": string(req.path),
+            "csrf": ""
+        };
         if req.auth != null and req.auth.check() {
             ctx["csrf"] = req.auth.csrf();
         }
@@ -74,11 +74,11 @@ public class StorefrontController {
     public fn home(self, req) {
         let code = self.display_currency(req);
         let featured = self.service.featured(code, 8, self.fx_context());
-        let ctx = map(
-            "products", featured,
-            "has_products", featured.len() > 0,
-            "meta_description", "Shop " + self.settings["name"] + " — quality products, honest prices, fast delivery."
-        );
+        let ctx = {
+            "products": featured,
+            "has_products": featured.len() > 0,
+            "meta_description": "Shop " + self.settings["name"] + " — quality products, honest prices, fast delivery."
+        };
         return self.render(req, "store/home", self.settings["name"], ctx);
     }
 
@@ -103,11 +103,11 @@ public class StorefrontController {
         let i = 0;
         while i < rows.len() {
             let slug = string(rows[i]["slug"]);
-            out.push(map(
-                "slug", slug,
-                "name", string(rows[i]["name"]),
-                "selected", slug == selected_slug
-            ));
+            out.push({
+                "slug": slug,
+                "name": string(rows[i]["name"]),
+                "selected": slug == selected_slug
+            });
             i += 1;
         }
         return out;
@@ -159,11 +159,11 @@ public class StorefrontController {
         let i = 0;
         while i < rows.len() {
             let slug = string(rows[i]["slug"]);
-            out.push(map(
-                "slug", slug,
-                "name", string(rows[i]["name"]),
-                "selected", slug == selected_slug
-            ));
+            out.push({
+                "slug": slug,
+                "name": string(rows[i]["name"]),
+                "selected": slug == selected_slug
+            });
             i += 1;
         }
         return out;
@@ -175,7 +175,7 @@ public class StorefrontController {
         if cat == null {
             throw not_found("Category not found.");
         }
-        let params = map("category", slug, "path", req.path);
+        let params = {"category": slug, "path": req.path};
         for k in req.query_params.keys() {
             if k != "category" {
                 params[k] = req.query_params[k];
@@ -200,7 +200,7 @@ public class StorefrontController {
         if brand == null {
             throw not_found("Brand not found.");
         }
-        let params = map("brand", slug);
+        let params = {"brand": slug};
         for k in req.query_params.keys() {
             if k != "brand" {
                 params[k] = req.query_params[k];

@@ -21,17 +21,17 @@ public class BrandService {
     public fn create(self, data) {
         let name = string(data["name"]).trim();
         if DB.table("brands").where("name", "=", name).count() > 0 {
-            throw validation_failed(map("name", "Brand already exists."));
+            throw validation_failed({"name": "Brand already exists."});
         }
         let svc = self;
-        let slug = Slug.unique(name, fn(s) { return svc.slug_taken(s); });
-        let id = self.brands.create(map(
-            "name", name,
-            "slug", slug,
-            "description", string(data["description"]),
-            "logo", null,
-            "is_active", 1
-        ));
+        let slug = Slug.unique(name, s => svc.slug_taken(s));
+        let id = self.brands.create({
+            "name": name,
+            "slug": slug,
+            "description": string(data["description"]),
+            "logo": null,
+            "is_active": 1
+        });
         CatalogCache.bump_catalog_version();
         return self.brands.find(id);
     }
@@ -40,7 +40,7 @@ public class BrandService {
         if self.brands.find(id) == null {
             throw not_found("Brand not found.");
         }
-        let changes = map();
+        let changes = {};
         let keys = ["name", "description", "is_active"];
         let i = 0;
         while i < keys.len() {
@@ -67,7 +67,7 @@ public class BrandService {
             throw not_found("Brand not found.");
         }
         if DB.table("products").where("brand_id", "=", id).count() > 0 {
-            throw validation_failed(map("id", "Brand still has products."));
+            throw validation_failed({"id": "Brand still has products."});
         }
         return self.brands.delete(id);
     }

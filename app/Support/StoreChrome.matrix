@@ -103,10 +103,10 @@ public fn build(req, settings) {
     let footer_categories = [];
     let ci = 0;
     while ci < cat_rows.len() {
-        footer_categories.push(map(
-            "slug", string(cat_rows[ci]["slug"]),
-            "name", string(cat_rows[ci]["name"])
-        ));
+        footer_categories.push({
+            "slug": string(cat_rows[ci]["slug"]),
+            "name": string(cat_rows[ci]["name"])
+        });
         ci += 1;
     }
     // Header badge counts (read-only; guests without a cart cookie stay 0).
@@ -117,28 +117,28 @@ public fn build(req, settings) {
         wishlist_count = wishlist_badge_count(req);
     }
     let path = string(req.path);
-    return map(
-        "display_currency", display_currency,
-        "base_currency", base_currency,
-        "current_path", path,
-        "canonical", canonical_url(path),
-        "has_canonical", canonical_url(path) != "",
-        "robots_meta", robots_meta(path),
-        "cart_count", cart_count,
-        "has_cart_items", cart_count > 0,
-        "wishlist_count", wishlist_count,
-        "has_wishlist_items", wishlist_count > 0,
-        "header_search_q", header_q,
-        "footer_categories", footer_categories,
-        "has_footer_categories", footer_categories.len() > 0,
-        "currency_options", currencies.catalog(display_currency),
-        "locale_options", locales.locale_options(),
-        "active_locale", locale,
-        "nav_catalog", locales.translate(locale, "nav", "catalog", "Catalog"),
-        "nav_cart", locales.translate(locale, "nav", "cart", "Cart"),
-        "nav_wishlist", locales.translate(locale, "nav", "wishlist", "Wishlist"),
-        "nav_track", locales.translate(locale, "nav", "track", "Track order"),
-        "nav_support", locales.translate(locale, "nav", "support", "Support"),
-        "nav_account", locales.translate(locale, "nav", "account", "Account")
-    );
+    return {
+        "display_currency": display_currency,
+        "base_currency": base_currency,
+        "current_path": path,
+        "canonical": canonical_url(path),
+        "has_canonical": canonical_url(path) != "",
+        "robots_meta": robots_meta(path),
+        "cart_count": cart_count,
+        "has_cart_items": cart_count > 0,
+        "wishlist_count": wishlist_count,
+        "has_wishlist_items": wishlist_count > 0,
+        "header_search_q": header_q,
+        "footer_categories": footer_categories,
+        "has_footer_categories": footer_categories.len() > 0,
+        "currency_options": currencies.catalog(display_currency),
+        "locale_options": locales.locale_options(),
+        "active_locale": locale,
+        "nav_catalog": locales.translate(locale, "nav", "catalog", "Catalog"),
+        "nav_cart": locales.translate(locale, "nav", "cart", "Cart"),
+        "nav_wishlist": locales.translate(locale, "nav", "wishlist", "Wishlist"),
+        "nav_track": locales.translate(locale, "nav", "track", "Track order"),
+        "nav_support": locales.translate(locale, "nav", "support", "Support"),
+        "nav_account": locales.translate(locale, "nav", "account", "Account")
+    };
 }

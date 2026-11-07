@@ -17,20 +17,20 @@ public class StoreServiceProvider extends ServiceProvider {
             if currency == "" {
                 currency = "BDT";
             }
-            return map(
-                "name", string(Config.get("store.name", "Spid3r Store")),
-                "currency", currency,
-                "locale", string(Config.get("store.locale", "en"))
-            );
+            return {
+                "name": string(Config.get("store.name", "Spid3r Store")),
+                "currency": currency,
+                "locale": string(Config.get("store.locale", "en"))
+            };
         });
 
         // Catalog cache keys/ttl defaults live here so Phase 5 tuning is
         // one-place-only.
         container.singleton("store.cache", fn(c) {
-            return map(
-                "product_ttl", 300,
-                "home_ttl", 120
-            );
+            return {
+                "product_ttl": 300,
+                "home_ttl": 120
+            };
         });
     }
 

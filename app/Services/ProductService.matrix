@@ -41,22 +41,22 @@ public class ProductService {
         let name = string(data["name"]).trim();
         let sku = string(data["sku"]).trim().upper();
         if int(data["price_minor"]) <= 0 {
-            throw validation_failed(map("price_minor", "Price must be a positive amount."));
+            throw validation_failed({"price_minor": "Price must be a positive amount."});
         }
         if self.sku_taken(sku, null) {
-            throw validation_failed(map("sku", "That SKU is already in use."));
+            throw validation_failed({"sku": "That SKU is already in use."});
         }
         let category = DB.table("categories").where("id", "=", data["category_id"]).first();
         if category == null {
-            throw validation_failed(map("category_id", "Unknown category."));
+            throw validation_failed({"category_id": "Unknown category."});
         }
         let svc = self;
-        let slug = Slug.unique(name, fn(s) { return svc.slug_taken(s); });
+        let slug = Slug.unique(name, s => svc.slug_taken(s));
         let compare = null;
         if data.has("compare_at_minor") and data["compare_at_minor"] != null {
             compare = int(data["compare_at_minor"]);
             if compare <= int(data["price_minor"]) {
-                throw validation_failed(map("compare_at_minor", "Discount price must be higher than the sale price."));
+                throw validation_failed({"compare_at_minor": "Discount price must be higher than the sale price."});
             }
         }
         let status = "draft";
@@ -64,43 +64,43 @@ public class ProductService {
             status = string(data["status"]);
         }
         if status != "draft" and status != "published" and status != "archived" {
-            throw validation_failed(map("status", "Invalid publication status."));
+            throw validation_failed({"status": "Invalid publication status."});
         }
         let cost = 0;
         if data.has("cost_minor") and data["cost_minor"] != null {
             cost = int(data["cost_minor"]);
             if cost < 0 {
-                throw validation_failed(map("cost_minor", "Cost cannot be negative."));
+                throw validation_failed({"cost_minor": "Cost cannot be negative."});
             }
         }
         return DB.transaction(fn() {
-            let id = DB.table("products").insert(map(
-                "category_id", int(data["category_id"]),
-                "brand_id", data["brand_id"],
-                "name", name,
-                "slug", slug,
-                "sku", sku,
-                "short_description", string(data["short_description"]),
-                "description", string(data["description"]),
-                "price_minor", int(data["price_minor"]),
-                "compare_at_minor", compare,
-                "cost_minor", cost,
-                "currency", "BDT",
-                "tax_rate_bps", int(data["tax_rate_bps"]),
-                "status", status,
-                "is_featured", 0,
-                "weight_grams", int(data["weight_grams"]),
-                "meta_title", string(data["meta_title"]),
-                "meta_description", string(data["meta_description"])
-            ));
+            let id = DB.table("products").insert({
+                "category_id": int(data["category_id"]),
+                "brand_id": data["brand_id"],
+                "name": name,
+                "slug": slug,
+                "sku": sku,
+                "short_description": string(data["short_description"]),
+                "description": string(data["description"]),
+                "price_minor": int(data["price_minor"]),
+                "compare_at_minor": compare,
+                "cost_minor": cost,
+                "currency": "BDT",
+                "tax_rate_bps": int(data["tax_rate_bps"]),
+                "status": status,
+                "is_featured": 0,
+                "weight_grams": int(data["weight_grams"]),
+                "meta_title": string(data["meta_title"]),
+                "meta_description": string(data["meta_description"])
+            });
             // Inventory row exists for every product (available-to-promise).
-            DB.table("inventory").insert(map(
-                "product_id", id,
-                "variant_id", null,
-                "quantity", 0,
-                "reserved", 0,
-                "low_stock_threshold", 5
-            ));
+            DB.table("inventory").insert({
+                "product_id": id,
+                "variant_id": null,
+                "quantity": 0,
+                "reserved": 0,
+                "low_stock_threshold": 5
+            });
             CatalogCache.bump_catalog_version();
             return DB.table("products").where("id", "=", id).first();
         });
@@ -114,7 +114,7 @@ public class ProductService {
         let allowed = ["name", "category_id", "brand_id", "short_description", "description",
                        "price_minor", "compare_at_minor", "cost_minor", "tax_rate_bps", "weight_grams",
                        "meta_title", "meta_description", "status", "is_featured"];
-        let changes = map();
+        let changes = {};
         let i = 0;
         while i < allowed.len() {
             let key = allowed[i];
@@ -125,10 +125,10 @@ public class ProductService {
                     continue;
                 }
                 if key == "price_minor" and int(data[key]) <= 0 {
-                    throw validation_failed(map("price_minor", "Price must be positive."));
+                    throw validation_failed({"price_minor": "Price must be positive."});
                 }
                 if key == "cost_minor" and int(data[key]) < 0 {
-                    throw validation_failed(map("cost_minor", "Cost cannot be negative."));
+                    throw validation_failed({"cost_minor": "Cost cannot be negative."});
                 }
                 if key == "compare_at_minor" and data[key] != null {
                     // The compare-at price must stay ABOVE the sale price,
@@ -140,13 +140,13 @@ public class ProductService {
                         sale = int(product["price_minor"]);
                     }
                     if int(data[key]) > 0 and int(data[key]) <= sale {
-                        throw validation_failed(map("compare_at_minor", "Compare-at price must be higher than the sale price."));
+                        throw validation_failed({"compare_at_minor": "Compare-at price must be higher than the sale price."});
                     }
                 }
                 if key == "status" {
                     let st = string(data[key]);
                     if st != "draft" and st != "published" and st != "archived" {
-                        throw validation_failed(map("status", "Invalid publication status."));
+                        throw validation_failed({"status": "Invalid publication status."});
                     }
                 }
                 changes[key] = data[key];
@@ -175,7 +175,7 @@ public class ProductService {
         if publish {
             status = "published";
         }
-        DB.table("products").where("id", "=", id).update(map("status", status));
+        DB.table("products").where("id", "=", id).update({"status": status});
         CatalogCache.bump_catalog_version();
         return self.products.find(id);
     }
@@ -191,12 +191,12 @@ public class ProductService {
         if inv != null {
             qty = int(inv["quantity"]);
         }
-        return map(
-            "product_id", id,
-            "status", product["status"],
-            "quantity", qty,
-            "available", product["status"] == "published" and qty > 0
-        );
+        return {
+            "product_id": id,
+            "status": product["status"],
+            "quantity": qty,
+            "available": product["status"] == "published" and qty > 0
+        };
     }
 
     public fn delete(self, id) -> bool {
@@ -209,17 +209,15 @@ public class ProductService {
         // the order history intact — tell the admin to archive instead.
         let ordered = DB.table("order_items").where("product_id", "=", id).count();
         if ordered > 0 {
-            throw validation_failed(map(
-                "product",
-                "This product is part of " + string(ordered) + " order line(s) and cannot be deleted — archive it instead."
-            ));
+            throw validation_failed({
+                "product": "This product is part of " + string(ordered) + " order line(s) and cannot be deleted — archive it instead."
+            });
         }
         let in_carts = DB.table("cart_items").where("product_id", "=", id).count();
         if in_carts > 0 {
-            throw validation_failed(map(
-                "product",
-                "This product is still in " + string(in_carts) + " shopping cart(s) and cannot be deleted — archive it instead."
-            ));
+            throw validation_failed({
+                "product": "This product is still in " + string(in_carts) + " shopping cart(s) and cannot be deleted — archive it instead."
+            });
         }
         let image_rows = DB.table("product_images").where("product_id", "=", id).get();
         let removed = DB.transaction(fn() {

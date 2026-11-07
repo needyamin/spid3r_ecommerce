@@ -1,130 +1,108 @@
 // examples/task-api/main.matrix
-// Spid3rWeb Task API — a complete, runnable full-stack example.
+// Spid3rWeb Task API — a complete, runnable full-stack MVC example.
 //
-// Demonstrates the framework end to end WITHOUT opening a port: service
-// providers, the DI container, model events, the Validator, typed HTTP
-// exceptions, REST resource envelopes, and pagination — exercised through
-// Application.handle_request exactly like live traffic.
+// Demonstrates the modern Spid3rWeb framework end to end WITHOUT opening a port:
+// single-import barrel (`framework/Web`), zero-boilerplate `model()` repository,
+// service providers, model events, `req.validate_or_fail()`, `find_or_fail()`,
+// REST resource envelopes, pagination, and `TestClient` assertions.
 //
 // Run it:
 //   SPID3R_DB_DRIVER=sqlite spid3r run examples/task-api/main.matrix
 // Under the bytecode VM:
 //   SPID3R_DB_DRIVER=sqlite spid3r run --engine vm examples/task-api/main.matrix
-//
-// To serve the same app for real, replace the demo section at the bottom
-// with:  app.listen(8000);
 
-import "framework/Application";
+import "framework/Web";
 import "framework/Providers/ServiceProvider";
-import "framework/Response";
-import "framework/Router";
-import "framework/Database/DB";
-import "framework/Database/Schema";
-import "framework/Database/Model";
 import "framework/Resource";
-import "framework/HttpException";
-import "framework/Events/Event";
 
 // ---------------------------------------------------------------------------
-// Domain model + provider
+// 1. Zero-boilerplate domain model + service provider
 // ---------------------------------------------------------------------------
 
-class Task extends Model {
-    fn new() {
-        super("tasks", ["title", "done", "priority"], {});
+let Task = model("tasks", {
+    "fillable": ["title", "done", "priority"],
+    "casts": {
+        "done": "bool",
+        "priority": "int"
     }
-}
+});
 
-// A provider keeps bootstrap logic out of the global script: it binds the
-// task repository into the container and wires a model-event listener.
 class TaskProvider extends ServiceProvider {
     public fn register(self, container) {
         container.singleton("task.events_fired", fn(_c) {
-            return map("created", 0);
+            return {"created": 0, "deleted": 0};
         });
     }
 
     public fn boot(self, container) {
         let counter = container.make("task.events_fired");
-        Event.listen("model.tasks.created", fn(task, name) {
-            // Model events hand you the instance — react, audit, notify.
+        events().listen("model.tasks.created", fn(_task, _name) {
             counter["created"] = counter["created"] + 1;
+            return null;
+        });
+        events().listen("model.tasks.deleted", fn(_task, _name) {
+            counter["deleted"] = counter["deleted"] + 1;
             return null;
         });
     }
 }
 
-// REST resource: the API shape is decoupled from the table columns.
 let task_transformer = fn(t) {
-    return map(
-        "id", t["id"],
-        "title", t["title"],
-        "done", t["done"] == 1 or t["done"] == true,
-        "priority", t["priority"]
-    );
+    return {
+        "id": t["id"],
+        "title": t["title"],
+        "done": t["done"] == 1 or t["done"] == true,
+        "priority": int(t["priority"])
+    };
 };
 
 // ---------------------------------------------------------------------------
-// Controllers
+// 2. Clean MVC Controller
 // ---------------------------------------------------------------------------
 
 class TaskController {
     public fn index(self, req) {
-        let page = DB.table("tasks").orderBy("priority", "DESC").paginate(1, 10);
-        return json(resource_paginated(page, task_transformer));
+        let page = Task.orderBy("priority", "DESC").paginate(req.page(), req.per_page(10));
+        return resource_paginated(page, task_transformer);
     }
 
-    public fn store(self, req) {
-        let v = req.validate(map(
-            "title", "required|min:3|max:200",
-            "priority", "nullable|min:1|max:9"
-        ));
-        if v.fails() {
-            throw validation_failed(v.error_messages());
+    public fn store(self, req, res) {
+        let data = req.validate_or_fail({
+            "title": "required|min:3|max:200",
+            "priority": "nullable|integer|between:1,9"
+        });
+        let prio = 1;
+        if data["priority"] != null {
+            prio = data["priority"];
         }
-        let task = new Task();
-        task.set("title", req.input("title", ""));
-        let prio = req.input("priority", 1);
-        if prio == null {
-            prio = 1;
-        }
-        task.set("priority", int(prio));
-        task.set("done", 0);
-        task.save();  // fires model.tasks.created — the provider counts it
-        return json(resource_item(task, task_transformer), 201);
+        let task = Task.create({
+            "title": data["title"],
+            "priority": prio,
+            "done": false
+        });
+        return res.status(201).json(resource_item(task, task_transformer));
     }
 
     public fn show(self, req) {
-        let task = DB.table("tasks").find(req.params["id"]);
-        if task == null {
-            throw not_found("No task with that id.");
-        }
-        return json(resource_item(task, task_transformer));
+        let task = Task.find_or_fail(req.int("id"), "No task with that id.");
+        return resource_item(task, task_transformer);
     }
 
     public fn destroy(self, req) {
-        let task = DB.table("tasks").find(req.params["id"]);
-        if task == null {
-            throw not_found("No task with that id.");
-        }
-        let m = new Task();
-        m.set("id", task["id"]);
-        m.set("title", task["title"]);
-        m.set("done", task["done"]);
-        m.set("priority", task["priority"]);
-        m.exists = true;
-        m.delete();
-        return json(resource_item(task, task_transformer));
+        let task = Task.find_or_fail(req.int("id"), "No task with that id.");
+        let snapshot = task.to_map();
+        task.delete();
+        return resource_item(snapshot, task_transformer);
     }
 }
 
 // ---------------------------------------------------------------------------
-// App assembly + demo run
+// 3. App assembly + demo run
 // ---------------------------------------------------------------------------
 
-fn show(label: string, res) {
-    println("---- " + label + " -> " + string(res["status"]));
-    let body = string(res["body"]);
+fn show(label: string, test_res) {
+    println("---- " + label + " -> " + string(test_res.status));
+    let body = test_res.body;
     if len(body) > 220 {
         body = body.slice(0, 220) + " ...";
     }
@@ -132,63 +110,61 @@ fn show(label: string, res) {
 }
 
 fn main() {
-    // Schema (a real app would ship this as a migration instead).
-    Schema.dropIfExists("tasks");
-    Schema.create("tasks", fn(t) {
+    schema().dropIfExists("tasks");
+    schema().create("tasks", t => {
         t.id();
         t.string("title");
-        t.integer("done");
-        t.integer("priority");
+        t.integer("done").default(0);
+        t.integer("priority").default(1);
         t.timestamps();
     });
 
-    let app = new Application();
+    let app = web();
     app.register(new TaskProvider());
 
     let ctl = new TaskController();
-    Route.get("/api/tasks", fn(req) { return ctl.index(req); });
-    Route.post("/api/tasks", fn(req) { return ctl.store(req); });
-    Route.get("/api/tasks/:id", fn(req) { return ctl.show(req); });
-    Route.delete("/api/tasks/:id", fn(req) { return ctl.destroy(req); });
+    app.get("/api/tasks", req => ctl.index(req));
+    app.post("/api/tasks", (req, res) => ctl.store(req, res));
+    app.get("/api/tasks/:id", req => ctl.show(req));
+    app.delete("/api/tasks/:id", req => ctl.destroy(req));
 
-    // POST needs same-origin/CSRF context only over real browsers; the demo
-    // client sends neither an Origin nor a cookie session, so it passes the
-    // CSRF layers and reaches the handler.
-    let post_headers = map("content-type", "application/json");
+    let client = app.test_client();
 
     println("=== Spid3rWeb Task API demo ===\n");
 
     // 1. Validation failure -> 422 with field errors.
-    show("POST invalid (no title)",
-        app.handle_request(map("method", "POST", "path", "/api/tasks",
-            "headers", post_headers, "body", "{\"priority\":\"2\"}")));
+    let r_invalid = client.post_json("/api/tasks", {"priority": "2"}).assert_unprocessable();
+    show("POST invalid (no title)", r_invalid);
 
     // 2. Create -> 201 + resource envelope.
-    show("POST valid",
-        app.handle_request(map("method", "POST", "path", "/api/tasks",
-            "headers", post_headers, "body", "{\"title\":\"Ship Spid3rWeb 1.0\",\"priority\":\"5\"}")));
+    let r_created = client.post_json("/api/tasks", {"title": "Ship Spid3rWeb 2.0", "priority": "5"})
+        .assert_created()
+        .assert_json_path("data.title", "Ship Spid3rWeb 2.0")
+        .assert_json_path("data.priority", 5);
+    show("POST valid", r_created);
 
     // 3. Index -> paginated collection envelope.
-    show("GET /api/tasks",
-        app.handle_request(map("method", "GET", "path", "/api/tasks", "headers", map())));
+    let r_index = client.get("/api/tasks").assert_ok().assert_json_path("meta.total", 1);
+    show("GET /api/tasks", r_index);
 
     // 4. Typed 404 from a missing id.
-    show("GET /api/tasks/999",
-        app.handle_request(map("method", "GET", "path", "/api/tasks/999", "headers", map())));
+    let r_missing = client.get("/api/tasks/999").assert_not_found();
+    show("GET /api/tasks/999", r_missing);
 
     // 5. Show a real one, then delete it.
-    show("GET /api/tasks/1",
-        app.handle_request(map("method", "GET", "path", "/api/tasks/1", "headers", map())));
-    show("DELETE /api/tasks/1",
-        app.handle_request(map("method", "DELETE", "path", "/api/tasks/1", "headers", map())));
+    let r_show = client.get("/api/tasks/1").assert_ok().assert_json_path("data.id", 1);
+    show("GET /api/tasks/1", r_show);
 
-    // 6. Proof the provider's model-event listener ran.
+    let r_del = client.delete("/api/tasks/1").assert_ok();
+    show("DELETE /api/tasks/1", r_del);
+
+    // 6. Proof the provider's model-event listeners ran.
     let counter = app.container.make("task.events_fired");
-    println("---- model.tasks.created events observed by the provider: "
-        + string(counter["created"]));
+    println("---- model.tasks.created events observed: " + string(counter["created"])
+        + ", deleted: " + string(counter["deleted"]));
 
-    Schema.dropIfExists("tasks");
-    DB.close();
+    schema().dropIfExists("tasks");
+    db().close();
     println("\n=== Demo finished cleanly ===");
     return 0;
 }

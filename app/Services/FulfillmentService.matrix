@@ -71,13 +71,13 @@ public class FulfillmentService {
             }
             let status = string(order["status"]);
             if status == "cancelled" or status == "refunded" {
-                throw validation_failed(map("order", "A closed order cannot be shipped."));
+                throw validation_failed({"order": "A closed order cannot be shipped."});
             }
             if status == "delivered" {
-                throw validation_failed(map("order", "This order is already delivered."));
+                throw validation_failed({"order": "This order is already delivered."});
             }
             if string(method).trim() != "" and not self.shipping.is_method(method) {
-                throw validation_failed(map("method", "Unknown shipping method."));
+                throw validation_failed({"method": "Unknown shipping method."});
             }
             let tracking = string(tracking_number).trim();
             if tracking == "" {
@@ -92,16 +92,16 @@ public class FulfillmentService {
                 }
                 zone_ref = zone["id"];
             }
-            return DB.table("shipments").insert(map(
-                "order_id", order_id,
-                "carrier", string(carrier).trim(),
-                "tracking_number", tracking,
-                "method", string(method).trim(),
-                "zone_id", zone_ref,
-                "status", "preparing",
-                "estimated_at", string(estimated_at).trim(),
-                "notes", string(notes).trim()
-            ));
+            return DB.table("shipments").insert({
+                "order_id": order_id,
+                "carrier": string(carrier).trim(),
+                "tracking_number": tracking,
+                "method": string(method).trim(),
+                "zone_id": zone_ref,
+                "status": "preparing",
+                "estimated_at": string(estimated_at).trim(),
+                "notes": string(notes).trim()
+            });
         });
     }
 
@@ -109,7 +109,7 @@ public class FulfillmentService {
     // `delivered` stamps delivered_at and settles the order.
     public fn set_status(self, shipment_id, new_status: string) {
         if not self.valid_status(new_status) {
-            throw validation_failed(map("status", "Unknown shipment status."));
+            throw validation_failed({"status": "Unknown shipment status."});
         }
         return DB.transaction(fn() {
             let shipment = self.shipment(shipment_id);
@@ -118,9 +118,9 @@ public class FulfillmentService {
             }
             let current = string(shipment["status"]);
             if not self.allowed(current, new_status) {
-                throw validation_failed(map("status", "A shipment cannot move from " + current + " to " + new_status + "."));
+                throw validation_failed({"status": "A shipment cannot move from " + current + " to " + new_status + "."});
             }
-            let data = map("status", new_status);
+            let data = {"status": new_status};
             if new_status == "shipped" and shipment["shipped_at"] == null {
                 data["shipped_at"] = string(unix_time());
             }

@@ -10,58 +10,58 @@ public fn register_catalog_routes() {
     let ctl = new AdminCatalogController();
     let gate = "permission:catalog.manage";
 
-    Route.get("/admin/api/products", fn(req) { return ctl.products_index(req); }).middleware(gate);
-    Route.post("/admin/api/products", fn(req) { return ctl.product_store(req); }).middleware(gate);
-    Route.get("/admin/api/products/:id", fn(req) { return ctl.product_show(req); }).middleware(gate);
-    Route.put("/admin/api/products/:id", fn(req) { return ctl.product_update(req); }).middleware(gate);
-    Route.delete("/admin/api/products/:id", fn(req) { return ctl.product_delete(req); }).middleware(gate);
-    Route.post("/admin/api/products/:id/publish", fn(req) { return ctl.product_publish(req); }).middleware(gate);
-    Route.post("/admin/api/products/:id/unpublish", fn(req) { return ctl.product_unpublish(req); }).middleware(gate);
-    Route.get("/admin/api/products/:id/availability", fn(req) { return ctl.product_availability(req); }).middleware(gate);
+    Route.get("/admin/api/products", req => ctl.products_index(req)).middleware(gate);
+    Route.post("/admin/api/products", req => ctl.product_store(req)).middleware(gate);
+    Route.get("/admin/api/products/:id", req => ctl.product_show(req)).middleware(gate);
+    Route.put("/admin/api/products/:id", req => ctl.product_update(req)).middleware(gate);
+    Route.delete("/admin/api/products/:id", req => ctl.product_delete(req)).middleware(gate);
+    Route.post("/admin/api/products/:id/publish", req => ctl.product_publish(req)).middleware(gate);
+    Route.post("/admin/api/products/:id/unpublish", req => ctl.product_unpublish(req)).middleware(gate);
+    Route.get("/admin/api/products/:id/availability", req => ctl.product_availability(req)).middleware(gate);
 
-    Route.get("/admin/api/products/:id/inventory", fn(req) { return ctl.inventory_show(req); }).middleware(gate);
-    Route.post("/admin/api/products/:id/inventory/restock", fn(req) { return ctl.inventory_restock(req); }).middleware(gate);
-    Route.get("/admin/api/products/:id/inventory/history", fn(req) { return ctl.inventory_history(req); }).middleware(gate);
+    Route.get("/admin/api/products/:id/inventory", req => ctl.inventory_show(req)).middleware(gate);
+    Route.post("/admin/api/products/:id/inventory/restock", req => ctl.inventory_restock(req)).middleware(gate);
+    Route.get("/admin/api/products/:id/inventory/history", req => ctl.inventory_history(req)).middleware(gate);
 
-    Route.get("/admin/api/categories", fn(req) { return ctl.categories_index(req); }).middleware(gate);
-    Route.post("/admin/api/categories", fn(req) { return ctl.category_store(req); }).middleware(gate);
-    Route.put("/admin/api/categories/:id", fn(req) { return ctl.category_update(req); }).middleware(gate);
-    Route.delete("/admin/api/categories/:id", fn(req) { return ctl.category_delete(req); }).middleware(gate);
+    Route.get("/admin/api/categories", req => ctl.categories_index(req)).middleware(gate);
+    Route.post("/admin/api/categories", req => ctl.category_store(req)).middleware(gate);
+    Route.put("/admin/api/categories/:id", req => ctl.category_update(req)).middleware(gate);
+    Route.delete("/admin/api/categories/:id", req => ctl.category_delete(req)).middleware(gate);
 
-    Route.get("/admin/api/brands", fn(req) { return ctl.brands_index(req); }).middleware(gate);
-    Route.post("/admin/api/brands", fn(req) { return ctl.brand_store(req); }).middleware(gate);
-    Route.put("/admin/api/brands/:id", fn(req) { return ctl.brand_update(req); }).middleware(gate);
-    Route.delete("/admin/api/brands/:id", fn(req) { return ctl.brand_delete(req); }).middleware(gate);
+    Route.get("/admin/api/brands", req => ctl.brands_index(req)).middleware(gate);
+    Route.post("/admin/api/brands", req => ctl.brand_store(req)).middleware(gate);
+    Route.put("/admin/api/brands/:id", req => ctl.brand_update(req)).middleware(gate);
+    Route.delete("/admin/api/brands/:id", req => ctl.brand_delete(req)).middleware(gate);
 
-    Route.get("/admin/api/products/:id/variants", fn(req) { return ctl.variants_index(req); }).middleware(gate);
-    Route.post("/admin/api/products/:id/variants", fn(req) { return ctl.variant_store(req); }).middleware(gate);
+    Route.get("/admin/api/products/:id/variants", req => ctl.variants_index(req)).middleware(gate);
+    Route.post("/admin/api/products/:id/variants", req => ctl.variant_store(req)).middleware(gate);
 
-    Route.get("/admin/api/products/:id/images", fn(req) { return ctl.images_index(req); }).middleware(gate);
-    Route.post("/admin/api/products/:id/images", fn(req) { return ctl.image_store(req); }).middleware(gate);
-    Route.delete("/admin/api/images/:id", fn(req) { return ctl.image_delete(req); }).middleware(gate);
+    Route.get("/admin/api/products/:id/images", req => ctl.images_index(req)).middleware(gate);
+    Route.post("/admin/api/products/:id/images", req => ctl.image_store(req)).middleware(gate);
+    Route.delete("/admin/api/images/:id", req => ctl.image_delete(req)).middleware(gate);
 
     // ---- browser-form variants (HTML forms can only POST) ----
     // These back the admin UI forms: same permission gate, prices in
     // major units, and a redirect back to the page for non-JSON clients.
-    Route.post("/admin/api/products/create", fn(req) { return ctl.product_create_form(req); }).middleware(gate);
-    Route.post("/admin/api/products/:id/update", fn(req) { return ctl.product_update_form(req); }).middleware(gate);
-    Route.post("/admin/api/products/:id/publish-form", fn(req) { return ctl.product_publish_form(req); }).middleware(gate);
-    Route.post("/admin/api/products/:id/unpublish-form", fn(req) { return ctl.product_unpublish_form(req); }).middleware(gate);
-    Route.post("/admin/api/products/:id/inventory/restock-form", fn(req) { return ctl.inventory_restock_form(req); }).middleware(gate);
-    Route.post("/admin/api/products/:id/inventory/set-form", fn(req) { return ctl.inventory_set_form(req); }).middleware(gate);
-    Route.post("/admin/api/products/:id/images-form", fn(req) { return ctl.image_upload_form(req); }).middleware(gate);
-    Route.post("/admin/api/images/:id/delete-form", fn(req) { return ctl.image_delete_form(req); }).middleware(gate);
-    Route.post("/admin/api/images/:id/primary-form", fn(req) { return ctl.image_primary_form(req); }).middleware(gate);
-    Route.post("/admin/api/images/:id/update-form", fn(req) { return ctl.image_update_form(req); }).middleware(gate);
-    Route.post("/admin/api/images/:id/move-form", fn(req) { return ctl.image_move_form(req); }).middleware(gate);
-    Route.post("/admin/api/products/:id/inventory/threshold-form", fn(req) { return ctl.inventory_threshold_form(req); }).middleware(gate);
-    Route.post("/admin/api/products/:id/featured-form", fn(req) { return ctl.product_featured_form(req); }).middleware(gate);
-    Route.post("/admin/api/products/:id/delete-form", fn(req) { return ctl.product_delete_form(req); }).middleware(gate);
-    Route.post("/admin/api/products/:id/variants-form", fn(req) { return ctl.variant_store_form(req); }).middleware(gate);
-    Route.post("/admin/api/products/:id/variants/:variant_id/update-form", fn(req) { return ctl.variant_update_form(req); }).middleware(gate);
-    Route.post("/admin/api/products/:id/variants/:variant_id/delete-form", fn(req) { return ctl.variant_delete_form(req); }).middleware(gate);
-    Route.post("/admin/api/categories/create", fn(req) { return ctl.category_create_form(req); }).middleware(gate);
-    Route.post("/admin/api/categories/:id/update", fn(req) { return ctl.category_update_form(req); }).middleware(gate);
-    Route.post("/admin/api/brands/create", fn(req) { return ctl.brand_create_form(req); }).middleware(gate);
-    Route.post("/admin/api/brands/:id/update", fn(req) { return ctl.brand_update_form(req); }).middleware(gate);
+    Route.post("/admin/api/products/create", req => ctl.product_create_form(req)).middleware(gate);
+    Route.post("/admin/api/products/:id/update", req => ctl.product_update_form(req)).middleware(gate);
+    Route.post("/admin/api/products/:id/publish-form", req => ctl.product_publish_form(req)).middleware(gate);
+    Route.post("/admin/api/products/:id/unpublish-form", req => ctl.product_unpublish_form(req)).middleware(gate);
+    Route.post("/admin/api/products/:id/inventory/restock-form", req => ctl.inventory_restock_form(req)).middleware(gate);
+    Route.post("/admin/api/products/:id/inventory/set-form", req => ctl.inventory_set_form(req)).middleware(gate);
+    Route.post("/admin/api/products/:id/images-form", req => ctl.image_upload_form(req)).middleware(gate);
+    Route.post("/admin/api/images/:id/delete-form", req => ctl.image_delete_form(req)).middleware(gate);
+    Route.post("/admin/api/images/:id/primary-form", req => ctl.image_primary_form(req)).middleware(gate);
+    Route.post("/admin/api/images/:id/update-form", req => ctl.image_update_form(req)).middleware(gate);
+    Route.post("/admin/api/images/:id/move-form", req => ctl.image_move_form(req)).middleware(gate);
+    Route.post("/admin/api/products/:id/inventory/threshold-form", req => ctl.inventory_threshold_form(req)).middleware(gate);
+    Route.post("/admin/api/products/:id/featured-form", req => ctl.product_featured_form(req)).middleware(gate);
+    Route.post("/admin/api/products/:id/delete-form", req => ctl.product_delete_form(req)).middleware(gate);
+    Route.post("/admin/api/products/:id/variants-form", req => ctl.variant_store_form(req)).middleware(gate);
+    Route.post("/admin/api/products/:id/variants/:variant_id/update-form", req => ctl.variant_update_form(req)).middleware(gate);
+    Route.post("/admin/api/products/:id/variants/:variant_id/delete-form", req => ctl.variant_delete_form(req)).middleware(gate);
+    Route.post("/admin/api/categories/create", req => ctl.category_create_form(req)).middleware(gate);
+    Route.post("/admin/api/categories/:id/update", req => ctl.category_update_form(req)).middleware(gate);
+    Route.post("/admin/api/brands/create", req => ctl.brand_create_form(req)).middleware(gate);
+    Route.post("/admin/api/brands/:id/update", req => ctl.brand_update_form(req)).middleware(gate);
 }

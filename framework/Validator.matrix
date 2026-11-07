@@ -193,6 +193,20 @@ public class Validator {
         return all.join(sep);
     }
 
+    public fn make(self, data, rules) {
+        if type_of(data) == "map" {
+            let fake_req = {
+                "data": data,
+                "input": fn(key, def_val = null) {
+                    if data.has(key) { return data[key]; }
+                    return def_val;
+                }
+            };
+            return self.check(fake_req, rules);
+        }
+        return self.check(data, rules);
+    }
+
     // ------------------------------------------------------------------
     // Rule engine
     // ------------------------------------------------------------------

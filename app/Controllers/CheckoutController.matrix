@@ -25,14 +25,14 @@ public class CheckoutController {
     }
 
     fn base(self, req, title: string) {
-        let ctx = map(
-            "store_name", self.settings["name"],
-            "currency", self.settings["currency"],
-            "title", title,
-            "meta_description", title + " — " + self.settings["name"],
-            "current_path", string(req.path),
-            "csrf", ""
-        );
+        let ctx = {
+            "store_name": self.settings["name"],
+            "currency": self.settings["currency"],
+            "title": title,
+            "meta_description": title + " — " + self.settings["name"],
+            "current_path": string(req.path),
+            "csrf": ""
+        };
         let chrome = StoreChrome.build(req, self.settings);
         for k in chrome.keys() {
             ctx[k] = chrome[k];
@@ -41,7 +41,7 @@ public class CheckoutController {
     }
 
     fn options(self, req) {
-        let opts = map();
+        let opts = {};
         for k in req.query_params.keys() {
             opts[k] = req.query_params[k];
         }
@@ -76,21 +76,18 @@ public class CheckoutController {
 
     public fn quote_json(self, req) {
         let ident = CartIdentity.cart_identity(req);
-        let res = json(map("data", self.checkout.quote(ident, self.options(req))));
+        let res = json({"data": self.checkout.quote(ident, self.options(req))});
         res.cookie("cart", ident["key"], "/", 2592000);
         return res;
     }
 
     public fn place(self, req) {
-        let v = req.validate(CheckoutValidators.place_rules());
-        if v.fails() {
-            throw validation_failed(v.error_messages());
-        }
+        req.validate_or_fail(CheckoutValidators.place_rules());
         let ident = CartIdentity.cart_identity(req);
         let order = self.checkout.place_order(ident, req.data);
         let number = string(order["order_number"]);
         if req.input("format", "") == "json" {
-            let res = json(map("data", map("order_number", number, "status", order["status"], "total_minor", order["total_minor"])), 201);
+            let res = json({"data": {"order_number": number, "status": order["status"], "total_minor": order["total_minor"]}}, 201);
             res.cookie("cart", ident["key"], "/", 2592000);
             return res;
         }
@@ -113,23 +110,20 @@ public class CheckoutController {
 
     // Saved addresses for authenticated customers.
     public fn store_address(self, req) {
-        let v = req.validate(CheckoutValidators.address_rules());
-        if v.fails() {
-            throw validation_failed(v.error_messages());
-        }
-        let id = self.addresses.create(map(
-            "user_id", req.auth.id(),
-            "label", req.input("label", "Home"),
-            "full_name", req.input("full_name", ""),
-            "phone", req.input("phone", ""),
-            "line1", req.input("line1", ""),
-            "line2", req.input("line2", ""),
-            "city", req.input("city", ""),
-            "district", req.input("district", ""),
-            "postal_code", req.input("postal_code", ""),
-            "country", req.input("country", "Bangladesh"),
-            "is_default", 1
-        ));
-        return json(map("data", map("id", id, "created", true)), 201);
+        req.validate_or_fail(CheckoutValidators.address_rules());
+        let id = self.addresses.create({
+            "user_id": req.auth.id(),
+            "label": req.input("label", "Home"),
+            "full_name": req.input("full_name", ""),
+            "phone": req.input("phone", ""),
+            "line1": req.input("line1", ""),
+            "line2": req.input("line2", ""),
+            "city": req.input("city", ""),
+            "district": req.input("district", ""),
+            "postal_code": req.input("postal_code", ""),
+            "country": req.input("country", "Bangladesh"),
+            "is_default": 1
+        });
+        return json({"data": {"id": id, "created": true}}, 201);
     }
 }

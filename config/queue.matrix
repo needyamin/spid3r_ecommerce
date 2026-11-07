@@ -12,19 +12,19 @@
 //
 // The queue name can be overridden per-deploy with SPID3R_QUEUE.
 
-public let config_queue = map(
-    "default", "database",
-    "queue_env", "SPID3R_QUEUE",
-    "connections", map(
-        "database", map(
-            "driver", "database",
-            "table", "jobs",
-            "queue", "default",
-            "retry_after", 90,     // seconds before a reserved job is retried
-            "max_attempts", 3      // attempts before a job is discarded
-        ),
-        "sync", map(
-            "driver", "sync"
-        )
-    )
-);
+public let config_queue = {
+    "default": "database",
+    "queue_env": "SPID3R_QUEUE",
+    "connections": {
+        "database": {
+            "driver": "database",
+            "table": "jobs",
+            "queue": "default",
+            "retry_after": 90,     // seconds before a reserved job is retried
+            "max_attempts": 3      // attempts before a job is discarded
+        },
+        "sync": {
+            "driver": "sync"
+        }
+    }
+};

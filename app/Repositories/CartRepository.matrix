@@ -21,12 +21,12 @@ public class CartRepository {
         if cart != null {
             return cart;
         }
-        let id = DB.table("carts").insert(map(
-            "user_id", user_id,
-            "session_key", session_key,
-            "status", "active",
-            "currency", "BDT"
-        ));
+        let id = DB.table("carts").insert({
+            "user_id": user_id,
+            "session_key": session_key,
+            "status": "active",
+            "currency": "BDT"
+        });
         return DB.table("carts").where("id", "=", id).first();
     }
 
@@ -57,13 +57,13 @@ public class CartRepository {
                 .increment("quantity", qty);
             return changes > 0;
         }
-        let id = DB.table("cart_items").insert(map(
-            "cart_id", cart_id,
-            "product_id", product_id,
-            "variant_id", variant_id,
-            "quantity", qty,
-            "unit_price_minor", unit_price_minor
-        ));
+        let id = DB.table("cart_items").insert({
+            "cart_id": cart_id,
+            "product_id": product_id,
+            "variant_id": variant_id,
+            "quantity": qty,
+            "unit_price_minor": unit_price_minor
+        });
         return int(id) > 0;
     }
 
@@ -71,7 +71,7 @@ public class CartRepository {
         if qty <= 0 {
             return self.remove_item(item_id);
         }
-        return DB.table("cart_items").where("id", "=", item_id).update(map("quantity", qty)) > 0;
+        return DB.table("cart_items").where("id", "=", item_id).update({"quantity": qty}) > 0;
     }
 
     public fn remove_item(self, item_id) -> bool {

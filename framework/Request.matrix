@@ -333,7 +333,9 @@ public class Request {
                     }
                     self.files[field] = {
                         "name": filename,
+                        "filename": filename,
                         "type": part_ct,
+                        "content_type": part_ct,
                         "size": value.len(),
                         "content": value,
                         "ext": ext
@@ -421,6 +423,10 @@ public class Request {
         return "";
     }
 
+    public fn bearer_token(self) -> string {
+        return self.bearer();
+    }
+
     public fn user(self) {
         if self.user_data != null {
             return self.user_data;
@@ -437,6 +443,14 @@ public class Request {
             self.session_store = new SessionStore(string(sid));
         }
         return self.session_store;
+    }
+
+    public fn flash(self, key: string, value) {
+        return self.session().flash(key, value);
+    }
+
+    public fn get_flash(self, key: string, default_val = null) {
+        return self.session().get_flash(key, default_val);
     }
 
     public fn is_json(self) -> bool {

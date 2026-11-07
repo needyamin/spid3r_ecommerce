@@ -51,14 +51,14 @@ public class InventoryRepository {
             if changes == 0 {
                 return false;
             }
-            DB.table("stock_movements").insert(map(
-                "product_id", product_id,
-                "variant_id", variant_id,
-                "delta", 0 - qty,
-                "reason", reason,
-                "reference_type", reference_type,
-                "reference_id", reference_id
-            ));
+            DB.table("stock_movements").insert({
+                "product_id": product_id,
+                "variant_id": variant_id,
+                "delta": 0 - qty,
+                "reason": reason,
+                "reference_type": reference_type,
+                "reference_id": reference_id
+            });
             CatalogCache.bump_catalog_version();
             return true;
         });
@@ -80,12 +80,12 @@ public class InventoryRepository {
             if changes == 0 {
                 return false;
             }
-            DB.table("stock_movements").insert(map(
-                "product_id", product_id,
-                "variant_id", variant_id,
-                "delta", qty,
-                "reason", reason
-            ));
+            DB.table("stock_movements").insert({
+                "product_id": product_id,
+                "variant_id": variant_id,
+                "delta": qty,
+                "reason": reason
+            });
             CatalogCache.bump_catalog_version();
             return true;
         });
@@ -117,17 +117,17 @@ public class InventoryRepository {
             let delta = qty - int(row["quantity"]);
             let changed = DB.table("inventory")
                 .where("id", "=", row["id"])
-                .update(map("quantity", qty)) > 0;
+                .update({"quantity": qty}) > 0;
             if not changed {
                 return false;
             }
             if delta != 0 {
-                DB.table("stock_movements").insert(map(
-                    "product_id", product_id,
-                    "variant_id", variant_id,
-                    "delta", delta,
-                    "reason", reason
-                ));
+                DB.table("stock_movements").insert({
+                    "product_id": product_id,
+                    "variant_id": variant_id,
+                    "delta": delta,
+                    "reason": reason
+                });
             }
             CatalogCache.bump_catalog_version();
             return true;
@@ -142,7 +142,7 @@ public class InventoryRepository {
         return DB.table("inventory")
             .where("product_id", "=", product_id)
             .whereNull("variant_id")
-            .update(map("low_stock_threshold", threshold)) > 0;
+            .update({"low_stock_threshold": threshold}) > 0;
     }
 
     public fn movements_for(self, product_id) {

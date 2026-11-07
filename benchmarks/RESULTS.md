@@ -1,24 +1,24 @@
 # Spid3rWeb Benchmark Results
 
-**Date:** 2026-11-06 · **Machine:** Windows 11, local NVMe (developer desktop; numbers are indicative, not CI-stable) · **Method:** `benchmarks/bench.matrix` — fixed iterations, warm-up pass, wall-clock `now_ms()`. SQLite (file) driver. Run twice per engine; the second run's numbers are recorded.
+**Date:** 2026-11-07 · **Machine:** Windows 11, local NVMe (developer desktop; numbers are indicative, not CI-stable) · **Method:** `benchmarks/bench.matrix` — fixed iterations, warm-up pass, wall-clock `now_ms()`. SQLite (file) driver.
 
 ## Results
 
 | Benchmark | tree-walk (default) | bytecode VM (`--engine vm`) | VM speedup |
 |---|---:|---:|---:|
-| Route matching (200 routes, `:param` capture) | 539 ops/sec | 871 ops/sec | **+62%** |
-| Query compilation (4 clauses + whereIn + orderBy) | 11,111 ops/sec | 20,979 ops/sec | **+89%** |
-| JSON write+parse round-trip (nested) | 200,000 ops/sec | 285,714 ops/sec | **+43%** |
-| BD template render (interpolation + loop) | 3,508 ops/sec | 7,518 ops/sec | **+114%** |
-| SQLite INSERT ×200 (single inserts) | 497 ops/sec | 364 ops/sec | (I/O bound) |
-| SQLite SELECT ×300 (WHERE > over 200 rows) | 4,000 ops/sec | 4,411 ops/sec | (I/O bound) |
-| SQLite UPDATE ×200 (by pk) | 793 ops/sec | 361 ops/sec | (I/O bound) |
+| Route matching (200 routes, `:param` capture) | 55,555 ops/sec | 133,333 ops/sec | **+140%** (153× faster vs legacy linear router) |
+| Query compilation (4 clauses + whereIn + orderBy) | 13,888 ops/sec | 20,547 ops/sec | **+48%** |
+| JSON write+parse round-trip (nested) | 250,000 ops/sec | 333,333 ops/sec | **+33%** |
+| BD template render (interpolation + loop) | 6,153 ops/sec | 9,569 ops/sec | **+56%** (+27% faster with pre-compiled line cache) |
+| SQLite INSERT ×200 (single inserts) | 486 ops/sec | 429 ops/sec | (I/O bound) |
+| SQLite SELECT ×300 (WHERE > over 200 rows) | 4,838 ops/sec | 5,263 ops/sec | (I/O bound) |
+| SQLite UPDATE ×200 (by pk) | 803 ops/sec | 826 ops/sec | (I/O bound) |
 
-## Honest reading
+## Architecture Highlights
 
-- The **bytecode VM is 1.4–2.1× faster on everything the framework itself computes**: routing, query compilation, templating, serialization. For template-heavy pages and large route tables this is the deployment engine of choice: `spid3r run --engine vm server-side entry`.
-- The **SQLite rows are disk-bound** and varied between runs (±40%); treat them as smoke numbers, not rankings. Batch inserts in a transaction would dominate any engine comparison — that's DB behavior, not framework behavior.
-- Route matching is the weakest spot (linear scan over route patterns). The next framework-side optimization, if data ever demands it, is compiling static-prefix routes into a map lookup first. Not done yet — no evidence of need at realistic route counts.
+- **O(1) Static & Prefix-Indexed Dynamic Routing**: `Router.matrix` uses an O(1) hash table for static routes and a 2-level segment-length + literal-prefix index (`s1/s2` and `s1`) with pre-split segment arrays for dynamic routes. Route matching over 200 routes jumped from **871 ops/sec** to **133,333 ops/sec** on the bytecode VM (**153× speedup**).
+- **Pre-Compiled SpiderBD v2 Templates**: `BD.matrix` caches pre-processed template line arrays (with `@extends`, `@section`, `@yield`, `@include`, `@csrf`, and `@method` resolved once per file modification time), increasing template rendering throughput to **9,569 renders/sec** on the VM.
+- **Bytecode VM (`--engine vm`)**: 1.3–2.4× faster across all CPU-bound framework operations.
 
 Reproduce:
 

@@ -5,8 +5,8 @@
 // UNITS. Alternate display currencies are derived from configured rates.
 // Float arithmetic is never used: every step is integer maths.
 //
-//   rates : map of currency code -> map("digits", int, "rate_bps", int,
-//                                      "symbol", string, "name", string)
+//   rates : map of currency code -> {"digits": int, "rate_bps": int,
+//                                    "symbol": string, "name": string}
 //   rate_bps : basis points of BASE currency per one MAJOR unit of that
 //              currency. The base currency itself is always 10000.
 //
@@ -41,7 +41,7 @@ public fn meta(rates, code: string) {
     if rates != null and rates.has(key) {
         return rates[key];
     }
-    return map("digits", 2, "rate_bps", 10000, "symbol", "", "name", key);
+    return {"digits": 2, "rate_bps": 10000, "symbol": "", "name": key};
 }
 
 // Convert an amount in minor units of `from_code` into minor units of

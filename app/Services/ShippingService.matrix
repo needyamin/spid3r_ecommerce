@@ -161,7 +161,7 @@ public class ShippingService {
             return self.setting("shipping.express_minor", 12000);
         }
         if not self.is_method(method) {
-            throw validation_failed(map("shipping_method", "Choose a valid shipping method."));
+            throw validation_failed({"shipping_method": "Choose a valid shipping method."});
         }
         let free_threshold = self.setting("shipping.free_threshold_minor", 200000);
         if after_discount >= free_threshold {
@@ -175,21 +175,21 @@ public class ShippingService {
     // plus a delivery estimate.
     public fn quote(self, address, method: string, order_value_minor: int) {
         if not self.is_method(method) {
-            throw validation_failed(map("shipping_method", "Choose a valid shipping method."));
+            throw validation_failed({"shipping_method": "Choose a valid shipping method."});
         }
         let zone = self.zone_for_address(address);
         if zone != null {
             let rate = self.rate_for(zone["id"], method, order_value_minor);
             if rate != null {
-                return map(
-                    "fee_minor", int(rate["fee_minor"]),
-                    "method", method,
-                    "zone_id", zone["id"],
-                    "zone_name", string(zone["name"]),
-                    "estimated_days_min", int(rate["estimated_days_min"]),
-                    "estimated_days_max", int(rate["estimated_days_max"]),
-                    "source", "zone_rate"
-                );
+                return {
+                    "fee_minor": int(rate["fee_minor"]),
+                    "method": method,
+                    "zone_id": zone["id"],
+                    "zone_name": string(zone["name"]),
+                    "estimated_days_min": int(rate["estimated_days_min"]),
+                    "estimated_days_max": int(rate["estimated_days_max"]),
+                    "source": "zone_rate"
+                };
             }
         }
         let zone_id = null;
@@ -204,15 +204,15 @@ public class ShippingService {
             days_min = 1;
             days_max = 2;
         }
-        return map(
-            "fee_minor", self.flat_fee(method, order_value_minor),
-            "method", method,
-            "zone_id", zone_id,
-            "zone_name", zone_name,
-            "estimated_days_min", days_min,
-            "estimated_days_max", days_max,
-            "source", "flat"
-        );
+        return {
+            "fee_minor": self.flat_fee(method, order_value_minor),
+            "method": method,
+            "zone_id": zone_id,
+            "zone_name": zone_name,
+            "estimated_days_min": days_min,
+            "estimated_days_max": days_max,
+            "source": "flat"
+        };
     }
 
     // ---- administration ----
@@ -221,14 +221,14 @@ public class ShippingService {
     public fn save_zone(self, name: string, country: string, districts: string, is_active: int) {
         let key = string(name).trim();
         if key == "" {
-            throw validation_failed(map("name", "A zone name is required."));
+            throw validation_failed({"name": "A zone name is required."});
         }
-        let data = map(
-            "name", key,
-            "country", string(country).trim(),
-            "districts", string(districts).trim(),
-            "is_active", is_active
-        );
+        let data = {
+            "name": key,
+            "country": string(country).trim(),
+            "districts": string(districts).trim(),
+            "is_active": is_active
+        };
         let existing = DB.table("shipping_zones").where("name", "=", key).first();
         if existing != null {
             DB.table("shipping_zones").where("id", "=", existing["id"]).update(data);
@@ -244,31 +244,31 @@ public class ShippingService {
             throw not_found("Shipping zone not found.");
         }
         if not self.is_method(method) {
-            throw validation_failed(map("method", "Unknown shipping method."));
+            throw validation_failed({"method": "Unknown shipping method."});
         }
         if fee_minor < 0 {
-            throw validation_failed(map("fee_minor", "The fee cannot be negative."));
+            throw validation_failed({"fee_minor": "The fee cannot be negative."});
         }
         if days_min < 0 or days_max < days_min {
-            throw validation_failed(map("estimated_days", "The estimate window is invalid."));
+            throw validation_failed({"estimated_days": "The estimate window is invalid."});
         }
-        return DB.table("shipping_rates").insert(map(
-            "zone_id", zone["id"],
-            "method", string(method).trim(),
-            "min_order_minor", min_order_minor,
-            "max_order_minor", max_order_minor,
-            "fee_minor", fee_minor,
-            "estimated_days_min", days_min,
-            "estimated_days_max", days_max,
-            "is_active", is_active
-        ));
+        return DB.table("shipping_rates").insert({
+            "zone_id": zone["id"],
+            "method": string(method).trim(),
+            "min_order_minor": min_order_minor,
+            "max_order_minor": max_order_minor,
+            "fee_minor": fee_minor,
+            "estimated_days_min": days_min,
+            "estimated_days_max": days_max,
+            "is_active": is_active
+        });
     }
 
     public fn deactivate_rate(self, rate_id) -> bool {
-        return DB.table("shipping_rates").where("id", "=", rate_id).update(map("is_active", 0)) > 0;
+        return DB.table("shipping_rates").where("id", "=", rate_id).update({"is_active": 0}) > 0;
     }
 
     public fn deactivate_zone(self, zone_id) -> bool {
-        return DB.table("shipping_zones").where("id", "=", zone_id).update(map("is_active", 0)) > 0;
+        return DB.table("shipping_zones").where("id", "=", zone_id).update({"is_active": 0}) > 0;
     }
 }
