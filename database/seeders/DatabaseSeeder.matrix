@@ -50,21 +50,60 @@ fn seed_role_permissions() {
 }
 
 fn seed_settings() {
+    // 1. General Store
     ensure("settings", "setting_key", "store.name", {"setting_key": "store.name", "value": "Spid3r Store", "setting_group": "general"});
+    ensure("settings", "setting_key", "store.tagline", {"setting_key": "store.tagline", "value": "The Next-Gen Modern E-Commerce Platform", "setting_group": "general"});
+    ensure("settings", "setting_key", "store.support_email", {"setting_key": "store.support_email", "value": "support@spid3r.test", "setting_group": "general"});
+    ensure("settings", "setting_key", "store.support_phone", {"setting_key": "store.support_phone", "value": "+880 1700-000000", "setting_group": "general"});
+    ensure("settings", "setting_key", "store.address", {"setting_key": "store.address", "value": "Gulshan-2, Dhaka-1212, Bangladesh", "setting_group": "general"});
     ensure("settings", "setting_key", "store.currency", {"setting_key": "store.currency", "value": "BDT", "setting_group": "general"});
-    ensure("settings", "setting_key", "store.tax_rate_bps", {"setting_key": "store.tax_rate_bps", "value": "0", "setting_group": "tax"});
+    ensure("settings", "setting_key", "store.locale", {"setting_key": "store.locale", "value": "en", "setting_group": "general"});
+    ensure("settings", "setting_key", "store.order_prefix", {"setting_key": "store.order_prefix", "value": "SP-", "setting_group": "general"});
+
+    // 2. Shipping & Delivery
     ensure("settings", "setting_key", "shipping.flat_minor", {"setting_key": "shipping.flat_minor", "value": "6000", "setting_group": "shipping"});
-    ensure("settings", "setting_key", "shipping.free_threshold_minor", {"setting_key": "shipping.free_threshold_minor", "value": "200000", "setting_group": "shipping"});
-    // Phase 7 — express shipping surcharge.
     ensure("settings", "setting_key", "shipping.express_minor", {"setting_key": "shipping.express_minor", "value": "12000", "setting_group": "shipping"});
-    // Phase 8 — DEV-ONLY webhook secret. Production MUST override with
-    // <PROVIDER>_WEBHOOK_SECRET / COD_WEBHOOK_SECRET environment variables.
-    ensure("settings", "setting_key", "payments.webhook_secret", {"setting_key": "payments.webhook_secret", "value": "dev-webhook-secret-change-me", "setting_group": "payments"});
-    // Phase 6 — volume discount (5% off carts at/above 1000.00).
+    ensure("settings", "setting_key", "shipping.free_threshold_minor", {"setting_key": "shipping.free_threshold_minor", "value": "200000", "setting_group": "shipping"});
+    ensure("settings", "setting_key", "shipping.standard_lead_days", {"setting_key": "shipping.standard_lead_days", "value": "2 - 4 business days", "setting_group": "shipping"});
+    ensure("settings", "setting_key", "shipping.express_lead_days", {"setting_key": "shipping.express_lead_days", "value": "Within 24 hours", "setting_group": "shipping"});
+    ensure("settings", "setting_key", "returns.window_days", {"setting_key": "returns.window_days", "value": "14", "setting_group": "shipping"});
+    ensure("settings", "setting_key", "returns.allow_customer_returns", {"setting_key": "returns.allow_customer_returns", "value": "1", "setting_group": "shipping"});
+
+    // 3. Promotions, Loyalty & Referrals
     ensure("settings", "setting_key", "cart.discount_threshold_minor", {"setting_key": "cart.discount_threshold_minor", "value": "100000", "setting_group": "promotions"});
     ensure("settings", "setting_key", "cart.discount_bps", {"setting_key": "cart.discount_bps", "value": "500", "setting_group": "promotions"});
-    // Phase 11 — how many days after delivery a return may be requested.
-    ensure("settings", "setting_key", "returns.window_days", {"setting_key": "returns.window_days", "value": "14", "setting_group": "shipping"});
+    ensure("settings", "setting_key", "loyalty.spend_per_point_minor", {"setting_key": "loyalty.spend_per_point_minor", "value": "10000", "setting_group": "promotions"});
+    ensure("settings", "setting_key", "loyalty.point_value_minor", {"setting_key": "loyalty.point_value_minor", "value": "100", "setting_group": "promotions"});
+    ensure("settings", "setting_key", "referrals.referrer_bonus_points", {"setting_key": "referrals.referrer_bonus_points", "value": "500", "setting_group": "promotions"});
+    ensure("settings", "setting_key", "referrals.referee_bonus_points", {"setting_key": "referrals.referee_bonus_points", "value": "500", "setting_group": "promotions"});
+
+    // 4. Tax & VAT
+    ensure("settings", "setting_key", "store.tax_rate_bps", {"setting_key": "store.tax_rate_bps", "value": "0", "setting_group": "tax"});
+    ensure("settings", "setting_key", "store.tax_included", {"setting_key": "store.tax_included", "value": "0", "setting_group": "tax"});
+    ensure("settings", "setting_key", "store.tax_number", {"setting_key": "store.tax_number", "value": "BIN-002948194-0101", "setting_group": "tax"});
+
+    // 5. Payments
+    ensure("settings", "setting_key", "payments.mode", {"setting_key": "payments.mode", "value": "sandbox", "setting_group": "payments"});
+    ensure("settings", "setting_key", "payments.cod_enabled", {"setting_key": "payments.cod_enabled", "value": "1", "setting_group": "payments"});
+    ensure("settings", "setting_key", "payments.cod_max_limit_minor", {"setting_key": "payments.cod_max_limit_minor", "value": "5000000", "setting_group": "payments"});
+    ensure("settings", "setting_key", "payments.bkash_enabled", {"setting_key": "payments.bkash_enabled", "value": "1", "setting_group": "payments"});
+    ensure("settings", "setting_key", "payments.nagad_enabled", {"setting_key": "payments.nagad_enabled", "value": "1", "setting_group": "payments"});
+    ensure("settings", "setting_key", "payments.sslcommerz_enabled", {"setting_key": "payments.sslcommerz_enabled", "value": "1", "setting_group": "payments"});
+    ensure("settings", "setting_key", "payments.stripe_enabled", {"setting_key": "payments.stripe_enabled", "value": "1", "setting_group": "payments"});
+    ensure("settings", "setting_key", "payments.webhook_secret", {"setting_key": "payments.webhook_secret", "value": "dev-webhook-secret-change-me", "setting_group": "payments"});
+
+    // 6. Storefront Appearance & Announcements
+    ensure("settings", "setting_key", "storefront.announcement_enabled", {"setting_key": "storefront.announcement_enabled", "value": "1", "setting_group": "storefront"});
+    ensure("settings", "setting_key", "storefront.announcement_bar", {"setting_key": "storefront.announcement_bar", "value": "🚚 Free express delivery across Bangladesh on orders over ৳2,000!", "setting_group": "storefront"});
+    ensure("settings", "setting_key", "storefront.footer_text", {"setting_key": "storefront.footer_text", "value": "Quality products, honest prices, fast delivery across Bangladesh.", "setting_group": "storefront"});
+    ensure("settings", "setting_key", "storefront.social_facebook", {"setting_key": "storefront.social_facebook", "value": "https://facebook.com/spid3rstore", "setting_group": "storefront"});
+    ensure("settings", "setting_key", "storefront.social_instagram", {"setting_key": "storefront.social_instagram", "value": "https://instagram.com/spid3rstore", "setting_group": "storefront"});
+
+    // 7. Inventory & Order Policies
+    ensure("settings", "setting_key", "inventory.low_stock_default", {"setting_key": "inventory.low_stock_default", "value": "5", "setting_group": "inventory"});
+    ensure("settings", "setting_key", "inventory.allow_backorders", {"setting_key": "inventory.allow_backorders", "value": "0", "setting_group": "inventory"});
+    ensure("settings", "setting_key", "orders.guest_checkout_enabled", {"setting_key": "orders.guest_checkout_enabled", "value": "1", "setting_group": "inventory"});
+    ensure("settings", "setting_key", "orders.auto_cancel_unpaid_hours", {"setting_key": "orders.auto_cancel_unpaid_hours", "value": "48", "setting_group": "inventory"});
 }
 
 fn ensure_setting_value(table_name: string, column: string, value, data) {

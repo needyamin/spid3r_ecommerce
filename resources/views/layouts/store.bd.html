@@ -17,10 +17,25 @@
 </head>
 <body>
 @if(not is_admin_area)
-  <!-- Top strip: currency & language -->
+@if(has_announcement)
+  <div class="dz-announcement-strip text-center py-1 small fw-semibold bg-dark text-white border-bottom">
+    <div class="container d-flex justify-content-center align-items-center">
+      <span>{{ announcement_text }}</span>
+    </div>
+  </div>
+@endif
+  <!-- Top strip: currency & language & support contact -->
   @if(currency_options)
   <div class="dz-topbar d-none d-md-block">
     <div class="container d-flex justify-content-end align-items-center gap-3 py-1">
+      <div class="me-auto text-secondary small d-none d-lg-flex align-items-center gap-3">
+@if(has_support_phone)
+        <span>&#128222; Hotline: <strong>{{ support_phone }}</strong></span>
+@endif
+@if(has_support_email)
+        <span>&#9993; {{ support_email }}</span>
+@endif
+      </div>
       <form class="switcher" method="post" action="/locale">
         <input type="hidden" name="_csrf" value="{{ csrf }}">
         <input type="hidden" name="return_to" value="{{ current_path }}">
@@ -166,6 +181,9 @@
       <div class="row g-4">
         <div class="col-12 col-md-4">
           <h6>{{ store_name }}</h6>
+@if(has_store_tagline)
+          <p class="text-primary-emphasis fw-medium small mb-1">{{ store_tagline }}</p>
+@endif
           <p class="text-secondary mb-0" style="font-size:13.5px;">Quality products, honest prices, fast delivery. Cash on delivery, bKash, Nagad and cards accepted.</p>
         </div>
         <div class="col-6 col-md-2">

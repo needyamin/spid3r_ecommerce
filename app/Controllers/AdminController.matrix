@@ -958,6 +958,9 @@ public class AdminController {
         if key == "store.currency" and value != "" {
             self.settings["currency"] = value.trim().upper();
         }
+        if key == "store.locale" and value != "" {
+            self.settings["locale"] = value.trim();
+        }
         self.audit(req, "settings.update", "settings", key, {"value": value});
         if req.input("format", "") != "json" {
             return redirect("/admin/settings");

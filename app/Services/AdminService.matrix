@@ -403,9 +403,10 @@ public class AdminService {
             });
             return true;
         }
-        return DB.table("settings").where("setting_key", "=", clean).update({
+        DB.table("settings").where("setting_key", "=", clean).update({
             "value": value, "setting_group": group
-        }) > 0;
+        });
+        return true;
     }
 
     // ---- audit log ----

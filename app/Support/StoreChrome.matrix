@@ -117,6 +117,29 @@ public fn build(req, settings) {
         wishlist_count = wishlist_badge_count(req);
     }
     let path = string(req.path);
+    let ann_row = DB.table("settings").where("setting_key", "=", "storefront.announcement_bar").first();
+    let ann_en = DB.table("settings").where("setting_key", "=", "storefront.announcement_enabled").first();
+    let announcement_text = "";
+    let has_announcement = false;
+    if ann_en != null and string(ann_en["value"]) == "1" and ann_row != null {
+        announcement_text = string(ann_row["value"]);
+        has_announcement = announcement_text != "";
+    }
+    let phone_row = DB.table("settings").where("setting_key", "=", "store.support_phone").first();
+    let support_phone = "";
+    if phone_row != null {
+        support_phone = string(phone_row["value"]);
+    }
+    let email_row = DB.table("settings").where("setting_key", "=", "store.support_email").first();
+    let support_email = "";
+    if email_row != null {
+        support_email = string(email_row["value"]);
+    }
+    let tagline_row = DB.table("settings").where("setting_key", "=", "store.tagline").first();
+    let store_tagline = "";
+    if tagline_row != null {
+        store_tagline = string(tagline_row["value"]);
+    }
     return {
         "display_currency": display_currency,
         "base_currency": base_currency,
@@ -134,6 +157,14 @@ public fn build(req, settings) {
         "currency_options": currencies.catalog(display_currency),
         "locale_options": locales.locale_options(),
         "active_locale": locale,
+        "announcement_text": announcement_text,
+        "has_announcement": has_announcement,
+        "support_phone": support_phone,
+        "has_support_phone": support_phone != "",
+        "support_email": support_email,
+        "has_support_email": support_email != "",
+        "store_tagline": store_tagline,
+        "has_store_tagline": store_tagline != "",
         "nav_catalog": locales.translate(locale, "nav", "catalog", "Catalog"),
         "nav_cart": locales.translate(locale, "nav", "cart", "Cart"),
         "nav_wishlist": locales.translate(locale, "nav", "wishlist", "Wishlist"),

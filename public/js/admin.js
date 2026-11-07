@@ -1595,55 +1595,255 @@
 
   // ---- Settings ----
   var SETTING_META = {
+    // 1. General Store
     "store.name": {
-      label: "Store Name",
-      hint: "Displayed in the storefront header, browser titles, invoices, and customer emails.",
-      unit: "text"
+      label: "Store Brand Name",
+      hint: "Brand name shown in navigation headers, browser titles, invoices, and customer emails.",
+      type: "text"
+    },
+    "store.tagline": {
+      label: "Store Tagline / Slogan",
+      hint: "Short slogan or subtitle displayed in the storefront footer and social previews.",
+      type: "text"
+    },
+    "store.support_email": {
+      label: "Customer Support Email",
+      hint: "Primary email address where order notifications and customer inquiries are directed.",
+      type: "email"
+    },
+    "store.support_phone": {
+      label: "Customer Support Phone / Hotline",
+      hint: "Hotline phone number visible in the storefront topbar, help center, and checkout.",
+      type: "tel"
+    },
+    "store.address": {
+      label: "Physical Store / Office Address",
+      hint: "Official business headquarters or warehouse dispatch location printed on packing slips.",
+      type: "text"
     },
     "store.currency": {
       label: "Base Store Currency",
-      hint: "Three-letter ISO currency code (e.g. BDT, USD, EUR) used for catalog pricing.",
-      unit: "text"
+      hint: "Three-letter ISO currency code (BDT, USD, EUR). All catalog prices and ledger items are stored in this currency.",
+      type: "select",
+      options: [
+        { value: "BDT", label: "BDT — Bangladeshi Taka (৳)" },
+        { value: "USD", label: "USD — US Dollar ($)" },
+        { value: "EUR", label: "EUR — Euro (€)" }
+      ]
     },
+    "store.locale": {
+      label: "Default Storefront Language",
+      hint: "Default language code for storefront pages and emails when no cookie preference is set.",
+      type: "select",
+      options: [
+        { value: "en", label: "English (en)" },
+        { value: "bn", label: "বাংলা / Bengali (bn)" }
+      ]
+    },
+    "store.order_prefix": {
+      label: "Order Number Prefix",
+      hint: "Prefix string prepended to all auto-generated customer order numbers (e.g. SP-).",
+      type: "text"
+    },
+
+    // 2. Shipping & Delivery
     "shipping.flat_minor": {
       label: "Standard Flat Shipping Fee (Minor Units)",
-      hint: "Default standard delivery charge when order is below the free-shipping threshold (100 = 1.00 BDT).",
+      hint: "Default standard delivery charge when order is below the free-shipping threshold (100 = 1.00 BDT, e.g. 6000 = 60.00 BDT).",
+      type: "minor",
       unit: "minor"
     },
     "shipping.express_minor": {
       label: "Express Delivery Fee (Minor Units)",
       hint: "Priority 24h express delivery charge in minor units (e.g. 12000 = 120.00 BDT).",
+      type: "minor",
       unit: "minor"
     },
     "shipping.free_threshold_minor": {
       label: "Free Standard Shipping Threshold (Minor Units)",
       hint: "Orders at or above this subtotal qualify for free standard shipping (e.g. 200000 = 2,000.00 BDT).",
+      type: "minor",
       unit: "minor"
+    },
+    "shipping.standard_lead_days": {
+      label: "Standard Delivery Lead Time",
+      hint: "Estimated transit time shown on product pages and at checkout for standard delivery.",
+      type: "text"
+    },
+    "shipping.express_lead_days": {
+      label: "Express Delivery Lead Time",
+      hint: "Estimated transit time shown on product pages and at checkout for priority express delivery.",
+      type: "text"
     },
     "returns.window_days": {
       label: "Return Eligibility Window (Days)",
-      hint: "Number of days after delivery within which a customer can request a return.",
+      hint: "Number of days following confirmed order delivery during which customers can request a return.",
+      type: "days",
       unit: "days"
     },
+    "returns.allow_customer_returns": {
+      label: "Customer Self-Service Returns",
+      hint: "Allow authenticated customers to submit return requests online from their account order history.",
+      type: "boolean"
+    },
+
+    // 3. Promotions & Loyalty
     "cart.discount_threshold_minor": {
       label: "Volume Discount Subtotal Threshold (Minor Units)",
       hint: "Minimum cart subtotal required to trigger the automatic volume discount (e.g. 100000 = 1,000.00 BDT).",
+      type: "minor",
       unit: "minor"
     },
     "cart.discount_bps": {
       label: "Volume Discount Rate (Basis Points)",
       hint: "Automatic percentage discount applied above threshold (100 bps = 1.00%, 500 bps = 5.00%).",
+      type: "bps",
       unit: "bps"
     },
+    "loyalty.spend_per_point_minor": {
+      label: "Spend Amount Required per 1 Loyalty Point (Minor Units)",
+      hint: "How much a customer must spend on paid orders to earn 1 loyalty point (e.g. 10000 = 100.00 BDT).",
+      type: "minor",
+      unit: "minor"
+    },
+    "loyalty.point_value_minor": {
+      label: "Redemption Credit Value per 1 Point (Minor Units)",
+      hint: "Store credit value granted when a customer redeems 1 loyalty point (e.g. 100 = 1.00 BDT).",
+      type: "minor",
+      unit: "minor"
+    },
+    "referrals.referrer_bonus_points": {
+      label: "Referrer Reward Points (Points)",
+      hint: "Loyalty points awarded to an existing customer when their referred friend completes their first paid order.",
+      type: "number",
+      unit: "pts"
+    },
+    "referrals.referee_bonus_points": {
+      label: "Referred Friend Welcome Bonus (Points)",
+      hint: "Loyalty points awarded to the new customer when they sign up with a valid referral code.",
+      type: "number",
+      unit: "pts"
+    },
+
+    // 4. Tax & VAT
     "store.tax_rate_bps": {
       label: "Default Store Tax / VAT Rate (Basis Points)",
-      hint: "Fallback tax rate in basis points when a product does not specify its own tax rate (0 = Tax-exempt).",
+      hint: "Fallback tax rate in basis points when a product does not specify its own tax rate (0 = Tax-exempt, 500 = 5.00%, 750 = 7.50%).",
+      type: "bps",
       unit: "bps"
     },
+    "store.tax_included": {
+      label: "Catalog Pricing Tax Mode",
+      hint: "Whether product prices entered in the catalog already include VAT/tax or if tax is calculated on top at checkout.",
+      type: "select",
+      options: [
+        { value: "0", label: "Exclusive — Tax added on top at checkout" },
+        { value: "1", label: "Inclusive — Catalog prices already include Tax/VAT" }
+      ]
+    },
+    "store.tax_number": {
+      label: "Business Identification Number / VAT Reg No (BIN)",
+      hint: "Official government tax registration number displayed on customer VAT invoices and receipts.",
+      type: "text"
+    },
+
+    // 5. Payment Gateways
+    "payments.mode": {
+      label: "Gateway Environment Mode",
+      hint: "Set to Sandbox for test transactions without real money; switch to Live for production processing.",
+      type: "select",
+      options: [
+        { value: "sandbox", label: "Sandbox / Test Environment (Safe)" },
+        { value: "live", label: "Live / Production Environment" }
+      ]
+    },
+    "payments.cod_enabled": {
+      label: "Cash on Delivery (COD) Payment",
+      hint: "Allow customers to pay cash when their parcel arrives at their doorstep.",
+      type: "boolean"
+    },
+    "payments.cod_max_limit_minor": {
+      label: "COD Maximum Order Limit (Minor Units)",
+      hint: "Maximum order total eligible for Cash on Delivery (e.g. 5000000 = 50,000.00 BDT; enter 0 for unlimited).",
+      type: "minor",
+      unit: "minor"
+    },
+    "payments.bkash_enabled": {
+      label: "bKash Mobile Financial Service",
+      hint: "Accept mobile payments via bKash gateway / merchant API.",
+      type: "boolean"
+    },
+    "payments.nagad_enabled": {
+      label: "Nagad Mobile Financial Service",
+      hint: "Accept mobile payments via Nagad gateway / merchant API.",
+      type: "boolean"
+    },
+    "payments.sslcommerz_enabled": {
+      label: "SSLCommerz Multi-Channel Payment Gateway",
+      hint: "Accept Bangladeshi debit/credit cards, internet banking, and mobile wallets via SSLCommerz.",
+      type: "boolean"
+    },
+    "payments.stripe_enabled": {
+      label: "Stripe International Credit/Debit Cards",
+      hint: "Accept Visa, Mastercard, and American Express cards internationally through Stripe.",
+      type: "boolean"
+    },
     "payments.webhook_secret": {
-      label: "Payment Webhook Signing Secret",
-      hint: "Shared HMAC secret used to verify incoming payment gateway webhook callbacks.",
+      label: "Payment Webhook Verification Secret",
+      hint: "Shared HMAC-SHA256 secret key used to cryptographically verify incoming payment gateway webhooks.",
+      type: "secret",
       unit: "secret"
+    },
+
+    // 6. Storefront & Branding
+    "storefront.announcement_enabled": {
+      label: "Header Announcement Banner",
+      hint: "Show a highlight announcement banner at the very top of all storefront pages.",
+      type: "boolean"
+    },
+    "storefront.announcement_bar": {
+      label: "Announcement Banner Text",
+      hint: "Promotional message, flash sale notice, or free delivery reminder displayed in the top banner.",
+      type: "text"
+    },
+    "storefront.footer_text": {
+      label: "Footer Description & About Notice",
+      hint: "Brand description paragraph displayed in the main website footer.",
+      type: "textarea"
+    },
+    "storefront.social_facebook": {
+      label: "Facebook Page URL",
+      hint: "Official Facebook community or page URL linked from the store footer.",
+      type: "url"
+    },
+    "storefront.social_instagram": {
+      label: "Instagram Profile URL",
+      hint: "Official Instagram profile URL linked from the store footer.",
+      type: "url"
+    },
+
+    // 7. Inventory & Order Policies
+    "inventory.low_stock_default": {
+      label: "Default Low-Stock Threshold",
+      hint: "Default reorder point assigned to new products when no custom threshold is specified.",
+      type: "number",
+      unit: "units"
+    },
+    "inventory.allow_backorders": {
+      label: "Allow Backorders When Out of Stock",
+      hint: "Permit customers to purchase products even when current available inventory is zero.",
+      type: "boolean"
+    },
+    "orders.guest_checkout_enabled": {
+      label: "Guest Checkout Allowed",
+      hint: "Allow visitors to complete checkout without requiring them to create a customer password account.",
+      type: "boolean"
+    },
+    "orders.auto_cancel_unpaid_hours": {
+      label: "Auto-Cancel Unpaid Orders Window (Hours)",
+      hint: "Automatically mark pending unpaid checkouts as cancelled after this many hours (enter 0 to disable).",
+      type: "number",
+      unit: "hours"
     }
   };
 
@@ -1651,16 +1851,76 @@
     var meta = SETTING_META[key];
     if (!meta) return "";
     var n = parseInt(val, 10);
-    if (meta.unit === "minor" && !isNaN(n)) {
+    if ((meta.unit === "minor" || meta.type === "minor") && !isNaN(n)) {
       return (ADMIN.currency || "BDT") + " " + (n / 100).toFixed(2);
     }
-    if (meta.unit === "bps" && !isNaN(n)) {
+    if ((meta.unit === "bps" || meta.type === "bps") && !isNaN(n)) {
       return (n / 100).toFixed(2) + "%";
     }
-    if (meta.unit === "days" && !isNaN(n)) {
+    if ((meta.unit === "days" || meta.type === "days") && !isNaN(n)) {
       return n + " days";
     }
+    if (meta.unit === "hours" && !isNaN(n)) {
+      return n > 0 ? n + " hrs" : "Never";
+    }
+    if (meta.unit === "pts" && !isNaN(n)) {
+      return n + " pts";
+    }
+    if (meta.unit === "units" && !isNaN(n)) {
+      return n + " units";
+    }
+    if (meta.type === "boolean") {
+      return val === "1" || val === 1 || val === true || val === "true" ? "Enabled" : "Disabled";
+    }
+    if (meta.type === "select" && meta.options) {
+      for (var i = 0; i < meta.options.length; i++) {
+        if (String(meta.options[i].value) === String(val)) return meta.options[i].label;
+      }
+    }
     return "";
+  }
+
+  function renderSettingInput(s, meta) {
+    var key = ADMIN.esc(s.setting_key);
+    var group = ADMIN.esc(s.setting_group || "general");
+    var val = s.value == null ? "" : s.value;
+    var type = meta ? meta.type : "text";
+
+    if (type === "boolean") {
+      var isOne = String(val) === "1" || val === 1 || String(val) === "true";
+      return '<select class="form-select" data-setting="' + key + '" data-group="' + group + '">' +
+        '<option value="1"' + (isOne ? " selected" : "") + '>1 — Enabled / Active</option>' +
+        '<option value="0"' + (!isOne ? " selected" : "") + '>0 — Disabled / Inactive</option>' +
+      '</select>';
+    }
+
+    if (type === "select" && meta.options) {
+      var opts = meta.options.map(function (opt) {
+        var sel = String(val) === String(opt.value) ? " selected" : "";
+        return '<option value="' + ADMIN.esc(opt.value) + '"' + sel + '>' + ADMIN.esc(opt.label) + '</option>';
+      }).join("");
+      return '<select class="form-select" data-setting="' + key + '" data-group="' + group + '">' + opts + '</select>';
+    }
+
+    if (type === "textarea") {
+      return '<textarea class="form-control" rows="3" data-setting="' + key + '" data-group="' + group + '">' + ADMIN.esc(val) + '</textarea>';
+    }
+
+    if (type === "secret") {
+      return '<div class="input-group">' +
+        '<input type="password" class="form-control" data-setting="' + key + '" data-group="' + group + '" value="' + ADMIN.esc(val) + '">' +
+        '<button class="btn btn-outline-secondary" type="button" data-toggle-secret title="Toggle visibility">&#128065; Show</button>' +
+        '<button class="btn btn-outline-secondary" type="button" data-gen-secret title="Generate random key">&#9889; Generate</button>' +
+      '</div>';
+    }
+
+    var inputType = "text";
+    if (type === "minor" || type === "bps" || type === "days" || type === "number") inputType = "number";
+    else if (type === "email") inputType = "email";
+    else if (type === "tel") inputType = "tel";
+    else if (type === "url") inputType = "url";
+
+    return '<input type="' + inputType + '" class="form-control" data-setting="' + key + '" data-group="' + group + '" value="' + ADMIN.esc(val) + '">';
   }
 
   function SettingsModule(root) {
@@ -1671,7 +1931,15 @@
         if (res.auth) return;
         if (!res.ok) { root.innerHTML = ADMIN.errorHTML("Could not load settings."); return; }
         var all = (res.data && res.data.data) || [];
-        var byGroup = { general: [], shipping: [], promotions: [], tax: [], payments: [] };
+        var byGroup = {
+          general: [],
+          shipping: [],
+          promotions: [],
+          tax: [],
+          payments: [],
+          storefront: [],
+          inventory: []
+        };
         all.forEach(function (s) {
           var g = s.setting_group || "general";
           if (!byGroup[g]) byGroup[g] = [];
@@ -1679,12 +1947,14 @@
         });
 
         var groups = [
-          ["general", "General Store", byGroup.general, "Store identity, branding, and base currency configuration."],
-          ["shipping", "Shipping & Returns", byGroup.shipping, "Standard/express delivery fees, free shipping threshold, and return window."],
-          ["promotions", "Promotions & Cart", byGroup.promotions, "Automatic cart volume discounts and promotional thresholds."],
-          ["tax", "Tax & VAT", byGroup.tax, "Store-wide default tax and VAT calculation rules."],
-          ["payments", "Payments & Webhooks", byGroup.payments, "Gateway webhook verification secrets and payment security."],
-          ["all", "All Keys & Custom", all, "Inspect all raw key-value settings or add a custom configuration key."]
+          ["general", "General Store", byGroup.general || [], "Store identity, branding, customer contact, and base currency configuration."],
+          ["shipping", "Shipping & Returns", byGroup.shipping || [], "Standard & express delivery fees, free shipping threshold, and return window."],
+          ["promotions", "Promotions & Loyalty", byGroup.promotions || [], "Automatic cart volume discounts, loyalty points earning/redemption, and referral bonuses."],
+          ["tax", "Tax & VAT", byGroup.tax || [], "Store-wide default tax rate, VAT calculation mode, and business tax registration number (BIN)."],
+          ["payments", "Payment Gateways", byGroup.payments || [], "Gateway mode (sandbox/live), Cash on Delivery, bKash, Nagad, SSLCommerz, Stripe, and webhook security."],
+          ["storefront", "Storefront & Branding", byGroup.storefront || [], "Header announcement bar notice, footer descriptions, and social media channel links."],
+          ["inventory", "Inventory & Orders", byGroup.inventory || [], "Default product low-stock reorder thresholds, backorders, and guest checkout policy."],
+          ["all", "All Keys & Custom", all, "Inspect all active configuration keys in one table or add/override any custom configuration key."]
         ];
 
         var tabs = groups.map(function (g) {
@@ -1709,12 +1979,19 @@
               '<div class="row g-4">' +
                 '<div class="col-12 col-lg-7">' +
                   '<div class="dz-card p-3 p-lg-4 h-100">' +
-                    '<h2 class="h6 fw-bold mb-1">All Active Configuration Keys</h2>' +
-                    '<p class="small text-secondary mb-3">' + ADMIN.esc(g[3]) + '</p>' +
-                    '<div class="table-responsive"><table class="table table-sm table-hover align-middle mb-0">' +
-                      '<thead><tr><th>Setting Key</th><th>Group</th><th>Current Value</th></tr></thead>' +
-                      '<tbody>' + tableRows + '</tbody>' +
-                    '</table></div>' +
+                    '<div class="d-flex justify-content-between align-items-center mb-2">' +
+                      '<div><h2 class="h6 fw-bold mb-0">All Active Configuration Keys</h2><p class="small text-secondary mb-0">' + ADMIN.esc(g[3]) + '</p></div>' +
+                      '<span class="badge text-bg-light border">' + all.length + ' settings</span>' +
+                    '</div>' +
+                    '<div class="my-3">' +
+                      '<input type="search" id="setting-table-search" class="form-control form-control-sm" placeholder="Filter settings by key or group…">' +
+                    '</div>' +
+                    '<div class="table-responsive" style="max-height: 480px; overflow-y: auto;">' +
+                      '<table class="table table-sm table-hover align-middle mb-0">' +
+                        '<thead class="sticky-top bg-white"><tr><th>Setting Key</th><th>Group</th><th>Current Value</th></tr></thead>' +
+                        '<tbody id="settings-all-tbody">' + tableRows + '</tbody>' +
+                      '</table>' +
+                    '</div>' +
                   '</div>' +
                 '</div>' +
                 '<div class="col-12 col-lg-5">' +
@@ -1733,6 +2010,9 @@
                         '<option value="promotions">promotions</option>' +
                         '<option value="tax">tax</option>' +
                         '<option value="payments">payments</option>' +
+                        '<option value="storefront">storefront</option>' +
+                        '<option value="inventory">inventory</option>' +
+                        '<option value="custom">custom</option>' +
                       '</select>' +
                     '</div>' +
                     '<div class="mb-3">' +
@@ -1749,21 +2029,26 @@
           var extraBanner = "";
           if (key === "shipping") {
             extraBanner = '<div class="alert alert-light border d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3 py-2 small">' +
-              '<span>Need city/weight-based delivery rates or return approvals?</span>' +
+              '<span>Need regional city/district delivery rates or return resolution?</span>' +
               '<div class="d-flex gap-2"><a class="btn btn-outline-primary btn-sm py-0 px-2" href="/admin/shipping">Shipping Zones &amp; Rates &rarr;</a>' +
               '<a class="btn btn-light border btn-sm py-0 px-2" href="/admin/returns">Manage Returns &rarr;</a></div></div>';
           } else if (key === "promotions") {
             extraBanner = '<div class="alert alert-light border d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3 py-2 small">' +
-              '<span>Want to create promo codes or flash sale campaigns?</span>' +
-              '<a class="btn btn-outline-primary btn-sm py-0 px-2" href="/admin/coupons">Manage Discount Coupons &rarr;</a></div>';
+              '<span>Want to create discount coupons, flash sale campaigns, or gift cards?</span>' +
+              '<div class="d-flex gap-2"><a class="btn btn-outline-primary btn-sm py-0 px-2" href="/admin/coupons">Manage Coupons &rarr;</a>' +
+              '<a class="btn btn-light border btn-sm py-0 px-2" href="/account/rewards">Customer Rewards &rarr;</a></div></div>';
           } else if (key === "payments") {
             extraBanner = '<div class="alert alert-light border d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3 py-2 small">' +
-              '<span>Supported gateways: <strong>Cash on Delivery (COD)</strong>, <strong>SSLCommerz</strong>, <strong>bKash</strong>, <strong>Nagad</strong>, <strong>Stripe</strong>.</span>' +
-              '<span class="badge bg-success-subtle text-success border border-success-subtle">5 Gateways Active</span></div>';
+              '<span>Supported gateways: <strong>Cash on Delivery (COD)</strong>, <strong>bKash</strong>, <strong>Nagad</strong>, <strong>SSLCommerz</strong>, <strong>Stripe</strong>.</span>' +
+              '<span class="badge bg-success-subtle text-success border border-success-subtle">Multi-Gateway Configured</span></div>';
+          } else if (key === "storefront") {
+            extraBanner = '<div class="alert alert-light border d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3 py-2 small">' +
+              '<span>Top announcement notice and brand links update immediately on all customer storefront pages.</span>' +
+              '<a class="btn btn-light border btn-sm py-0 px-2" href="/" target="_blank" rel="noopener">Open Storefront &nearr;</a></div>';
           }
 
           var rows = g[2].map(function (s) {
-            var meta = SETTING_META[s.setting_key] || { label: s.setting_key, hint: "Configuration key: " + s.setting_key, unit: "text" };
+            var meta = SETTING_META[s.setting_key] || { label: s.setting_key, hint: "Configuration key: " + s.setting_key, type: "text" };
             var preview = formatSettingPreview(s.setting_key, s.value);
             return '<div class="dz-form-group mb-3 pb-3 border-bottom">' +
               '<div class="d-flex flex-wrap justify-content-between align-items-center mb-1">' +
@@ -1771,7 +2056,7 @@
                 (preview ? '<span class="badge bg-primary-subtle text-primary border border-primary-subtle" data-preview-for="' + ADMIN.esc(s.setting_key) + '">' + ADMIN.esc(preview) + '</span>' : '') +
               '</div>' +
               '<p class="small text-secondary mb-2">' + ADMIN.esc(meta.hint) + '</p>' +
-              '<input class="form-control" data-setting="' + ADMIN.esc(s.setting_key) + '" data-group="' + ADMIN.esc(s.setting_group) + '" value="' + ADMIN.esc(s.value) + '">' +
+              renderSettingInput(s, meta) +
             '</div>';
           }).join("") || '<p class="text-secondary small">No settings in this group yet.</p>';
 
@@ -1780,7 +2065,7 @@
               '<div class="mb-3"><h2 class="h6 fw-bold mb-1">' + ADMIN.esc(g[1]) + '</h2><p class="small text-secondary mb-0">' + ADMIN.esc(g[3]) + '</p></div>' +
               extraBanner +
               rows +
-              '<div class="d-flex align-items-center gap-2 mt-2">' +
+              '<div class="d-flex align-items-center gap-2 mt-3">' +
                 '<button type="button" class="btn btn-primary" data-save-group="' + key + '">Save ' + ADMIN.esc(g[1]) + '</button>' +
                 '<span class="dz-form-feedback small text-secondary" data-fb="' + key + '"></span>' +
               '</div>' +
@@ -1791,7 +2076,7 @@
         root.innerHTML =
           '<div class="dz-admin-page-head">' +
             '<div><span class="dz-eyebrow">Configuration</span><h1 class="page-title">Store Settings</h1>' +
-            '<p class="page-description">Manage general branding, delivery fees, automatic discounts, tax rules, and payment webhooks.</p></div>' +
+            '<p class="page-description">Complete control over general branding, delivery fees, automatic discounts, tax compliance, payment gateways, and policies.</p></div>' +
             '<div class="dz-admin-page-head-actions">' +
               '<a class="btn btn-light border btn-sm" href="/admin/shipping">Shipping Zones</a>' +
               '<a class="btn btn-light border btn-sm" href="/admin/coupons">Coupons</a>' +
@@ -1810,14 +2095,42 @@
           });
         });
 
-        root.querySelectorAll("input[data-setting]").forEach(function (inp) {
-          inp.addEventListener("input", function () {
+        root.querySelectorAll("[data-setting]").forEach(function (inp) {
+          var handler = function () {
             var k = inp.getAttribute("data-setting");
             var badge = root.querySelector('[data-preview-for="' + k + '"]');
             if (badge) {
               var pv = formatSettingPreview(k, inp.value);
-              if (pv) badge.textContent = pv;
+              badge.textContent = pv;
+              badge.style.display = pv ? "" : "none";
             }
+          };
+          inp.addEventListener("input", handler);
+          inp.addEventListener("change", handler);
+        });
+
+        root.querySelectorAll("[data-toggle-secret]").forEach(function (btn) {
+          btn.addEventListener("click", function () {
+            var input = btn.closest(".input-group").querySelector("input");
+            if (input.type === "password") {
+              input.type = "text";
+              btn.innerHTML = "&#128274; Hide";
+            } else {
+              input.type = "password";
+              btn.innerHTML = "&#128065; Show";
+            }
+          });
+        });
+
+        root.querySelectorAll("[data-gen-secret]").forEach(function (btn) {
+          btn.addEventListener("click", function () {
+            var input = btn.closest(".input-group").querySelector("input");
+            var rand = "sec_" + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+            input.value = rand;
+            input.type = "text";
+            var tog = btn.closest(".input-group").querySelector("[data-toggle-secret]");
+            if (tog) tog.innerHTML = "&#128274; Hide";
+            ADMIN.toast("Generated new random secret key. Remember to save changes.", true);
           });
         });
 
@@ -1841,7 +2154,7 @@
             chain.then(function () {
               btn.disabled = false;
               if (fb) fb.textContent = "Saved ✓";
-              ADMIN.toast("Settings saved.", true);
+              ADMIN.toast("Settings saved successfully.", true);
             }).catch(function (e) {
               btn.disabled = false;
               if (fb) fb.textContent = "";
@@ -1849,6 +2162,17 @@
             });
           });
         });
+
+        var searchInput = root.querySelector("#setting-table-search");
+        if (searchInput) {
+          searchInput.addEventListener("input", function () {
+            var q = searchInput.value.toLowerCase().trim();
+            root.querySelectorAll("#settings-all-tbody tr").forEach(function (tr) {
+              var txt = tr.textContent.toLowerCase();
+              tr.style.display = txt.includes(q) ? "" : "none";
+            });
+          });
+        }
 
         var customBtn = root.querySelector("#custom-setting-save");
         if (customBtn) {
