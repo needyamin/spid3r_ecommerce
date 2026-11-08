@@ -221,6 +221,12 @@ fn cleanup_users(tag: string) {
 
 fn main() {
     println("\n=== Running Store Auth Test Suite ===");
+    let prev_env = "dev";
+    let cur_env = env("SPID3R_ENV");
+    if cur_env.is_some() {
+        prev_env = string(cur_env.unwrap());
+    }
+    env_set("SPID3R_ENV", "production");
     let app = new Application();
     register_store_middleware(app);
     register_web_routes();
@@ -228,14 +234,17 @@ fn main() {
     run_database_seeder();
     let tag = string(unix_time());
 
-    test_registration_and_login(app, tag);
-    test_password_reset(app, tag);
-    test_email_verification(app, tag);
-    test_account_status_and_rbac(app, tag);
-    test_customer_blocked_from_admin(app, tag);
-    test_login_rate_limit(app, tag);
-
-    cleanup_users(tag);
+    try {
+        test_registration_and_login(app, tag);
+        test_password_reset(app, tag);
+        test_email_verification(app, tag);
+        test_account_status_and_rbac(app, tag);
+        test_customer_blocked_from_admin(app, tag);
+        test_login_rate_limit(app, tag);
+    } finally {
+        cleanup_users(tag);
+        env_set("SPID3R_ENV", prev_env);
+    }
     DB.close();
     println("=== All Store Auth Tests Passed! ===\n");
     return 0;

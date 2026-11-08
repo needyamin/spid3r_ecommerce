@@ -155,6 +155,22 @@ fn main() {
         assert(bres["verified"] == false, "Unverified bKash payment ID rejected");
         println("  [PASS] bKash tokenized gateway handling & verification security");
 
+        // --- TEST 6: Nagad Gateway Handling & Resolution ---
+        println("Testing Nagad gateway handling...");
+        let nagad_threw = false;
+        try {
+            pay_service.initiate(order_num, "nagad", null);
+        } catch (e) {
+            nagad_threw = true;
+            let err_str = string(e);
+            println("  -> Nagad error reported cleanly: " + err_str);
+            assert(err_str.contains("Nagad") or err_str.contains("merchant") or err_str.contains("keys"), "Nagad messaging clear");
+        }
+        assert(nagad_threw, "Nagad threw clean exception when merchant keys not uploaded");
+        let nagad_gw = pay_service.gateways.resolve("nagad");
+        assert(nagad_gw != null and nagad_gw.name == "nagad", "Nagad gateway resolves correctly");
+        println("  [PASS] Nagad gateway initiation and resolution");
+
     } finally {
         // Cleanup test data
         DB.table("refunds").where("payment_id", "IN", DB.table("payments").where("order_id", "=", order_id).pluck("id")).delete();

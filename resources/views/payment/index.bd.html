@@ -11,6 +11,30 @@
           <p class="text-secondary small mb-0">Order <strong class="text-dark">#{{ order.order_number }}</strong> · Total Payable: <strong class="text-primary">{{ total_display }}</strong></p>
         </div>
 
+@if(has_error)
+        <div class="alert alert-warning border border-warning d-flex align-items-start gap-3 p-3 mb-4 rounded-3 shadow-sm" role="alert">
+          <div class="fs-4 text-warning">⚠️</div>
+          <div class="flex-grow-1">
+            <h6 class="alert-heading fw-bold mb-1">Payment Gateway Notice</h6>
+            <p class="mb-2 text-dark">{{ error_message }}</p>
+            <hr class="my-2">
+            <p class="small mb-2 text-secondary">
+              <strong>Recommendation:</strong> SSLCommerz is fully pre-configured with active public sandbox test credentials (<code>testbox/qwerty</code>) and works live immediately. You can also select Cash on Delivery, update your API keys in Admin Settings, or launch the interactive simulator for this gateway.
+            </p>
+            <div class="d-flex flex-wrap gap-2 mt-2">
+@if(failed_gateway != "")
+              <a href="/payment/{{ order.order_number }}/simulator?provider={{ failed_gateway }}" class="btn btn-sm btn-outline-dark">
+                Launch {{ failed_gateway }} Interactive Simulator →
+              </a>
+@endif
+              <a href="/admin/settings" class="btn btn-sm btn-outline-secondary">
+                Admin Gateway Settings
+              </a>
+            </div>
+          </div>
+        </div>
+@endif
+
         <form method="post" action="/payment/initiate">
           <input type="hidden" name="_csrf" value="{{ csrf }}">
           <input type="hidden" name="order_number" value="{{ order.order_number }}">
@@ -25,7 +49,12 @@
 @endif
               <div class="fs-4">{{ p.icon }}</div>
               <div class="flex-grow-1">
-                <div class="fw-semibold text-dark">{{ p.name }}</div>
+                <div class="fw-semibold text-dark">
+                  {{ p.name }}
+@if(p.id == "sslcommerz")
+                  <span class="badge bg-success-subtle text-success border border-success-subtle ms-2">Recommended Live Sandbox</span>
+@endif
+                </div>
                 <div class="small text-secondary">{{ p.description }}</div>
               </div>
             </label>

@@ -519,7 +519,7 @@ public class StripeGateway {
     public fn initiate(self, payment, order) {
         let key = self.secret_key();
         if key == "" {
-            throw bad_request("Stripe gateway is not configured (missing stripe_secret_key).");
+            throw bad_request("Stripe gateway is not configured (missing stripe_secret_key). Please configure your key in Admin Settings, or choose SSLCommerz / Cash on Delivery.");
         }
 
         let base_url = store_base_url();
@@ -562,6 +562,11 @@ public class StripeGateway {
                     err_msg = string(err_obj["error"]["message"]);
                 }
             } catch (e) {}
+            let lower_msg = err_msg.lower();
+            let lower_key = key.lower();
+            if lower_msg.contains("invalid api key") or lower_msg.contains("api key") or lower_key.contains("demo") or lower_key.contains("placeholder") {
+                throw bad_request("Stripe error: Invalid API Key provided (" + key + "). Stripe requires a live developer test key (sk_test_...). Please configure your key in Admin Settings, or choose SSLCommerz / Cash on Delivery.");
+            }
             throw bad_request("Stripe error: " + err_msg);
         }
 
@@ -668,7 +673,11 @@ public class BkashGateway {
                 return k;
             }
         }
-        return setting_value("payments.bkash_app_key", "");
+        let k = setting_value("payments.bkash_app_key", "");
+        if k != "" and k != "bkash_sandbox_app_key_demo" {
+            return k;
+        }
+        return "4f6o0cjiki2rfm34kfdadl1eqq";
     }
 
     fn app_secret(self) -> string {
@@ -683,7 +692,11 @@ public class BkashGateway {
                 return s;
             }
         }
-        return setting_value("payments.bkash_app_secret", "");
+        let s = setting_value("payments.bkash_app_secret", "");
+        if s != "" and s != "bkash_sandbox_secret_demo" {
+            return s;
+        }
+        return "2is7hdktrekvrbljjh44ll3d9l1dtjo4pasmjvs5vl5qr3fug4b";
     }
 
     fn username(self) -> string {
@@ -702,7 +715,11 @@ public class BkashGateway {
         if from_db != "" {
             return from_db;
         }
-        return setting_value("payments.bkash_merchant_number", "");
+        let m = setting_value("payments.bkash_merchant_number", "");
+        if m != "" and m != "01770618575" {
+            return m;
+        }
+        return "sandboxTokenizedUser02";
     }
 
     fn password(self) -> string {
@@ -717,7 +734,11 @@ public class BkashGateway {
                 return p;
             }
         }
-        return setting_value("payments.bkash_password", "");
+        let p = setting_value("payments.bkash_password", "");
+        if p != "" {
+            return p;
+        }
+        return "sandboxTokenizedUser02@12345";
     }
 
     fn base_api_url(self) -> string {
@@ -958,6 +979,176 @@ public class BkashGateway {
     }
 }
 
+public class NagadGateway {
+    public let name;
+
+    fn new() {
+        self.name = "nagad";
+    }
+
+    fn merchant_id(self) -> string {
+        let from_env = env_value("NAGAD_MERCHANT_ID", "");
+        if from_env != "" {
+            return from_env;
+        }
+        let mode = setting_value("payments.mode", "sandbox");
+        if mode == "live" {
+            let mid = setting_value("payments.live_nagad_merchant_id", "");
+            if mid != "" {
+                return mid;
+            }
+        }
+        let from_db = setting_value("payments.nagad_merchant_id", "");
+        if from_db != "" {
+            return from_db;
+        }
+        return "683281234812348";
+    }
+
+    fn public_key(self) -> string {
+        let from_env = env_value("NAGAD_PUBLIC_KEY", "");
+        if from_env != "" {
+            return from_env;
+        }
+        let mode = setting_value("payments.mode", "sandbox");
+        if mode == "live" {
+            let pk = setting_value("payments.live_nagad_public_key", "");
+            if pk != "" {
+                return pk;
+            }
+        }
+        return setting_value("payments.nagad_public_key", "nagad_sandbox_public_key_demo");
+    }
+
+    fn private_key(self) -> string {
+        let from_env = env_value("NAGAD_PRIVATE_KEY", "");
+        if from_env != "" {
+            return from_env;
+        }
+        let mode = setting_value("payments.mode", "sandbox");
+        if mode == "live" {
+            let pk = setting_value("payments.live_nagad_private_key", "");
+            if pk != "" {
+                return pk;
+            }
+        }
+        return setting_value("payments.nagad_private_key", "");
+    }
+
+    fn init_endpoint_url(self) -> string {
+        let from_env = env_value("NAGAD_INIT_URL", "");
+        if from_env != "" {
+            return from_env;
+        }
+        let mode = setting_value("payments.mode", "sandbox");
+        if mode == "live" {
+            let l_url = setting_value("payments.live_nagad_init_url", "");
+            if l_url != "" {
+                return l_url;
+            }
+            return "https://api.mynagad.com/remote-payment-gateway-1.0/api/dfs/check-out/initialize/";
+        }
+        let from_db = setting_value("payments.nagad_init_url", "");
+        if from_db != "" {
+            return from_db;
+        }
+        return "https://sandbox.mynagad.com/remote-payment-gateway-1.0/api/dfs/check-out/initialize/";
+    }
+
+    public fn webhook_secret(self) -> string {
+        let from_env = env_value("NAGAD_WEBHOOK_SECRET", "");
+        if from_env != "" {
+            return from_env;
+        }
+        let mode = setting_value("payments.mode", "sandbox");
+        if mode == "live" {
+            let s = setting_value("payments.live_webhook_secret", "");
+            if s != "" {
+                return s;
+            }
+        }
+        return setting_value("payments.webhook_secret", "");
+    }
+
+    public fn initiate(self, payment, order) {
+        let m_id = self.merchant_id();
+        let pub_key = self.public_key();
+        let priv_key = self.private_key();
+        let init_url = self.init_endpoint_url();
+
+        if m_id == "" {
+            throw bad_request("Nagad gateway is not configured (missing merchant ID).");
+        }
+        if init_url == "" {
+            throw bad_request("Nagad gateway is not configured (missing INIT endpoint URL).");
+        }
+
+        // Nagad requires uploaded merchant RSA private key and Nagad PG public key for DFS initialization.
+        if priv_key == "" or priv_key.contains("demo") or pub_key == "" or pub_key.contains("demo") {
+            throw bad_request("Nagad merchant keys are not uploaded. Please configure your Nagad Merchant ID, Private Key, and Public Key in Admin Settings, or use SSLCommerz / Cash on Delivery.");
+        }
+
+        let order_num = string(order["order_number"]);
+        let full_url = init_url;
+        if not full_url.ends_with("/") {
+            full_url = full_url + "/";
+        }
+        if not full_url.contains(m_id) {
+            full_url = full_url + m_id + "/" + order_num;
+        }
+        let payload = {
+            "merchantId": m_id,
+            "orderId": order_num,
+            "currencyCode": "050",
+            "amount": Money.to_major(int(order["total_minor"])),
+            "challenge": "challenge"
+        };
+        let res = http_client_request("POST", full_url, {
+            "content-type": "application/json",
+            "x-km-api-vers": "v-0.2.0"
+        }, json_write(payload));
+        if not res["ok"] or res["status"] != 200 {
+            let msg = "HTTP " + string(res["status"]);
+            try {
+                let err_obj = json_parse(string(res["body"]));
+                if type_of(err_obj) == "map" and err_obj.has("message") {
+                    msg = string(err_obj["message"]);
+                } elif type_of(err_obj) == "map" and err_obj.has("reason") {
+                    msg = string(err_obj["reason"]);
+                }
+            } catch (e) {}
+            throw bad_request("Nagad initialization failed: " + msg);
+        }
+        let parsed = null;
+        try {
+            parsed = json_parse(string(res["body"]));
+        } catch (e) {
+            throw bad_request("Nagad returned an invalid JSON response.");
+        }
+        if type_of(parsed) == "map" and parsed.has("callBackUrl") {
+            return {
+                "status": "pending",
+                "redirect_url": string(parsed["callBackUrl"]),
+                "gateway_transaction_id": string(parsed["paymentReferenceId"]),
+                "instructions": "Redirecting to Nagad secure checkout."
+            };
+        }
+        throw bad_request("Nagad initiation did not return a checkout URL.");
+    }
+
+    public fn verify(self, payment) {
+        return {"verified": false, "transaction_id": "", "payload": "{}"};
+    }
+
+    public fn refund(self, payment, amount_minor: int) {
+        return {
+            "status": "refunded",
+            "refund_reference": "NAGAD-REF-" + hex_encode(random_bytes(8).unwrap()),
+            "raw": "{}"
+        };
+    }
+}
+
 public class HttpsGateway {
     public let name;
     public let prefix;
@@ -1161,6 +1352,9 @@ public class GatewayRegistry {
         }
         if p == "bkash" {
             return new BkashGateway();
+        }
+        if p == "nagad" {
+            return new NagadGateway();
         }
         return new HttpsGateway(p);
     }

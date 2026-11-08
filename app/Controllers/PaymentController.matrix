@@ -94,8 +94,13 @@ public class PaymentController {
             "cod": {"name": "Cash on Delivery (COD)", "desc": "Pay with cash when parcel is delivered", "icon": "💵"}
         };
 
+        let err_msg = string(req.input("err", "")).trim();
+        let failed_gateway = string(req.input("failed_gateway", "")).trim();
+        let has_error = err_msg != "";
+
         let providers_list = [];
         let pi = 0;
+        let found_selected = false;
         while pi < active_keys.len() {
             let pkey = active_keys[pi];
             let name = pkey.upper();
@@ -107,14 +112,32 @@ public class PaymentController {
                 desc = m["desc"];
                 icon = m["icon"];
             }
+            let is_sel = false;
+            if failed_gateway != "" {
+                if failed_gateway != "sslcommerz" and pkey == "sslcommerz" {
+                    is_sel = true;
+                    found_selected = true;
+                } elif failed_gateway == "sslcommerz" and pkey == "cod" {
+                    is_sel = true;
+                    found_selected = true;
+                }
+            } else {
+                if pi == 0 {
+                    is_sel = true;
+                    found_selected = true;
+                }
+            }
             providers_list.push({
                 "id": pkey,
                 "name": name,
                 "description": desc,
                 "icon": icon,
-                "selected": pi == 0
+                "selected": is_sel
             });
             pi += 1;
+        }
+        if not found_selected and providers_list.len() > 0 {
+            providers_list[0]["selected"] = true;
         }
 
         let is_sb = is_sandbox_mode();
@@ -124,17 +147,40 @@ public class PaymentController {
             "total_display": Money.format(int(order["total_minor"]), pay_cur),
             "providers": providers_list,
             "csrf": csrf,
-            "is_sandbox": is_sb
+            "is_sandbox": is_sb,
+            "has_error": has_error,
+            "error_message": err_msg,
+            "failed_gateway": failed_gateway
         }));
     }
 
     public fn initiate(self, req) {
         let number = string(req.input("order_number", ""));
         let provider = string(req.input("provider", ""));
-        if number == "" or provider == "" {
-            throw validation_failed({"provider": "Choose an order and payment method."});
+        if number == "" {
+            throw validation_failed({"order_number": "Choose an order."});
         }
-        let result = self.payments.initiate(number, provider, self.user_id(req));
+        if provider == "" {
+            if req.input("format", "") == "json" {
+                throw validation_failed({"provider": "Choose a payment method."});
+            }
+            return redirect("/payment/" + number + "?err=" + url_encode("Please choose a payment method."));
+        }
+        let result = null;
+        try {
+            result = self.payments.initiate(number, provider, self.user_id(req));
+        } catch (e) {
+            let msg = "Payment initiation failed.";
+            if is_http_exception(e) or (type_of(e) == "map" and e.has("message")) {
+                msg = string(e["message"]);
+            } else {
+                msg = string(e);
+            }
+            if req.input("format", "") == "json" {
+                return json({"ok": false, "error": msg, "failed_gateway": provider}, 400);
+            }
+            return redirect("/payment/" + number + "?err=" + url_encode(msg) + "&failed_gateway=" + url_encode(provider));
+        }
         if req.input("format", "") == "json" {
             return json({"data": {
                 "payment_id": result["payment"]["id"],

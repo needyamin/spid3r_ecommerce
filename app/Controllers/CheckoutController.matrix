@@ -242,7 +242,23 @@ public class CheckoutController {
                     res.cookie("cart", ident["key"], "/", 2592000);
                     return res;
                 }
-            } catch (e) {}
+            } catch (e) {
+                let msg = "Payment initiation failed.";
+                if is_http_exception(e) or (type_of(e) == "map" and e.has("message")) {
+                    msg = string(e["message"]);
+                } else {
+                    msg = string(e);
+                }
+                let res = redirect("/payment/" + number + "?err=" + url_encode(msg) + "&failed_gateway=" + url_encode(pay_method));
+                res.cookie("cart", ident["key"], "/", 2592000);
+                return res;
+            }
+        }
+
+        if pay_method != "" and pay_method != "cod" {
+            let res = redirect("/payment/" + number);
+            res.cookie("cart", ident["key"], "/", 2592000);
+            return res;
         }
 
         let res = redirect("/checkout/confirmation/" + number);

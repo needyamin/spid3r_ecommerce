@@ -1027,11 +1027,11 @@ public class AdminController {
         if pmap.has("payments.bkash_merchant_number") and string(pmap["payments.bkash_merchant_number"]).trim() != "" {
             bkash_merchant_number = string(pmap["payments.bkash_merchant_number"]);
         }
-        let bkash_app_key = "bkash_sandbox_app_key_demo";
+        let bkash_app_key = "4f6o0cjiki2rfm34kfdadl1eqq";
         if pmap.has("payments.bkash_app_key") and string(pmap["payments.bkash_app_key"]).trim() != "" {
             bkash_app_key = string(pmap["payments.bkash_app_key"]);
         }
-        let bkash_app_secret = "bkash_sandbox_secret_demo";
+        let bkash_app_secret = "2is7hdktrekvrbljjh44ll3d9l1dtjo4pasmjvs5vl5qr3fug4b";
         if pmap.has("payments.bkash_app_secret") and string(pmap["payments.bkash_app_secret"]).trim() != "" {
             bkash_app_secret = string(pmap["payments.bkash_app_secret"]);
         }
@@ -1055,6 +1055,14 @@ public class AdminController {
         let nagad_public_key = "nagad_sandbox_public_key_demo";
         if pmap.has("payments.nagad_public_key") and string(pmap["payments.nagad_public_key"]).trim() != "" {
             nagad_public_key = string(pmap["payments.nagad_public_key"]);
+        }
+        let nagad_private_key = "";
+        if pmap.has("payments.nagad_private_key") and string(pmap["payments.nagad_private_key"]).trim() != "" {
+            nagad_private_key = string(pmap["payments.nagad_private_key"]);
+        }
+        let nagad_init_url = "https://sandbox.mynagad.com/remote-payment-gateway-1.0/api/dfs/check-out/initialize/";
+        if pmap.has("payments.nagad_init_url") and string(pmap["payments.nagad_init_url"]).trim() != "" {
+            nagad_init_url = string(pmap["payments.nagad_init_url"]);
         }
 
         let sslcommerz_enabled = "1";
@@ -1112,6 +1120,14 @@ public class AdminController {
         let live_nagad_public_key = "";
         if pmap.has("payments.live_nagad_public_key") {
             live_nagad_public_key = string(pmap["payments.live_nagad_public_key"]);
+        }
+        let live_nagad_private_key = "";
+        if pmap.has("payments.live_nagad_private_key") {
+            live_nagad_private_key = string(pmap["payments.live_nagad_private_key"]);
+        }
+        let live_nagad_init_url = "https://api.mynagad.com/remote-payment-gateway-1.0/api/dfs/check-out/initialize/";
+        if pmap.has("payments.live_nagad_init_url") and string(pmap["payments.live_nagad_init_url"]).trim() != "" {
+            live_nagad_init_url = string(pmap["payments.live_nagad_init_url"]);
         }
 
         let live_sslcommerz_store_id = "";
@@ -1175,6 +1191,8 @@ public class AdminController {
             "nagad_enabled": nagad_enabled == "1",
             "nagad_merchant_id": nagad_merchant_id,
             "nagad_public_key": nagad_public_key,
+            "nagad_private_key": nagad_private_key,
+            "nagad_init_url": nagad_init_url,
             "sslcommerz_enabled": sslcommerz_enabled == "1",
             "sslcommerz_store_id": sslcommerz_store_id,
             "sslcommerz_store_passwd": sslcommerz_store_passwd,
@@ -1188,6 +1206,8 @@ public class AdminController {
             "live_bkash_password": live_bkash_password,
             "live_nagad_merchant_id": live_nagad_merchant_id,
             "live_nagad_public_key": live_nagad_public_key,
+            "live_nagad_private_key": live_nagad_private_key,
+            "live_nagad_init_url": live_nagad_init_url,
             "live_sslcommerz_store_id": live_sslcommerz_store_id,
             "live_sslcommerz_store_passwd": live_sslcommerz_store_passwd,
             "live_stripe_publishable_key": live_stripe_publishable_key,
@@ -1217,13 +1237,14 @@ public class AdminController {
             self.admin.update_setting("payments.cod_instructions", "Pay with cash when your parcel is delivered.", "payments");
             self.admin.update_setting("payments.bkash_enabled", "1", "payments");
             self.admin.update_setting("payments.bkash_merchant_number", "01770618575", "payments");
-            self.admin.update_setting("payments.bkash_app_key", "bkash_sandbox_app_key_demo", "payments");
-            self.admin.update_setting("payments.bkash_app_secret", "bkash_sandbox_secret_demo", "payments");
+            self.admin.update_setting("payments.bkash_app_key", "4f6o0cjiki2rfm34kfdadl1eqq", "payments");
+            self.admin.update_setting("payments.bkash_app_secret", "2is7hdktrekvrbljjh44ll3d9l1dtjo4pasmjvs5vl5qr3fug4b", "payments");
             self.admin.update_setting("payments.bkash_username", "sandboxTokenizedUser02", "payments");
             self.admin.update_setting("payments.bkash_password", "sandboxTokenizedUser02@12345", "payments");
             self.admin.update_setting("payments.nagad_enabled", "1", "payments");
             self.admin.update_setting("payments.nagad_merchant_id", "683281234812348", "payments");
             self.admin.update_setting("payments.nagad_public_key", "nagad_sandbox_public_key_demo", "payments");
+            self.admin.update_setting("payments.nagad_init_url", "https://sandbox.mynagad.com/remote-payment-gateway-1.0/api/dfs/check-out/initialize/", "payments");
             self.admin.update_setting("payments.sslcommerz_enabled", "1", "payments");
             self.admin.update_setting("payments.sslcommerz_store_id", "testbox", "payments");
             self.admin.update_setting("payments.sslcommerz_store_passwd", "qwerty", "payments");
@@ -1273,6 +1294,8 @@ public class AdminController {
         self.admin.update_setting("payments.nagad_enabled", nagad_en, "payments");
         self.admin.update_setting("payments.nagad_merchant_id", string(req.input("nagad_merchant_id", "")), "payments");
         self.admin.update_setting("payments.nagad_public_key", string(req.input("nagad_public_key", "")), "payments");
+        self.admin.update_setting("payments.nagad_private_key", string(req.input("nagad_private_key", "")), "payments");
+        self.admin.update_setting("payments.nagad_init_url", string(req.input("nagad_init_url", "https://sandbox.mynagad.com/remote-payment-gateway-1.0/api/dfs/check-out/initialize/")), "payments");
 
         let ssl_en = "0";
         if string(req.input("sslcommerz_enabled", "")) == "1" or string(req.input("sslcommerz_enabled", "")) == "on" { ssl_en = "1"; }
@@ -1294,6 +1317,8 @@ public class AdminController {
         self.admin.update_setting("payments.live_bkash_password", string(req.input("live_bkash_password", "")), "payments");
         self.admin.update_setting("payments.live_nagad_merchant_id", string(req.input("live_nagad_merchant_id", "")), "payments");
         self.admin.update_setting("payments.live_nagad_public_key", string(req.input("live_nagad_public_key", "")), "payments");
+        self.admin.update_setting("payments.live_nagad_private_key", string(req.input("live_nagad_private_key", "")), "payments");
+        self.admin.update_setting("payments.live_nagad_init_url", string(req.input("live_nagad_init_url", "https://api.mynagad.com/remote-payment-gateway-1.0/api/dfs/check-out/initialize/")), "payments");
         self.admin.update_setting("payments.live_sslcommerz_store_id", string(req.input("live_sslcommerz_store_id", "")), "payments");
         self.admin.update_setting("payments.live_sslcommerz_store_passwd", string(req.input("live_sslcommerz_store_passwd", "")), "payments");
         self.admin.update_setting("payments.live_stripe_publishable_key", string(req.input("live_stripe_publishable_key", "")), "payments");

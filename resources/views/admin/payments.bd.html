@@ -224,6 +224,14 @@
                 <label class="form-label small text-secondary fw-semibold mb-1" for="nagad_public_key">Sandbox Public Key</label>
                 <input type="text" id="nagad_public_key" name="nagad_public_key" value="{{ nagad_public_key }}" class="form-control font-monospace" placeholder="nagad_sandbox_public_key_demo">
               </div>
+              <div class="col-12 col-md-6">
+                <label class="form-label small text-secondary fw-semibold mb-1" for="nagad_private_key">Sandbox Merchant Private Key</label>
+                <input type="password" id="nagad_private_key" name="nagad_private_key" value="{{ nagad_private_key }}" class="form-control font-monospace" placeholder="Merchant Private Key (PEM)">
+              </div>
+              <div class="col-12 col-md-6">
+                <label class="form-label small text-secondary fw-semibold mb-1" for="nagad_init_url">Sandbox INIT Endpoint URL</label>
+                <input type="text" id="nagad_init_url" name="nagad_init_url" value="{{ nagad_init_url }}" class="form-control font-monospace" placeholder="https://sandbox.mynagad.com/remote-payment-gateway-1.0/api/dfs/check-out/initialize/">
+              </div>
             </div>
             <div id="res_sb_nagad" class="mt-3 d-none"></div>
           </div>
@@ -379,6 +387,14 @@
               <div class="col-12 col-md-6">
                 <label class="form-label small text-secondary fw-semibold mb-1" for="live_nagad_public_key">Live Nagad Public Key / Certificate</label>
                 <input type="password" id="live_nagad_public_key" name="live_nagad_public_key" value="{{ live_nagad_public_key }}" class="form-control font-monospace" placeholder="••••••••">
+              </div>
+              <div class="col-12 col-md-6">
+                <label class="form-label small text-secondary fw-semibold mb-1" for="live_nagad_private_key">Live Nagad Private Key</label>
+                <input type="password" id="live_nagad_private_key" name="live_nagad_private_key" value="{{ live_nagad_private_key }}" class="form-control font-monospace" placeholder="••••••••">
+              </div>
+              <div class="col-12 col-md-6">
+                <label class="form-label small text-secondary fw-semibold mb-1" for="live_nagad_init_url">Live INIT Endpoint URL</label>
+                <input type="text" id="live_nagad_init_url" name="live_nagad_init_url" value="{{ live_nagad_init_url }}" class="form-control font-monospace" placeholder="https://api.mynagad.com/remote-payment-gateway-1.0/api/dfs/check-out/initialize/">
               </div>
             </div>
             <div id="res_live_nagad" class="mt-3 d-none"></div>

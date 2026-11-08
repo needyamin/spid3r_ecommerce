@@ -21,6 +21,7 @@ services:
       - ../:/var/www/app
       - uploads-data:/var/www/app/public/uploads
     environment:
+      SPID3R_HOST: "0.0.0.0"
       SPID3R_DB_DRIVER: mysql
       SPID3R_MYSQL_HOST: mysql
       SPID3R_MYSQL_PORT: "3306"
