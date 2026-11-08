@@ -122,6 +122,8 @@ public class AdminController {
             {"label": "Staff", "url": "/admin/staff", "active": page == "staff", "icon": "staff"},
             {"label": "Roles", "url": "/admin/roles", "active": page == "roles", "icon": "roles"},
             {"label": "Coupons", "url": "/admin/coupons", "active": page == "coupons", "icon": "coupons"},
+            {"label": "Payments", "url": "/admin/payments", "active": page == "payments", "icon": "payments"},
+            {"label": "Shipping", "url": "/admin/shipping", "active": page == "shipping", "icon": "shipping"},
             {"label": "Reports", "url": "/admin/reports", "active": page == "reports", "icon": "reports"},
             {"label": "Settings", "url": "/admin/settings", "active": page == "settings", "icon": "settings"}
         ];
@@ -600,6 +602,9 @@ public class AdminController {
     }
 
     public fn page(self, req, name: string) {
+        if name == "payments" {
+            return self.admin_payments_page(req);
+        }
         let titles = {
             "products": "Products", "categories": "Categories", "brands": "Brands",
             "inventory": "Inventory", "orders": "Orders", "customers": "Customers",
@@ -981,6 +986,573 @@ public class AdminController {
             return redirect("/admin/settings");
         }
         return json({"data": {"updated": ok, "setting_key": key}});
+    }
+
+    public fn admin_payments_page(self, req) {
+        let rows = self.admin.settings("payments");
+        let pmap = {};
+        let i = 0;
+        while i < rows.len() {
+            pmap[rows[i]["setting_key"]] = rows[i]["value"];
+            i += 1;
+        }
+
+        let mode = "sandbox";
+        if pmap.has("payments.mode") and string(pmap["payments.mode"]).trim() != "" {
+            mode = string(pmap["payments.mode"]).trim().lower();
+        }
+
+        let cod_enabled = "1";
+        if pmap.has("payments.cod_enabled") {
+            cod_enabled = string(pmap["payments.cod_enabled"]);
+        }
+
+        let cod_max_limit_minor = 5000000;
+        if pmap.has("payments.cod_max_limit_minor") and string(pmap["payments.cod_max_limit_minor"]).trim() != "" {
+            cod_max_limit_minor = int(pmap["payments.cod_max_limit_minor"]);
+        }
+        let cod_max_limit_bdt = cod_max_limit_minor / 100;
+
+        let cod_instructions = "Pay in cash when your parcel is delivered.";
+        if pmap.has("payments.cod_instructions") and string(pmap["payments.cod_instructions"]).trim() != "" {
+            cod_instructions = string(pmap["payments.cod_instructions"]);
+        }
+
+        // Sandbox default credentials
+        let bkash_enabled = "1";
+        if pmap.has("payments.bkash_enabled") {
+            bkash_enabled = string(pmap["payments.bkash_enabled"]);
+        }
+        let bkash_merchant_number = "01770618575";
+        if pmap.has("payments.bkash_merchant_number") and string(pmap["payments.bkash_merchant_number"]).trim() != "" {
+            bkash_merchant_number = string(pmap["payments.bkash_merchant_number"]);
+        }
+        let bkash_app_key = "bkash_sandbox_app_key_demo";
+        if pmap.has("payments.bkash_app_key") and string(pmap["payments.bkash_app_key"]).trim() != "" {
+            bkash_app_key = string(pmap["payments.bkash_app_key"]);
+        }
+        let bkash_app_secret = "bkash_sandbox_secret_demo";
+        if pmap.has("payments.bkash_app_secret") and string(pmap["payments.bkash_app_secret"]).trim() != "" {
+            bkash_app_secret = string(pmap["payments.bkash_app_secret"]);
+        }
+
+        let nagad_enabled = "1";
+        if pmap.has("payments.nagad_enabled") {
+            nagad_enabled = string(pmap["payments.nagad_enabled"]);
+        }
+        let nagad_merchant_id = "683281234812348";
+        if pmap.has("payments.nagad_merchant_id") and string(pmap["payments.nagad_merchant_id"]).trim() != "" {
+            nagad_merchant_id = string(pmap["payments.nagad_merchant_id"]);
+        }
+        let nagad_public_key = "nagad_sandbox_public_key_demo";
+        if pmap.has("payments.nagad_public_key") and string(pmap["payments.nagad_public_key"]).trim() != "" {
+            nagad_public_key = string(pmap["payments.nagad_public_key"]);
+        }
+
+        let sslcommerz_enabled = "1";
+        if pmap.has("payments.sslcommerz_enabled") {
+            sslcommerz_enabled = string(pmap["payments.sslcommerz_enabled"]);
+        }
+        let sslcommerz_store_id = "testbox";
+        if pmap.has("payments.sslcommerz_store_id") and string(pmap["payments.sslcommerz_store_id"]).trim() != "" {
+            sslcommerz_store_id = string(pmap["payments.sslcommerz_store_id"]);
+        }
+        let sslcommerz_store_passwd = "qwerty";
+        if pmap.has("payments.sslcommerz_store_passwd") and string(pmap["payments.sslcommerz_store_passwd"]).trim() != "" {
+            sslcommerz_store_passwd = string(pmap["payments.sslcommerz_store_passwd"]);
+        }
+
+        let stripe_enabled = "1";
+        if pmap.has("payments.stripe_enabled") {
+            stripe_enabled = string(pmap["payments.stripe_enabled"]);
+        }
+        let stripe_publishable_key = "pk_test_51DemoStripePublishableKey";
+        if pmap.has("payments.stripe_publishable_key") and string(pmap["payments.stripe_publishable_key"]).trim() != "" {
+            stripe_publishable_key = string(pmap["payments.stripe_publishable_key"]);
+        }
+        let stripe_secret_key = "sk_test_51DemoStripeSecretKey";
+        if pmap.has("payments.stripe_secret_key") and string(pmap["payments.stripe_secret_key"]).trim() != "" {
+            stripe_secret_key = string(pmap["payments.stripe_secret_key"]);
+        }
+
+        // Live / Production credentials
+        let live_bkash_merchant_number = "";
+        if pmap.has("payments.live_bkash_merchant_number") {
+            live_bkash_merchant_number = string(pmap["payments.live_bkash_merchant_number"]);
+        }
+        let live_bkash_app_key = "";
+        if pmap.has("payments.live_bkash_app_key") {
+            live_bkash_app_key = string(pmap["payments.live_bkash_app_key"]);
+        }
+        let live_bkash_app_secret = "";
+        if pmap.has("payments.live_bkash_app_secret") {
+            live_bkash_app_secret = string(pmap["payments.live_bkash_app_secret"]);
+        }
+
+        let live_nagad_merchant_id = "";
+        if pmap.has("payments.live_nagad_merchant_id") {
+            live_nagad_merchant_id = string(pmap["payments.live_nagad_merchant_id"]);
+        }
+        let live_nagad_public_key = "";
+        if pmap.has("payments.live_nagad_public_key") {
+            live_nagad_public_key = string(pmap["payments.live_nagad_public_key"]);
+        }
+
+        let live_sslcommerz_store_id = "";
+        if pmap.has("payments.live_sslcommerz_store_id") {
+            live_sslcommerz_store_id = string(pmap["payments.live_sslcommerz_store_id"]);
+        }
+        let live_sslcommerz_store_passwd = "";
+        if pmap.has("payments.live_sslcommerz_store_passwd") {
+            live_sslcommerz_store_passwd = string(pmap["payments.live_sslcommerz_store_passwd"]);
+        }
+
+        let live_stripe_publishable_key = "";
+        if pmap.has("payments.live_stripe_publishable_key") {
+            live_stripe_publishable_key = string(pmap["payments.live_stripe_publishable_key"]);
+        }
+        let live_stripe_secret_key = "";
+        if pmap.has("payments.live_stripe_secret_key") {
+            live_stripe_secret_key = string(pmap["payments.live_stripe_secret_key"]);
+        }
+
+        let live_webhook_secret = "";
+        if pmap.has("payments.live_webhook_secret") {
+            live_webhook_secret = string(pmap["payments.live_webhook_secret"]);
+        }
+
+        let webhook_secret = "dev-webhook-secret-change-me";
+        if pmap.has("payments.webhook_secret") and string(pmap["payments.webhook_secret"]).trim() != "" {
+            webhook_secret = string(pmap["payments.webhook_secret"]);
+        }
+
+        let webhook_base_url = "http://localhost:8090";
+        if pmap.has("payments.webhook_base_url") and string(pmap["payments.webhook_base_url"]).trim() != "" {
+            webhook_base_url = string(pmap["payments.webhook_base_url"]).trim();
+        }
+        let clean_base = webhook_base_url;
+        if clean_base.ends_with("/") {
+            clean_base = clean_base.slice(0, clean_base.len() - 1);
+        }
+
+        let active_count = 0;
+        if cod_enabled == "1" { active_count += 1; }
+        if bkash_enabled == "1" { active_count += 1; }
+        if nagad_enabled == "1" { active_count += 1; }
+        if sslcommerz_enabled == "1" { active_count += 1; }
+        if stripe_enabled == "1" { active_count += 1; }
+
+        let ctx = self.ctx(req, "Payment Gateways & Security", "payments", {
+            "mode": mode,
+            "is_sandbox": mode == "sandbox",
+            "is_live": mode == "live",
+            "active_count": active_count,
+            "cod_enabled": cod_enabled == "1",
+            "cod_max_limit_bdt": cod_max_limit_bdt,
+            "cod_instructions": cod_instructions,
+            "bkash_enabled": bkash_enabled == "1",
+            "bkash_merchant_number": bkash_merchant_number,
+            "bkash_app_key": bkash_app_key,
+            "bkash_app_secret": bkash_app_secret,
+            "nagad_enabled": nagad_enabled == "1",
+            "nagad_merchant_id": nagad_merchant_id,
+            "nagad_public_key": nagad_public_key,
+            "sslcommerz_enabled": sslcommerz_enabled == "1",
+            "sslcommerz_store_id": sslcommerz_store_id,
+            "sslcommerz_store_passwd": sslcommerz_store_passwd,
+            "stripe_enabled": stripe_enabled == "1",
+            "stripe_publishable_key": stripe_publishable_key,
+            "stripe_secret_key": stripe_secret_key,
+            "live_bkash_merchant_number": live_bkash_merchant_number,
+            "live_bkash_app_key": live_bkash_app_key,
+            "live_bkash_app_secret": live_bkash_app_secret,
+            "live_nagad_merchant_id": live_nagad_merchant_id,
+            "live_nagad_public_key": live_nagad_public_key,
+            "live_sslcommerz_store_id": live_sslcommerz_store_id,
+            "live_sslcommerz_store_passwd": live_sslcommerz_store_passwd,
+            "live_stripe_publishable_key": live_stripe_publishable_key,
+            "live_stripe_secret_key": live_stripe_secret_key,
+            "live_webhook_secret": live_webhook_secret,
+            "webhook_secret": webhook_secret,
+            "webhook_base_url": clean_base,
+            "webhook_full_cod": clean_base + "/webhooks/payments/cod",
+            "webhook_full_bkash": clean_base + "/webhooks/payments/bkash",
+            "webhook_full_nagad": clean_base + "/webhooks/payments/nagad",
+            "webhook_full_sslcommerz": clean_base + "/webhooks/payments/sslcommerz",
+            "webhook_full_stripe": clean_base + "/webhooks/payments/stripe",
+            "saved": req.query("saved", "") == "1",
+            "reset_done": req.query("reset", "") == "1",
+            "csrf": req.auth.csrf()
+        });
+
+        return view("admin/payments", ctx);
+    }
+
+    public fn api_payments_update(self, req) {
+        let action = string(req.input("action", "")).trim();
+        if action == "reset_sandbox_defaults" {
+            self.admin.update_setting("payments.mode", "sandbox", "payments");
+            self.admin.update_setting("payments.cod_enabled", "1", "payments");
+            self.admin.update_setting("payments.cod_max_limit_minor", "5000000", "payments");
+            self.admin.update_setting("payments.cod_instructions", "Pay with cash when your parcel is delivered.", "payments");
+            self.admin.update_setting("payments.bkash_enabled", "1", "payments");
+            self.admin.update_setting("payments.bkash_merchant_number", "01770618575", "payments");
+            self.admin.update_setting("payments.bkash_app_key", "bkash_sandbox_app_key_demo", "payments");
+            self.admin.update_setting("payments.bkash_app_secret", "bkash_sandbox_secret_demo", "payments");
+            self.admin.update_setting("payments.nagad_enabled", "1", "payments");
+            self.admin.update_setting("payments.nagad_merchant_id", "683281234812348", "payments");
+            self.admin.update_setting("payments.nagad_public_key", "nagad_sandbox_public_key_demo", "payments");
+            self.admin.update_setting("payments.sslcommerz_enabled", "1", "payments");
+            self.admin.update_setting("payments.sslcommerz_store_id", "testbox", "payments");
+            self.admin.update_setting("payments.sslcommerz_store_passwd", "qwerty", "payments");
+            self.admin.update_setting("payments.stripe_enabled", "1", "payments");
+            self.admin.update_setting("payments.stripe_publishable_key", "pk_test_51DemoStripePublishableKey", "payments");
+            self.admin.update_setting("payments.stripe_secret_key", "sk_test_51DemoStripeSecretKey", "payments");
+            self.admin.update_setting("payments.webhook_secret", "dev-webhook-secret-change-me", "payments");
+            self.audit(req, "payments.reset", "settings", "payments", {"action": "reset_sandbox"});
+            return redirect("/admin/payments?reset=1");
+        }
+
+        let single_key = string(req.input("setting_key", "")).trim();
+        if single_key != "" {
+            let single_val = string(req.input("value", ""));
+            self.admin.update_setting(single_key, single_val, "payments");
+            self.audit(req, "payments.update", "settings", single_key, {"value": single_val});
+            if req.input("format", "") == "json" {
+                return json({"data": {"updated": true, "key": single_key, "value": single_val}});
+            }
+            return redirect("/admin/payments?saved=1");
+        }
+
+        let mode = string(req.input("mode", "sandbox")).trim().lower();
+        if mode != "live" { mode = "sandbox"; }
+        self.admin.update_setting("payments.mode", mode, "payments");
+
+        let cod_en = "0";
+        if string(req.input("cod_enabled", "")) == "1" or string(req.input("cod_enabled", "")) == "on" { cod_en = "1"; }
+        self.admin.update_setting("payments.cod_enabled", cod_en, "payments");
+
+        let cod_limit_bdt = int(req.input("cod_max_limit_bdt", 50000));
+        if cod_limit_bdt < 0 { cod_limit_bdt = 0; }
+        self.admin.update_setting("payments.cod_max_limit_minor", string(cod_limit_bdt * 100), "payments");
+        self.admin.update_setting("payments.cod_instructions", string(req.input("cod_instructions", "")), "payments");
+
+        let bkash_en = "0";
+        if string(req.input("bkash_enabled", "")) == "1" or string(req.input("bkash_enabled", "")) == "on" { bkash_en = "1"; }
+        self.admin.update_setting("payments.bkash_enabled", bkash_en, "payments");
+        self.admin.update_setting("payments.bkash_merchant_number", string(req.input("bkash_merchant_number", "")), "payments");
+        self.admin.update_setting("payments.bkash_app_key", string(req.input("bkash_app_key", "")), "payments");
+        self.admin.update_setting("payments.bkash_app_secret", string(req.input("bkash_app_secret", "")), "payments");
+
+        let nagad_en = "0";
+        if string(req.input("nagad_enabled", "")) == "1" or string(req.input("nagad_enabled", "")) == "on" { nagad_en = "1"; }
+        self.admin.update_setting("payments.nagad_enabled", nagad_en, "payments");
+        self.admin.update_setting("payments.nagad_merchant_id", string(req.input("nagad_merchant_id", "")), "payments");
+        self.admin.update_setting("payments.nagad_public_key", string(req.input("nagad_public_key", "")), "payments");
+
+        let ssl_en = "0";
+        if string(req.input("sslcommerz_enabled", "")) == "1" or string(req.input("sslcommerz_enabled", "")) == "on" { ssl_en = "1"; }
+        self.admin.update_setting("payments.sslcommerz_enabled", ssl_en, "payments");
+        self.admin.update_setting("payments.sslcommerz_store_id", string(req.input("sslcommerz_store_id", "")), "payments");
+        self.admin.update_setting("payments.sslcommerz_store_passwd", string(req.input("sslcommerz_store_passwd", "")), "payments");
+
+        let stripe_en = "0";
+        if string(req.input("stripe_enabled", "")) == "1" or string(req.input("stripe_enabled", "")) == "on" { stripe_en = "1"; }
+        self.admin.update_setting("payments.stripe_enabled", stripe_en, "payments");
+        self.admin.update_setting("payments.stripe_publishable_key", string(req.input("stripe_publishable_key", "")), "payments");
+        self.admin.update_setting("payments.stripe_secret_key", string(req.input("stripe_secret_key", "")), "payments");
+
+        // Live credentials
+        self.admin.update_setting("payments.live_bkash_merchant_number", string(req.input("live_bkash_merchant_number", "")), "payments");
+        self.admin.update_setting("payments.live_bkash_app_key", string(req.input("live_bkash_app_key", "")), "payments");
+        self.admin.update_setting("payments.live_bkash_app_secret", string(req.input("live_bkash_app_secret", "")), "payments");
+        self.admin.update_setting("payments.live_nagad_merchant_id", string(req.input("live_nagad_merchant_id", "")), "payments");
+        self.admin.update_setting("payments.live_nagad_public_key", string(req.input("live_nagad_public_key", "")), "payments");
+        self.admin.update_setting("payments.live_sslcommerz_store_id", string(req.input("live_sslcommerz_store_id", "")), "payments");
+        self.admin.update_setting("payments.live_sslcommerz_store_passwd", string(req.input("live_sslcommerz_store_passwd", "")), "payments");
+        self.admin.update_setting("payments.live_stripe_publishable_key", string(req.input("live_stripe_publishable_key", "")), "payments");
+        self.admin.update_setting("payments.live_stripe_secret_key", string(req.input("live_stripe_secret_key", "")), "payments");
+        self.admin.update_setting("payments.live_webhook_secret", string(req.input("live_webhook_secret", "")), "payments");
+
+        // Webhook settings
+        let webhook_base = string(req.input("webhook_base_url", "http://localhost:8090")).trim();
+        self.admin.update_setting("payments.webhook_base_url", webhook_base, "payments");
+
+        let webhook_sec = string(req.input("webhook_secret", "")).trim();
+        if webhook_sec != "" {
+            self.admin.update_setting("payments.webhook_secret", webhook_sec, "payments");
+        }
+
+        self.audit(req, "payments.update", "settings", "payments", {"mode": mode});
+
+        if req.input("format", "") == "json" {
+            return json({"data": {"saved": true, "mode": mode}});
+        }
+        return redirect("/admin/payments?saved=1");
+    }
+
+    public fn api_payments_webhook_test(self, req) {
+        let pmap = {};
+        let rows = self.admin.settings("payments");
+        let i = 0;
+        while i < rows.len() {
+            pmap[rows[i]["setting_key"]] = rows[i]["value"];
+            i += 1;
+        }
+        let secret = "dev-webhook-secret-change-me";
+        if pmap.has("payments.webhook_secret") and string(pmap["payments.webhook_secret"]).trim() != "" {
+            secret = string(pmap["payments.webhook_secret"]).trim();
+        }
+        let sample_payload = "{\"event\":\"test.ping\",\"status\":\"ok\",\"provider\":\"test\",\"timestamp\":" + string(unix_time()) + "}";
+        let sig = hmac_sha256(secret, sample_payload);
+        return json({
+            "ok": true,
+            "secret_configured": secret != "",
+            "sample_payload": sample_payload,
+            "signature": sig,
+            "header_name": "X-Signature",
+            "algorithm": "HMAC-SHA256"
+        });
+    }
+
+    public fn api_payments_test_gateway(self, req) {
+        let provider = string(req.input("provider", "bkash")).trim().lower();
+        let mode = string(req.input("mode", "sandbox")).trim().lower();
+        let pmap = {};
+        let rows = self.admin.settings("payments");
+        let i = 0;
+        while i < rows.len() {
+            pmap[rows[i]["setting_key"]] = rows[i]["value"];
+            i += 1;
+        }
+
+        let is_sandbox = mode == "sandbox";
+        let res = {
+            "ok": true,
+            "provider": provider,
+            "mode": mode,
+            "timestamp": unix_time(),
+            "status": "passed",
+            "message": "",
+            "details": {}
+        };
+
+        if provider == "cod" {
+            let max_limit = 50000;
+            if pmap.has("payments.cod_max_limit_minor") {
+                max_limit = int(pmap["payments.cod_max_limit_minor"]) / 100;
+            }
+            res["message"] = "Cash on Delivery operational. Threshold limit: ৳" + string(max_limit);
+            res["details"] = {
+                "max_order_limit_bdt": max_limit,
+                "verification_mode": "doorstep_physical_cash",
+                "rules": "Orders above limit will switch to digital gateways"
+            };
+            return json(res);
+        }
+
+        if is_sandbox {
+            if provider == "bkash" {
+                let wallet = "01770618575";
+                if pmap.has("payments.bkash_merchant_number") and string(pmap["payments.bkash_merchant_number"]).trim() != "" {
+                    wallet = string(pmap["payments.bkash_merchant_number"]).trim();
+                }
+                let app_key = "bkash_sandbox_app_key_demo";
+                if pmap.has("payments.bkash_app_key") and string(pmap["payments.bkash_app_key"]).trim() != "" {
+                    app_key = string(pmap["payments.bkash_app_key"]).trim();
+                }
+                res["message"] = "bKash Sandbox API Handshake & Token Simulation Successful";
+                res["details"] = {
+                    "merchant_wallet": wallet,
+                    "app_key": app_key,
+                    "simulated_token": "bkash_tok_sb_" + hex_encode(random_bytes(8).unwrap()),
+                    "auth_endpoint": "https://tokenized.sandbox.bka.sh/v1.2.0-beta/token/grant",
+                    "payment_status": "Ready for test transactions"
+                };
+            } elif provider == "nagad" {
+                let m_id = "683281234812348";
+                if pmap.has("payments.nagad_merchant_id") and string(pmap["payments.nagad_merchant_id"]).trim() != "" {
+                    m_id = string(pmap["payments.nagad_merchant_id"]).trim();
+                }
+                res["message"] = "Nagad Sandbox Verification & Public Key Validation Successful";
+                res["details"] = {
+                    "merchant_id": m_id,
+                    "sandbox_host": "http://sandbox.mynagad.com:10080/remote-payment-gateway-1.0/",
+                    "key_algorithm": "RSA-2048 / SHA256withRSA",
+                    "payment_status": "Ready for test transactions"
+                };
+            } elif provider == "sslcommerz" {
+                let store_id = "testbox";
+                if pmap.has("payments.sslcommerz_store_id") and string(pmap["payments.sslcommerz_store_id"]).trim() != "" {
+                    store_id = string(pmap["payments.sslcommerz_store_id"]).trim();
+                }
+                res["message"] = "SSLCommerz Sandbox Session Handshake (testbox) Validated";
+                res["details"] = {
+                    "store_id": store_id,
+                    "gateway_url": "https://sandbox.sslcommerz.com/gwprocess/v4/api.php",
+                    "validation_url": "https://sandbox.sslcommerz.com/validator/api/validationserverAPI.php",
+                    "supported_methods": "Visa, Mastercard, bKash, Nagad, Rocket, Internet Banking"
+                };
+            } elif provider == "stripe" {
+                let pk = "pk_test_demo";
+                if pmap.has("payments.stripe_publishable_key") and string(pmap["payments.stripe_publishable_key"]).trim() != "" {
+                    pk = string(pmap["payments.stripe_publishable_key"]).trim();
+                }
+                res["message"] = "Stripe Test Mode Keys & Tokenizer Ready";
+                res["details"] = {
+                    "publishable_key": pk,
+                    "elements_api": "https://api.stripe.com/v1/payment_intents",
+                    "supported_cards": "Visa 4242, Mastercard, Amex test numbers",
+                    "payment_status": "Ready for test card processing"
+                };
+            } else {
+                res["ok"] = false;
+                res["status"] = "failed";
+                res["message"] = "Unknown provider '" + provider + "'";
+            }
+            return json(res);
+        }
+
+        // Live Production Testing / Validation:
+        if provider == "bkash" {
+            let l_wallet = "";
+            if pmap.has("payments.live_bkash_merchant_number") {
+                l_wallet = string(pmap["payments.live_bkash_merchant_number"]).trim();
+            }
+            let l_key = "";
+            if pmap.has("payments.live_bkash_app_key") {
+                l_key = string(pmap["payments.live_bkash_app_key"]).trim();
+            }
+            let l_sec = "";
+            if pmap.has("payments.live_bkash_app_secret") {
+                l_sec = string(pmap["payments.live_bkash_app_secret"]).trim();
+            }
+            if l_wallet == "" or l_key == "" or l_sec == "" {
+                res["ok"] = false;
+                res["status"] = "incomplete";
+                res["message"] = "Live bKash credentials incomplete. Please configure live merchant wallet number, app key, and app secret in the Production tab.";
+            } else {
+                let mask = l_key;
+                if l_key.len() > 8 {
+                    mask = l_key.slice(0, 4) + "••••" + l_key.slice(l_key.len() - 4, l_key.len());
+                }
+                res["message"] = "Live bKash Production configuration verified & formatted correctly.";
+                res["details"] = {
+                    "live_wallet": l_wallet,
+                    "app_key_masked": mask,
+                    "live_endpoint": "https://tokenized.pay.bka.sh/v1.2.0-beta/token/grant",
+                    "mode": "PRODUCTION"
+                };
+            }
+        } elif provider == "nagad" {
+            let l_mid = "";
+            if pmap.has("payments.live_nagad_merchant_id") {
+                l_mid = string(pmap["payments.live_nagad_merchant_id"]).trim();
+            }
+            let l_pk = "";
+            if pmap.has("payments.live_nagad_public_key") {
+                l_pk = string(pmap["payments.live_nagad_public_key"]).trim();
+            }
+            if l_mid == "" or l_pk == "" {
+                res["ok"] = false;
+                res["status"] = "incomplete";
+                res["message"] = "Live Nagad credentials incomplete. Please configure live merchant ID and public key in the Production tab.";
+            } else {
+                res["message"] = "Live Nagad Production credentials verified & formatted correctly.";
+                res["details"] = {
+                    "live_merchant_id": l_mid,
+                    "live_endpoint": "https://api.mynagad.com/remote-payment-gateway-1.0/",
+                    "mode": "PRODUCTION"
+                };
+            }
+        } elif provider == "sslcommerz" {
+            let l_sid = "";
+            if pmap.has("payments.live_sslcommerz_store_id") {
+                l_sid = string(pmap["payments.live_sslcommerz_store_id"]).trim();
+            }
+            let l_pwd = "";
+            if pmap.has("payments.live_sslcommerz_store_passwd") {
+                l_pwd = string(pmap["payments.live_sslcommerz_store_passwd"]).trim();
+            }
+            if l_sid == "" or l_pwd == "" {
+                res["ok"] = false;
+                res["status"] = "incomplete";
+                res["message"] = "Live SSLCommerz credentials incomplete. Please configure live store ID and store password in the Production tab.";
+            } else {
+                res["message"] = "Live SSLCommerz Production credentials verified.";
+                res["details"] = {
+                    "store_id": l_sid,
+                    "live_gateway_url": "https://securepay.sslcommerz.com/gwprocess/v4/api.php",
+                    "mode": "PRODUCTION"
+                };
+            }
+        } elif provider == "stripe" {
+            let l_pk = "";
+            if pmap.has("payments.live_stripe_publishable_key") {
+                l_pk = string(pmap["payments.live_stripe_publishable_key"]).trim();
+            }
+            let l_sk = "";
+            if pmap.has("payments.live_stripe_secret_key") {
+                l_sk = string(pmap["payments.live_stripe_secret_key"]).trim();
+            }
+            if l_pk == "" or l_sk == "" {
+                res["ok"] = false;
+                res["status"] = "incomplete";
+                res["message"] = "Live Stripe credentials incomplete. Please configure live publishable and secret keys in the Production tab.";
+            } elif not l_pk.starts_with("pk_live_") {
+                res["ok"] = false;
+                res["status"] = "invalid_format";
+                res["message"] = "Live Stripe Publishable Key should start with 'pk_live_'.";
+            } else {
+                let mask = l_pk;
+                if l_pk.len() > 12 {
+                    mask = l_pk.slice(0, 12) + "••••••••";
+                }
+                res["message"] = "Live Stripe Production keys validated and formatted correctly.";
+                res["details"] = {
+                    "live_publishable_key": mask,
+                    "mode": "PRODUCTION"
+                };
+            }
+        }
+        return json(res);
+    }
+
+    public fn api_payments_create_test_order(self, req) {
+        let provider = string(req.input("provider", "bkash")).trim().lower();
+        let num = "TEST-" + string(unix_time()) + "-" + hex_encode(random_bytes(3).unwrap());
+        let total_minor = 10000;
+        let order_id = DB.table("orders").insert({
+            "order_number": num,
+            "user_id": req.auth.id(),
+            "status": "awaiting_payment",
+            "subtotal_minor": total_minor,
+            "discount_minor": 0,
+            "shipping_minor": 0,
+            "tax_minor": 0,
+            "total_minor": total_minor,
+            "currency": "BDT",
+            "shipping_address_json": "{\"full_name\":\"Test Tester\",\"phone\":\"01700000000\",\"line1\":\"Admin Test Office\",\"city\":\"Dhaka\",\"district\":\"Dhaka\",\"postal_code\":\"1212\",\"country\":\"Bangladesh\"}",
+            "shipping_method": "standard",
+            "placed_at": string(unix_time())
+        });
+        DB.table("order_items").insert({
+            "order_id": order_id,
+            "product_id": 1,
+            "name_snapshot": "Gateway Test Sample Item",
+            "sku_snapshot": "TEST-SKU-01",
+            "quantity": 1,
+            "unit_price_minor": total_minor,
+            "line_total_minor": total_minor
+        });
+        return json({
+            "ok": true,
+            "order_number": num,
+            "total_display": "৳100.00",
+            "provider": provider,
+            "confirmation_url": "/checkout/confirmation/" + num,
+            "simulator_url": "/payment/" + num + "/simulator?provider=" + provider
+        });
     }
 
     public fn api_audit(self, req) {

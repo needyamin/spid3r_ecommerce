@@ -1,0 +1,51 @@
+@extends("layouts.store")
+@section('title', title)
+@section('meta_description', meta_description)
+@section("content")
+  <div class="row justify-content-center my-4">
+    <div class="col-12 col-md-7 col-lg-5">
+      <div class="dz-card p-4 p-md-5 text-center shadow-sm">
+        <div class="d-inline-flex align-items-center justify-content-center rounded-circle bg-light border p-3 mb-3 fs-3">
+          {{ provider_icon }}
+        </div>
+        <h1 class="h4 fw-bold mb-1">{{ provider_label }}</h1>
+        <p class="text-secondary small mb-4">Complete test checkout for Order <strong class="text-dark font-monospace">#{{ order.order_number }}</strong></p>
+
+        <div class="bg-light rounded-3 p-3 mb-4 text-start small">
+          <div class="d-flex justify-content-between py-1 border-bottom">
+            <span class="text-secondary">Order Reference</span>
+            <strong class="font-monospace">#{{ order.order_number }}</strong>
+          </div>
+          <div class="d-flex justify-content-between py-1 border-bottom">
+            <span class="text-secondary">Payment Method</span>
+            <strong class="text-primary">{{ provider_label }}</strong>
+          </div>
+          <div class="d-flex justify-content-between py-2 align-items-center">
+            <span class="fw-semibold">Total Payable</span>
+            <span class="fs-5 fw-bold text-success">{{ total_display }}</span>
+          </div>
+        </div>
+
+@if(is_paid)
+        <div class="alert alert-success d-flex align-items-center justify-content-center gap-2 mb-3">
+          <span>✓ This order is already marked as <strong>PAID</strong>!</span>
+        </div>
+        <a class="btn btn-primary w-100 py-2 fw-semibold" href="/checkout/confirmation/{{ order.order_number }}">View Order Confirmation</a>
+@else
+        <div class="d-grid gap-2 mb-4">
+          <form method="post" action="/payment/{{ order.order_number }}/simulate-success">
+            <input type="hidden" name="_csrf" value="{{ csrf }}">
+            <button type="submit" class="btn btn-primary btn-lg w-100 fw-semibold py-3 shadow-sm">
+              Pay {{ total_display }} with {{ provider_label }}
+            </button>
+          </form>
+          <a class="btn btn-outline-secondary py-2" href="/payment/{{ order.order_number }}">Choose Different Payment Method</a>
+          <a class="btn btn-light border py-2 text-secondary" href="/checkout/confirmation/{{ order.order_number }}">Return to Order (Pay Later)</a>
+        </div>
+
+        <p class="small text-muted mb-0">🔒 Sandbox Test Mode · No actual charges are made to any account.</p>
+@endif
+      </div>
+    </div>
+  </div>
+@endsection

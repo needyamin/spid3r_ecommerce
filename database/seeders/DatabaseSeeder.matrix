@@ -82,15 +82,45 @@ fn seed_settings() {
     ensure("settings", "setting_key", "store.tax_included", {"setting_key": "store.tax_included", "value": "0", "setting_group": "tax"});
     ensure("settings", "setting_key", "store.tax_number", {"setting_key": "store.tax_number", "value": "BIN-002948194-0101", "setting_group": "tax"});
 
-    // 5. Payments
+    // 5. Payments — Default Sandbox Configuration & Production Stubs
     ensure("settings", "setting_key", "payments.mode", {"setting_key": "payments.mode", "value": "sandbox", "setting_group": "payments"});
     ensure("settings", "setting_key", "payments.cod_enabled", {"setting_key": "payments.cod_enabled", "value": "1", "setting_group": "payments"});
     ensure("settings", "setting_key", "payments.cod_max_limit_minor", {"setting_key": "payments.cod_max_limit_minor", "value": "5000000", "setting_group": "payments"});
+    ensure("settings", "setting_key", "payments.cod_instructions", {"setting_key": "payments.cod_instructions", "value": "Pay with cash when your parcel is delivered.", "setting_group": "payments"});
+
+    // bKash Sandbox & Live
     ensure("settings", "setting_key", "payments.bkash_enabled", {"setting_key": "payments.bkash_enabled", "value": "1", "setting_group": "payments"});
+    ensure("settings", "setting_key", "payments.bkash_merchant_number", {"setting_key": "payments.bkash_merchant_number", "value": "01770618575", "setting_group": "payments"});
+    ensure("settings", "setting_key", "payments.bkash_app_key", {"setting_key": "payments.bkash_app_key", "value": "bkash_sandbox_app_key_demo", "setting_group": "payments"});
+    ensure("settings", "setting_key", "payments.bkash_app_secret", {"setting_key": "payments.bkash_app_secret", "value": "bkash_sandbox_secret_demo", "setting_group": "payments"});
+    ensure("settings", "setting_key", "payments.live_bkash_merchant_number", {"setting_key": "payments.live_bkash_merchant_number", "value": "", "setting_group": "payments"});
+    ensure("settings", "setting_key", "payments.live_bkash_app_key", {"setting_key": "payments.live_bkash_app_key", "value": "", "setting_group": "payments"});
+    ensure("settings", "setting_key", "payments.live_bkash_app_secret", {"setting_key": "payments.live_bkash_app_secret", "value": "", "setting_group": "payments"});
+
+    // Nagad Sandbox & Live
     ensure("settings", "setting_key", "payments.nagad_enabled", {"setting_key": "payments.nagad_enabled", "value": "1", "setting_group": "payments"});
+    ensure("settings", "setting_key", "payments.nagad_merchant_id", {"setting_key": "payments.nagad_merchant_id", "value": "683281234812348", "setting_group": "payments"});
+    ensure("settings", "setting_key", "payments.nagad_public_key", {"setting_key": "payments.nagad_public_key", "value": "nagad_sandbox_public_key_demo", "setting_group": "payments"});
+    ensure("settings", "setting_key", "payments.live_nagad_merchant_id", {"setting_key": "payments.live_nagad_merchant_id", "value": "", "setting_group": "payments"});
+    ensure("settings", "setting_key", "payments.live_nagad_public_key", {"setting_key": "payments.live_nagad_public_key", "value": "", "setting_group": "payments"});
+
+    // SSLCommerz Sandbox & Live
     ensure("settings", "setting_key", "payments.sslcommerz_enabled", {"setting_key": "payments.sslcommerz_enabled", "value": "1", "setting_group": "payments"});
+    ensure("settings", "setting_key", "payments.sslcommerz_store_id", {"setting_key": "payments.sslcommerz_store_id", "value": "testbox", "setting_group": "payments"});
+    ensure("settings", "setting_key", "payments.sslcommerz_store_passwd", {"setting_key": "payments.sslcommerz_store_passwd", "value": "qwerty", "setting_group": "payments"});
+    ensure("settings", "setting_key", "payments.live_sslcommerz_store_id", {"setting_key": "payments.live_sslcommerz_store_id", "value": "", "setting_group": "payments"});
+    ensure("settings", "setting_key", "payments.live_sslcommerz_store_passwd", {"setting_key": "payments.live_sslcommerz_store_passwd", "value": "", "setting_group": "payments"});
+
+    // Stripe Sandbox & Live
     ensure("settings", "setting_key", "payments.stripe_enabled", {"setting_key": "payments.stripe_enabled", "value": "1", "setting_group": "payments"});
+    ensure("settings", "setting_key", "payments.stripe_publishable_key", {"setting_key": "payments.stripe_publishable_key", "value": "pk_test_51DemoStripePublishableKey", "setting_group": "payments"});
+    ensure("settings", "setting_key", "payments.stripe_secret_key", {"setting_key": "payments.stripe_secret_key", "value": "sk_test_51DemoStripeSecretKey", "setting_group": "payments"});
+    ensure("settings", "setting_key", "payments.live_stripe_publishable_key", {"setting_key": "payments.live_stripe_publishable_key", "value": "", "setting_group": "payments"});
+    ensure("settings", "setting_key", "payments.live_stripe_secret_key", {"setting_key": "payments.live_stripe_secret_key", "value": "", "setting_group": "payments"});
+
+    // Webhook Settings
     ensure("settings", "setting_key", "payments.webhook_secret", {"setting_key": "payments.webhook_secret", "value": "dev-webhook-secret-change-me", "setting_group": "payments"});
+    ensure("settings", "setting_key", "payments.webhook_base_url", {"setting_key": "payments.webhook_base_url", "value": "http://localhost:8090", "setting_group": "payments"});
 
     // 6. Storefront Appearance & Announcements
     ensure("settings", "setting_key", "storefront.announcement_enabled", {"setting_key": "storefront.announcement_enabled", "value": "1", "setting_group": "storefront"});

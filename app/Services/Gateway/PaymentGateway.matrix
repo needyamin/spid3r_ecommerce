@@ -92,13 +92,43 @@ public class HttpsGateway {
     }
 
     fn api_key(self) -> string {
-        return env_value(self.prefix + "_API_KEY", "");
+        let from_env = env_value(self.prefix + "_API_KEY", "");
+        if from_env != "" {
+            return from_env;
+        }
+        let mode = setting_value("payments.mode", "sandbox");
+        if mode == "live" {
+            let l1 = setting_value("payments.live_" + self.name + "_app_key", "");
+            if l1 != "" { return l1; }
+            let l2 = setting_value("payments.live_" + self.name + "_merchant_id", "");
+            if l2 != "" { return l2; }
+            let l3 = setting_value("payments.live_" + self.name + "_store_id", "");
+            if l3 != "" { return l3; }
+            let l4 = setting_value("payments.live_" + self.name + "_secret_key", "");
+            if l4 != "" { return l4; }
+        }
+        let from_db = setting_value("payments." + self.name + "_app_key", "");
+        if from_db != "" { return from_db; }
+        let from_db2 = setting_value("payments." + self.name + "_merchant_id", "");
+        if from_db2 != "" { return from_db2; }
+        let from_db3 = setting_value("payments." + self.name + "_store_id", "");
+        if from_db3 != "" { return from_db3; }
+        let from_db4 = setting_value("payments." + self.name + "_secret_key", "");
+        if from_db4 != "" { return from_db4; }
+        return setting_value("payments." + self.name + "_api_key", "");
     }
 
     public fn webhook_secret(self) -> string {
         let from_env = env_value(self.prefix + "_WEBHOOK_SECRET", "");
         if from_env != "" {
             return from_env;
+        }
+        let mode = setting_value("payments.mode", "sandbox");
+        if mode == "live" {
+            let l_sec = setting_value("payments.live_webhook_secret", "");
+            if l_sec != "" {
+                return l_sec;
+            }
         }
         return setting_value("payments.webhook_secret", "");
     }
@@ -137,7 +167,18 @@ public class HttpsGateway {
     }
 
     public fn initiate(self, payment, order) {
-        let response = self.post(self.url_for("INIT", ""), {
+        let init_url = self.url_for("INIT", "");
+        let mode = setting_value("payments.mode", "sandbox");
+        if init_url == "" and mode == "sandbox" {
+            let redirect = "/payment/" + string(order["order_number"]) + "/simulator?provider=" + self.name;
+            return {
+                "status": "pending",
+                "redirect_url": redirect,
+                "gateway_transaction_id": "SANDBOX-" + self.prefix + "-" + string(payment["id"]),
+                "instructions": "Sandbox Mode: Payment simulated successfully for " + self.name + "."
+            };
+        }
+        let response = self.post(init_url, {
             "order_number": order["order_number"],
             "amount_minor": int(order["total_minor"]),
             "currency": order["currency"],
@@ -164,7 +205,20 @@ public class HttpsGateway {
     // Server-to-server verification: query the gateway with OUR payment id
     // and reject anything whose amount or status does not match.
     public fn verify(self, payment) {
-        let response = self.post(self.url_for("VERIFY", ""), {
+        let verify_url = self.url_for("VERIFY", "");
+        let mode = setting_value("payments.mode", "sandbox");
+        if verify_url == "" and mode == "sandbox" {
+            let txn = string(payment["gateway_transaction_id"]);
+            if txn == "" {
+                txn = "SANDBOX-" + self.prefix + "-" + string(payment["id"]);
+            }
+            return {
+                "verified": true,
+                "transaction_id": txn,
+                "payload": "{\"mode\":\"sandbox\",\"status\":\"paid\",\"provider\":\"" + self.name + "\"}"
+            };
+        }
+        let response = self.post(verify_url, {
             "payment_id": payment["id"],
             "idempotency_key": payment["idempotency_key"],
             "gateway_transaction_id": payment["gateway_transaction_id"]

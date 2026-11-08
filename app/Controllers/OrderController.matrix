@@ -10,8 +10,17 @@ import "app/Support/Money" as Money;
 import "app/Services/OrderService";
 import "app/Support/StoreChrome" as StoreChrome;
 import "app/Repositories/OrderRepository";
+import "framework/Database/DB";
 
 let identity = row => row;
+
+fn is_sandbox_mode() -> bool {
+    let row = DB.table("settings").where("setting_key", "=", "payments.mode").first();
+    if row == null {
+        return true;
+    }
+    return string(row["value"]).trim().lower() != "live";
+}
 
 public class OrderController {
     public let service;
@@ -55,7 +64,11 @@ public class OrderController {
             if row.has("currency") and string(row["currency"]).trim() != "" {
                 row_cur = string(row["currency"]).trim().upper();
             }
+            let st = string(row["status"]);
             row["total_display"] = Money.format(int(row["total_minor"]), row_cur);
+            row["is_paid"] = st == "paid";
+            row["is_pending_cod"] = st == "pending";
+            row["is_awaiting_payment"] = st == "awaiting_payment";
             rows.push(row);
             i += 1;
         }
@@ -74,7 +87,13 @@ public class OrderController {
     public fn show(self, req) {
         let order = self.service.for_customer(string(req.params["number"]), req.auth.id());
         let ctx = self.ctx(req, "Order " + string(order["order_number"]), self.service.decorate(order));
+        let st = string(order["status"]);
         ctx["csrf"] = req.auth.csrf();
+        ctx["status"] = st;
+        ctx["is_paid"] = st == "paid";
+        ctx["is_pending_cod"] = st == "pending";
+        ctx["is_awaiting_payment"] = st == "awaiting_payment";
+        ctx["is_sandbox"] = is_sandbox_mode();
         return view("orders/show", ctx);
     }
 

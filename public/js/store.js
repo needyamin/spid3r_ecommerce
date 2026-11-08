@@ -694,10 +694,47 @@
     });
   });
 
+  function wireLocaleSwitchers() {
+    document.addEventListener("change", function (e) {
+      var target = e.target;
+      if (!target || target.tagName !== "SELECT") return;
+      if (target.name === "currency" || target.name === "locale") {
+        if (target.form) {
+          target.form.submit();
+        }
+      }
+    });
+  }
+
+  function wirePayOptions() {
+    function updateSelected(container) {
+      var radios = (container || document).querySelectorAll('input[type="radio"][name="payment_method"], input[type="radio"][name="provider"]');
+      radios.forEach(function (r) {
+        var card = r.closest(".dz-pay-option");
+        if (card) {
+          if (r.checked) {
+            card.classList.add("dz-pay-selected");
+          } else {
+            card.classList.remove("dz-pay-selected");
+          }
+        }
+      });
+    }
+    document.addEventListener("change", function (e) {
+      var target = e.target;
+      if (target && target.type === "radio" && (target.name === "payment_method" || target.name === "provider")) {
+        updateSelected(target.form || document);
+      }
+    });
+    updateSelected();
+  }
+
   wireImageInputs();
   wireTableFilters();
   wireGalleryThumbnails();
   wireOrderView();
   wireProductEnhancements();
   wireCheckoutLiveQuote();
+  wireLocaleSwitchers();
+  wirePayOptions();
 })();

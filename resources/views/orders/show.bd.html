@@ -5,8 +5,33 @@
   <nav aria-label="breadcrumb">
     <ol class="breadcrumb"><li class="breadcrumb-item"><a href="/">Home</a></li><li class="breadcrumb-item"><a href="/orders">Orders</a></li><li class="breadcrumb-item active" aria-current="page">{{ order.order_number }}</li></ol>
   </nav>
-  <h1 class="page-title">Order {{ order.order_number }}</h1>
-  <p class="page-description">Status: <span class="stock-badge stock-in">{{ status_label }}</span></p>
+  <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+    <div>
+      <h1 class="page-title mb-1">Order #{{ order.order_number }}</h1>
+      <p class="text-secondary small mb-0">Status: <span class="stock-badge stock-in">{{ status_label }}</span></p>
+    </div>
+    <a class="btn btn-sm btn-outline-primary" href="/track?order_number={{ order.order_number }}">Track Order</a>
+  </div>
+
+@if(is_awaiting_payment)
+  <div class="alert alert-warning d-flex flex-wrap justify-content-between align-items-center gap-3 my-3 p-3 rounded-3">
+    <div>
+      <strong class="d-block">⏳ Payment Required</strong>
+      <span class="small text-secondary">This order is awaiting payment before fulfillment and dispatch.</span>
+    </div>
+    <div>
+      <a class="btn btn-sm btn-primary fw-semibold px-3" href="/payment/{{ order.order_number }}">Complete Payment →</a>
+    </div>
+  </div>
+@elif(is_pending_cod)
+  <div class="alert alert-info d-flex align-items-center gap-2 my-3 p-3 rounded-3">
+    <span class="fs-5">💵</span>
+    <div>
+      <strong class="d-block small fw-bold">Cash on Delivery</strong>
+      <span class="small text-secondary">Payment of {{ total_display }} will be collected in cash upon delivery.</span>
+    </div>
+  </div>
+@endif
 
   <div class="row g-4">
     <div class="col-12 col-lg-8">
@@ -25,16 +50,21 @@
 
     <div class="col-12 col-lg-4">
       <div class="dz-card p-4">
-        <div class="total-line"><span>Subtotal</span><span>{{ subtotal_display }}</span></div>
-        <div class="total-line text-success"><span>Discount</span><span>− {{ discount_display }}</span></div>
-        <div class="total-line"><span>Shipping</span><span>{{ shipping_display }}</span></div>
-        <div class="total-line"><span>Tax</span><span>{{ tax_display }}</span></div>
-        <div class="total-line total-grand"><strong>Total</strong><strong>{{ total_display }}</strong></div>
-        <div class="d-grid gap-2 mt-3">
-          <a class="btn btn-primary" href="/orders/{{ order.order_number }}/invoice">View invoice</a>
+        <div class="total-line small"><span>Subtotal</span><span>{{ subtotal_display }}</span></div>
+@if(order.discount_minor)
+        <div class="total-line small text-success"><span>Discount</span><span>− {{ discount_display }}</span></div>
+@endif
+        <div class="total-line small"><span>Shipping</span><span>{{ shipping_display }}</span></div>
+        <div class="total-line small"><span>Tax</span><span>{{ tax_display }}</span></div>
+        <div class="total-line total-grand mt-2 pt-2 border-top">
+          <strong>Total</strong>
+          <strong class="text-primary">{{ total_display }}</strong>
+        </div>
+        <div class="d-grid gap-2 mt-3 pt-2 border-top">
+          <a class="btn btn-primary" href="/orders/{{ order.order_number }}/invoice">View Invoice</a>
           <form method="post" action="/orders/{{ order.order_number }}/cancel">
             <input type="hidden" name="_csrf" value="{{ csrf }}">
-            <button class="btn btn-light border w-100 text-danger" type="submit">Cancel order</button>
+            <button class="btn btn-light border w-100 text-danger" type="submit">Cancel Order</button>
           </form>
         </div>
       </div>

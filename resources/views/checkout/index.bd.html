@@ -163,27 +163,40 @@
 
         <!-- 3. Payment preference -->
         <div class="dz-card p-4">
-          <h2 class="h5 mb-1">💳 Payment preference</h2>
-          <p class="small text-secondary mb-3">Choose how you would like to settle your order. Online gateways are verified server-side on the next step.</p>
+          <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-1">
+            <h2 class="h5 mb-0">💳 Payment preference</h2>
+@if(is_sandbox)
+            <span class="badge text-bg-warning text-dark small px-2 py-1">Test Sandbox Active</span>
+@endif
+          </div>
+          <p class="small text-secondary mb-3">Choose how you would like to settle your order. Gateways are secured with server-to-server verification.</p>
           <div class="row g-2">
+@if(has_payment_methods)
+@foreach(m in payment_methods)
             <div class="col-12 col-sm-6">
-              <label class="dz-pay-option">
-                <input type="radio" name="payment_method" value="cod" class="form-check-input" checked>
+              <label class="dz-pay-option @if(m.selected) dz-pay-selected @endif @if(m.disabled) opacity-50 pe-none bg-light @endif">
+@if(m.disabled)
+                <input type="radio" name="payment_method" value="{{ m.id }}" class="form-check-input" disabled>
+@elif(m.selected)
+                <input type="radio" name="payment_method" value="{{ m.id }}" class="form-check-input" checked>
+@else
+                <input type="radio" name="payment_method" value="{{ m.id }}" class="form-check-input">
+@endif
                 <div>
-                  <strong class="d-block">💵 Cash on Delivery (COD)</strong>
-                  <span class="small text-secondary">Pay in cash when your parcel arrives</span>
+                  <strong class="d-block">{{ m.icon }} {{ m.name }}</strong>
+                  <span class="small text-secondary">{{ m.description }}</span>
+@if(m.disabled)
+                  <span class="d-block small text-danger fw-semibold mt-1">⚠️ {{ m.disabled_reason }}</span>
+@endif
                 </div>
               </label>
             </div>
-            <div class="col-12 col-sm-6">
-              <label class="dz-pay-option">
-                <input type="radio" name="payment_method" value="online" class="form-check-input">
-                <div>
-                  <strong class="d-block">📱 bKash / Nagad / Card</strong>
-                  <span class="small text-secondary">Select gateway after order confirmation</span>
-                </div>
-              </label>
+@endforeach
+@else
+            <div class="col-12">
+              <div class="alert alert-warning small mb-0">No active payment methods currently available. Please contact store support.</div>
             </div>
+@endif
           </div>
         </div>
       </div>

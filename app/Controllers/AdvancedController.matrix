@@ -305,6 +305,10 @@ public class AdvancedController {
         if result == null {
             throw not_found("We could not find that order. Check the order number and the contact details you entered.");
         }
+        let st = string(result["status"]);
+        result["is_awaiting_payment"] = st == "awaiting_payment";
+        result["is_pending_cod"] = st == "pending";
+        result["is_paid"] = st == "paid";
         if req.input("format", "") == "json" {
             return json({"data": result});
         }

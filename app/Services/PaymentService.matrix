@@ -26,6 +26,45 @@ public class PaymentService {
         return self.gateways.providers();
     }
 
+    public fn is_provider_enabled(self, provider: string) -> bool {
+        let p = string(provider).trim().lower();
+        let row = DB.table("settings").where("setting_key", "=", "payments." + p + "_enabled").first();
+        if row != null and string(row["value"]).trim() == "0" {
+            return false;
+        }
+        return true;
+    }
+
+    public fn active_providers(self, order = null) {
+        let all = self.gateways.providers();
+        let active = [];
+        let i = 0;
+        while i < all.len() {
+            let p = all[i];
+            if self.is_provider_enabled(p) {
+                let eligible = true;
+                if p == "cod" and order != null {
+                    let max_row = DB.table("settings").where("setting_key", "=", "payments.cod_max_limit_minor").first();
+                    if max_row != null and string(max_row["value"]).trim() != "" {
+                        let limit = int(max_row["value"]);
+                        let total = 0;
+                        if order.has("total_minor") {
+                            total = int(order["total_minor"]);
+                        }
+                        if limit > 0 and total > limit {
+                            eligible = false;
+                        }
+                    }
+                }
+                if eligible {
+                    active.push(p);
+                }
+            }
+            i += 1;
+        }
+        return active;
+    }
+
     // A guest may pay a guest order by its (random) number; customer orders
     // require the owner.
     fn order_for(self, number: string, user_id) {
@@ -47,6 +86,18 @@ public class PaymentService {
 
     public fn initiate(self, number: string, provider: string, user_id) {
         let order = self.order_for(number, user_id);
+        if not self.is_provider_enabled(provider) {
+            throw validation_failed({"provider": "That payment method is currently disabled."});
+        }
+        if provider == "cod" {
+            let max_row = DB.table("settings").where("setting_key", "=", "payments.cod_max_limit_minor").first();
+            if max_row != null and string(max_row["value"]).trim() != "" {
+                let limit = int(max_row["value"]);
+                if limit > 0 and int(order["total_minor"]) > limit {
+                    throw validation_failed({"provider": "Order total exceeds maximum limit for Cash on Delivery."});
+                }
+            }
+        }
         let gateway = self.gateways.resolve(provider);
         // One payment per order+provider: repeating the request returns the
         // same row (idempotency), it never creates a second charge.

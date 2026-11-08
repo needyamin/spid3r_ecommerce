@@ -14,6 +14,14 @@ import "app/Support/Money" as Money;
 
 let identity = row => row;
 
+fn is_sandbox_mode() -> bool {
+    let row = DB.table("settings").where("setting_key", "=", "payments.mode").first();
+    if row == null {
+        return true;
+    }
+    return string(row["value"]).trim().lower() != "live";
+}
+
 public class PaymentController {
     public let payments;
     public let orders;
@@ -57,6 +65,9 @@ public class PaymentController {
         if order == null {
             throw not_found("Order not found.");
         }
+        if string(order["status"]) == "paid" {
+            return redirect("/checkout/confirmation/" + string(order["order_number"]));
+        }
         let csrf = "";
         if req.auth != null and req.auth.check() {
             csrf = req.auth.csrf();
@@ -65,12 +76,50 @@ public class PaymentController {
         if order.has("currency") and string(order["currency"]).trim() != "" {
             pay_cur = string(order["currency"]).trim().upper();
         }
-        return view("payment/index", self.ctx(req, "Choose payment method", {
+        let active_keys = self.payments.active_providers(order);
+        if active_keys.len() == 0 {
+            active_keys = self.payments.providers();
+        }
+
+        let provider_meta = {
+            "bkash": {"name": "bKash Direct / MFS", "desc": "Fast & secure payment from your bKash wallet", "icon": "📱"},
+            "nagad": {"name": "Nagad Instant", "desc": "Pay directly using your Nagad account", "icon": "📱"},
+            "sslcommerz": {"name": "Cards & Internet Banking (SSLCommerz)", "desc": "Visa, MasterCard, Amex & BD banks", "icon": "💳"},
+            "stripe": {"name": "Credit / Debit Card (Stripe)", "desc": "International cards & digital wallets", "icon": "💳"},
+            "cod": {"name": "Cash on Delivery (COD)", "desc": "Pay with cash when parcel is delivered", "icon": "💵"}
+        };
+
+        let providers_list = [];
+        let pi = 0;
+        while pi < active_keys.len() {
+            let pkey = active_keys[pi];
+            let name = pkey.upper();
+            let desc = "Pay with " + name;
+            let icon = "💳";
+            if provider_meta.has(pkey) {
+                let m = provider_meta[pkey];
+                name = m["name"];
+                desc = m["desc"];
+                icon = m["icon"];
+            }
+            providers_list.push({
+                "id": pkey,
+                "name": name,
+                "description": desc,
+                "icon": icon,
+                "selected": pi == 0
+            });
+            pi += 1;
+        }
+
+        let is_sb = is_sandbox_mode();
+        return view("payment/index", self.ctx(req, "Complete Payment", {
             "order": order,
             "currency": pay_cur,
             "total_display": Money.format(int(order["total_minor"]), pay_cur),
-            "providers": self.payments.providers(),
-            "csrf": csrf
+            "providers": providers_list,
+            "csrf": csrf,
+            "is_sandbox": is_sb
         }));
     }
 
@@ -102,10 +151,139 @@ public class PaymentController {
         if order == null {
             throw not_found("Order not found.");
         }
-        return view("payment/return", self.ctx(req, "Payment status", {
+        let pay_cur = "BDT";
+        if order.has("currency") and string(order["currency"]).trim() != "" {
+            pay_cur = string(order["currency"]).trim().upper();
+        }
+        let pay_rows = DB.table("payments").where("order_id", "=", order["id"]).orderBy("id", "DESC").get();
+        let provider_raw = "";
+        let provider_name = "";
+        if pay_rows.len() > 0 {
+            provider_raw = string(pay_rows[0]["provider"]).trim().lower();
+            if provider_raw == "cod" {
+                provider_name = "Cash on Delivery";
+            } elif provider_raw == "bkash" {
+                provider_name = "bKash";
+            } elif provider_raw == "nagad" {
+                provider_name = "Nagad";
+            } elif provider_raw == "sslcommerz" {
+                provider_name = "SSLCommerz";
+            } elif provider_raw == "stripe" {
+                provider_name = "Card / Stripe";
+            } else {
+                provider_name = provider_raw.upper();
+            }
+        }
+        let st = string(order["status"]);
+        let is_paid = st == "paid";
+        let is_pending_cod = st == "pending" or provider_raw == "cod";
+        let is_awaiting = st == "awaiting_payment" and not is_pending_cod and not is_paid;
+        let is_sb = is_sandbox_mode();
+        return view("payment/return", self.ctx(req, "Payment Status", {
             "order": order,
+            "status": st,
+            "total_display": Money.format(int(order["total_minor"]), pay_cur),
+            "provider": provider_name,
+            "is_awaiting_payment": is_awaiting,
+            "is_pending_cod": is_pending_cod,
+            "is_paid": is_paid,
+            "is_sandbox": is_sb
+        }));
+    }
+
+    // Dedicated customer simulator page for sandbox testing
+    public fn simulator(self, req) {
+        let number = string(req.params["order_number"]);
+        let order = self.orders.find_by_number(number);
+        if order == null {
+            throw not_found("Order not found.");
+        }
+        if not is_sandbox_mode() {
+            return redirect("/checkout/confirmation/" + number);
+        }
+        if string(order["status"]) == "paid" {
+            return redirect("/checkout/confirmation/" + number);
+        }
+        let pay_cur = "BDT";
+        if order.has("currency") and string(order["currency"]).trim() != "" {
+            pay_cur = string(order["currency"]).trim().upper();
+        }
+        let provider = string(req.query("provider", "bkash")).trim().lower();
+        if provider == "" {
+            provider = "bkash";
+        }
+        let pay_row = DB.table("payments").where("order_id", "=", order["id"]).orderBy("id", "DESC").first();
+        if pay_row != null and pay_row.has("provider") {
+            provider = string(pay_row["provider"]).trim().lower();
+        }
+        let is_paid = string(order["status"]) == "paid";
+        let is_sb = is_sandbox_mode();
+        let provider_meta = {
+            "bkash": {"name": "bKash Direct", "icon": "📱"},
+            "nagad": {"name": "Nagad Instant", "icon": "📱"},
+            "sslcommerz": {"name": "SSLCommerz Gateways", "icon": "💳"},
+            "stripe": {"name": "Card / Stripe", "icon": "💳"},
+            "cod": {"name": "Cash on Delivery", "icon": "💵"}
+        };
+        let p_label = provider.upper();
+        let p_icon = "💳";
+        if provider_meta.has(provider) {
+            p_label = provider_meta[provider]["name"];
+            p_icon = provider_meta[provider]["icon"];
+        }
+        return view("payment/simulator", self.ctx(req, p_label + " — Test Checkout", {
+            "order": order,
+            "provider": provider,
+            "provider_label": p_label,
+            "provider_icon": p_icon,
+            "currency": pay_cur,
+            "total_display": Money.format(int(order["total_minor"]), pay_cur),
+            "is_paid": is_paid,
+            "is_sandbox": is_sb,
             "status": order["status"]
         }));
+    }
+
+    // Customer / Sandbox self-service payment success completion
+    public fn simulate_success(self, req) {
+        if not is_sandbox_mode() {
+            throw forbidden("Payment simulation is only available in sandbox mode.");
+        }
+        let number = string(req.params["order_number"]);
+        let order = self.orders.find_by_number(number);
+        if order == null {
+            throw not_found("Order not found.");
+        }
+        let st = string(order["status"]);
+        if st == "cancelled" or st == "refunded" {
+            throw bad_request("Order is closed.");
+        }
+        if st == "paid" {
+            if req.input("format", "") == "json" {
+                return json({"ok": true, "status": "paid", "order_number": number});
+            }
+            return redirect("/checkout/confirmation/" + number);
+        }
+        let pay_row = DB.table("payments").where("order_id", "=", order["id"]).orderBy("id", "DESC").first();
+        if pay_row != null and string(pay_row["provider"]).trim().lower() == "cod" {
+            if req.input("format", "") == "json" {
+                return json({"ok": false, "status": "pending", "message": "COD orders are collected upon delivery."});
+            }
+            return redirect("/checkout/confirmation/" + number);
+        }
+        let payment_id = null;
+        if pay_row == null {
+            let prov = string(req.input("provider", "bkash"));
+            let init_res = self.payments.initiate(number, prov, self.user_id(req));
+            payment_id = init_res["payment"]["id"];
+        } else {
+            payment_id = pay_row["id"];
+        }
+        let verify_res = self.payments.verify(payment_id);
+        if req.input("format", "") == "json" {
+            return json({"ok": true, "status": "paid", "order_number": number});
+        }
+        return redirect("/checkout/confirmation/" + number);
     }
 
     // Gateway webhook: raw body + HMAC signature header.

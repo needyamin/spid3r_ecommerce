@@ -5,16 +5,28 @@
   <nav aria-label="breadcrumb">
     <ol class="breadcrumb"><li class="breadcrumb-item"><a href="/">Home</a></li><li class="breadcrumb-item active" aria-current="page">Order history</li></ol>
   </nav>
-  <h1 class="page-title">Order history</h1>
+  <h1 class="page-title">Order History</h1>
 @if(has_orders)
   <div class="d-flex flex-column gap-3">
 @foreach(order in orders)
     <div class="dz-card p-3 d-flex flex-wrap justify-content-between align-items-center gap-2">
-      <div>
-        <a href="/orders/{{ order.order_number }}" class="fw-bold">{{ order.order_number }}</a>
-        <span class="stock-badge stock-in ms-2">{{ order.status }}</span>
+      <div class="d-flex align-items-center flex-wrap gap-2">
+        <a href="/orders/{{ order.order_number }}" class="fw-bold font-monospace">#{{ order.order_number }}</a>
+@if(order.is_paid)
+        <span class="badge text-bg-success">Paid</span>
+@elif(order.is_pending_cod)
+        <span class="badge text-bg-secondary">Pending (COD)</span>
+@elif(order.is_awaiting_payment)
+        <span class="badge text-bg-warning text-dark">Awaiting Payment</span>
+        <a href="/payment/{{ order.order_number }}" class="btn btn-sm btn-primary py-0 px-2 fw-semibold">Pay Now</a>
+@else
+        <span class="badge text-bg-light border text-capitalize">{{ order.status }}</span>
+@endif
       </div>
-      <div class="fw-bold">{{ order.total_display }}</div>
+      <div class="d-flex align-items-center gap-3">
+        <span class="fw-bold text-dark">{{ order.total_display }}</span>
+        <a href="/orders/{{ order.order_number }}" class="btn btn-sm btn-outline-secondary py-0 px-2">Details →</a>
+      </div>
     </div>
 @endforeach
   </div>

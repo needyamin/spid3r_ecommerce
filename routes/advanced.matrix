@@ -46,7 +46,7 @@ public fn register_advanced_routes() {
     Route.post("/track", req => ctl.track_lookup(req));
 
     // ---- display currency & language preference ----
-    Route.post("/locale", req => ctl.set_locale(req));
+    Route.match_any(["GET", "POST"], "/locale", req => ctl.set_locale(req));
 
     // ---- administration (Phase 10 areas) ----
     Route.get("/admin/reviews", req => ctl.admin_reviews(req)).name("admin.reviews").middleware("role:admin");

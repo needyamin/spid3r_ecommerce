@@ -1,0 +1,688 @@
+@extends("layouts.admin")
+@section('title', title)
+@section('meta_description', meta_description)
+@section("content")
+  <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4">
+    <div>
+      <span class="dz-eyebrow text-uppercase text-muted small fw-bold">Store Configuration</span>
+      <h1 class="h3 mb-0 fw-bold">Payment Gateways &amp; Security</h1>
+      <p class="text-secondary small mb-0 mt-1">Configure active checkout methods, credentials, gateway environments, and HMAC webhook security.</p>
+    </div>
+    <div class="d-flex align-items-center gap-2">
+@if(is_sandbox)
+      <span class="badge badge-mode-sandbox px-3 py-2 rounded-pill fw-semibold"><span class="dz-status-dot me-1 bg-warning"></span>Sandbox / Test Mode Active</span>
+@else
+      <span class="badge badge-mode-live px-3 py-2 rounded-pill fw-semibold"><span class="dz-status-dot me-1 bg-success"></span>Live Production Mode Active</span>
+@endif
+      <span class="badge bg-secondary-subtle text-secondary px-3 py-2 rounded-pill fw-semibold">{{ active_count }} Active Gateways</span>
+    </div>
+  </div>
+
+@if(saved)
+  <div class="alert alert-success d-flex align-items-center gap-2 alert-dismissible fade show mb-4" role="alert">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
+    <div><strong>Success!</strong> Payment settings and environment configurations have been updated.</div>
+    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+  </div>
+@endif
+
+@if(reset_done)
+  <div class="alert alert-info d-flex align-items-center gap-2 alert-dismissible fade show mb-4" role="alert">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+    <div><strong>Defaults Restored!</strong> Sandbox credentials have been reset to default demo test configurations.</div>
+    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+  </div>
+@endif
+
+  <!-- Configuration Navigation Tabs -->
+  <ul class="nav nav-pills mb-4 gap-2 bg-light p-2 rounded-3 border" id="paymentTabs" role="tablist">
+    <li class="nav-item" role="presentation">
+      <button class="nav-link active fw-bold px-3 py-2 d-flex align-items-center gap-2" id="tab-sandbox-btn" data-bs-toggle="pill" data-bs-target="#tab-sandbox" type="button" role="tab" aria-controls="tab-sandbox" aria-selected="true">
+        <span>🧪</span> Sandbox Configuration
+      </button>
+    </li>
+    <li class="nav-item" role="presentation">
+      <button class="nav-link fw-bold px-3 py-2 d-flex align-items-center gap-2" id="tab-production-btn" data-bs-toggle="pill" data-bs-target="#tab-production" type="button" role="tab" aria-controls="tab-production" aria-selected="false">
+        <span>🚀</span> Production / Live Configuration
+      </button>
+    </li>
+    <li class="nav-item" role="presentation">
+      <button class="nav-link fw-bold px-3 py-2 d-flex align-items-center gap-2" id="tab-webhooks-btn" data-bs-toggle="pill" data-bs-target="#tab-webhooks" type="button" role="tab" aria-controls="tab-webhooks" aria-selected="false">
+        <span>🔒</span> Webhook Settings &amp; Security
+      </button>
+    </li>
+    <li class="nav-item" role="presentation">
+      <button class="nav-link fw-bold px-3 py-2 d-flex align-items-center gap-2 text-primary" id="tab-testing-btn" data-bs-toggle="pill" data-bs-target="#tab-testing" type="button" role="tab" aria-controls="tab-testing" aria-selected="false">
+        <span>⚡</span> Gateway Testing Lab
+      </button>
+    </li>
+  </ul>
+
+  <form method="post" action="/admin/api/payments/settings" id="paymentsForm">
+    <input type="hidden" name="_csrf" value="{{ csrf }}">
+
+    <!-- Environment Mode Selector -->
+    <div class="dz-payment-card mb-4">
+      <div class="dz-payment-card-header">
+        <div class="d-flex align-items-center gap-2">
+          <span class="fs-5">⚙️</span>
+          <div>
+            <h2 class="h6 mb-0 fw-bold">Active Gateway Environment</h2>
+            <small class="text-secondary">Select which environment is currently active for customer checkout</small>
+          </div>
+        </div>
+      </div>
+      <div class="dz-payment-card-body">
+        <div class="row g-3">
+          <div class="col-12 col-md-6">
+            <label class="p-3 border rounded-3 d-flex align-items-start gap-3 w-100 cursor-pointer @if(is_sandbox) border-warning bg-warning bg-opacity-10 @endif">
+              <input type="radio" name="mode" value="sandbox" class="form-check-input mt-1" @if(is_sandbox) checked @endif>
+              <div>
+                <strong class="d-block mb-1">🧪 Sandbox / Test Mode</strong>
+                <p class="small text-secondary mb-0">Uses sandbox test credentials and simulated test gateways. Safe for development, testing, and employee training without real money.</p>
+              </div>
+            </label>
+          </div>
+          <div class="col-12 col-md-6">
+            <label class="p-3 border rounded-3 d-flex align-items-start gap-3 w-100 cursor-pointer @if(is_live) border-success bg-success bg-opacity-10 @endif">
+              <input type="radio" name="mode" value="live" class="form-check-input mt-1" @if(is_live) checked @endif>
+              <div>
+                <strong class="d-block mb-1">🚀 Live Production Mode</strong>
+                <p class="small text-secondary mb-0">Uses production live credentials. Real transactions will be processed and funds transferred from customer accounts.</p>
+              </div>
+            </label>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="tab-content" id="paymentTabsContent">
+      <!-- ========================================== -->
+      <!-- TAB 1: SANDBOX CONFIGURATION (DEFAULT)     -->
+      <!-- ========================================== -->
+      <div class="tab-pane fade show active" id="tab-sandbox" role="tabpanel" aria-labelledby="tab-sandbox-btn">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <div class="small text-secondary">All sandbox credentials below are pre-filled by default for testing.</div>
+          <button type="submit" name="action" value="reset_sandbox_defaults" class="btn btn-sm btn-outline-secondary">
+            ↻ Reset to Sandbox Defaults
+          </button>
+        </div>
+
+        <!-- COD (Shared) -->
+        <div class="dz-payment-card mb-4">
+          <div class="dz-payment-card-header">
+            <div class="d-flex align-items-center gap-3">
+              <span class="dz-gateway-logo dz-gateway-cod">COD</span>
+              <div>
+                <h2 class="h6 mb-0 fw-bold">Cash on Delivery (COD)</h2>
+                <small class="text-secondary">Physical cash collection upon doorstep delivery</small>
+              </div>
+            </div>
+            <div class="d-flex align-items-center gap-2">
+              <button type="button" class="btn btn-sm btn-outline-primary" data-action="test-gateway" data-provider="cod" data-mode="sandbox" data-target="res_sb_cod">
+                ⚡ Test COD Rules
+              </button>
+              <div class="form-check form-switch m-0">
+                <input class="form-check-input" type="checkbox" role="switch" id="cod_enabled" name="cod_enabled" value="1" @if(cod_enabled) checked @endif>
+                <label class="form-check-label fw-semibold small" for="cod_enabled">Enable COD</label>
+              </div>
+            </div>
+          </div>
+          <div class="dz-payment-card-body">
+            <div class="row g-3">
+              <div class="col-12 col-md-6">
+                <label class="form-label small text-secondary fw-semibold mb-1" for="cod_max_limit_bdt">Maximum Order Limit (৳ BDT)</label>
+                <div class="input-group">
+                  <span class="input-group-text">৳</span>
+                  <input type="number" id="cod_max_limit_bdt" name="cod_max_limit_bdt" value="{{ cod_max_limit_bdt }}" min="0" step="500" class="form-control" placeholder="50000">
+                </div>
+                <div class="form-text small">Orders exceeding this amount will have COD disabled at checkout.</div>
+              </div>
+              <div class="col-12 col-md-6">
+                <label class="form-label small text-secondary fw-semibold mb-1" for="cod_instructions">Customer Delivery Note</label>
+                <input type="text" id="cod_instructions" name="cod_instructions" value="{{ cod_instructions }}" class="form-control" placeholder="Pay in cash when your parcel is delivered.">
+              </div>
+            </div>
+            <div id="res_sb_cod" class="mt-3 d-none"></div>
+          </div>
+        </div>
+
+        <!-- bKash Sandbox -->
+        <div class="dz-payment-card mb-4">
+          <div class="dz-payment-card-header">
+            <div class="d-flex align-items-center gap-3">
+              <span class="dz-gateway-logo dz-gateway-bkash">bK</span>
+              <div>
+                <h2 class="h6 mb-0 fw-bold">bKash (Sandbox)</h2>
+                <small class="text-secondary">Pre-configured test wallet &amp; sandbox tokens</small>
+              </div>
+            </div>
+            <div class="d-flex align-items-center gap-2">
+              <button type="button" class="btn btn-sm btn-outline-primary" data-action="test-gateway" data-provider="bkash" data-mode="sandbox" data-target="res_sb_bkash">
+                ⚡ Test bKash Sandbox
+              </button>
+              <div class="form-check form-switch m-0">
+                <input class="form-check-input" type="checkbox" role="switch" id="bkash_enabled" name="bkash_enabled" value="1" @if(bkash_enabled) checked @endif>
+                <label class="form-check-label fw-semibold small" for="bkash_enabled">Enable in Sandbox</label>
+              </div>
+            </div>
+          </div>
+          <div class="dz-payment-card-body">
+            <div class="row g-3">
+              <div class="col-12 col-md-4">
+                <label class="form-label small text-secondary fw-semibold mb-1" for="bkash_merchant_number">Sandbox Merchant Wallet</label>
+                <input type="text" id="bkash_merchant_number" name="bkash_merchant_number" value="{{ bkash_merchant_number }}" class="form-control" placeholder="01770618575">
+              </div>
+              <div class="col-12 col-md-4">
+                <label class="form-label small text-secondary fw-semibold mb-1" for="bkash_app_key">Sandbox App Key</label>
+                <input type="text" id="bkash_app_key" name="bkash_app_key" value="{{ bkash_app_key }}" class="form-control font-monospace" placeholder="bkash_sandbox_app_key_demo">
+              </div>
+              <div class="col-12 col-md-4">
+                <label class="form-label small text-secondary fw-semibold mb-1" for="bkash_app_secret">Sandbox App Secret</label>
+                <input type="text" id="bkash_app_secret" name="bkash_app_secret" value="{{ bkash_app_secret }}" class="form-control font-monospace" placeholder="bkash_sandbox_secret_demo">
+              </div>
+            </div>
+            <div id="res_sb_bkash" class="mt-3 d-none"></div>
+          </div>
+        </div>
+
+        <!-- Nagad Sandbox -->
+        <div class="dz-payment-card mb-4">
+          <div class="dz-payment-card-header">
+            <div class="d-flex align-items-center gap-3">
+              <span class="dz-gateway-logo dz-gateway-nagad">Ng</span>
+              <div>
+                <h2 class="h6 mb-0 fw-bold">Nagad (Sandbox)</h2>
+                <small class="text-secondary">Pre-configured Nagad test merchant</small>
+              </div>
+            </div>
+            <div class="d-flex align-items-center gap-2">
+              <button type="button" class="btn btn-sm btn-outline-primary" data-action="test-gateway" data-provider="nagad" data-mode="sandbox" data-target="res_sb_nagad">
+                ⚡ Test Nagad Sandbox
+              </button>
+              <div class="form-check form-switch m-0">
+                <input class="form-check-input" type="checkbox" role="switch" id="nagad_enabled" name="nagad_enabled" value="1" @if(nagad_enabled) checked @endif>
+                <label class="form-check-label fw-semibold small" for="nagad_enabled">Enable in Sandbox</label>
+              </div>
+            </div>
+          </div>
+          <div class="dz-payment-card-body">
+            <div class="row g-3">
+              <div class="col-12 col-md-6">
+                <label class="form-label small text-secondary fw-semibold mb-1" for="nagad_merchant_id">Sandbox Merchant ID</label>
+                <input type="text" id="nagad_merchant_id" name="nagad_merchant_id" value="{{ nagad_merchant_id }}" class="form-control font-monospace" placeholder="683281234812348">
+              </div>
+              <div class="col-12 col-md-6">
+                <label class="form-label small text-secondary fw-semibold mb-1" for="nagad_public_key">Sandbox Public Key</label>
+                <input type="text" id="nagad_public_key" name="nagad_public_key" value="{{ nagad_public_key }}" class="form-control font-monospace" placeholder="nagad_sandbox_public_key_demo">
+              </div>
+            </div>
+            <div id="res_sb_nagad" class="mt-3 d-none"></div>
+          </div>
+        </div>
+
+        <!-- SSLCommerz Sandbox -->
+        <div class="dz-payment-card mb-4">
+          <div class="dz-payment-card-header">
+            <div class="d-flex align-items-center gap-3">
+              <span class="dz-gateway-logo dz-gateway-sslcommerz">SSL</span>
+              <div>
+                <h2 class="h6 mb-0 fw-bold">SSLCommerz (Sandbox)</h2>
+                <small class="text-secondary">Official SSLCommerz test store: <code>testbox / qwerty</code></small>
+              </div>
+            </div>
+            <div class="d-flex align-items-center gap-2">
+              <button type="button" class="btn btn-sm btn-outline-primary" data-action="test-gateway" data-provider="sslcommerz" data-mode="sandbox" data-target="res_sb_sslcommerz">
+                ⚡ Test SSLCommerz Sandbox
+              </button>
+              <div class="form-check form-switch m-0">
+                <input class="form-check-input" type="checkbox" role="switch" id="sslcommerz_enabled" name="sslcommerz_enabled" value="1" @if(sslcommerz_enabled) checked @endif>
+                <label class="form-check-label fw-semibold small" for="sslcommerz_enabled">Enable in Sandbox</label>
+              </div>
+            </div>
+          </div>
+          <div class="dz-payment-card-body">
+            <div class="row g-3">
+              <div class="col-12 col-md-6">
+                <label class="form-label small text-secondary fw-semibold mb-1" for="sslcommerz_store_id">Sandbox Store ID</label>
+                <input type="text" id="sslcommerz_store_id" name="sslcommerz_store_id" value="{{ sslcommerz_store_id }}" class="form-control font-monospace" placeholder="testbox">
+              </div>
+              <div class="col-12 col-md-6">
+                <label class="form-label small text-secondary fw-semibold mb-1" for="sslcommerz_store_passwd">Sandbox Store Password</label>
+                <input type="text" id="sslcommerz_store_passwd" name="sslcommerz_store_passwd" value="{{ sslcommerz_store_passwd }}" class="form-control font-monospace" placeholder="qwerty">
+              </div>
+            </div>
+            <div id="res_sb_sslcommerz" class="mt-3 d-none"></div>
+          </div>
+        </div>
+
+        <!-- Stripe Sandbox -->
+        <div class="dz-payment-card mb-4">
+          <div class="dz-payment-card-header">
+            <div class="d-flex align-items-center gap-3">
+              <span class="dz-gateway-logo dz-gateway-stripe">S</span>
+              <div>
+                <h2 class="h6 mb-0 fw-bold">Stripe (Sandbox / Test Mode)</h2>
+                <small class="text-secondary">Standard Stripe test keys (<code>pk_test_...</code> / <code>sk_test_...</code>)</small>
+              </div>
+            </div>
+            <div class="d-flex align-items-center gap-2">
+              <button type="button" class="btn btn-sm btn-outline-primary" data-action="test-gateway" data-provider="stripe" data-mode="sandbox" data-target="res_sb_stripe">
+                ⚡ Test Stripe Sandbox
+              </button>
+              <div class="form-check form-switch m-0">
+                <input class="form-check-input" type="checkbox" role="switch" id="stripe_enabled" name="stripe_enabled" value="1" @if(stripe_enabled) checked @endif>
+                <label class="form-check-label fw-semibold small" for="stripe_enabled">Enable in Sandbox</label>
+              </div>
+            </div>
+          </div>
+          <div class="dz-payment-card-body">
+            <div class="row g-3">
+              <div class="col-12 col-md-6">
+                <label class="form-label small text-secondary fw-semibold mb-1" for="stripe_publishable_key">Sandbox Publishable Key</label>
+                <input type="text" id="stripe_publishable_key" name="stripe_publishable_key" value="{{ stripe_publishable_key }}" class="form-control font-monospace" placeholder="pk_test_...">
+              </div>
+              <div class="col-12 col-md-6">
+                <label class="form-label small text-secondary fw-semibold mb-1" for="stripe_secret_key">Sandbox Secret Key</label>
+                <input type="text" id="stripe_secret_key" name="stripe_secret_key" value="{{ stripe_secret_key }}" class="form-control font-monospace" placeholder="sk_test_...">
+              </div>
+            </div>
+            <div id="res_sb_stripe" class="mt-3 d-none"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ========================================== -->
+      <!-- TAB 2: PRODUCTION / LIVE CONFIGURATION    -->
+      <!-- ========================================== -->
+      <div class="tab-pane fade" id="tab-production" role="tabpanel" aria-labelledby="tab-production-btn">
+        <div class="alert alert-warning d-flex align-items-center gap-2 mb-4">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+          <div><strong>Live Production Environment:</strong> These live credentials are only invoked when the Gateway Mode is set to <strong>Live Production Mode</strong>. Ensure SSL (HTTPS) is active on your domain.</div>
+        </div>
+
+        <!-- bKash Production -->
+        <div class="dz-payment-card mb-4">
+          <div class="dz-payment-card-header">
+            <div class="d-flex align-items-center gap-3">
+              <span class="dz-gateway-logo dz-gateway-bkash">bK</span>
+              <div>
+                <h2 class="h6 mb-0 fw-bold">bKash (Live Production)</h2>
+                <small class="text-secondary">Official bKash merchant credentials from your bKash merchant agreement</small>
+              </div>
+            </div>
+            <div class="d-flex align-items-center gap-2">
+              <button type="button" class="btn btn-sm btn-outline-success" data-action="test-gateway" data-provider="bkash" data-mode="live" data-target="res_live_bkash">
+                🔍 Validate Live bKash
+              </button>
+              <span class="badge bg-secondary-subtle text-secondary">Live Channel</span>
+            </div>
+          </div>
+          <div class="dz-payment-card-body">
+            <div class="row g-3">
+              <div class="col-12 col-md-4">
+                <label class="form-label small text-secondary fw-semibold mb-1" for="live_bkash_merchant_number">Live Merchant Wallet Number</label>
+                <input type="text" id="live_bkash_merchant_number" name="live_bkash_merchant_number" value="{{ live_bkash_merchant_number }}" class="form-control" placeholder="01XXXXXXXXX">
+              </div>
+              <div class="col-12 col-md-4">
+                <label class="form-label small text-secondary fw-semibold mb-1" for="live_bkash_app_key">Live bKash App Key</label>
+                <input type="text" id="live_bkash_app_key" name="live_bkash_app_key" value="{{ live_bkash_app_key }}" class="form-control font-monospace" placeholder="Live App Key">
+              </div>
+              <div class="col-12 col-md-4">
+                <label class="form-label small text-secondary fw-semibold mb-1" for="live_bkash_app_secret">Live bKash App Secret</label>
+                <input type="password" id="live_bkash_app_secret" name="live_bkash_app_secret" value="{{ live_bkash_app_secret }}" class="form-control font-monospace" placeholder="••••••••">
+              </div>
+            </div>
+            <div id="res_live_bkash" class="mt-3 d-none"></div>
+          </div>
+        </div>
+
+        <!-- Nagad Production -->
+        <div class="dz-payment-card mb-4">
+          <div class="dz-payment-card-header">
+            <div class="d-flex align-items-center gap-3">
+              <span class="dz-gateway-logo dz-gateway-nagad">Ng</span>
+              <div>
+                <h2 class="h6 mb-0 fw-bold">Nagad (Live Production)</h2>
+                <small class="text-secondary">Official Nagad production merchant ID and public key</small>
+              </div>
+            </div>
+            <div class="d-flex align-items-center gap-2">
+              <button type="button" class="btn btn-sm btn-outline-success" data-action="test-gateway" data-provider="nagad" data-mode="live" data-target="res_live_nagad">
+                🔍 Validate Live Nagad
+              </button>
+              <span class="badge bg-secondary-subtle text-secondary">Live Channel</span>
+            </div>
+          </div>
+          <div class="dz-payment-card-body">
+            <div class="row g-3">
+              <div class="col-12 col-md-6">
+                <label class="form-label small text-secondary fw-semibold mb-1" for="live_nagad_merchant_id">Live Nagad Merchant ID</label>
+                <input type="text" id="live_nagad_merchant_id" name="live_nagad_merchant_id" value="{{ live_nagad_merchant_id }}" class="form-control font-monospace" placeholder="Live Merchant ID">
+              </div>
+              <div class="col-12 col-md-6">
+                <label class="form-label small text-secondary fw-semibold mb-1" for="live_nagad_public_key">Live Nagad Public Key / Certificate</label>
+                <input type="password" id="live_nagad_public_key" name="live_nagad_public_key" value="{{ live_nagad_public_key }}" class="form-control font-monospace" placeholder="••••••••">
+              </div>
+            </div>
+            <div id="res_live_nagad" class="mt-3 d-none"></div>
+          </div>
+        </div>
+
+        <!-- SSLCommerz Production -->
+        <div class="dz-payment-card mb-4">
+          <div class="dz-payment-card-header">
+            <div class="d-flex align-items-center gap-3">
+              <span class="dz-gateway-logo dz-gateway-sslcommerz">SSL</span>
+              <div>
+                <h2 class="h6 mb-0 fw-bold">SSLCommerz (Live Production)</h2>
+                <small class="text-secondary">Production store account issued by SSL Wireless</small>
+              </div>
+            </div>
+            <div class="d-flex align-items-center gap-2">
+              <button type="button" class="btn btn-sm btn-outline-success" data-action="test-gateway" data-provider="sslcommerz" data-mode="live" data-target="res_live_sslcommerz">
+                🔍 Validate Live SSLCommerz
+              </button>
+              <span class="badge bg-secondary-subtle text-secondary">Live Channel</span>
+            </div>
+          </div>
+          <div class="dz-payment-card-body">
+            <div class="row g-3">
+              <div class="col-12 col-md-6">
+                <label class="form-label small text-secondary fw-semibold mb-1" for="live_sslcommerz_store_id">Live Store ID</label>
+                <input type="text" id="live_sslcommerz_store_id" name="live_sslcommerz_store_id" value="{{ live_sslcommerz_store_id }}" class="form-control font-monospace" placeholder="Your production Store ID">
+              </div>
+              <div class="col-12 col-md-6">
+                <label class="form-label small text-secondary fw-semibold mb-1" for="live_sslcommerz_store_passwd">Live Store Password</label>
+                <input type="password" id="live_sslcommerz_store_passwd" name="live_sslcommerz_store_passwd" value="{{ live_sslcommerz_store_passwd }}" class="form-control font-monospace" placeholder="••••••••">
+              </div>
+            </div>
+            <div id="res_live_sslcommerz" class="mt-3 d-none"></div>
+          </div>
+        </div>
+
+        <!-- Stripe Production -->
+        <div class="dz-payment-card mb-4">
+          <div class="dz-payment-card-header">
+            <div class="d-flex align-items-center gap-3">
+              <span class="dz-gateway-logo dz-gateway-stripe">S</span>
+              <div>
+                <h2 class="h6 mb-0 fw-bold">Stripe (Live Production)</h2>
+                <small class="text-secondary">Production API keys: <code>pk_live_...</code> and <code>sk_live_...</code></small>
+              </div>
+            </div>
+            <div class="d-flex align-items-center gap-2">
+              <button type="button" class="btn btn-sm btn-outline-success" data-action="test-gateway" data-provider="stripe" data-mode="live" data-target="res_live_stripe">
+                🔍 Validate Live Stripe
+              </button>
+              <span class="badge bg-secondary-subtle text-secondary">Live Channel</span>
+            </div>
+          </div>
+          <div class="dz-payment-card-body">
+            <div class="row g-3">
+              <div class="col-12 col-md-6">
+                <label class="form-label small text-secondary fw-semibold mb-1" for="live_stripe_publishable_key">Live Publishable Key (<code>pk_live_...</code>)</label>
+                <input type="text" id="live_stripe_publishable_key" name="live_stripe_publishable_key" value="{{ live_stripe_publishable_key }}" class="form-control font-monospace" placeholder="pk_live_...">
+              </div>
+              <div class="col-12 col-md-6">
+                <label class="form-label small text-secondary fw-semibold mb-1" for="live_stripe_secret_key">Live Secret Key (<code>sk_live_...</code>)</label>
+                <input type="password" id="live_stripe_secret_key" name="live_stripe_secret_key" value="{{ live_stripe_secret_key }}" class="form-control font-monospace" placeholder="sk_live_...">
+              </div>
+            </div>
+            <div id="res_live_stripe" class="mt-3 d-none"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ========================================== -->
+      <!-- TAB 3: WEBHOOK SETTINGS & SECURITY        -->
+      <!-- ========================================== -->
+      <div class="tab-pane fade" id="tab-webhooks" role="tabpanel" aria-labelledby="tab-webhooks-btn">
+        <div class="dz-payment-card mb-4">
+          <div class="dz-payment-card-header">
+            <div class="d-flex align-items-center gap-2">
+              <span class="fs-5">🔒</span>
+              <div>
+                <h2 class="h6 mb-0 fw-bold">Master Webhook Configuration &amp; Base URL</h2>
+                <small class="text-secondary">Configure your domain endpoint and cryptographic HMAC secret</small>
+              </div>
+            </div>
+            <span class="badge bg-success-subtle text-success border border-success-subtle">HMAC-SHA256 Active</span>
+          </div>
+          <div class="dz-payment-card-body">
+            <div class="row g-3 mb-3">
+              <div class="col-12 col-md-6">
+                <label class="form-label small text-secondary fw-semibold mb-1" for="webhook_base_url">Public Webhook Base URL</label>
+                <input type="url" id="webhook_base_url" name="webhook_base_url" value="{{ webhook_base_url }}" class="form-control font-monospace" placeholder="https://spid3rstore.com" required>
+                <div class="form-text small">Used to generate full callback URLs for developer portals.</div>
+              </div>
+              <div class="col-12 col-md-6">
+                <label class="form-label small text-secondary fw-semibold mb-1" for="webhook_secret">Master Webhook Signing Secret</label>
+                <div class="input-group">
+                  <input type="text" id="webhook_secret" name="webhook_secret" value="{{ webhook_secret }}" class="form-control font-monospace" placeholder="whsec_..." required>
+                  <button class="btn btn-outline-secondary" type="button" data-action="generate-webhook-secret">Generate New</button>
+                </div>
+                <div class="form-text small">Used to compute and verify HMAC-SHA256 signatures for callbacks.</div>
+              </div>
+            </div>
+
+            <!-- Provider Webhook Endpoints Directory Table -->
+            <div class="border rounded p-3 bg-light mb-3">
+              <div class="d-flex justify-content-between align-items-center mb-2">
+                <h3 class="h6 mb-0 fw-bold">Dynamic Gateway Webhook Callbacks</h3>
+                <span class="badge bg-primary-subtle text-primary border border-primary-subtle">Automated URLs</span>
+              </div>
+              <div class="table-responsive">
+                <table class="table table-sm table-bordered bg-white mb-0 align-middle">
+                  <thead class="table-light small">
+                    <tr>
+                      <th>Gateway</th>
+                      <th>Method</th>
+                      <th>Public Webhook URL (Paste into Merchant Portal)</th>
+                      <th>Signature Header</th>
+                    </tr>
+                  </thead>
+                  <tbody class="small font-monospace">
+                    <tr>
+                      <td>bKash</td>
+                      <td><span class="badge text-bg-primary">POST</span></td>
+                      <td><code>{{ webhook_base_url }}/webhooks/payments/bkash</code></td>
+                      <td><code>X-Signature</code></td>
+                    </tr>
+                    <tr>
+                      <td>Nagad</td>
+                      <td><span class="badge text-bg-primary">POST</span></td>
+                      <td><code>{{ webhook_base_url }}/webhooks/payments/nagad</code></td>
+                      <td><code>X-Signature</code></td>
+                    </tr>
+                    <tr>
+                      <td>SSLCommerz</td>
+                      <td><span class="badge text-bg-primary">POST</span></td>
+                      <td><code>{{ webhook_base_url }}/webhooks/payments/sslcommerz</code></td>
+                      <td><code>X-Signature</code></td>
+                    </tr>
+                    <tr>
+                      <td>Stripe</td>
+                      <td><span class="badge text-bg-primary">POST</span></td>
+                      <td><code>{{ webhook_base_url }}/webhooks/payments/stripe</code></td>
+                      <td><code>X-Signature</code></td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- Webhook Diagnostic Self-Test Tool -->
+            <div class="border rounded p-3 bg-white">
+              <div class="d-flex justify-content-between align-items-center mb-2">
+                <h3 class="h6 mb-0 fw-bold">Live Webhook Diagnostic Verification</h3>
+                <button type="button" class="btn btn-sm btn-outline-primary" id="btnTestWebhook" data-action="webhook-diagnostic">
+                  ⚡ Run Diagnostic Signature Check
+                </button>
+              </div>
+              <p class="small text-secondary mb-2">Verifies that the server HMAC-SHA256 signature algorithm correctly matches incoming payloads with your secret.</p>
+              <div id="webhookDiagnosticResult" class="p-2 border rounded bg-light small font-monospace d-none"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ========================================== -->
+      <!-- TAB 4: GATEWAY TESTING & DIAGNOSTICS LAB   -->
+      <!-- ========================================== -->
+      <div class="tab-pane fade" id="tab-testing" role="tabpanel" aria-labelledby="tab-testing-btn">
+        <div class="row g-4">
+          <!-- Sandbox Testing Hub -->
+          <div class="col-12 col-lg-7">
+            <div class="dz-payment-card mb-4">
+              <div class="dz-payment-card-header bg-warning bg-opacity-10">
+                <div class="d-flex align-items-center gap-2">
+                  <span class="fs-5">🧪</span>
+                  <div>
+                    <h2 class="h6 mb-0 fw-bold">Sandbox Mode Gateway Test Suite</h2>
+                    <small class="text-secondary">Simulate handshakes, tokens, and verification for all sandbox providers</small>
+                  </div>
+                </div>
+                <button type="button" class="btn btn-sm btn-warning fw-bold shadow-sm" data-action="run-all-sandbox-tests">
+                  ⚡ Run All Sandbox Tests
+                </button>
+              </div>
+              <div class="dz-payment-card-body">
+                <p class="small text-secondary mb-3">Trigger automated test calls to verify that Spid3r gateway drivers are operating properly with sandbox credentials:</p>
+                <div class="list-group mb-3">
+                  <div class="list-group-item d-flex justify-content-between align-items-center">
+                    <div>
+                      <strong>bKash Sandbox</strong>
+                      <div class="small text-muted">Tokenized API simulation (Wallet: {{ bkash_merchant_number }})</div>
+                    </div>
+                    <button type="button" class="btn btn-sm btn-outline-primary" data-action="test-gateway" data-provider="bkash" data-mode="sandbox" data-target="res_lab_bkash">Test bKash</button>
+                  </div>
+                  <div id="res_lab_bkash" class="p-2 bg-light border-top small d-none"></div>
+
+                  <div class="list-group-item d-flex justify-content-between align-items-center">
+                    <div>
+                      <strong>Nagad Sandbox</strong>
+                      <div class="small text-muted">Merchant ID &amp; Signature test (MID: {{ nagad_merchant_id }})</div>
+                    </div>
+                    <button type="button" class="btn btn-sm btn-outline-primary" data-action="test-gateway" data-provider="nagad" data-mode="sandbox" data-target="res_lab_nagad">Test Nagad</button>
+                  </div>
+                  <div id="res_lab_nagad" class="p-2 bg-light border-top small d-none"></div>
+
+                  <div class="list-group-item d-flex justify-content-between align-items-center">
+                    <div>
+                      <strong>SSLCommerz Sandbox</strong>
+                      <div class="small text-muted">Session API with testbox store</div>
+                    </div>
+                    <button type="button" class="btn btn-sm btn-outline-primary" data-action="test-gateway" data-provider="sslcommerz" data-mode="sandbox" data-target="res_lab_sslcommerz">Test SSLCommerz</button>
+                  </div>
+                  <div id="res_lab_sslcommerz" class="p-2 bg-light border-top small d-none"></div>
+
+                  <div class="list-group-item d-flex justify-content-between align-items-center">
+                    <div>
+                      <strong>Stripe Test Mode</strong>
+                      <div class="small text-muted">Card Intent &amp; Tokenizer (pk_test_...)</div>
+                    </div>
+                    <button type="button" class="btn btn-sm btn-outline-primary" data-action="test-gateway" data-provider="stripe" data-mode="sandbox" data-target="res_lab_stripe">Test Stripe</button>
+                  </div>
+                  <div id="res_lab_stripe" class="p-2 bg-light border-top small d-none"></div>
+
+                  <div class="list-group-item d-flex justify-content-between align-items-center">
+                    <div>
+                      <strong>Cash on Delivery (COD)</strong>
+                      <div class="small text-muted">Threshold limit validation (৳{{ cod_max_limit_bdt }})</div>
+                    </div>
+                    <button type="button" class="btn btn-sm btn-outline-primary" data-action="test-gateway" data-provider="cod" data-mode="sandbox" data-target="res_lab_cod">Test COD</button>
+                  </div>
+                  <div id="res_lab_cod" class="p-2 bg-light border-top small d-none"></div>
+                </div>
+
+                <!-- Instant Test Order Generator -->
+                <div class="p-3 border rounded-3 bg-light">
+                  <h3 class="h6 fw-bold mb-1">🛒 Instant Test Order Generator</h3>
+                  <p class="small text-secondary mb-3">Creates a real sample order in the store so you can test customer payment flows, simulator pages, and invoice generation in 1 click.</p>
+                  <div class="row g-2 align-items-center">
+                    <div class="col-12 col-sm-6">
+                      <select class="form-select form-select-sm" id="testOrderProvider">
+                        <option value="bkash">bKash (Sandbox)</option>
+                        <option value="nagad">Nagad (Sandbox)</option>
+                        <option value="sslcommerz">SSLCommerz (Sandbox)</option>
+                        <option value="stripe">Stripe (Test Cards)</option>
+                        <option value="cod">Cash on Delivery</option>
+                      </select>
+                    </div>
+                    <div class="col-12 col-sm-6">
+                      <button type="button" class="btn btn-success btn-sm w-100 fw-bold" data-action="create-test-order">
+                        ⚡ Create Order &amp; Open Test
+                      </button>
+                    </div>
+                  </div>
+                  <div id="testOrderResult" class="mt-3 p-2 border rounded bg-white small d-none"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Live Production Testing Hub -->
+          <div class="col-12 col-lg-5">
+            <div class="dz-payment-card mb-4">
+              <div class="dz-payment-card-header bg-success bg-opacity-10">
+                <div class="d-flex align-items-center gap-2">
+                  <span class="fs-5">🚀</span>
+                  <div>
+                    <h2 class="h6 mb-0 fw-bold">Live Production Gateway Diagnostics</h2>
+                    <small class="text-secondary">Validate production keys &amp; readiness before go-live</small>
+                  </div>
+                </div>
+              </div>
+              <div class="dz-payment-card-body">
+                <p class="small text-secondary mb-3">Check whether your production credentials adhere to the official payment network format and are ready to process real transactions:</p>
+
+                <div class="d-grid gap-2 mb-3">
+                  <button type="button" class="btn btn-outline-success btn-sm d-flex justify-content-between align-items-center" data-action="test-gateway" data-provider="bkash" data-mode="live" data-target="res_diag_bkash">
+                    <span>Validate Live bKash</span>
+                    <span class="badge bg-success-subtle text-success">Check</span>
+                  </button>
+                  <div id="res_diag_bkash" class="p-2 bg-light border rounded small d-none"></div>
+
+                  <button type="button" class="btn btn-outline-success btn-sm d-flex justify-content-between align-items-center" data-action="test-gateway" data-provider="nagad" data-mode="live" data-target="res_diag_nagad">
+                    <span>Validate Live Nagad</span>
+                    <span class="badge bg-success-subtle text-success">Check</span>
+                  </button>
+                  <div id="res_diag_nagad" class="p-2 bg-light border rounded small d-none"></div>
+
+                  <button type="button" class="btn btn-outline-success btn-sm d-flex justify-content-between align-items-center" data-action="test-gateway" data-provider="sslcommerz" data-mode="live" data-target="res_diag_sslcommerz">
+                    <span>Validate Live SSLCommerz</span>
+                    <span class="badge bg-success-subtle text-success">Check</span>
+                  </button>
+                  <div id="res_diag_sslcommerz" class="p-2 bg-light border rounded small d-none"></div>
+
+                  <button type="button" class="btn btn-outline-success btn-sm d-flex justify-content-between align-items-center" data-action="test-gateway" data-provider="stripe" data-mode="live" data-target="res_diag_stripe">
+                    <span>Validate Live Stripe</span>
+                    <span class="badge bg-success-subtle text-success">Check</span>
+                  </button>
+                  <div id="res_diag_stripe" class="p-2 bg-light border rounded small d-none"></div>
+                </div>
+
+                <div class="border rounded p-3 bg-light small">
+                  <div class="fw-bold mb-1 text-dark">📋 Live Testing Safe Checklist:</div>
+                  <ul class="ps-3 mb-0 text-secondary">
+                    <li>Switch <strong>Active Gateway Environment</strong> to <code>Live Production Mode</code>.</li>
+                    <li>Conduct a minimum transaction test (e.g. ৳10) using a real bKash/Nagad account or card.</li>
+                    <li>Verify the webhook fires and updates order status to <code>paid</code>.</li>
+                    <li>Process a test refund via staff order management.</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Action Bar -->
+    <div class="d-flex justify-content-end gap-3 my-4">
+      <a href="/admin/dashboard" class="btn btn-outline-secondary px-4">Cancel</a>
+      <button type="submit" class="btn btn-primary px-5 fw-bold shadow-sm">Save Payment Settings</button>
+    </div>
+  </form>
+@endsection

@@ -334,7 +334,7 @@ public class Application {
         //     (curl, some old browsers) fall through to the token check.
         if req.method == "POST" or req.method == "PUT" or req.method == "PATCH" or req.method == "DELETE" {
             let origin = req.header("origin", "");
-            if origin != "" and not self.is_same_origin(req, origin) {
+            if req.path != "/locale" and origin != "" and not self.is_same_origin(req, origin) {
                 let plain = response("403 Forbidden — cross-origin request rejected", 403);
                 plain.header("content-type", "text/plain");
                 return plain.to_http();
@@ -522,7 +522,32 @@ public class Application {
         if default_port != "" and host.ends_with(default_port) {
             host = host.slice(0, host.len() - default_port.len());
         }
-        return host == o;
+        if host == o {
+            return true;
+        }
+        // Local dev loopback aliases (localhost, 127.0.0.1, ::1) on the same port
+        let o_port = "";
+        let h_port = "";
+        let o_host = o;
+        let h_host = host;
+        if o.contains(":") {
+            let o_parts = o.split(":");
+            o_host = o_parts[0];
+            o_port = o_parts[1];
+        }
+        if host.contains(":") {
+            let h_parts = host.split(":");
+            h_host = h_parts[0];
+            h_port = h_parts[1];
+        }
+        if o_port == h_port {
+            let o_is_loop = o_host == "localhost" or o_host == "127.0.0.1" or o_host == "::1" or o_host == "[::1]";
+            let h_is_loop = h_host == "localhost" or h_host == "127.0.0.1" or h_host == "::1" or h_host == "[::1]";
+            if o_is_loop and h_is_loop {
+                return true;
+            }
+        }
+        return false;
     }
 
     fn resolve_middleware(self, mw_names) {
@@ -583,7 +608,7 @@ public class Application {
         if req.session_source != "cookie" {
             return true; // Bearer or anonymous: no ambient credential to abuse
         }
-        if req.path == "/logout" or req.path.starts_with("/api/") {
+        if req.path == "/logout" or req.path == "/locale" or req.path.starts_with("/api/") {
             return true;
         }
         if req.auth == null {

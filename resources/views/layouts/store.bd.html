@@ -42,7 +42,7 @@
           <input type="hidden" name="_csrf" value="{{ csrf }}">
           <input type="hidden" name="return_to" value="{{ current_path }}">
           <label for="currency-select" class="text-muted small mb-0">{{ lbl_currency }}</label>
-          <select id="currency-select" name="currency" class="form-select form-select-sm topbar-select" onchange="this.form.submit()">
+          <select id="currency-select" name="currency" class="form-select form-select-sm topbar-select">
 @foreach(cur in currency_options)
 @if(cur.selected)
             <option value="{{ cur.code }}" selected>{{ cur.code }} ({{ cur.name }})</option>
@@ -57,7 +57,7 @@
           <input type="hidden" name="_csrf" value="{{ csrf }}">
           <input type="hidden" name="return_to" value="{{ current_path }}">
           <label for="locale-select" class="text-muted small mb-0">{{ lbl_language }}</label>
-          <select id="locale-select" name="locale" class="form-select form-select-sm topbar-select" onchange="this.form.submit()">
+          <select id="locale-select" name="locale" class="form-select form-select-sm topbar-select">
 @foreach(loc in locale_options)
 @if(loc.selected)
             <option value="{{ loc.code }}" selected>{{ loc.label }}</option>
@@ -125,7 +125,7 @@
           <form class="switcher flex-fill" method="post" action="/locale">
             <input type="hidden" name="_csrf" value="{{ csrf }}">
             <input type="hidden" name="return_to" value="{{ current_path }}">
-            <select name="currency" class="form-select form-select-sm" aria-label="Currency" onchange="this.form.submit()">
+            <select name="currency" class="form-select form-select-sm" aria-label="Currency">
 @foreach(cur in currency_options)
 @if(cur.selected)
               <option value="{{ cur.code }}" selected>{{ cur.code }} ({{ cur.name }})</option>
@@ -138,7 +138,7 @@
           <form class="switcher flex-fill" method="post" action="/locale">
             <input type="hidden" name="_csrf" value="{{ csrf }}">
             <input type="hidden" name="return_to" value="{{ current_path }}">
-            <select name="locale" class="form-select form-select-sm" aria-label="Language" onchange="this.form.submit()">
+            <select name="locale" class="form-select form-select-sm" aria-label="Language">
 @foreach(loc in locale_options)
 @if(loc.selected)
               <option value="{{ loc.code }}" selected>{{ loc.label }}</option>

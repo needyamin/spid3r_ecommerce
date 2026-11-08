@@ -2,11 +2,35 @@
 @section('title', title)
 @section('meta_description', meta_description)
 @section("content")
-  <div class="auth-card text-center">
-    <div class="display-4 mb-2">💳</div>
-    <h1 class="h4">Payment status</h1>
-    <p class="text-secondary">Order <strong>{{ order.order_number }}</strong> is currently <strong class="text-dark">{{ status }}</strong>.</p>
-    <div class="alert alert-secondary small">We never trust a browser redirect as proof of payment. Your order is updated only after server-side verification or a signed gateway notification.</div>
-    <a class="btn btn-primary" href="/orders">View order history</a>
+  <div class="row justify-content-center my-4">
+    <div class="col-12 col-md-8 col-lg-6">
+      <div class="dz-card p-4 p-md-5 text-center">
+@if(is_paid)
+        <div class="display-5 mb-2 text-success">✅</div>
+        <h1 class="h4 fw-bold mb-1">Payment Successful</h1>
+        <p class="text-secondary mb-4">Payment of <strong class="text-primary">{{ total_display }}</strong> for Order <strong class="text-dark">#{{ order.order_number }}</strong> has been verified.</p>
+        <div class="d-grid gap-2">
+          <a class="btn btn-primary py-2 fw-semibold" href="/checkout/confirmation/{{ order.order_number }}">View Order Confirmation</a>
+          <a class="btn btn-light border py-2 text-secondary" href="/orders">View Order History</a>
+        </div>
+@elif(is_pending_cod)
+        <div class="display-5 mb-2">💵</div>
+        <h1 class="h4 fw-bold mb-1">Order Confirmed (Cash on Delivery)</h1>
+        <p class="text-secondary mb-4">Order <strong class="text-dark">#{{ order.order_number }}</strong> is placed. Please have <strong class="text-primary">{{ total_display }}</strong> in cash ready upon parcel delivery.</p>
+        <div class="d-grid gap-2">
+          <a class="btn btn-primary py-2 fw-semibold" href="/checkout/confirmation/{{ order.order_number }}">View Order Confirmation</a>
+          <a class="btn btn-light border py-2 text-secondary" href="/catalog">Continue Shopping</a>
+        </div>
+@else
+        <div class="display-5 mb-2 text-warning">⏳</div>
+        <h1 class="h4 fw-bold mb-1">Payment Pending</h1>
+        <p class="text-secondary mb-4">Order <strong class="text-dark">#{{ order.order_number }}</strong> is awaiting payment completion.</p>
+        <div class="d-grid gap-2">
+          <a class="btn btn-primary py-2 fw-semibold" href="/payment/{{ order.order_number }}">Complete Payment Now</a>
+          <a class="btn btn-light border py-2 text-secondary" href="/checkout/confirmation/{{ order.order_number }}">Back to Order Confirmation</a>
+        </div>
+@endif
+      </div>
+    </div>
   </div>
 @endsection

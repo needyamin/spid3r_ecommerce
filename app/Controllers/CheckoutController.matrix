@@ -15,6 +15,14 @@ import "app/Support/StoreChrome" as StoreChrome;
 import "app/Validators/CheckoutValidators" as CheckoutValidators;
 import "app/Services/CurrencyService";
 
+fn is_sandbox_mode() -> bool {
+    let row = DB.table("settings").where("setting_key", "=", "payments.mode").first();
+    if row == null {
+        return true;
+    }
+    return string(row["value"]).trim().lower() != "live";
+}
+
 public class CheckoutController {
     public let checkout;
     public let payments;
@@ -88,6 +96,109 @@ public class CheckoutController {
         if req.auth != null and req.auth.check() {
             ctx["csrf"] = req.auth.csrf();
         }
+
+        // Active payment methods & mode
+        let cod_limit_row = DB.table("settings").where("setting_key", "=", "payments.cod_max_limit_minor").first();
+        let cod_limit_minor = 5000000;
+        if cod_limit_row != null and string(cod_limit_row["value"]).trim() != "" {
+            cod_limit_minor = int(cod_limit_row["value"]);
+        }
+        let quote_total = int(quote["total_minor"]);
+        let cod_exceeded = cod_limit_minor > 0 and quote_total > cod_limit_minor;
+
+        let mode_row = DB.table("settings").where("setting_key", "=", "payments.mode").first();
+        let gateway_mode = "sandbox";
+        if mode_row != null and string(mode_row["value"]).trim() != "" {
+            gateway_mode = string(mode_row["value"]).trim().lower();
+        }
+
+        let methods = [];
+        let cod_on = self.payments.is_provider_enabled("cod");
+        if cod_on {
+            methods.push({
+                "id": "cod",
+                "name": "Cash on Delivery (COD)",
+                "icon": "💵",
+                "description": "Pay in cash when your parcel arrives",
+                "disabled": cod_exceeded,
+                "disabled_reason": "Order exceeds COD limit of " + Money.format(cod_limit_minor, "BDT"),
+                "selected": not cod_exceeded
+            });
+        }
+
+        if self.payments.is_provider_enabled("bkash") {
+            methods.push({
+                "id": "bkash",
+                "name": "bKash Direct / MFS",
+                "icon": "📱",
+                "description": "Fast & secure payment from your bKash personal wallet",
+                "disabled": false,
+                "disabled_reason": "",
+                "selected": not cod_on or cod_exceeded
+            });
+        }
+
+        if self.payments.is_provider_enabled("nagad") {
+            methods.push({
+                "id": "nagad",
+                "name": "Nagad Instant Payment",
+                "icon": "📱",
+                "description": "Pay directly using your Nagad account",
+                "disabled": false,
+                "disabled_reason": "",
+                "selected": false
+            });
+        }
+
+        if self.payments.is_provider_enabled("sslcommerz") {
+            methods.push({
+                "id": "sslcommerz",
+                "name": "Cards & MFS (SSLCommerz)",
+                "icon": "💳",
+                "description": "Visa, MasterCard, Amex, Internet Banking & all BD wallets",
+                "disabled": false,
+                "disabled_reason": "",
+                "selected": false
+            });
+        }
+
+        if self.payments.is_provider_enabled("stripe") {
+            methods.push({
+                "id": "stripe",
+                "name": "Credit / Debit Card (Stripe)",
+                "icon": "💳",
+                "description": "International credit/debit card, Apple Pay & Google Pay",
+                "disabled": false,
+                "disabled_reason": "",
+                "selected": false
+            });
+        }
+
+        let has_sel = false;
+        let mi = 0;
+        while mi < methods.len() {
+            if methods[mi]["selected"] and not methods[mi]["disabled"] {
+                has_sel = true;
+                break;
+            }
+            mi += 1;
+        }
+        if not has_sel and methods.len() > 0 {
+            let mj = 0;
+            while mj < methods.len() {
+                if not methods[mj]["disabled"] {
+                    methods[mj]["selected"] = true;
+                    break;
+                }
+                mj += 1;
+            }
+        }
+
+        ctx["payment_methods"] = methods;
+        ctx["has_payment_methods"] = methods.len() > 0;
+        ctx["gateway_mode"] = gateway_mode;
+        ctx["is_sandbox"] = gateway_mode == "sandbox";
+
         let res = view("checkout/index", ctx);
         res.cookie("cart", ident["key"], "/", 2592000);
         return res;
@@ -105,19 +216,35 @@ public class CheckoutController {
         let ident = CartIdentity.cart_identity(req);
         let order = self.checkout.place_order(ident, req.data);
         let number = string(order["order_number"]);
-        // Optional payment method pre-selection on checkout form (only for browser form flows;
-        // JSON API tests expect awaiting_payment untouched unless /payment/initiate is called).
         let pay_method = string(req.input("payment_method", "")).trim().lower();
         if req.input("format", "") == "json" {
             let res = json({"data": {"order_number": number, "status": order["status"], "total_minor": order["total_minor"]}}, 201);
             res.cookie("cart", ident["key"], "/", 2592000);
             return res;
         }
+
         if pay_method == "cod" {
+            DB.table("orders").where("id", "=", order["id"]).update({"status": "pending"});
             try {
                 self.payments.initiate(number, "cod", ident["user_id"]);
             } catch (e) {}
+            let res = redirect("/checkout/confirmation/" + number);
+            res.cookie("cart", ident["key"], "/", 2592000);
+            return res;
         }
+
+        if pay_method != "" and self.payments.is_provider_enabled(pay_method) {
+            try {
+                let init_res = self.payments.initiate(number, pay_method, ident["user_id"]);
+                if init_res.has("redirect_url") and string(init_res["redirect_url"]).trim() != "" {
+                    let rurl = string(init_res["redirect_url"]).trim();
+                    let res = redirect(rurl);
+                    res.cookie("cart", ident["key"], "/", 2592000);
+                    return res;
+                }
+            } catch (e) {}
+        }
+
         let res = redirect("/checkout/confirmation/" + number);
         res.cookie("cart", ident["key"], "/", 2592000);
         return res;
@@ -129,7 +256,7 @@ public class CheckoutController {
         if order == null {
             throw not_found("Order not found.");
         }
-        let ctx = self.base(req, "Order confirmed");
+        let ctx = self.base(req, "Order Confirmed — #" + number);
         if req.auth != null and req.auth.check() {
             ctx["csrf"] = req.auth.csrf();
             ctx["signed_in"] = true;
@@ -165,26 +292,78 @@ public class CheckoutController {
         } catch (e) {}
         let pay_rows = DB.table("payments").where("order_id", "=", order["id"]).orderBy("id", "DESC").get();
         let has_payment = pay_rows.len() > 0;
-        let payment_provider = "";
+        let payment_provider_raw = "";
+        let payment_provider = "Cash on Delivery (COD)";
         let payment_status = "";
         if has_payment {
-            payment_provider = string(pay_rows[0]["provider"]).upper();
+            payment_provider_raw = string(pay_rows[0]["provider"]).trim().lower();
+            if payment_provider_raw == "cod" {
+                payment_provider = "Cash on Delivery";
+            } elif payment_provider_raw == "bkash" {
+                payment_provider = "bKash Direct";
+            } elif payment_provider_raw == "nagad" {
+                payment_provider = "Nagad Instant";
+            } elif payment_provider_raw == "sslcommerz" {
+                payment_provider = "SSLCommerz";
+            } elif payment_provider_raw == "stripe" {
+                payment_provider = "Card / Stripe";
+            } else {
+                payment_provider = payment_provider_raw.upper();
+            }
             payment_status = string(pay_rows[0]["status"]);
         }
+        let st = string(order["status"]);
+        let is_paid = st == "paid";
+        let is_pending_cod = (st == "pending" or payment_provider_raw == "cod") and not is_paid;
+        let is_awaiting = st == "awaiting_payment" and not is_pending_cod and not is_paid;
+        let is_sb = is_sandbox_mode();
+
+        let status_label = "Pending";
+        let status_badge_class = "badge bg-secondary";
+        if is_paid {
+            status_label = "Paid";
+            status_badge_class = "badge bg-success";
+        } elif is_pending_cod {
+            status_label = "Pending (Cash on Delivery)";
+            status_badge_class = "badge bg-info text-dark";
+        } elif is_awaiting {
+            status_label = "Awaiting Payment";
+            status_badge_class = "badge bg-warning text-dark";
+        } elif st == "shipped" {
+            status_label = "Shipped";
+            status_badge_class = "badge bg-primary";
+        } elif st == "delivered" {
+            status_label = "Delivered";
+            status_badge_class = "badge bg-success";
+        } elif st == "cancelled" {
+            status_label = "Cancelled";
+            status_badge_class = "badge bg-danger";
+        } else {
+            status_label = st.replace("_", " ");
+            status_badge_class = "badge bg-secondary";
+        }
+
         ctx["order"] = order;
+        ctx["status"] = st;
+        ctx["status_label"] = status_label;
+        ctx["status_badge_class"] = status_badge_class;
         ctx["items"] = items;
         ctx["has_items"] = items.len() > 0;
         ctx["address"] = addr;
         ctx["has_payment"] = has_payment;
         ctx["payment_provider"] = payment_provider;
+        ctx["payment_provider_raw"] = payment_provider_raw;
         ctx["payment_status"] = payment_status;
-        ctx["providers"] = self.payments.providers();
         ctx["subtotal_display"] = Money.format(int(order["subtotal_minor"]), order_cur);
         ctx["discount_display"] = Money.format(int(order["discount_minor"]), order_cur);
         ctx["has_discount"] = int(order["discount_minor"]) > 0;
         ctx["shipping_display"] = Money.format(int(order["shipping_minor"]), order_cur);
         ctx["tax_display"] = Money.format(int(order["tax_minor"]), order_cur);
         ctx["total_display"] = Money.format(int(order["total_minor"]), order_cur);
+        ctx["is_awaiting_payment"] = is_awaiting;
+        ctx["is_pending_cod"] = is_pending_cod;
+        ctx["is_paid"] = is_paid;
+        ctx["is_sandbox"] = is_sb;
         return view("checkout/confirmation", ctx);
     }
 

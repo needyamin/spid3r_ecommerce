@@ -55,6 +55,10 @@ public fn register_admin_routes() {
     Route.get("/admin/api/settings", req => ctl.api_settings(req)).middleware("permission:settings.manage");
     Route.put("/admin/api/settings", req => ctl.api_setting_update(req)).middleware("permission:settings.manage");
     Route.post("/admin/api/settings", req => ctl.api_setting_update(req)).middleware("permission:settings.manage");
+    Route.post("/admin/api/payments/settings", req => ctl.api_payments_update(req)).middleware("permission:settings.manage");
+    Route.post("/admin/api/payments/webhook-test", req => ctl.api_payments_webhook_test(req)).middleware("permission:settings.manage");
+    Route.post("/admin/api/payments/test-gateway", req => ctl.api_payments_test_gateway(req)).middleware("permission:settings.manage");
+    Route.post("/admin/api/payments/create-test-order", req => ctl.api_payments_create_test_order(req)).middleware("permission:settings.manage");
     Route.get("/admin/api/audit", req => ctl.api_audit(req)).middleware("permission:reports.view");
 
     // AJAX list / detail / status endpoints for the redesigned admin SPA.

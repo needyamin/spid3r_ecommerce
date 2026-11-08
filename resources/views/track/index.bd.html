@@ -134,6 +134,25 @@
       </div>
     </div>
 
+@if(result.is_awaiting_payment)
+    <div class="alert alert-warning d-flex justify-content-between align-items-center flex-wrap gap-2 my-3 p-3 rounded-3">
+      <div>
+        <strong class="d-block">⏳ Payment Pending</strong>
+        <span class="small text-secondary">Please complete your payment so we can begin fulfillment and dispatch.</span>
+      </div>
+      <div>
+        <a href="/payment/{{ result.order_number }}" class="btn btn-primary btn-sm fw-semibold">Complete Payment →</a>
+      </div>
+    </div>
+@elif(result.is_pending_cod)
+    <div class="alert alert-info d-flex justify-content-between align-items-center flex-wrap gap-2 my-3 p-3 rounded-3">
+      <div>
+        <strong class="d-block">💵 Cash on Delivery</strong>
+        <span class="small text-secondary">Your order is being processed. Payment will be collected upon parcel delivery.</span>
+      </div>
+    </div>
+@endif
+
     <!-- Stepper Visual -->
     <div class="dz-stepper-wrap my-4 p-3 bg-light rounded-4">
       <div class="row text-center g-2">

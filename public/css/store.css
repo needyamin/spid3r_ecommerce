@@ -1127,8 +1127,14 @@ main.container { min-height: 52vh; }
   transition: border-color .15s ease, background .15s ease;
 }
 .dz-pay-option:hover {
-  border-color: var(--dz-orange);
+  border-color: #2563eb;
   background: #fff;
+}
+.dz-pay-option.dz-pay-selected,
+.dz-pay-option:has(.form-check-input:checked) {
+  border-color: #2563eb;
+  background: #eff6ff;
+  box-shadow: 0 0 0 1px #2563eb;
 }
 .dz-pay-option .form-check-input {
   margin-top: 4px;
