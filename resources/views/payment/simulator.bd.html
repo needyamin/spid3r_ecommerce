@@ -2,50 +2,581 @@
 @section('title', title)
 @section('meta_description', meta_description)
 @section("content")
-  <div class="row justify-content-center my-4">
-    <div class="col-12 col-md-7 col-lg-5">
-      <div class="dz-card p-4 p-md-5 text-center shadow-sm">
-        <div class="d-inline-flex align-items-center justify-content-center rounded-circle bg-light border p-3 mb-3 fs-3">
-          {{ provider_icon }}
-        </div>
-        <h1 class="h4 fw-bold mb-1">{{ provider_label }}</h1>
-        <p class="text-secondary small mb-4">Complete test checkout for Order <strong class="text-dark font-monospace">#{{ order.order_number }}</strong></p>
-
-        <div class="bg-light rounded-3 p-3 mb-4 text-start small">
-          <div class="d-flex justify-content-between py-1 border-bottom">
-            <span class="text-secondary">Order Reference</span>
-            <strong class="font-monospace">#{{ order.order_number }}</strong>
-          </div>
-          <div class="d-flex justify-content-between py-1 border-bottom">
-            <span class="text-secondary">Payment Method</span>
-            <strong class="text-primary">{{ provider_label }}</strong>
-          </div>
-          <div class="d-flex justify-content-between py-2 align-items-center">
-            <span class="fw-semibold">Total Payable</span>
-            <span class="fs-5 fw-bold text-success">{{ total_display }}</span>
-          </div>
-        </div>
+<div class="row justify-content-center my-4">
+  <div class="col-12 col-md-8 col-lg-6">
 
 @if(is_paid)
-        <div class="alert alert-success d-flex align-items-center justify-content-center gap-2 mb-3">
-          <span>✓ This order is already marked as <strong>PAID</strong>!</span>
+    <!-- Order Already Paid Screen -->
+    <div class="card shadow-sm border-0 rounded-4 overflow-hidden text-center p-4 p-md-5">
+      <div class="d-inline-flex align-items-center justify-content-center rounded-circle bg-success bg-opacity-10 text-success p-3 mx-auto mb-3" style="width: 72px; height: 72px;">
+        <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+      </div>
+      <h2 class="h3 fw-bold text-dark mb-2">Order Already Paid</h2>
+      <p class="text-secondary mb-4">Payment for Order <span class="font-monospace fw-bold text-dark">#{{ order.order_number }}</span> has already been confirmed and settled. No further payment is required.</p>
+
+      <div class="bg-light rounded-3 p-3 mb-4 text-start small">
+        <div class="d-flex justify-content-between py-1 border-bottom">
+          <span class="text-secondary">Order Reference</span>
+          <span class="font-monospace fw-semibold">#{{ order.order_number }}</span>
         </div>
-        <a class="btn btn-primary w-100 py-2 fw-semibold" href="/checkout/confirmation/{{ order.order_number }}">View Order Confirmation</a>
-@else
-        <div class="d-grid gap-2 mb-4">
-          <form method="post" action="/payment/{{ order.order_number }}/simulate-success">
-            <input type="hidden" name="_csrf" value="{{ csrf }}">
-            <button type="submit" class="btn btn-primary btn-lg w-100 fw-semibold py-3 shadow-sm">
-              Pay {{ total_display }} with {{ provider_label }}
+        <div class="d-flex justify-content-between py-1 border-bottom">
+          <span class="text-secondary">Payment Status</span>
+          <span class="badge text-bg-success text-uppercase">Paid</span>
+        </div>
+        <div class="d-flex justify-content-between py-2 align-items-center">
+          <span class="fw-semibold">Total Paid</span>
+          <span class="fs-5 fw-bold text-success">{{ total_display }}</span>
+        </div>
+      </div>
+
+      <div class="d-grid gap-2">
+        <a class="btn btn-primary btn-lg fw-semibold py-3" href="/checkout/confirmation/{{ order.order_number }}">
+          View Confirmation Receipt
+        </a>
+        <a class="btn btn-outline-secondary py-2" href="/orders">
+          View My Orders
+        </a>
+      </div>
+    </div>
+
+@elif(is_bkash)
+    <!-- Authentic bKash Sandbox Checkout -->
+    <div class="card shadow-sm border-0 rounded-4 overflow-hidden" style="border-top: 5px solid #e2136e !important;">
+      <!-- bKash Banner Header -->
+      <div class="p-3 text-white d-flex align-items-center justify-content-between" style="background: linear-gradient(135deg, #e2136e 0%, #b80f58 100%);">
+        <div class="d-flex align-items-center gap-2">
+          <div class="bg-white rounded-3 p-1 d-flex align-items-center justify-content-center" style="width: 38px; height: 38px;">
+            <span style="color: #e2136e; font-size: 20px; font-weight: 900;">b</span>
+          </div>
+          <div>
+            <h5 class="mb-0 fw-bold" style="letter-spacing: -0.02em;">bKash Payment</h5>
+            <small class="opacity-75" style="font-size: 11px;">Merchant: {{ store_name }}</small>
+          </div>
+        </div>
+        <div class="text-end">
+          <span class="badge bg-white text-danger px-2 py-1 small fw-bold">SANDBOX</span>
+          <div class="fs-5 fw-bold mt-1">{{ total_display }}</div>
+        </div>
+      </div>
+
+      <div class="card-body p-4">
+        <!-- Order info pill -->
+        <div class="bg-light rounded-3 p-2 px-3 mb-3 d-flex justify-content-between align-items-center small">
+          <span class="text-secondary">Invoice: <strong class="text-dark font-monospace">#{{ order.order_number }}</strong></span>
+          <span class="text-secondary">Amount: <strong class="text-danger">{{ total_display }}</strong></span>
+        </div>
+
+        <form method="post" action="/payment/{{ order.order_number }}/simulate-success" id="bkash-form">
+          <input type="hidden" name="_csrf" value="{{ csrf }}">
+          <input type="hidden" name="provider" value="bkash">
+
+          <!-- Step 1: Account Number -->
+          <div class="mb-3">
+            <div class="d-flex justify-content-between align-items-center mb-1">
+              <label class="form-label fw-semibold small mb-0" for="bkash-account">Your bKash Account Number</label>
+              <button type="button" class="btn btn-link p-0 text-decoration-none small text-danger" style="font-size: 11px;" onclick="document.getElementById('bkash-account').value='01770618575'">Fill Demo: 01770618575</button>
+            </div>
+            <div class="input-group">
+              <span class="input-group-text bg-white text-secondary" style="border-color: #f1b3cb;"><span style="color: #e2136e;">🇧🇩</span> +88</span>
+              <input type="text" class="form-control" id="bkash-account" name="account_number" placeholder="017XXXXXXXX" value="01770618575" required style="border-color: #f1b3cb;">
+            </div>
+            <div class="form-text small" style="font-size: 11px;">Test Account hint: <code class="text-danger">01770618575</code></div>
+          </div>
+
+          <!-- Step 2: SMS Verification OTP -->
+          <div class="mb-3">
+            <div class="d-flex justify-content-between align-items-center mb-1">
+              <label class="form-label fw-semibold small mb-0" for="bkash-otp">bKash Verification Code (OTP)</label>
+              <button type="button" class="btn btn-link p-0 text-decoration-none small text-danger" style="font-size: 11px;" onclick="document.getElementById('bkash-otp').value='123456'">Fill Demo: 123456</button>
+            </div>
+            <input type="text" class="form-control font-monospace" id="bkash-otp" name="otp" placeholder="6-digit OTP" value="123456" maxlength="6" required style="border-color: #f1b3cb; letter-spacing: 0.2em;">
+            <div class="form-text small" style="font-size: 11px;">Test OTP hint: <code class="text-danger">123456</code> (Sent via simulated SMS)</div>
+          </div>
+
+          <!-- Step 3: bKash PIN -->
+          <div class="mb-4">
+            <div class="d-flex justify-content-between align-items-center mb-1">
+              <label class="form-label fw-semibold small mb-0" for="bkash-pin">Enter 5-digit bKash PIN</label>
+              <button type="button" class="btn btn-link p-0 text-decoration-none small text-danger" style="font-size: 11px;" onclick="document.getElementById('bkash-pin').value='12121'">Fill Demo: 12121</button>
+            </div>
+            <input type="password" class="form-control font-monospace" id="bkash-pin" name="pin" placeholder="5-digit PIN" value="12121" maxlength="5" required style="border-color: #f1b3cb; letter-spacing: 0.3em;">
+            <div class="form-text small" style="font-size: 11px;">Test PIN hint: <code class="text-danger">12121</code></div>
+          </div>
+
+          <div class="alert alert-light border small text-muted p-2 mb-3" style="font-size: 11px;">
+            🔒 By clicking <strong>Confirm &amp; Pay</strong>, you agree to the bKash terms and authorize charge of <strong>{{ total_display }}</strong>.
+          </div>
+
+          <!-- Actions -->
+          <div class="d-grid gap-2">
+            <button type="submit" class="btn btn-lg text-white fw-bold py-2 shadow-sm" style="background-color: #e2136e; border-color: #e2136e;">
+              Confirm &amp; Pay {{ total_display }}
             </button>
-          </form>
+            <div class="row g-2 mt-1">
+              <div class="col-6">
+                <a class="btn btn-outline-secondary w-100 py-2 small" href="/payment/{{ order.order_number }}">Close / Cancel</a>
+              </div>
+              <div class="col-6">
+                <a class="btn btn-light border w-100 py-2 small text-secondary" href="/checkout/confirmation/{{ order.order_number }}">Pay Later</a>
+              </div>
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
+
+@elif(is_nagad)
+    <!-- Authentic Nagad Sandbox Checkout -->
+    <div class="card shadow-sm border-0 rounded-4 overflow-hidden" style="border-top: 5px solid #f7941d !important;">
+      <!-- Nagad Banner Header -->
+      <div class="p-3 text-white d-flex align-items-center justify-content-between" style="background: linear-gradient(135deg, #f7941d 0%, #ea580c 100%);">
+        <div class="d-flex align-items-center gap-2">
+          <div class="bg-white rounded-circle p-1 d-flex align-items-center justify-content-center" style="width: 38px; height: 38px;">
+            <span style="color: #ea580c; font-size: 18px; font-weight: 900;">ন</span>
+          </div>
+          <div>
+            <h5 class="mb-0 fw-bold" style="letter-spacing: -0.02em;">Nagad Instant Pay</h5>
+            <small class="opacity-75" style="font-size: 11px;">Merchant: {{ store_name }}</small>
+          </div>
+        </div>
+        <div class="text-end">
+          <span class="badge bg-white text-warning px-2 py-1 small fw-bold">SANDBOX</span>
+          <div class="fs-5 fw-bold mt-1">{{ total_display }}</div>
+        </div>
+      </div>
+
+      <div class="card-body p-4">
+        <!-- Order info pill -->
+        <div class="bg-light rounded-3 p-2 px-3 mb-3 d-flex justify-content-between align-items-center small">
+          <span class="text-secondary">Order: <strong class="text-dark font-monospace">#{{ order.order_number }}</strong></span>
+          <span class="text-secondary">Payable: <strong class="text-warning-emphasis">{{ total_display }}</strong></span>
+        </div>
+
+        <form method="post" action="/payment/{{ order.order_number }}/simulate-success" id="nagad-form">
+          <input type="hidden" name="_csrf" value="{{ csrf }}">
+          <input type="hidden" name="provider" value="nagad">
+
+          <!-- Step 1: Nagad Account -->
+          <div class="mb-3">
+            <div class="d-flex justify-content-between align-items-center mb-1">
+              <label class="form-label fw-semibold small mb-0" for="nagad-account">Nagad Account Number</label>
+              <button type="button" class="btn btn-link p-0 text-decoration-none small text-warning-emphasis" style="font-size: 11px;" onclick="document.getElementById('nagad-account').value='01812345678'">Fill Demo: 01812345678</button>
+            </div>
+            <div class="input-group">
+              <span class="input-group-text bg-white text-secondary" style="border-color: #fbd38d;">🇧🇩 +88</span>
+              <input type="text" class="form-control" id="nagad-account" name="account_number" placeholder="018XXXXXXXX" value="01812345678" required style="border-color: #fbd38d;">
+            </div>
+            <div class="form-text small" style="font-size: 11px;">Test Account hint: <code class="text-warning-emphasis">01812345678</code></div>
+          </div>
+
+          <!-- Step 2: Verification Code -->
+          <div class="mb-3">
+            <div class="d-flex justify-content-between align-items-center mb-1">
+              <label class="form-label fw-semibold small mb-0" for="nagad-otp">Verification OTP Code</label>
+              <button type="button" class="btn btn-link p-0 text-decoration-none small text-warning-emphasis" style="font-size: 11px;" onclick="document.getElementById('nagad-otp').value='123456'">Fill Demo: 123456</button>
+            </div>
+            <input type="text" class="form-control font-monospace" id="nagad-otp" name="otp" placeholder="6-digit OTP" value="123456" maxlength="6" required style="border-color: #fbd38d; letter-spacing: 0.2em;">
+            <div class="form-text small" style="font-size: 11px;">Test OTP hint: <code class="text-warning-emphasis">123456</code></div>
+          </div>
+
+          <!-- Step 3: Nagad PIN -->
+          <div class="mb-4">
+            <div class="d-flex justify-content-between align-items-center mb-1">
+              <label class="form-label fw-semibold small mb-0" for="nagad-pin">Enter 4-digit Nagad PIN</label>
+              <button type="button" class="btn btn-link p-0 text-decoration-none small text-warning-emphasis" style="font-size: 11px;" onclick="document.getElementById('nagad-pin').value='1234'">Fill Demo: 1234</button>
+            </div>
+            <input type="password" class="form-control font-monospace" id="nagad-pin" name="pin" placeholder="4-digit PIN" value="1234" maxlength="4" required style="border-color: #fbd38d; letter-spacing: 0.3em;">
+            <div class="form-text small" style="font-size: 11px;">Test PIN hint: <code class="text-warning-emphasis">1234</code></div>
+          </div>
+
+          <div class="alert alert-light border small text-muted p-2 mb-3" style="font-size: 11px;">
+            🔒 Nagad Sandbox Gateway &middot; Simulated test mode. No actual debit occurs.
+          </div>
+
+          <!-- Actions -->
+          <div class="d-grid gap-2">
+            <button type="submit" class="btn btn-lg text-white fw-bold py-2 shadow-sm" style="background: linear-gradient(135deg, #f7941d 0%, #ea580c 100%); border-color: #ea580c;">
+              Proceed &amp; Pay {{ total_display }}
+            </button>
+            <div class="row g-2 mt-1">
+              <div class="col-6">
+                <a class="btn btn-outline-secondary w-100 py-2 small" href="/payment/{{ order.order_number }}">Close / Cancel</a>
+              </div>
+              <div class="col-6">
+                <a class="btn btn-light border w-100 py-2 small text-secondary" href="/checkout/confirmation/{{ order.order_number }}">Pay Later</a>
+              </div>
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
+
+@elif(is_sslcommerz)
+    <!-- Authentic SSLCommerz Sandbox Checkout -->
+    <div class="card shadow-sm border-0 rounded-4 overflow-hidden" style="border-top: 5px solid #1b3f8b !important;">
+      <!-- SSLCommerz Banner Header -->
+      <div class="p-3 text-white d-flex align-items-center justify-content-between" style="background: linear-gradient(135deg, #1b3f8b 0%, #0d6efd 100%);">
+        <div class="d-flex align-items-center gap-2">
+          <div class="bg-white rounded-3 p-1 px-2 d-flex align-items-center justify-content-center fw-bold" style="color: #1b3f8b; font-size: 13px; letter-spacing: 0.05em;">
+            SSLCOMMERZ
+          </div>
+          <div>
+            <h6 class="mb-0 fw-bold">Payment Gateway</h6>
+            <small class="opacity-75" style="font-size: 11px;">PCI-DSS Certified Sandbox</small>
+          </div>
+        </div>
+        <div class="text-end">
+          <span class="badge bg-white text-primary px-2 py-1 small fw-bold">TEST MODE</span>
+          <div class="fs-5 fw-bold mt-1">{{ total_display }}</div>
+        </div>
+      </div>
+
+      <div class="card-body p-4">
+        <!-- Order info pill -->
+        <div class="bg-light rounded-3 p-2 px-3 mb-3 d-flex justify-content-between align-items-center small">
+          <span class="text-secondary">Order Reference: <strong class="text-dark font-monospace">#{{ order.order_number }}</strong></span>
+          <span class="text-secondary">Payable: <strong class="text-primary">{{ total_display }}</strong></span>
+        </div>
+
+        <form method="post" action="/payment/{{ order.order_number }}/simulate-success" id="ssl-form">
+          <input type="hidden" name="_csrf" value="{{ csrf }}">
+          <input type="hidden" name="provider" value="sslcommerz">
+          <input type="hidden" name="ssl_tab" id="ssl-active-tab" value="cards">
+
+          <!-- SSLCommerz Payment Method Tabs -->
+          <ul class="nav nav-pills nav-fill mb-3 bg-light p-1 rounded-3" id="ssl-tabs" role="tablist">
+            <li class="nav-item" role="presentation">
+              <button class="nav-link active small py-2 fw-semibold" id="ssl-tab-cards" type="button" onclick="switchSslTab('cards')">
+                💳 Cards
+              </button>
+            </li>
+            <li class="nav-item" role="presentation">
+              <button class="nav-link small py-2 fw-semibold text-secondary" id="ssl-tab-mfs" type="button" onclick="switchSslTab('mfs')">
+                📱 Mobile Banking
+              </button>
+            </li>
+            <li class="nav-item" role="presentation">
+              <button class="nav-link small py-2 fw-semibold text-secondary" id="ssl-tab-netbank" type="button" onclick="switchSslTab('netbank')">
+                🏦 Net Banking
+              </button>
+            </li>
+          </ul>
+
+          <!-- Tab 1: Cards Panel -->
+          <div id="ssl-panel-cards">
+            <!-- Test Card Pre-fill Chips -->
+            <div class="mb-3">
+              <label class="form-label small text-secondary fw-semibold mb-1">Click to Pre-fill Test Cards:</label>
+              <div class="d-flex flex-wrap gap-1">
+                <button type="button" class="btn btn-outline-primary btn-sm py-0 px-2" style="font-size: 11px;" onclick="prefillSslCard('4242 4242 4242 4242', '12/28', '123', 'Visa Test User')">Visa Test (4242...)</button>
+                <button type="button" class="btn btn-outline-primary btn-sm py-0 px-2" style="font-size: 11px;" onclick="prefillSslCard('5105 1051 0510 5100', '11/27', '456', 'Mastercard Test')">MasterCard (5105...)</button>
+                <button type="button" class="btn btn-outline-primary btn-sm py-0 px-2" style="font-size: 11px;" onclick="prefillSslCard('3782 8224 6310 005', '10/26', '789', 'Amex Test')">Amex (3782...)</button>
+              </div>
+            </div>
+
+            <div class="mb-3">
+              <label class="form-label small fw-semibold mb-1" for="ssl-card-number">Card Number</label>
+              <div class="input-group">
+                <span class="input-group-text bg-white text-secondary">💳</span>
+                <input type="text" class="form-control font-monospace" id="ssl-card-number" name="card_number" placeholder="4242 4242 4242 4242" value="4242 4242 4242 4242">
+              </div>
+            </div>
+
+            <div class="row g-2 mb-3">
+              <div class="col-6">
+                <label class="form-label small fw-semibold mb-1" for="ssl-card-expiry">Expiration (MM/YY)</label>
+                <input type="text" class="form-control font-monospace" id="ssl-card-expiry" name="expiry" placeholder="MM/YY" value="12/28">
+              </div>
+              <div class="col-6">
+                <label class="form-label small fw-semibold mb-1" for="ssl-card-cvv">CVV / CVC</label>
+                <input type="password" class="form-control font-monospace" id="ssl-card-cvv" name="cvv" placeholder="123" value="123" maxlength="4">
+              </div>
+            </div>
+
+            <div class="mb-3">
+              <label class="form-label small fw-semibold mb-1" for="ssl-card-name">Cardholder Name</label>
+              <input type="text" class="form-control" id="ssl-card-name" name="cardholder_name" placeholder="John Doe" value="Valued Customer">
+            </div>
+          </div>
+
+          <!-- Tab 2: Mobile Banking Panel (Hidden by default) -->
+          <div id="ssl-panel-mfs" style="display: none;">
+            <div class="mb-3">
+              <label class="form-label small text-secondary fw-semibold mb-2">Select Mobile Banking Service:</label>
+              <div class="d-flex gap-2 mb-3">
+                <label class="btn btn-outline-danger btn-sm px-3 py-2 fw-semibold d-flex align-items-center gap-1 active" id="ssl-mfs-btn-bkash" style="cursor: pointer;" onclick="selectSslMfs('bkash')">
+                  <input type="radio" name="ssl_mfs_provider" id="mfs-bkash" value="bkash" checked class="d-none">
+                  <span>📱 bKash</span>
+                </label>
+                <label class="btn btn-outline-warning text-dark btn-sm px-3 py-2 fw-semibold d-flex align-items-center gap-1" id="ssl-mfs-btn-nagad" style="cursor: pointer;" onclick="selectSslMfs('nagad')">
+                  <input type="radio" name="ssl_mfs_provider" id="mfs-nagad" value="nagad" class="d-none">
+                  <span>📱 Nagad</span>
+                </label>
+                <label class="btn btn-outline-primary btn-sm px-3 py-2 fw-semibold d-flex align-items-center gap-1" id="ssl-mfs-btn-rocket" style="cursor: pointer;" onclick="selectSslMfs('rocket')">
+                  <input type="radio" name="ssl_mfs_provider" id="mfs-rocket" value="rocket" class="d-none">
+                  <span>🚀 Rocket</span>
+                </label>
+              </div>
+            </div>
+            <div class="mb-3">
+              <div class="d-flex justify-content-between align-items-center mb-1">
+                <label class="form-label small fw-semibold mb-0" for="ssl-mfs-acc">Mobile Account Number</label>
+                <button type="button" class="btn btn-link p-0 text-decoration-none small text-primary" style="font-size: 11px;" onclick="document.getElementById('ssl-mfs-acc').value='01770618575'">Fill Demo: 01770618575</button>
+              </div>
+              <input type="text" class="form-control font-monospace" id="ssl-mfs-acc" name="ssl_mfs_account" placeholder="017XXXXXXXX" value="01770618575">
+              <div class="form-text small" style="font-size: 11px;">Test Wallet hint: <code>01770618575</code></div>
+            </div>
+          </div>
+
+          <!-- Tab 3: Net Banking Panel (Hidden by default) -->
+          <div id="ssl-panel-netbank" style="display: none;">
+            <div class="mb-3">
+              <label class="form-label small fw-semibold mb-1" for="ssl-bank-select">Select Bank</label>
+              <select class="form-select" id="ssl-bank-select" name="ssl_bank">
+                <option value="citytouch" selected>City Bank - City Touch</option>
+                <option value="ibbl">Islami Bank Bangladesh (iBanking)</option>
+                <option value="dbbl">DBBL Nexus Internet Banking</option>
+                <option value="brac">BRAC Bank Astha</option>
+                <option value="ebl">Eastern Bank (EBL SKYBANKING)</option>
+              </select>
+            </div>
+            <div class="mb-3">
+              <label class="form-label small fw-semibold mb-1" for="ssl-bank-user">Internet Banking User ID / Account</label>
+              <input type="text" class="form-control font-monospace" id="ssl-bank-user" name="ssl_bank_user" placeholder="Bank Username / Account" value="demo_banking_user">
+            </div>
+          </div>
+
+          <div class="alert alert-light border small text-muted p-2 mb-3" style="font-size: 11px;">
+            🔒 SSLCommerz 128-bit Encrypted SSL Sandbox &middot; Sandbox Test Gateway.
+          </div>
+
+          <!-- Actions -->
+          <div class="d-grid gap-2">
+            <button type="submit" class="btn btn-primary btn-lg fw-bold py-2 shadow-sm" style="background-color: #1b3f8b; border-color: #1b3f8b;">
+              Pay Now {{ total_display }}
+            </button>
+            <div class="row g-2 mt-1">
+              <div class="col-6">
+                <a class="btn btn-outline-secondary w-100 py-2 small" href="/payment/{{ order.order_number }}">Cancel</a>
+              </div>
+              <div class="col-6">
+                <a class="btn btn-light border w-100 py-2 small text-secondary" href="/checkout/confirmation/{{ order.order_number }}">Pay Later</a>
+              </div>
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
+
+@elif(is_stripe)
+    <!-- Authentic Stripe Elements Sandbox Checkout -->
+    <div class="card shadow-sm border-0 rounded-4 overflow-hidden" style="border-top: 5px solid #635bff !important;">
+      <!-- Stripe Header -->
+      <div class="p-3 text-white d-flex align-items-center justify-content-between" style="background: linear-gradient(135deg, #635bff 0%, #4338ca 100%);">
+        <div class="d-flex align-items-center gap-2">
+          <div class="bg-white rounded-3 p-1 px-2 d-flex align-items-center justify-content-center fw-bold" style="color: #635bff; font-size: 14px; letter-spacing: -0.02em;">
+            stripe
+          </div>
+          <div>
+            <h6 class="mb-0 fw-bold">Card Checkout</h6>
+            <small class="opacity-75" style="font-size: 11px;">Stripe Elements Sandbox</small>
+          </div>
+        </div>
+        <div class="text-end">
+          <span class="badge bg-white text-indigo px-2 py-1 small fw-bold" style="color: #635bff;">TEST MODE</span>
+          <div class="fs-5 fw-bold mt-1">{{ total_display }}</div>
+        </div>
+      </div>
+
+      <div class="card-body p-4">
+        <!-- Order info pill -->
+        <div class="bg-light rounded-3 p-2 px-3 mb-3 d-flex justify-content-between align-items-center small">
+          <span class="text-secondary">Order: <strong class="text-dark font-monospace">#{{ order.order_number }}</strong></span>
+          <span class="text-secondary">Amount: <strong class="text-dark fw-bold">{{ total_display }}</strong></span>
+        </div>
+
+        <form method="post" action="/payment/{{ order.order_number }}/simulate-success" id="stripe-form">
+          <input type="hidden" name="_csrf" value="{{ csrf }}">
+          <input type="hidden" name="provider" value="stripe">
+
+          <!-- Card Element container -->
+          <div class="border rounded-3 p-3 mb-3 bg-light bg-opacity-50">
+            <!-- Card Number -->
+            <div class="mb-3">
+              <div class="d-flex justify-content-between align-items-center mb-1">
+                <label class="form-label small fw-semibold mb-0" for="stripe-card-num">Card Number</label>
+                <button type="button" class="btn btn-link p-0 text-decoration-none small" style="font-size: 11px; color: #635bff;" onclick="document.getElementById('stripe-card-num').value='4242 4242 4242 4242'">Default 4242</button>
+              </div>
+              <div class="input-group">
+                <span class="input-group-text bg-white text-secondary">💳</span>
+                <input type="text" class="form-control font-monospace" id="stripe-card-num" name="card_number" placeholder="4242 4242 4242 4242" value="4242 4242 4242 4242" required>
+              </div>
+            </div>
+
+            <!-- Expiry & CVC & ZIP in one row -->
+            <div class="row g-2 mb-3">
+              <div class="col-4">
+                <label class="form-label small fw-semibold mb-1" for="stripe-exp">Expires</label>
+                <input type="text" class="form-control font-monospace" id="stripe-exp" name="expiry" placeholder="MM/YY" value="12/28" required>
+              </div>
+              <div class="col-4">
+                <label class="form-label small fw-semibold mb-1" for="stripe-cvc">CVC</label>
+                <input type="password" class="form-control font-monospace" id="stripe-cvc" name="cvc" placeholder="123" value="123" maxlength="4" required>
+              </div>
+              <div class="col-4">
+                <label class="form-label small fw-semibold mb-1" for="stripe-zip">ZIP / Postal</label>
+                <input type="text" class="form-control font-monospace" id="stripe-zip" name="zip" placeholder="1212" value="1212" required>
+              </div>
+            </div>
+
+            <div>
+              <label class="form-label small fw-semibold mb-1" for="stripe-name">Cardholder Name</label>
+              <input type="text" class="form-control" id="stripe-name" name="cardholder_name" placeholder="Name on card" value="Sandbox Customer">
+            </div>
+          </div>
+
+          <div class="alert alert-light border small text-muted p-2 mb-3" style="font-size: 11px;">
+            🔒 Stripe Sandbox Mode: You can use test card <code>4242 4242 4242 4242</code> with any future expiry date and any 3-digit CVC.
+          </div>
+
+          <!-- Actions -->
+          <div class="d-grid gap-2">
+            <button type="submit" class="btn btn-lg text-white fw-bold py-2 shadow-sm" style="background-color: #635bff; border-color: #635bff;">
+              Pay {{ total_display }}
+            </button>
+            <div class="row g-2 mt-1">
+              <div class="col-6">
+                <a class="btn btn-outline-secondary w-100 py-2 small" href="/payment/{{ order.order_number }}">Cancel</a>
+              </div>
+              <div class="col-6">
+                <a class="btn btn-light border w-100 py-2 small text-secondary" href="/checkout/confirmation/{{ order.order_number }}">Pay Later</a>
+              </div>
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
+
+@else
+    <!-- Generic / Other Provider Sandbox -->
+    <div class="card shadow-sm border-0 rounded-4 overflow-hidden p-4 text-center">
+      <div class="d-inline-flex align-items-center justify-content-center rounded-circle bg-light border p-3 mb-3 fs-3 mx-auto">
+        {{ provider_icon }}
+      </div>
+      <h1 class="h4 fw-bold mb-1">{{ provider_label }}</h1>
+      <p class="text-secondary small mb-4">Complete test checkout for Order <strong class="text-dark font-monospace">#{{ order.order_number }}</strong></p>
+
+      <div class="bg-light rounded-3 p-3 mb-4 text-start small">
+        <div class="d-flex justify-content-between py-1 border-bottom">
+          <span class="text-secondary">Order Reference</span>
+          <strong class="font-monospace">#{{ order.order_number }}</strong>
+        </div>
+        <div class="d-flex justify-content-between py-1 border-bottom">
+          <span class="text-secondary">Payment Method</span>
+          <strong class="text-primary">{{ provider_label }}</strong>
+        </div>
+        <div class="d-flex justify-content-between py-2 align-items-center">
+          <span class="fw-semibold">Total Payable</span>
+          <span class="fs-5 fw-bold text-success">{{ total_display }}</span>
+        </div>
+      </div>
+
+      <form method="post" action="/payment/{{ order.order_number }}/simulate-success">
+        <input type="hidden" name="_csrf" value="{{ csrf }}">
+        <input type="hidden" name="provider" value="{{ provider }}">
+        <input type="hidden" name="confirm" value="1">
+        <div class="d-grid gap-2 mb-3">
+          <button type="submit" class="btn btn-primary btn-lg w-100 fw-semibold py-3 shadow-sm">
+            Pay {{ total_display }} with {{ provider_label }}
+          </button>
           <a class="btn btn-outline-secondary py-2" href="/payment/{{ order.order_number }}">Choose Different Payment Method</a>
           <a class="btn btn-light border py-2 text-secondary" href="/checkout/confirmation/{{ order.order_number }}">Return to Order (Pay Later)</a>
         </div>
-
-        <p class="small text-muted mb-0">🔒 Sandbox Test Mode · No actual charges are made to any account.</p>
+      </form>
+    </div>
 @endif
+
+    <!-- Local Dev Sandbox Gateway Switcher Toolbar -->
+    <div class="mt-4 p-3 bg-light rounded-3 border text-center">
+      <div class="small fw-semibold text-secondary mb-2">🛠️ Local Dev Sandbox Gateway Switcher</div>
+      <div class="d-flex flex-wrap justify-content-center gap-2">
+        <a href="/payment/{{ order.order_number }}/simulator?provider=bkash" class="btn btn-sm @if(is_bkash)btn-danger@else btn-outline-secondary@endif py-1 px-3">bKash</a>
+        <a href="/payment/{{ order.order_number }}/simulator?provider=nagad" class="btn btn-sm @if(is_nagad)btn-warning@else btn-outline-secondary@endif py-1 px-3">Nagad</a>
+        <a href="/payment/{{ order.order_number }}/simulator?provider=sslcommerz" class="btn btn-sm @if(is_sslcommerz)btn-primary@else btn-outline-secondary@endif py-1 px-3">SSLCommerz</a>
+        <a href="/payment/{{ order.order_number }}/simulator?provider=stripe" class="btn btn-sm @if(is_stripe)btn-dark@else btn-outline-secondary@endif py-1 px-3">Stripe</a>
+      </div>
+      <div class="small text-muted mt-2" style="font-size: 11px;">
+        Order status: <span class="badge text-bg-secondary">{{ status }}</span> &middot; Sandbox active
       </div>
     </div>
+
   </div>
+</div>
+
+<script>
+function switchSslTab(tab) {
+  var cardsBtn = document.getElementById('ssl-tab-cards');
+  var mfsBtn = document.getElementById('ssl-tab-mfs');
+  var netbankBtn = document.getElementById('ssl-tab-netbank');
+
+  var cardsPanel = document.getElementById('ssl-panel-cards');
+  var mfsPanel = document.getElementById('ssl-panel-mfs');
+  var netbankPanel = document.getElementById('ssl-panel-netbank');
+  var activeInput = document.getElementById('ssl-active-tab');
+
+  if (!cardsBtn || !mfsBtn || !netbankBtn) return;
+
+  cardsBtn.className = 'nav-link small py-2 fw-semibold text-secondary';
+  mfsBtn.className = 'nav-link small py-2 fw-semibold text-secondary';
+  netbankBtn.className = 'nav-link small py-2 fw-semibold text-secondary';
+
+  cardsPanel.style.display = 'none';
+  mfsPanel.style.display = 'none';
+  netbankPanel.style.display = 'none';
+
+  if (activeInput) activeInput.value = tab;
+
+  if (tab === 'cards') {
+    cardsBtn.className = 'nav-link active small py-2 fw-semibold';
+    cardsPanel.style.display = 'block';
+  } else if (tab === 'mfs') {
+    mfsBtn.className = 'nav-link active small py-2 fw-semibold';
+    mfsPanel.style.display = 'block';
+  } else if (tab === 'netbank') {
+    netbankBtn.className = 'nav-link active small py-2 fw-semibold';
+    netbankPanel.style.display = 'block';
+  }
+}
+
+function selectSslMfs(provider) {
+  var providers = ['bkash', 'nagad', 'rocket'];
+  for (var i = 0; i < providers.length; i++) {
+    var p = providers[i];
+    var btn = document.getElementById('ssl-mfs-btn-' + p);
+    var radio = document.getElementById('mfs-' + p);
+    if (btn && radio) {
+      if (p === provider) {
+        radio.checked = true;
+        btn.classList.add('active');
+        if (p === 'bkash') btn.className = 'btn btn-outline-danger btn-sm px-3 py-2 fw-semibold d-flex align-items-center gap-1 active';
+        if (p === 'nagad') btn.className = 'btn btn-outline-warning text-dark btn-sm px-3 py-2 fw-semibold d-flex align-items-center gap-1 active';
+        if (p === 'rocket') btn.className = 'btn btn-outline-primary btn-sm px-3 py-2 fw-semibold d-flex align-items-center gap-1 active';
+      } else {
+        radio.checked = false;
+        btn.classList.remove('active');
+        if (p === 'bkash') btn.className = 'btn btn-outline-danger btn-sm px-3 py-2 fw-semibold d-flex align-items-center gap-1';
+        if (p === 'nagad') btn.className = 'btn btn-outline-warning text-dark btn-sm px-3 py-2 fw-semibold d-flex align-items-center gap-1';
+        if (p === 'rocket') btn.className = 'btn btn-outline-primary btn-sm px-3 py-2 fw-semibold d-flex align-items-center gap-1';
+      }
+    }
+  }
+}
+
+function prefillSslCard(num, exp, cvv, name) {
+  if (document.getElementById('ssl-card-number')) document.getElementById('ssl-card-number').value = num;
+  if (document.getElementById('ssl-card-expiry')) document.getElementById('ssl-card-expiry').value = exp;
+  if (document.getElementById('ssl-card-cvv')) document.getElementById('ssl-card-cvv').value = cvv;
+  if (document.getElementById('ssl-card-name')) document.getElementById('ssl-card-name').value = name;
+}
+</script>
 @endsection

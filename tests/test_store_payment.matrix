@@ -218,12 +218,176 @@ fn test_history_and_reconciliation(app, ids, adm) {
     println("  [PASS] test_history_and_reconciliation");
 }
 
-fn cleanup(ids, ids2, adm, tag: string) {
+fn test_simulator_and_sandbox_checkout(app, ids, ids4, ids5, ids6, adm) {
+    // 1. GET simulator for bKash
+    let bkash_page = call(app, "GET", "/payment/" + ids["number"] + "/simulator?provider=bkash", null, "");
+    assert(bkash_page["status"] == 200, "bKash simulator page renders");
+    let bkash_body = string(bkash_page["body"]);
+    assert(bkash_body.contains("bKash Payment") or bkash_body.contains("01770618575"), "bKash theme renders with hints");
+    assert(bkash_body.contains("123456"), "OTP hint present");
+    assert(bkash_body.contains("12121"), "PIN hint present");
+
+    // 2. GET simulator for Nagad
+    let nagad_page = call(app, "GET", "/payment/" + ids["number"] + "/simulator?provider=nagad", null, "");
+    assert(nagad_page["status"] == 200, "Nagad simulator page renders");
+    let nagad_body = string(nagad_page["body"]);
+    assert(nagad_body.contains("Nagad") and nagad_body.contains("01812345678"), "Nagad theme renders");
+
+    // 3. GET simulator for SSLCommerz
+    let ssl_page = call(app, "GET", "/payment/" + ids["number"] + "/simulator?provider=sslcommerz", null, "");
+    assert(ssl_page["status"] == 200, "SSLCommerz simulator page renders");
+    let ssl_body = string(ssl_page["body"]);
+    assert(ssl_body.contains("SSLCOMMERZ") and ssl_body.contains("4242"), "SSLCommerz tabs render");
+    assert(ssl_body.contains("Mobile Banking") and ssl_body.contains("Net Banking"), "SSLCommerz sub-channels present");
+
+    // 4. GET simulator for Stripe
+    let stripe_page = call(app, "GET", "/payment/" + ids["number"] + "/simulator?provider=stripe", null, "");
+    assert(stripe_page["status"] == 200, "Stripe simulator page renders");
+    let stripe_body = string(stripe_page["body"]);
+    assert(stripe_body.contains("stripe") or stripe_body.contains("TEST MODE"), "Stripe theme renders");
+
+    // 5. Rogue GET route for simulate-success must NOT succeed (404/405)
+    let rogue_get = call(app, "GET", "/payment/" + ids["number"] + "/simulate-success", null, "");
+    assert(rogue_get["status"] == 404 or rogue_get["status"] == 405, "GET simulate-success route removed");
+
+    // 6. POST simulate-success with missing test input fails validation (422)
+    let bad_post = call(app, "POST", "/payment/" + ids["number"] + "/simulate-success", map(
+        "provider", "bkash",
+        "account_number", "",
+        "otp", "",
+        "pin", ""
+    ), "");
+    assert(bad_post["status"] == 422, "Missing test input rejected by validation");
+
+    let bad_stripe = call(app, "POST", "/payment/" + ids["number"] + "/simulate-success", map(
+        "provider", "stripe",
+        "card_number", "",
+        "cvc", ""
+    ), "");
+    assert(bad_stripe["status"] == 422, "Missing stripe card input rejected by validation");
+
+    // 7. CSRF verification for authenticated sessions:
+    // Missing CSRF token on authenticated session POST returns 419
+    let no_csrf_post = call(app, "POST", "/payment/" + ids["number"] + "/simulate-success", map(
+        "provider", "bkash",
+        "account_number", "01770618575",
+        "otp", "123456",
+        "pin", "12121",
+        "format", "json"
+    ), adm["cookie"]);
+    assert(no_csrf_post["status"] == 419, "Authenticated POST missing CSRF is rejected with 419");
+
+    // Forged CSRF token on authenticated session POST returns 419
+    let bad_csrf_post = call(app, "POST", "/payment/" + ids["number"] + "/simulate-success", map(
+        "provider", "bkash",
+        "account_number", "01770618575",
+        "otp", "123456",
+        "pin", "12121",
+        "_csrf", "evil_forged_token",
+        "format", "json"
+    ), adm["cookie"]);
+    assert(bad_csrf_post["status"] == 419, "Authenticated POST with forged CSRF is rejected with 419");
+
+    // 8. POST simulate-success with valid test inputs + valid CSRF succeeds and settles payment
+    let good_post = call(app, "POST", "/payment/" + ids["number"] + "/simulate-success", map(
+        "provider", "bkash",
+        "account_number", "01770618575",
+        "otp", "123456",
+        "pin", "12121",
+        "_csrf", adm["csrf"],
+        "format", "json"
+    ), adm["cookie"]);
+    assert(good_post["status"] == 200, "POST simulate-success succeeds with CSRF");
+    let good_data = body(good_post);
+    assert(good_data["ok"] == true and good_data["status"] == "paid", "Order marked paid in response");
+    let txn_id = string(good_data["transaction_id"]);
+    assert(txn_id.starts_with("TRX-BKASH-"), "Realistic transaction ID generated: " + txn_id);
+
+    // Verify DB state
+    let updated_order = DB.table("orders").where("id", "=", ids["order"]).first();
+    assert(string(updated_order["status"]) == "paid", "Order status in DB is paid");
+    let pay_record = DB.table("payments").where("order_id", "=", ids["order"]).first();
+    assert(pay_record != null and string(pay_record["status"]) == "paid", "Payment recorded as paid");
+    assert(string(pay_record["gateway_transaction_id"]) == txn_id, "Payment gateway_transaction_id recorded");
+
+    // 9. GET simulator on already paid order does NOT redirect away: renders 200 with Paid message
+    let paid_sim = call(app, "GET", "/payment/" + ids["number"] + "/simulator?provider=bkash", null, "");
+    assert(paid_sim["status"] == 200, "Paid order simulator returns 200 without redirect");
+    let paid_sim_body = string(paid_sim["body"]);
+    assert(paid_sim_body.contains("Order Already Paid") or paid_sim_body.contains("already been confirmed"), "Clean paid status rendered with confirmation link");
+    assert(paid_sim_body.contains("/checkout/confirmation/" + ids["number"]), "Link to confirmation receipt present");
+
+    // 10. Settle Nagad on ids4
+    let nagad_post = call(app, "POST", "/payment/" + ids4["number"] + "/simulate-success", map(
+        "provider", "nagad",
+        "account_number", "01812345678",
+        "otp", "123456",
+        "pin", "1234",
+        "format", "json"
+    ), "");
+    assert(nagad_post["status"] == 200, "POST simulate-success Nagad succeeds");
+    let nagad_data = body(nagad_post);
+    let nagad_txn = string(nagad_data["transaction_id"]);
+    assert(nagad_txn.starts_with("NAGAD-TRX-"), "Nagad transaction ID starts with NAGAD-TRX-");
+
+    // 11. Settle SSLCommerz MFS channel on ids5
+    let ssl_mfs_post = call(app, "POST", "/payment/" + ids5["number"] + "/simulate-success", map(
+        "provider", "sslcommerz",
+        "ssl_tab", "mfs",
+        "ssl_mfs_provider", "rocket",
+        "ssl_mfs_account", "01770618575",
+        "format", "json"
+    ), "");
+    assert(ssl_mfs_post["status"] == 200, "POST simulate-success SSLCommerz MFS succeeds");
+    let ssl_data = body(ssl_mfs_post);
+    let ssl_txn = string(ssl_data["transaction_id"]);
+    assert(ssl_txn.starts_with("SSL-"), "SSL transaction ID starts with SSL-");
+    let ssl_pay = DB.table("payments").where("order_id", "=", ids5["order"]).first();
+    assert(string(ssl_pay["method"]).contains("ROCKET"), "SSLCommerz MFS method label recorded correctly: " + string(ssl_pay["method"]));
+
+    // 12. Settle Stripe Elements on ids6
+    let stripe_post = call(app, "POST", "/payment/" + ids6["number"] + "/simulate-success", map(
+        "provider", "stripe",
+        "card_number", "4242 4242 4242 4242",
+        "expiry", "12/28",
+        "cvc", "123",
+        "zip", "1212",
+        "format", "json"
+    ), "");
+    assert(stripe_post["status"] == 200, "POST simulate-success Stripe succeeds");
+    let stripe_data = body(stripe_post);
+    let stripe_txn = string(stripe_data["transaction_id"]);
+    assert(stripe_txn.starts_with("ch_stripe_"), "Stripe transaction ID starts with ch_stripe-");
+
+    println("  [PASS] test_simulator_and_sandbox_checkout");
+}
+
+fn test_real_sslcommerz_sandbox_initiation(app, ids) {
+    let res = call(app, "POST", "/payment/initiate", map(
+        "order_number", ids["number"],
+        "provider", "sslcommerz",
+        "format", "json"
+    ), "");
+    assert(res["status"] == 201, "SSLCommerz payment initiated with HTTP 201");
+    let res_body = body(res);
+    let redirect_url = string(res_body["data"]["redirect_url"]);
+    assert(not redirect_url.contains("/simulator"), "SSLCommerz redirect does NOT point to mock simulator");
+    assert(redirect_url.starts_with("https://sandbox.sslcommerz.com/EasyCheckOut/"), "SSLCommerz redirect points directly to real vendor sandbox checkout portal: " + redirect_url);
+
+    // Verify return handler with invalid val_id does NOT mark order paid
+    let back = call(app, "GET", "/payment/" + ids["number"] + "/return?val_id=invalid_test_val_id", null, "");
+    assert(back["status"] == 200, "return page renders");
+    let current_order = DB.table("orders").where("id", "=", ids["order"]).first();
+    assert(string(current_order["status"]) == "awaiting_payment", "Order is NOT marked paid when val_id validation fails");
+    println("  [PASS] test_real_sslcommerz_sandbox_initiation");
+}
+
+fn cleanup(orders_list, adm, tag: string) {
     try {
-        let orders = [ids["order"], ids2["order"]];
         let i = 0;
-        while i < orders.len() {
-            let oid = orders[i];
+        while i < orders_list.len() {
+            let item = orders_list[i];
+            let oid = item["order"];
             let pays = DB.table("payments").where("order_id", "=", oid).get();
             let j = 0;
             while j < pays.len() {
@@ -233,14 +397,9 @@ fn cleanup(ids, ids2, adm, tag: string) {
             }
             DB.table("order_items").where("order_id", "=", oid).delete();
             DB.table("orders").where("id", "=", oid).delete();
-            i += 1;
-        }
-        let products = [ids["product"], ids2["product"]];
-        i = 0;
-        while i < products.len() {
-            DB.table("inventory").where("product_id", "=", products[i]).delete();
-            DB.table("stock_movements").where("product_id", "=", products[i]).delete();
-            DB.table("products").where("id", "=", products[i]).delete();
+            DB.table("inventory").where("product_id", "=", item["product"]).delete();
+            DB.table("stock_movements").where("product_id", "=", item["product"]).delete();
+            DB.table("products").where("id", "=", item["product"]).delete();
             i += 1;
         }
         DB.table("categories").where("slug", "LIKE", "pay-cat-" + tag + "%").delete();
@@ -252,7 +411,7 @@ fn cleanup(ids, ids2, adm, tag: string) {
             DB.table("users").where("id", "=", user["id"]).delete();
         }
     } catch (e) {
-        println("[cleanup] best-effort: " + string(e));
+        println("cleanup warning: " + string(e));
     }
 }
 
@@ -266,6 +425,11 @@ fn main() {
     let tag = string(unix_time());
     let ids = make_order(tag, "a", null);
     let ids2 = make_order(tag, "b", null);
+    let ids3 = make_order(tag, "c", null);
+    let ids4 = make_order(tag, "d", null);
+    let ids5 = make_order(tag, "e", null);
+    let ids6 = make_order(tag, "f", null);
+    let ids7 = make_order(tag, "g", null);
     let adm = admin(app, tag);
 
     try {
@@ -274,8 +438,10 @@ fn main() {
         let pid2 = test_webhooks(app, ids2, adm);
         test_refunds(app, ids, pid, adm);
         test_history_and_reconciliation(app, ids, adm);
+        test_simulator_and_sandbox_checkout(app, ids3, ids4, ids5, ids6, adm);
+        test_real_sslcommerz_sandbox_initiation(app, ids7);
     } finally {
-        cleanup(ids, ids2, adm, tag);
+        cleanup([ids, ids2, ids3, ids4, ids5, ids6, ids7], adm, tag);
     }
     DB.close();
     println("=== All Store Payment Tests Passed! ===\n");

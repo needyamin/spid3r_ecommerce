@@ -1,0 +1,172 @@
+// tests/test_real_gateways.matrix
+// Test real vendor sandbox integrations:
+// 1. SSLCommerz Real Sandbox initiation -> live API call -> GatewayPageURL
+// 2. SSLCommerz validation API handling & return security
+// 3. Stripe Checkout Sessions API call -> Bearer auth -> error or url
+// 4. Stripe fake/unpaid session return security rejection
+// 5. bKash Tokenized API credentials & execution handling
+// 6. Verification that mock simulator interceptor is gone
+
+import "framework/Application";
+import "framework/Router";
+import "framework/Database/DB";
+import "routes/web";
+import "routes/queue";
+import "app/Middleware/StoreMiddleware";
+import "app/Services/Gateway/PaymentGateway";
+import "app/Services/PaymentService";
+
+fn main() {
+    println("\n=== Running Real Payment Gateways Test Suite ===");
+
+    let app = new Application();
+    register_store_middleware(app);
+    register_web_routes();
+
+    let pay_service = new PaymentService();
+
+    // 1. Setup a test order
+    let cat = DB.table("categories").insert({
+        "name": "Live Gateway Cat", "slug": "live-gw-cat-" + string(unix_time())
+    });
+    let product = DB.table("products").insert({
+        "category_id": cat, "name": "Live Test Product",
+        "slug": "live-test-product-" + string(unix_time()), "sku": "LIVE-GW-SKU",
+        "price_minor": 15000, "status": "published", "currency": "BDT"
+    });
+    let order_num = "SP-LIVE-" + string(unix_time());
+    let order_id = DB.table("orders").insert({
+        "order_number": order_num,
+        "user_id": null,
+        "status": "awaiting_payment",
+        "subtotal_minor": 15000,
+        "discount_minor": 0,
+        "shipping_minor": 0,
+        "tax_minor": 0,
+        "total_minor": 15000,
+        "currency": "BDT",
+        "shipping_address_json": "{\"name\":\"Real Test Customer\",\"email\":\"test@example.com\",\"phone\":\"01711111111\",\"address1\":\"Gulshan\",\"city\":\"Dhaka\",\"country\":\"Bangladesh\"}",
+        "billing_address_json": "{}",
+        "placed_at": string(unix_time())
+    });
+    DB.table("order_items").insert({
+        "order_id": order_id,
+        "product_id": product,
+        "name_snapshot": "Live Test Product",
+        "sku_snapshot": "LIVE-GW-SKU",
+        "unit_price_minor": 15000,
+        "quantity": 1,
+        "discount_minor": 0,
+        "tax_minor": 0,
+        "line_total_minor": 15000
+    });
+
+    try {
+        // --- TEST 1: SSLCommerz Real Sandbox Initiation ---
+        println("Testing SSLCommerz sandbox initiation...");
+        let res_ssl = pay_service.initiate(order_num, "sslcommerz", null);
+        let redirect_url = string(res_ssl["redirect_url"]);
+        println("  -> Received redirect_url: " + redirect_url);
+
+        // Verify it does NOT redirect to mock simulator
+        assert(not redirect_url.contains("/simulator"), "SSLCommerz redirect does NOT point to mock simulator");
+        // Verify it points to the real SSLCommerz sandbox hosted checkout portal
+        assert(redirect_url.starts_with("https://sandbox.sslcommerz.com/EasyCheckOut/"), "SSLCommerz redirect points to real sandbox GatewayPageURL: " + redirect_url);
+        println("  [PASS] SSLCommerz live sandbox initiation");
+
+        // --- TEST 2: SSLCommerz Validator API ---
+        println("Testing SSLCommerz sandbox validator API...");
+        let ssl_gw = pay_service.gateways.resolve("sslcommerz");
+        let pay_record = DB.table("payments").where("order_id", "=", order_id).first();
+        assert(pay_record != null, "Payment record created");
+
+        // Calling validator with dummy val_id should return verified: false because it is not in SSLCommerz DB
+        let val_test = ssl_gw.verify_val_id(pay_record, "dummy_invalid_val_id_12345");
+        assert(val_test["verified"] == false, "Invalid val_id rejected by SSLCommerz validator");
+        println("  [PASS] SSLCommerz validator call and rejection of invalid val_id");
+
+        // Test return handler with SSLCommerz val_id invalid: does NOT mark order as paid
+        let ret_req = app.handle_request({
+            "method": "GET",
+            "path": "/payment/" + order_num + "/return?val_id=dummy_invalid_val_id",
+            "headers": {},
+            "data": {}
+        });
+        assert(ret_req["status"] == 200, "Return page renders 200");
+        let order_after_dummy = DB.table("orders").where("id", "=", order_id).first();
+        assert(string(order_after_dummy["status"]) == "awaiting_payment", "Order remains awaiting_payment on invalid val_id");
+        println("  [PASS] Return handler security with SSLCommerz validator");
+
+        // --- TEST 3: Stripe API Initiation ---
+        println("Testing Stripe checkout session API call...");
+        let stripe_threw = false;
+        try {
+            pay_service.initiate(order_num, "stripe", null);
+        } catch (e) {
+            stripe_threw = true;
+            let err_str = string(e);
+            println("  -> Stripe correctly attempted API call, error on demo key: " + err_str);
+            assert(err_str.contains("Stripe") or err_str.contains("API Key") or err_str.contains("invalid"), "Stripe API reached and error reported");
+        }
+        assert(stripe_threw, "Stripe threw exception due to demo key rejection by Stripe API");
+        println("  [PASS] Stripe live API call attempt");
+
+        // --- TEST 4: Stripe Return Security Check (Fake Session ID Rejection) ---
+        println("Testing Stripe return handler security check (fake session rejection)...");
+        let stripe_pay_id = DB.table("payments").insert({
+            "order_id": order_id,
+            "provider": "stripe",
+            "amount_minor": 15000,
+            "currency": "BDT",
+            "status": "initiated",
+            "idempotency_key": "pay-sec-stripe-" + string(unix_time())
+        });
+        let stripe_ret = app.handle_request({
+            "method": "GET",
+            "path": "/payment/" + order_num + "/return?session_id=cs_test_fake_unpaid_12345",
+            "headers": {},
+            "data": {}
+        });
+        assert(stripe_ret["status"] == 200, "Stripe return page renders 200");
+        let order_after_stripe_fake = DB.table("orders").where("id", "=", order_id).first();
+        assert(string(order_after_stripe_fake["status"]) == "awaiting_payment", "Order is NOT marked paid when Stripe session is unverified");
+        DB.table("payments").where("id", "=", stripe_pay_id).delete();
+        println("  [PASS] Stripe return handler security check");
+
+        // --- TEST 5: bKash Tokenized Sandbox Handling & Return Security ---
+        println("Testing bKash tokenized gateway handling...");
+        let bkash_threw = false;
+        try {
+            pay_service.initiate(order_num, "bkash", null);
+        } catch (e) {
+            bkash_threw = true;
+            let err_str = string(e);
+            println("  -> bKash error reported cleanly: " + err_str);
+            assert(err_str.contains("bKash") or err_str.contains("credentials") or err_str.contains("grant"), "bKash messaging clear");
+        }
+        // Note: throws cleanly if credentials don't auth or aren't set
+        let bkash_gw = pay_service.gateways.resolve("bkash");
+        let bkash_pay_test = {
+            "id": 999999,
+            "amount_minor": 15000,
+            "gateway_transaction_id": "dummy_payment_id"
+        };
+        let bres = bkash_gw.verify_payment_id(bkash_pay_test, "dummy_payment_id");
+        assert(bres["verified"] == false, "Unverified bKash payment ID rejected");
+        println("  [PASS] bKash tokenized gateway handling & verification security");
+
+    } finally {
+        // Cleanup test data
+        DB.table("refunds").where("payment_id", "IN", DB.table("payments").where("order_id", "=", order_id).pluck("id")).delete();
+        DB.table("payments").where("order_id", "=", order_id).delete();
+        DB.table("order_items").where("order_id", "=", order_id).delete();
+        DB.table("orders").where("id", "=", order_id).delete();
+        DB.table("inventory").where("product_id", "=", product).delete();
+        DB.table("products").where("id", "=", product).delete();
+        DB.table("categories").where("id", "=", cat).delete();
+    }
+
+    DB.close();
+    println("=== All Real Gateway Tests Passed Successfully! ===\n");
+    return 0;
+}

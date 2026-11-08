@@ -34,12 +34,17 @@ public class PaymentController {
     }
 
     fn ctx(self, req, title: string, extra) {
+        let csrf = "";
+        if req.auth != null and req.auth.check() {
+            csrf = req.auth.csrf();
+        }
         let base = {
             "store_name": self.settings["name"],
             "currency": self.settings["currency"],
             "title": title,
             "meta_description": title + " — " + self.settings["name"],
-            "csrf": ""
+            "csrf": csrf,
+            "csrf_token": csrf
         };
         let chrome = StoreChrome.build(req, self.settings);
         for ck in chrome.keys() {
@@ -173,6 +178,73 @@ public class PaymentController {
             } else {
                 provider_name = provider_raw.upper();
             }
+
+            // Real gateway return validation (SSLCommerz val_id, Stripe session_id, bKash paymentID)
+            if string(order["status"]) != "paid" {
+                let val_id = string(req.input("val_id", req.query("val_id", ""))).trim();
+                if val_id != "" and provider_raw == "sslcommerz" {
+                    let gw = self.payments.gateways.resolve("sslcommerz");
+                    let vres = gw.verify_val_id(pay_rows[0], val_id);
+                    if vres["verified"] {
+                        let changed = self.payments.payments.mark_verified(
+                            pay_rows[0]["id"],
+                            string(vres["transaction_id"]),
+                            string(vres["payload"])
+                        );
+                        if changed {
+                            try {
+                                let parsed_pay = json_parse(string(vres["payload"]));
+                                if type_of(parsed_pay) == "map" and parsed_pay.has("card_type") {
+                                    DB.table("payments").where("id", "=", pay_rows[0]["id"]).update({
+                                        "method": string(parsed_pay["card_type"]).trim()
+                                    });
+                                }
+                            } catch (e) {}
+                            self.payments.order_service.set_status(order["id"], "paid");
+                            order = self.orders.find_by_number(string(req.params["order_number"]));
+                        }
+                    }
+                }
+
+                let session_id = string(req.input("session_id", req.query("session_id", ""))).trim();
+                if session_id != "" and provider_raw == "stripe" {
+                    let gw = self.payments.gateways.resolve("stripe");
+                    let check_pay = map();
+                    for k in pay_rows[0].keys() {
+                        check_pay[k] = pay_rows[0][k];
+                    }
+                    check_pay["gateway_transaction_id"] = session_id;
+                    let vres = gw.verify(check_pay);
+                    if vres["verified"] {
+                        let changed = self.payments.payments.mark_verified(
+                            pay_rows[0]["id"],
+                            string(vres["transaction_id"]),
+                            string(vres["payload"])
+                        );
+                        if changed {
+                            self.payments.order_service.set_status(order["id"], "paid");
+                            order = self.orders.find_by_number(string(req.params["order_number"]));
+                        }
+                    }
+                }
+
+                let bkash_pid = string(req.input("paymentID", req.query("paymentID", ""))).trim();
+                if bkash_pid != "" and provider_raw == "bkash" {
+                    let gw = self.payments.gateways.resolve("bkash");
+                    let vres = gw.verify_payment_id(pay_rows[0], bkash_pid);
+                    if vres["verified"] {
+                        let changed = self.payments.payments.mark_verified(
+                            pay_rows[0]["id"],
+                            string(vres["transaction_id"]),
+                            string(vres["payload"])
+                        );
+                        if changed {
+                            self.payments.order_service.set_status(order["id"], "paid");
+                            order = self.orders.find_by_number(string(req.params["order_number"]));
+                        }
+                    }
+                }
+            }
         }
         let st = string(order["status"]);
         let is_paid = st == "paid";
@@ -201,20 +273,19 @@ public class PaymentController {
         if not is_sandbox_mode() {
             return redirect("/checkout/confirmation/" + number);
         }
-        if string(order["status"]) == "paid" {
-            return redirect("/checkout/confirmation/" + number);
-        }
         let pay_cur = "BDT";
         if order.has("currency") and string(order["currency"]).trim() != "" {
             pay_cur = string(order["currency"]).trim().upper();
         }
-        let provider = string(req.query("provider", "bkash")).trim().lower();
+        let provider = string(req.query("provider", "")).trim().lower();
+        let pay_row = DB.table("payments").where("order_id", "=", order["id"]).orderBy("id", "DESC").first();
+        if provider == "" {
+            if pay_row != null and pay_row.has("provider") {
+                provider = string(pay_row["provider"]).trim().lower();
+            }
+        }
         if provider == "" {
             provider = "bkash";
-        }
-        let pay_row = DB.table("payments").where("order_id", "=", order["id"]).orderBy("id", "DESC").first();
-        if pay_row != null and pay_row.has("provider") {
-            provider = string(pay_row["provider"]).trim().lower();
         }
         let is_paid = string(order["status"]) == "paid";
         let is_sb = is_sandbox_mode();
@@ -231,7 +302,17 @@ public class PaymentController {
             p_label = provider_meta[provider]["name"];
             p_icon = provider_meta[provider]["icon"];
         }
-        return view("payment/simulator", self.ctx(req, p_label + " — Test Checkout", {
+        let csrf = "";
+        if req.auth != null and req.auth.check() {
+            csrf = req.auth.csrf();
+        }
+        let is_bkash = provider == "bkash";
+        let is_nagad = provider == "nagad";
+        let is_sslcommerz = provider == "sslcommerz";
+        let is_stripe = provider == "stripe";
+        let is_cod = provider == "cod";
+
+        return view("payment/simulator", self.ctx(req, p_label + " — Sandbox Checkout", {
             "order": order,
             "provider": provider,
             "provider_label": p_label,
@@ -240,7 +321,14 @@ public class PaymentController {
             "total_display": Money.format(int(order["total_minor"]), pay_cur),
             "is_paid": is_paid,
             "is_sandbox": is_sb,
-            "status": order["status"]
+            "status": order["status"],
+            "csrf": csrf,
+            "csrf_token": csrf,
+            "is_bkash": is_bkash,
+            "is_nagad": is_nagad,
+            "is_sslcommerz": is_sslcommerz,
+            "is_stripe": is_stripe,
+            "is_cod": is_cod
         }));
     }
 
@@ -264,36 +352,219 @@ public class PaymentController {
             }
             return redirect("/checkout/confirmation/" + number);
         }
+
+        // CSRF verification for authenticated sessions
+        if req.auth != null and req.auth.check() and req.auth.csrf() != "" {
+            let csrf_val = string(req.input("_csrf", ""));
+            if csrf_val == "" or csrf_val != req.auth.csrf() {
+                throw make_http_exception(419, "Missing or invalid CSRF token.");
+            }
+        }
+
+        let prov = string(req.input("provider", "")).trim().lower();
         let pay_row = DB.table("payments").where("order_id", "=", order["id"]).orderBy("id", "DESC").first();
-        if pay_row != null and string(pay_row["provider"]).trim().lower() == "cod" {
+        if prov == "" {
+            if pay_row != null and pay_row.has("provider") {
+                prov = string(pay_row["provider"]).trim().lower();
+            }
+        }
+        if prov == "" {
+            prov = "bkash";
+        }
+
+        if prov == "cod" {
             if req.input("format", "") == "json" {
                 return json({"ok": false, "status": "pending", "message": "COD orders are collected upon delivery."});
             }
             return redirect("/checkout/confirmation/" + number);
         }
-        let payment_id = null;
-        if pay_row == null {
-            let prov = string(req.input("provider", "bkash"));
-            let init_res = self.payments.initiate(number, prov, self.user_id(req));
-            payment_id = init_res["payment"]["id"];
+
+        let simulated_meta = map();
+        let method_label = prov.upper();
+
+        // Validate vendor test inputs
+        if prov == "bkash" {
+            let acc = string(req.input("account_number", req.input("bkash_account", req.input("phone", "")))).trim();
+            let otp = string(req.input("otp", req.input("bkash_otp", ""))).trim();
+            let pin = string(req.input("pin", req.input("bkash_pin", ""))).trim();
+            if acc == "" or otp == "" or pin == "" {
+                throw validation_failed({"account_number": "bKash Customer Account, SMS OTP, and PIN are required."});
+            }
+            simulated_meta["account"] = acc;
+            simulated_meta["otp"] = otp;
+            method_label = "bKash Wallet (" + acc + ")";
+        } elif prov == "nagad" {
+            let acc = string(req.input("account_number", req.input("nagad_account", req.input("phone", "")))).trim();
+            let otp = string(req.input("otp", req.input("nagad_otp", ""))).trim();
+            let pin = string(req.input("pin", req.input("nagad_pin", ""))).trim();
+            if acc == "" or otp == "" or pin == "" {
+                throw validation_failed({"account_number": "Nagad Account Number, OTP, and PIN are required."});
+            }
+            simulated_meta["account"] = acc;
+            simulated_meta["otp"] = otp;
+            method_label = "Nagad Wallet (" + acc + ")";
+        } elif prov == "sslcommerz" {
+            let ssl_tab = string(req.input("ssl_tab", "")).trim().lower();
+            let card_num = string(req.input("card_number", req.input("ssl_card_number", ""))).trim();
+            let mfs_acc = string(req.input("ssl_mfs_account", req.input("account_number", ""))).trim();
+            let mfs_sub = string(req.input("ssl_mfs_provider", "bkash")).trim().lower();
+            let bank = string(req.input("ssl_bank", req.input("bank", ""))).trim();
+
+            if ssl_tab == "mfs" or (ssl_tab == "" and card_num == "" and mfs_acc != "") {
+                if mfs_acc == "" {
+                    throw validation_failed({"ssl_mfs_account": "Mobile account number is required."});
+                }
+                simulated_meta["channel"] = "mfs";
+                simulated_meta["mfs_provider"] = mfs_sub;
+                simulated_meta["account"] = mfs_acc;
+                method_label = "SSLCommerz " + mfs_sub.upper() + " (" + mfs_acc + ")";
+            } elif ssl_tab == "netbank" or (ssl_tab == "" and card_num == "" and bank != "") {
+                if bank == "" {
+                    throw validation_failed({"ssl_bank": "Internet banking option is required."});
+                }
+                simulated_meta["channel"] = "netbank";
+                simulated_meta["bank"] = bank;
+                simulated_meta["user"] = string(req.input("ssl_bank_user", "demo_user"));
+                method_label = "SSLCommerz NetBanking (" + bank.upper() + ")";
+            } else {
+                if card_num == "" {
+                    throw validation_failed({"card_number": "Card number is required."});
+                }
+                let last4 = "4242";
+                let clean_card = card_num.replace(" ", "");
+                if clean_card.len() >= 4 {
+                    last4 = clean_card.slice(clean_card.len() - 4, clean_card.len());
+                }
+                simulated_meta["channel"] = "card";
+                simulated_meta["card_last4"] = last4;
+                simulated_meta["cardholder"] = string(req.input("cardholder_name", "Valued Customer"));
+                method_label = "SSLCommerz Card (*" + last4 + ")";
+            }
+        } elif prov == "stripe" {
+            let card_num = string(req.input("card_number", req.input("stripe_card_number", ""))).trim();
+            let cvc = string(req.input("cvc", req.input("stripe_cvc", ""))).trim();
+            let exp = string(req.input("expiry", req.input("stripe_expiry", ""))).trim();
+            let zip = string(req.input("zip", req.input("postal_code", "1212"))).trim();
+            if card_num == "" or cvc == "" {
+                throw validation_failed({"card_number": "Card number and CVC are required."});
+            }
+            let last4 = "4242";
+            let clean_card = card_num.replace(" ", "");
+            if clean_card.len() >= 4 {
+                last4 = clean_card.slice(clean_card.len() - 4, clean_card.len());
+            }
+            simulated_meta["channel"] = "card";
+            simulated_meta["card_last4"] = last4;
+            simulated_meta["expiry"] = exp;
+            simulated_meta["zip"] = zip;
+            simulated_meta["cardholder"] = string(req.input("cardholder_name", "Sandbox Customer"));
+            method_label = "Stripe Card (*" + last4 + ")";
         } else {
-            payment_id = pay_row["id"];
+            let token = string(req.input("token", req.input("account_number", req.input("card_number", "")))).trim();
+            if token == "" and req.input("confirm", "") == "" {
+                throw validation_failed({"payment": "Payment confirmation details are required."});
+            }
         }
-        let verify_res = self.payments.verify(payment_id);
+
+        // Generate realistic simulated transaction ID
+        let txn_id = "";
+        let rand_hex = hex_encode(random_bytes(4).unwrap()).upper();
+        if prov == "bkash" {
+            txn_id = "TRX-BKASH-" + rand_hex;
+        } elif prov == "nagad" {
+            txn_id = "NAGAD-TRX-" + rand_hex;
+        } elif prov == "sslcommerz" {
+            txn_id = "SSL-" + string(unix_time()) + "-" + rand_hex.slice(0, 4);
+        } elif prov == "stripe" {
+            let rand_stripe = hex_encode(random_bytes(10).unwrap()).lower();
+            txn_id = "ch_stripe_" + rand_stripe;
+        } else {
+            txn_id = "TRX-" + prov.upper() + "-" + rand_hex;
+        }
+
+        // Find or initiate the payment row
+        let payment_id = null;
+        if pay_row != null and string(pay_row["provider"]).trim().lower() == prov {
+            payment_id = pay_row["id"];
+        } else {
+            let p_key = "pay-" + string(order["id"]) + "-" + prov;
+            let p_row = self.payments.payments.initiate(order["id"], prov, int(order["total_minor"]), p_key);
+            payment_id = p_row["id"];
+        }
+
+        // Record transaction details into the payments record
+        simulated_meta["mode"] = "sandbox";
+        simulated_meta["simulated"] = true;
+        simulated_meta["provider"] = prov;
+        simulated_meta["transaction_id"] = txn_id;
+        simulated_meta["timestamp"] = unix_time();
+        let payload_str = json_write(simulated_meta);
+
+        let changed = self.payments.payments.mark_verified(payment_id, txn_id, payload_str);
+        if changed {
+            DB.table("payments").where("id", "=", payment_id).update({
+                "method": method_label
+            });
+            // Mark order as paid and settle customer loyalty/referrals
+            self.payments.order_service.set_status(order["id"], "paid");
+        }
+
         if req.input("format", "") == "json" {
-            return json({"ok": true, "status": "paid", "order_number": number});
+            return json({
+                "ok": true,
+                "status": "paid",
+                "order_number": number,
+                "transaction_id": txn_id,
+                "provider": prov
+            });
         }
         return redirect("/checkout/confirmation/" + number);
     }
 
-    // Gateway webhook: raw body + HMAC signature header.
+    // Gateway webhook: raw body + HMAC signature header or gateway IPN validation.
     public fn webhook(self, req) {
+        let provider = string(req.params["provider"]).trim().lower();
         let signature = "";
         if req.headers.has("x-signature") {
             signature = string(req.headers["x-signature"]);
         }
+
+        // Special handling for SSLCommerz IPN (which posts val_id without HMAC header)
+        if provider == "sslcommerz" and signature == "" {
+            let val_id = string(req.input("val_id", "")).trim();
+            let tran_id = string(req.input("tran_id", "")).trim();
+            if val_id != "" {
+                let payment = null;
+                if tran_id != "" {
+                    payment = DB.table("payments").where("idempotency_key", "=", tran_id).first();
+                    if payment == null {
+                        let ord = self.orders.find_by_number(tran_id);
+                        if ord != null {
+                            payment = DB.table("payments").where("order_id", "=", ord["id"]).first();
+                        }
+                    }
+                }
+                if payment != null {
+                    let gw = self.payments.gateways.resolve("sslcommerz");
+                    let vres = gw.verify_val_id(payment, val_id);
+                    if vres["verified"] {
+                        let changed = self.payments.payments.mark_verified(
+                            payment["id"],
+                            string(vres["transaction_id"]),
+                            string(vres["payload"])
+                        );
+                        if changed {
+                            self.payments.order_service.set_status(payment["order_id"], "paid");
+                        }
+                        return json({"data": {"verified": true, "payment_id": payment["id"]}});
+                    }
+                    throw bad_request("SSLCommerz IPN validation failed.");
+                }
+            }
+        }
+
         let result = self.payments.handle_webhook(
-            string(req.params["provider"]), string(req.body), signature
+            provider, string(req.body), signature
         );
         return json({"data": result});
     }

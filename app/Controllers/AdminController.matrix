@@ -1035,6 +1035,14 @@ public class AdminController {
         if pmap.has("payments.bkash_app_secret") and string(pmap["payments.bkash_app_secret"]).trim() != "" {
             bkash_app_secret = string(pmap["payments.bkash_app_secret"]);
         }
+        let bkash_username = "sandboxTokenizedUser02";
+        if pmap.has("payments.bkash_username") and string(pmap["payments.bkash_username"]).trim() != "" {
+            bkash_username = string(pmap["payments.bkash_username"]);
+        }
+        let bkash_password = "sandboxTokenizedUser02@12345";
+        if pmap.has("payments.bkash_password") and string(pmap["payments.bkash_password"]).trim() != "" {
+            bkash_password = string(pmap["payments.bkash_password"]);
+        }
 
         let nagad_enabled = "1";
         if pmap.has("payments.nagad_enabled") {
@@ -1087,6 +1095,14 @@ public class AdminController {
         let live_bkash_app_secret = "";
         if pmap.has("payments.live_bkash_app_secret") {
             live_bkash_app_secret = string(pmap["payments.live_bkash_app_secret"]);
+        }
+        let live_bkash_username = "";
+        if pmap.has("payments.live_bkash_username") {
+            live_bkash_username = string(pmap["payments.live_bkash_username"]);
+        }
+        let live_bkash_password = "";
+        if pmap.has("payments.live_bkash_password") {
+            live_bkash_password = string(pmap["payments.live_bkash_password"]);
         }
 
         let live_nagad_merchant_id = "";
@@ -1154,6 +1170,8 @@ public class AdminController {
             "bkash_merchant_number": bkash_merchant_number,
             "bkash_app_key": bkash_app_key,
             "bkash_app_secret": bkash_app_secret,
+            "bkash_username": bkash_username,
+            "bkash_password": bkash_password,
             "nagad_enabled": nagad_enabled == "1",
             "nagad_merchant_id": nagad_merchant_id,
             "nagad_public_key": nagad_public_key,
@@ -1166,6 +1184,8 @@ public class AdminController {
             "live_bkash_merchant_number": live_bkash_merchant_number,
             "live_bkash_app_key": live_bkash_app_key,
             "live_bkash_app_secret": live_bkash_app_secret,
+            "live_bkash_username": live_bkash_username,
+            "live_bkash_password": live_bkash_password,
             "live_nagad_merchant_id": live_nagad_merchant_id,
             "live_nagad_public_key": live_nagad_public_key,
             "live_sslcommerz_store_id": live_sslcommerz_store_id,
@@ -1199,6 +1219,8 @@ public class AdminController {
             self.admin.update_setting("payments.bkash_merchant_number", "01770618575", "payments");
             self.admin.update_setting("payments.bkash_app_key", "bkash_sandbox_app_key_demo", "payments");
             self.admin.update_setting("payments.bkash_app_secret", "bkash_sandbox_secret_demo", "payments");
+            self.admin.update_setting("payments.bkash_username", "sandboxTokenizedUser02", "payments");
+            self.admin.update_setting("payments.bkash_password", "sandboxTokenizedUser02@12345", "payments");
             self.admin.update_setting("payments.nagad_enabled", "1", "payments");
             self.admin.update_setting("payments.nagad_merchant_id", "683281234812348", "payments");
             self.admin.update_setting("payments.nagad_public_key", "nagad_sandbox_public_key_demo", "payments");
@@ -1243,6 +1265,8 @@ public class AdminController {
         self.admin.update_setting("payments.bkash_merchant_number", string(req.input("bkash_merchant_number", "")), "payments");
         self.admin.update_setting("payments.bkash_app_key", string(req.input("bkash_app_key", "")), "payments");
         self.admin.update_setting("payments.bkash_app_secret", string(req.input("bkash_app_secret", "")), "payments");
+        self.admin.update_setting("payments.bkash_username", string(req.input("bkash_username", "")), "payments");
+        self.admin.update_setting("payments.bkash_password", string(req.input("bkash_password", "")), "payments");
 
         let nagad_en = "0";
         if string(req.input("nagad_enabled", "")) == "1" or string(req.input("nagad_enabled", "")) == "on" { nagad_en = "1"; }
@@ -1266,6 +1290,8 @@ public class AdminController {
         self.admin.update_setting("payments.live_bkash_merchant_number", string(req.input("live_bkash_merchant_number", "")), "payments");
         self.admin.update_setting("payments.live_bkash_app_key", string(req.input("live_bkash_app_key", "")), "payments");
         self.admin.update_setting("payments.live_bkash_app_secret", string(req.input("live_bkash_app_secret", "")), "payments");
+        self.admin.update_setting("payments.live_bkash_username", string(req.input("live_bkash_username", "")), "payments");
+        self.admin.update_setting("payments.live_bkash_password", string(req.input("live_bkash_password", "")), "payments");
         self.admin.update_setting("payments.live_nagad_merchant_id", string(req.input("live_nagad_merchant_id", "")), "payments");
         self.admin.update_setting("payments.live_nagad_public_key", string(req.input("live_nagad_public_key", "")), "payments");
         self.admin.update_setting("payments.live_sslcommerz_store_id", string(req.input("live_sslcommerz_store_id", "")), "payments");

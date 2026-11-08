@@ -24,6 +24,9 @@ RUN curl -fsSL https://raw.githubusercontent.com/needyamin/spid3r/main/install.s
 # ---------------------------------------------------------------------------
 FROM debian:bookworm-slim AS runtime
 
+RUN apt-get update -qq && apt-get install -y -qq curl ca-certificates >/dev/null \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY --from=builder /opt/spid3r/bin/spid3r /usr/local/bin/spid3r
 
 WORKDIR /var/www/app

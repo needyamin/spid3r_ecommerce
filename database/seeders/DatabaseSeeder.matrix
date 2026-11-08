@@ -91,9 +91,13 @@ fn seed_settings() {
     // bKash Sandbox & Live
     ensure("settings", "setting_key", "payments.bkash_enabled", {"setting_key": "payments.bkash_enabled", "value": "1", "setting_group": "payments"});
     ensure("settings", "setting_key", "payments.bkash_merchant_number", {"setting_key": "payments.bkash_merchant_number", "value": "01770618575", "setting_group": "payments"});
+    ensure("settings", "setting_key", "payments.bkash_username", {"setting_key": "payments.bkash_username", "value": "sandboxTokenizedUser02", "setting_group": "payments"});
+    ensure("settings", "setting_key", "payments.bkash_password", {"setting_key": "payments.bkash_password", "value": "sandboxTokenizedUser02@12345", "setting_group": "payments"});
     ensure("settings", "setting_key", "payments.bkash_app_key", {"setting_key": "payments.bkash_app_key", "value": "bkash_sandbox_app_key_demo", "setting_group": "payments"});
     ensure("settings", "setting_key", "payments.bkash_app_secret", {"setting_key": "payments.bkash_app_secret", "value": "bkash_sandbox_secret_demo", "setting_group": "payments"});
     ensure("settings", "setting_key", "payments.live_bkash_merchant_number", {"setting_key": "payments.live_bkash_merchant_number", "value": "", "setting_group": "payments"});
+    ensure("settings", "setting_key", "payments.live_bkash_username", {"setting_key": "payments.live_bkash_username", "value": "", "setting_group": "payments"});
+    ensure("settings", "setting_key", "payments.live_bkash_password", {"setting_key": "payments.live_bkash_password", "value": "", "setting_group": "payments"});
     ensure("settings", "setting_key", "payments.live_bkash_app_key", {"setting_key": "payments.live_bkash_app_key", "value": "", "setting_group": "payments"});
     ensure("settings", "setting_key", "payments.live_bkash_app_secret", {"setting_key": "payments.live_bkash_app_secret", "value": "", "setting_group": "payments"});
 

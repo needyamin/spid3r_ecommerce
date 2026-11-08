@@ -11,9 +11,9 @@ public fn register_payment_routes() {
     Route.get("/payment/:order_number", req => ctl.show(req)).name("payment.page");
     Route.post("/payment/initiate", req => ctl.initiate(req)).name("payment.initiate");
     Route.get("/payment/:order_number/return", req => ctl.return_page(req));
+    Route.post("/payment/:order_number/return", req => ctl.return_page(req));
     Route.get("/payment/:order_number/simulator", req => ctl.simulator(req)).name("payment.simulator");
-    Route.get("/payment/:order_number/simulate-success", req => ctl.simulate_success(req)).name("payment.simulate_success");
-    Route.post("/payment/:order_number/simulate-success", req => ctl.simulate_success(req));
+    Route.post("/payment/:order_number/simulate-success", req => ctl.simulate_success(req)).name("payment.simulate_success");
 
     Route.post("/webhooks/payments/:provider", req => ctl.webhook(req));
 
