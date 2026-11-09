@@ -1268,6 +1268,10 @@ public class AdminController {
         }
 
         let mode = string(req.input("mode", "sandbox")).trim().lower();
+        let switch_mode = string(req.input("switch_mode", "")).trim().lower();
+        if switch_mode == "sandbox" or switch_mode == "live" {
+            mode = switch_mode;
+        }
         if mode != "live" { mode = "sandbox"; }
         self.admin.update_setting("payments.mode", mode, "payments");
 

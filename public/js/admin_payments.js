@@ -257,6 +257,34 @@
     var paymentsForm = document.getElementById("paymentsForm");
     if (!paymentsForm) return;
 
+    // Restore active tab from hash or sessionStorage
+    var savedTab = window.location.hash || sessionStorage.getItem("spid3r_payments_tab");
+    if (savedTab) {
+      var tabBtn = document.querySelector('button[data-bs-target="' + savedTab + '"]');
+      if (tabBtn) {
+        if (window.bootstrap && window.bootstrap.Tab) {
+          var tab = new window.bootstrap.Tab(tabBtn);
+          tab.show();
+        } else {
+          tabBtn.click();
+        }
+      }
+    }
+
+    // Persist active tab when switching
+    var tabPills = document.querySelectorAll('#paymentTabs button[data-bs-toggle="pill"]');
+    tabPills.forEach(function (pill) {
+      pill.addEventListener('shown.bs.tab', function () {
+        var target = pill.getAttribute('data-bs-target');
+        if (target) {
+          sessionStorage.setItem("spid3r_payments_tab", target);
+          if (history.replaceState) {
+            history.replaceState(null, null, target);
+          }
+        }
+      });
+    });
+
     // Attach event listeners via delegated clicks
     document.addEventListener("click", function (evt) {
       var target = evt.target.closest("[data-action]");
