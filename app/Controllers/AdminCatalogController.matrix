@@ -145,7 +145,19 @@ public class AdminCatalogController {
     }
 
     public fn category_delete(self, req) {
-        self.categories.delete(self.id_of(req));
+        let id = self.id_of(req);
+        let reassign_to = req.input("reassign_to", null);
+        if reassign_to != null and string(reassign_to).trim() != "" {
+            let target_id = int(reassign_to);
+            if target_id != id {
+                let target = DB.table("categories").where("id", "=", target_id).first();
+                if target != null {
+                    DB.table("products").where("category_id", "=", id).update({"category_id": target_id});
+                    DB.table("categories").where("parent_id", "=", id).update({"parent_id": target_id});
+                }
+            }
+        }
+        self.categories.delete(id);
         return json({"data": {"deleted": true}});
     }
 

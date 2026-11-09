@@ -16,9 +16,12 @@ public fn register_shipping_routes() {
     Route.get("/admin/api/shipping/zones", req => ctl.api_zones(req)).middleware("permission:settings.manage");
     Route.post("/admin/api/shipping/zones", req => ctl.api_zone_save(req)).middleware("permission:settings.manage");
     Route.post("/admin/api/shipping/zones/:id/deactivate", req => ctl.api_zone_delete(req)).middleware("permission:settings.manage");
+    Route.post("/admin/api/shipping/zones/:id/toggle", req => ctl.api_zone_toggle(req)).middleware("permission:settings.manage");
     Route.get("/admin/api/shipping/rates", req => ctl.api_rates(req)).middleware("permission:settings.manage");
     Route.post("/admin/api/shipping/rates", req => ctl.api_rate_save(req)).middleware("permission:settings.manage");
     Route.post("/admin/api/shipping/rates/:id/deactivate", req => ctl.api_rate_delete(req)).middleware("permission:settings.manage");
+    Route.post("/admin/api/shipping/rates/:id/toggle", req => ctl.api_rate_toggle(req)).middleware("permission:settings.manage");
+    Route.post("/admin/api/shipping/flat-rates", req => ctl.api_flat_rates(req)).middleware("permission:settings.manage");
 
     // ---- administration: fulfilment ----
     Route.get("/admin/api/orders/:order_id/shipments", req => ctl.api_shipments(req)).middleware("permission:orders.manage");

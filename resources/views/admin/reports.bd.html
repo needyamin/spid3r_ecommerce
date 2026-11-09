@@ -2,24 +2,371 @@
 @section('title', title)
 @section('meta_description', meta_description)
 @section("content")
-  <h1 class="page-title">Sales &amp; revenue reports</h1>
-  <div class="row g-3 my-2">
-    <div class="col-12 col-md-4">
-      <div class="stat-card"><span>Revenue (settled)</span><strong>{{ revenue_display }}</strong></div>
+<div class="dz-admin-page dz-admin-module" data-module="reports">
+  <!-- Header -->
+  <div class="dz-admin-page-head mb-4">
+    <div class="d-flex align-items-center gap-3">
+      <div class="dz-head-icon-box">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>
+      </div>
+      <div>
+        <span class="dz-eyebrow">Analytics &amp; Financial Auditing</span>
+        <div class="d-flex align-items-center gap-2 mt-1">
+          <h1 class="page-title mb-0">Sales &amp; Revenue Reports</h1>
+          <span class="badge text-bg-light border ms-1">{{ settled_count }} Settled Orders</span>
+        </div>
+        <p class="page-description mb-0 mt-1">Audited financial metrics, gross settlement breakdown, fulfillment pipeline distribution, top selling products, and exportable ledger data.</p>
+      </div>
     </div>
-    <div class="col-6 col-md-4">
-      <div class="stat-card"><span>All orders</span><strong>{{ order_count }}</strong></div>
-    </div>
-    <div class="col-6 col-md-4">
-      <div class="stat-card"><span>Settled rows</span><strong>{{ settled_rows }}</strong></div>
+    <div class="dz-admin-page-head-actions">
+      <a class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center gap-1" href="/admin/orders">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"></path><line x1="3" y1="6" x2="21" y2="6"></line><path d="M16 10a4 4 0 0 1-8 0"></path></svg>
+        <span>Manage Orders</span>
+      </a>
+      <a class="btn btn-light border btn-sm d-inline-flex align-items-center gap-1" href="/admin/reports/export?format=json" target="_blank">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg>
+        <span>JSON Export</span>
+      </a>
+      <a class="btn btn-primary btn-sm d-inline-flex align-items-center gap-1" href="/admin/reports/export?format=csv">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+        <span>Download CSV</span>
+      </a>
     </div>
   </div>
-  <div class="dz-card p-4 my-4" style="max-width: 640px;">
-    <h2 class="h6 mb-2">Export</h2>
-    <p class="small text-secondary">Settled orders only (paid, processing, packed, shipped, delivered).</p>
-    <div class="d-flex gap-2">
-      <a class="btn btn-primary" href="/admin/reports/export?format=csv">Download CSV</a>
-      <a class="btn btn-light border" href="/admin/reports/export?format=json">JSON data</a>
+
+  <!-- Key Metrics 5-Card Grid -->
+  <div class="dz-stat-grid mb-4">
+    <div class="dz-stat-card-modern is-active" title="Audited gross settled revenue">
+      <div class="dz-stat-card-header">
+        <div class="dz-stat-icon-wrap dz-stat-icon-published">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><line x1="12" y1="1" x2="12" y2="23"></line><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
+        </div>
+        <span class="dz-stat-badge-tag text-success">Gross Settled</span>
+      </div>
+      <div class="dz-stat-card-body">
+        <div class="dz-stat-num text-success">{{ revenue_display }}</div>
+        <div class="dz-stat-sub">Settled Revenue</div>
+      </div>
+    </div>
+
+    <div class="dz-stat-card-modern" title="Total orders count across all lifecycles">
+      <div class="dz-stat-card-header">
+        <div class="dz-stat-icon-wrap dz-stat-icon-all">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"></path><line x1="3" y1="6" x2="21" y2="6"></line><path d="M16 10a4 4 0 0 1-8 0"></path></svg>
+        </div>
+        <span class="dz-stat-badge-tag text-primary">{{ settled_count }} Settled</span>
+      </div>
+      <div class="dz-stat-card-body">
+        <div class="dz-stat-num">{{ order_count }}</div>
+        <div class="dz-stat-sub">All-Time Orders</div>
+      </div>
+    </div>
+
+    <div class="dz-stat-card-modern" title="Average order revenue per settled sale">
+      <div class="dz-stat-card-header">
+        <div class="dz-stat-icon-wrap dz-stat-icon-units">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="21" r="1"></circle><circle cx="20" cy="21" r="1"></circle><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"></path></svg>
+        </div>
+        <span class="dz-stat-badge-tag">AOV</span>
+      </div>
+      <div class="dz-stat-card-body">
+        <div class="dz-stat-num">{{ aov_display }}</div>
+        <div class="dz-stat-sub">Avg Order Value</div>
+      </div>
+    </div>
+
+    <div class="dz-stat-card-modern" title="Percentage of orders successfully settled">
+      <div class="dz-stat-card-header">
+        <div class="dz-stat-icon-wrap dz-stat-icon-reserved">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 14 14"></polyline></svg>
+        </div>
+        <span class="dz-stat-badge-tag text-info">{{ settled_rate }}% Settled</span>
+      </div>
+      <div class="dz-stat-card-body">
+        <div class="dz-stat-num">{{ settled_rate }}%</div>
+        <div class="dz-stat-sub">Settlement Rate</div>
+      </div>
+    </div>
+
+    <div class="dz-stat-card-modern" title="Orders currently in processing or in transit">
+      <div class="dz-stat-card-header">
+        <div class="dz-stat-icon-wrap dz-stat-icon-low">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="3" width="15" height="13"></rect><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"></polygon><circle cx="5.5" cy="18.5" r="2.5"></circle><circle cx="18.5" cy="18.5" r="2.5"></circle></svg>
+        </div>
+        <span class="dz-stat-badge-tag text-warning">Active Queue</span>
+      </div>
+      <div class="dz-stat-card-body">
+        <div class="dz-stat-num text-warning">{{ active_pipeline_count }}</div>
+        <div class="dz-stat-sub">In Pipeline &amp; Transit</div>
+      </div>
     </div>
   </div>
+
+  <!-- Order Fulfillment Pipeline Distribution -->
+  <div class="dz-pipeline-card mb-4">
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+      <div>
+        <h2 class="h6 fw-bold mb-0">Order Fulfillment Pipeline</h2>
+        <span class="small text-secondary">Distribution of orders across payment, packaging, shipping, and delivery stages.</span>
+      </div>
+      <span class="badge text-bg-light border">{{ order_count }} total orders logged</span>
+    </div>
+
+    <!-- Multi-Segment Visual Progress Bar -->
+    <div class="dz-pipeline-bar" role="progressbar" aria-label="Fulfillment pipeline breakdown">
+      <div class="dz-pipeline-seg is-delivered" style="width: {{ pct_delivered }}%;" title="Delivered: {{ pct_delivered }}%"></div>
+      <div class="dz-pipeline-seg is-shipped" style="width: {{ pct_shipped }}%;" title="Shipped: {{ pct_shipped }}%"></div>
+      <div class="dz-pipeline-seg is-processing" style="width: {{ pct_processing }}%;" title="Processing/Packed: {{ pct_processing }}%"></div>
+      <div class="dz-pipeline-seg is-pending" style="width: {{ pct_pending }}%;" title="Pending: {{ pct_pending }}%"></div>
+    </div>
+
+    <!-- Pipeline Legend -->
+    <div class="dz-pipeline-legend">
+      <div class="dz-pipeline-chip">
+        <span class="dz-pipeline-dot is-delivered"></span>
+        <span><strong>{{ pipeline_delivered }}</strong> Delivered ({{ pct_delivered }}%)</span>
+      </div>
+      <div class="dz-pipeline-chip">
+        <span class="dz-pipeline-dot is-shipped"></span>
+        <span><strong>{{ pipeline_shipped }}</strong> Shipped ({{ pct_shipped }}%)</span>
+      </div>
+      <div class="dz-pipeline-chip">
+        <span class="dz-pipeline-dot is-processing"></span>
+        <span><strong>{{ pipeline_processing }}</strong> Paid &amp; Packed ({{ pct_processing }}%)</span>
+      </div>
+      <div class="dz-pipeline-chip">
+        <span class="dz-pipeline-dot is-pending"></span>
+        <span><strong>{{ pipeline_pending }}</strong> Awaiting Payment ({{ pct_pending }}%)</span>
+      </div>
+      <div class="dz-pipeline-chip">
+        <span class="dz-pipeline-dot is-cancelled"></span>
+        <span><strong>{{ pipeline_cancelled }}</strong> Cancelled / Refunded</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main 2-Column Analytics & Ledger Grid -->
+  <div class="row g-4 mb-4">
+    <!-- Left Column: Recent Settled Orders & Top Products -->
+    <div class="col-12 col-xl-7">
+      <!-- Recent Settled Orders -->
+      <div class="dz-card p-4 mb-4">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <div>
+            <span class="dz-eyebrow">Settled Ledger</span>
+            <h2 class="h5 fw-bold mb-0">Recent Settled Orders</h2>
+          </div>
+          <span class="badge text-bg-success">Revenue Counted</span>
+        </div>
+
+@if(has_recent_settled)
+        <div class="table-responsive">
+          <table class="table dz-admin-table table-hover align-middle mb-0">
+            <thead>
+              <tr>
+                <th>Order #</th>
+                <th>Customer</th>
+                <th>Status</th>
+                <th>Items</th>
+                <th>Amount</th>
+                <th class="text-end">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+@foreach(ord in recent_settled)
+              <tr>
+                <td>
+                  <a href="/admin/orders/{{ ord.id }}" class="fw-bold font-monospace text-decoration-none">
+                    {{ ord.order_number }}
+                  </a>
+                  <div class="small text-secondary">{{ ord.date_display }}</div>
+                </td>
+                <td>
+                  <span class="fw-medium text-dark">{{ ord.customer_name }}</span>
+                </td>
+                <td>
+                  <span class="badge text-bg-success">{{ ord.status_label }}</span>
+                </td>
+                <td>
+                  <span class="badge text-bg-light border">{{ ord.items_count }} item(s)</span>
+                </td>
+                <td>
+                  <strong class="text-dark">{{ ord.total_display }}</strong>
+                </td>
+                <td class="text-end">
+                  <a href="/admin/orders/{{ ord.id }}" class="btn btn-light border btn-sm py-1 px-2" title="Inspect order details">
+                    View
+                  </a>
+                </td>
+              </tr>
+@endforeach
+            </tbody>
+          </table>
+        </div>
+@else
+        <div class="text-center py-4 text-secondary">
+          <p class="mb-0">No settled orders found yet.</p>
+        </div>
+@endif
+      </div>
+
+      <!-- Top Performing Products -->
+      <div class="dz-card p-4">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <div>
+            <span class="dz-eyebrow">Inventory Performance</span>
+            <h2 class="h5 fw-bold mb-0">Top Performing Products</h2>
+          </div>
+          <span class="badge text-bg-light border">By Quantity Sold</span>
+        </div>
+
+@if(has_top_products)
+        <div class="table-responsive">
+          <table class="table dz-admin-table table-hover align-middle mb-0">
+            <thead>
+              <tr>
+                <th>Product</th>
+                <th>SKU</th>
+                <th class="text-center">Units Sold</th>
+                <th>Total Volume</th>
+                <th class="text-end">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+@foreach(tp in top_products)
+              <tr>
+                <td>
+                  <strong class="text-dark">{{ tp.name }}</strong>
+                </td>
+                <td>
+                  <code class="text-secondary small">{{ tp.sku }}</code>
+                </td>
+                <td class="text-center">
+                  <span class="badge text-bg-primary px-2 py-1">{{ tp.quantity }} sold</span>
+                </td>
+                <td>
+                  <strong class="text-success">{{ tp.sales_display }}</strong>
+                </td>
+                <td class="text-end">
+                  <a href="/admin/products/{{ tp.product_id }}/manage" class="btn btn-light border btn-sm py-1 px-2" title="Manage product">
+                    Manage
+                  </a>
+                </td>
+              </tr>
+@endforeach
+            </tbody>
+          </table>
+        </div>
+@else
+        <div class="text-center py-4 text-secondary">
+          <p class="mb-0">No product sales logged yet.</p>
+        </div>
+@endif
+      </div>
+    </div>
+
+    <!-- Right Column: Financial Breakdown, Payment Methods & Export Card -->
+    <div class="col-12 col-xl-5">
+      <!-- Financial Breakdown Card -->
+      <div class="dz-financial-card mb-4">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <div>
+            <span class="dz-eyebrow">Audit Ledger</span>
+            <h2 class="h6 fw-bold mb-0">Financial Settlement Breakdown</h2>
+          </div>
+          <span class="badge text-bg-light border font-monospace">BDT</span>
+        </div>
+        <div class="dz-financial-list">
+          <div class="dz-financial-row">
+            <span class="dz-financial-label">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"></path></svg>
+              <span>Merchandise Subtotal</span>
+            </span>
+            <span class="dz-financial-value">{{ subtotal_display }}</span>
+          </div>
+
+          <div class="dz-financial-row">
+            <span class="dz-financial-label">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="3" width="15" height="13"></rect><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"></polygon></svg>
+              <span>Shipping Fees Collected</span>
+            </span>
+            <span class="dz-financial-value">{{ shipping_display }}</span>
+          </div>
+
+          <div class="dz-financial-row">
+            <span class="dz-financial-label">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+              <span>Estimated Tax (VAT/BPS)</span>
+            </span>
+            <span class="dz-financial-value">{{ tax_display }}</span>
+          </div>
+
+          <div class="dz-financial-row">
+            <span class="dz-financial-label">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
+              <span>Coupons &amp; Discounts</span>
+            </span>
+            <span class="dz-financial-value text-danger">-{{ discount_display }}</span>
+          </div>
+
+          <div class="dz-financial-row is-total">
+            <span class="dz-financial-label">
+              <span>Gross Settled Revenue</span>
+            </span>
+            <span class="dz-financial-value">{{ revenue_display }}</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Payment Gateways & Distribution -->
+      <div class="dz-card p-4 mb-4">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <div>
+            <span class="dz-eyebrow">Payment Channels</span>
+            <h2 class="h6 fw-bold mb-0">Payment Gateways Logged</h2>
+          </div>
+          <span class="badge text-bg-light border">Audited</span>
+        </div>
+@if(has_payment_summary)
+        <div class="dz-gateway-list">
+@foreach(pm in payment_summary)
+          <div class="dz-gateway-chip">
+            <div class="dz-gateway-name">
+              <span class="badge text-bg-primary text-uppercase">{{ pm.provider }}</span>
+              <span class="small text-secondary">{{ pm.count }} transaction(s)</span>
+            </div>
+            <span class="dz-gateway-amt">{{ pm.amount_display }}</span>
+          </div>
+@endforeach
+        </div>
+@else
+        <div class="text-center py-3 text-secondary">
+          <p class="mb-0 small">No digital gateway transactions recorded yet.</p>
+        </div>
+@endif
+      </div>
+
+      <!-- Export & Accounting Center -->
+      <div class="dz-card p-4">
+        <div class="d-flex align-items-center gap-2 mb-2">
+          <div class="dz-stat-icon-wrap dz-stat-icon-units" style="width: 28px; height: 28px;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+          </div>
+          <h2 class="h6 fw-bold mb-0">Audited Financial Export</h2>
+        </div>
+        <p class="small text-secondary mb-3">Settled orders only (paid, processing, packed, shipped, delivered). Ready for accounting, tax filing, and spreadsheet reconciliation.</p>
+        <div class="d-flex flex-column gap-2">
+          <a class="btn btn-primary d-flex align-items-center justify-content-center gap-2" href="/admin/reports/export?format=csv">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+            <span>Download CSV Spreadsheet</span>
+          </a>
+          <a class="btn btn-light border d-flex align-items-center justify-content-center gap-2" href="/admin/reports/export?format=json" target="_blank">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg>
+            <span>Inspect JSON Dataset</span>
+          </a>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
 @endsection

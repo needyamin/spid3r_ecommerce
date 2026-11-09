@@ -14,6 +14,7 @@ import "app/Services/ShippingService";
 import "app/Services/FulfillmentService";
 import "app/Services/ReturnService";
 import "app/Support/StoreChrome" as StoreChrome;
+import "app/Support/Money" as Money;
 import "app/Validators/ShippingValidators" as ShippingValidators;
 
 public class ShippingController {
@@ -30,14 +31,34 @@ public class ShippingController {
     }
 
     fn ctx(self, req, title: string, extra) {
+        let page = "shipping";
         let base = {
             "store_name": self.settings["name"],
             "currency": self.settings["currency"],
             "title": title,
             "meta_description": "Store administration — " + title,
+            "page": page,
+            "is_admin_area": true,
+            "admin_active_shipping": true,
             "current_path": string(req.path),
             "csrf": req.auth.csrf()
         };
+        base["admin_navigation"] = [
+            {"label": "Overview", "url": "/admin/dashboard", "active": page == "dashboard", "icon": "dashboard"},
+            {"label": "Orders", "url": "/admin/orders", "active": page == "orders", "icon": "orders"},
+            {"label": "Products", "url": "/admin/products", "active": page == "products", "icon": "products"},
+            {"label": "Categories", "url": "/admin/categories", "active": page == "categories", "icon": "categories"},
+            {"label": "Brands", "url": "/admin/brands", "active": page == "brands", "icon": "brands"},
+            {"label": "Inventory", "url": "/admin/inventory", "active": page == "inventory", "icon": "inventory"},
+            {"label": "Customers", "url": "/admin/customers", "active": page == "customers", "icon": "customers"},
+            {"label": "Staff", "url": "/admin/staff", "active": page == "staff", "icon": "staff"},
+            {"label": "Roles", "url": "/admin/roles", "active": page == "roles", "icon": "roles"},
+            {"label": "Coupons", "url": "/admin/coupons", "active": page == "coupons", "icon": "coupons"},
+            {"label": "Payments", "url": "/admin/payments", "active": page == "payments", "icon": "payments"},
+            {"label": "Shipping", "url": "/admin/shipping", "active": true, "icon": "shipping"},
+            {"label": "Reports", "url": "/admin/reports", "active": page == "reports", "icon": "reports"},
+            {"label": "Settings", "url": "/admin/settings", "active": page == "settings", "icon": "settings"}
+        ];
         let chrome = StoreChrome.build(req, self.settings);
         for k in chrome.keys() {
             base[k] = chrome[k];
@@ -59,17 +80,50 @@ public class ShippingController {
     // Zones with their rate tiers attached (one query each, grouped here so
     // the view never loops over the full rate table per zone).
     fn zone_rows(self) {
+        let cur = string(self.settings["currency"]);
+        if cur == "" { cur = "BDT"; }
         let zones = self.shipping.all_zones();
         let rates = self.shipping.all_rates();
         let grouped = {};
         let i = 0;
         while i < rates.len() {
-            let zkey = string(rates[i]["zone_id"]);
+            let r = rates[i];
+            let zkey = string(r["zone_id"]);
+            let fee_m = int(r["fee_minor"]);
+            let min_m = int(r["min_order_minor"]);
+            let fee_disp = "FREE";
+            if fee_m > 0 {
+                fee_disp = Money.format(fee_m, cur);
+            }
+            r["fee_display"] = fee_disp;
+            r["fee_major"] = fee_m / 100;
+            let min_disp = "All orders";
+            if min_m > 0 {
+                min_disp = Money.format(min_m, cur);
+            }
+            r["min_order_display"] = min_disp;
+            if r["max_order_minor"] != null and string(r["max_order_minor"]).trim() != "" {
+                let max_m = int(r["max_order_minor"]);
+                r["max_order_display"] = Money.format(max_m, cur);
+                if min_m == 0 {
+                    r["tier_label"] = "Up to " + r["max_order_display"];
+                } else {
+                    r["tier_label"] = min_disp + " – " + r["max_order_display"];
+                }
+            } else {
+                r["max_order_display"] = "No limit";
+                if min_m == 0 {
+                    r["tier_label"] = "All order values";
+                } else {
+                    r["tier_label"] = "Orders from " + min_disp;
+                }
+            }
+            r["is_free"] = fee_m == 0;
             let bucket = [];
             if grouped.has(zkey) {
                 bucket = grouped[zkey];
             }
-            bucket.push(rates[i]);
+            bucket.push(r);
             grouped[zkey] = bucket;
             i += 1;
         }
@@ -84,6 +138,21 @@ public class ShippingController {
             }
             zone["rates"] = tiers;
             zone["has_rates"] = tiers.len() > 0;
+            zone["rate_count"] = tiers.len();
+            let dist_str = string(zone["districts"]).trim();
+            zone["is_nationwide"] = dist_str == "";
+            let dist_list = [];
+            if dist_str != "" {
+                let parts = dist_str.split(",");
+                let pi = 0;
+                while pi < parts.len() {
+                    let p = string(parts[pi]).trim();
+                    if p != "" { dist_list.push(p); }
+                    pi += 1;
+                }
+            }
+            zone["district_list"] = dist_list;
+            zone["has_districts"] = dist_list.len() > 0;
             out.push(zone);
             i += 1;
         }
@@ -91,12 +160,53 @@ public class ShippingController {
     }
 
     public fn admin_page(self, req) {
+        let cur = string(self.settings["currency"]);
+        if cur == "" { cur = "BDT"; }
         let zones = self.zone_rows();
+        let flat_std_m = self.shipping.flat_fee("standard", 0);
+        let flat_exp_m = self.shipping.flat_fee("express", 0);
+        let free_thresh_m = 0;
+        let free_row = DB.table("settings").where("setting_key", "=", "shipping.free_threshold_minor").first();
+        if free_row != null { free_thresh_m = int(free_row["value"]); }
+        let std_lead = "2 - 4 business days";
+        let lead_row = DB.table("settings").where("setting_key", "=", "shipping.standard_lead_days").first();
+        if lead_row != null { std_lead = string(lead_row["value"]); }
+        let exp_lead = "Within 24 hours";
+        let exp_row = DB.table("settings").where("setting_key", "=", "shipping.express_lead_days").first();
+        if exp_row != null { exp_lead = string(exp_row["value"]); }
+
+        let active_zones = 0;
+        let total_rates = 0;
+        let zi = 0;
+        while zi < zones.len() {
+            if int(zones[zi]["is_active"]) == 1 { active_zones += 1; }
+            total_rates += int(zones[zi]["rate_count"]);
+            zi += 1;
+        }
+
+        let free_thresh_disp = "Disabled";
+        if free_thresh_m > 0 {
+            free_thresh_disp = Money.format(free_thresh_m, cur);
+        }
+
         let view_ctx = {
             "zones": zones,
             "has_zones": zones.len() > 0,
-            "flat_standard_minor": self.shipping.flat_fee("standard", 0),
-            "flat_express_minor": self.shipping.flat_fee("express", 0),
+            "total_zones": zones.len(),
+            "active_zones": active_zones,
+            "total_rates": total_rates,
+            "currency": cur,
+            "flat_standard_minor": flat_std_m,
+            "flat_standard_display": Money.format(flat_std_m, cur),
+            "flat_standard_major": flat_std_m / 100,
+            "flat_express_minor": flat_exp_m,
+            "flat_express_display": Money.format(flat_exp_m, cur),
+            "flat_express_major": flat_exp_m / 100,
+            "free_threshold_minor": free_thresh_m,
+            "free_threshold_display": free_thresh_disp,
+            "free_threshold_major": free_thresh_m / 100,
+            "standard_lead_days": std_lead,
+            "express_lead_days": exp_lead,
             "csrf": req.auth.csrf()
         };
         return view("admin/shipping", self.ctx(req, "Shipping & delivery", view_ctx));
@@ -108,13 +218,23 @@ public class ShippingController {
 
     public fn api_zone_save(self, req) {
         req.validate_or_fail(ShippingValidators.zone_rules());
-        let id = self.shipping.save_zone(
-            string(req.input("name", "")),
-            string(req.input("country", "")),
-            string(req.input("districts", "")),
-            int(req.input("is_active", 1))
-        );
-        return json({"data": {"id": id, "saved": true}}, 201);
+        let zid = req.input("id", null);
+        let name = string(req.input("name", "")).trim();
+        let country = string(req.input("country", "Bangladesh")).trim();
+        let districts = string(req.input("districts", "")).trim();
+        let is_active = int(req.input("is_active", 1));
+
+        if zid != null and string(zid).trim() != "" {
+            DB.table("shipping_zones").where("id", "=", zid).update({
+                "name": name,
+                "country": country,
+                "districts": districts,
+                "is_active": is_active
+            });
+            return json({"data": {"id": zid, "saved": true, "updated": true}});
+        }
+        let id = self.shipping.save_zone(name, country, districts, is_active);
+        return json({"data": {"id": id, "saved": true, "created": true}}, 201);
     }
 
     public fn api_zone_delete(self, req) {
@@ -123,6 +243,20 @@ public class ShippingController {
             throw not_found("Shipping zone not found.");
         }
         return json({"data": {"deactivated": true}});
+    }
+
+    public fn api_zone_toggle(self, req) {
+        let zid = req.params["id"];
+        let zone = self.shipping.zone(zid);
+        if zone == null {
+            throw not_found("Shipping zone not found.");
+        }
+        let new_state = 0;
+        if int(zone["is_active"]) != 1 {
+            new_state = 1;
+        }
+        DB.table("shipping_zones").where("id", "=", zid).update({"is_active": new_state});
+        return json({"data": {"id": zid, "is_active": new_state}});
     }
 
     public fn api_rates(self, req) {
@@ -155,6 +289,45 @@ public class ShippingController {
             throw not_found("Shipping rate not found.");
         }
         return json({"data": {"deactivated": true}});
+    }
+
+    public fn api_rate_toggle(self, req) {
+        let rid = req.params["id"];
+        let rate = self.shipping.rate(rid);
+        if rate == null {
+            throw not_found("Shipping rate not found.");
+        }
+        let new_state = 0;
+        if int(rate["is_active"]) != 1 {
+            new_state = 1;
+        }
+        DB.table("shipping_rates").where("id", "=", rid).update({"is_active": new_state});
+        return json({"data": {"id": rid, "is_active": new_state}});
+    }
+
+    public fn api_flat_rates(self, req) {
+        let std_minor = int(req.input("flat_standard_minor", 6000));
+        let exp_minor = int(req.input("flat_express_minor", 12000));
+        let free_minor = int(req.input("free_threshold_minor", 0));
+        let std_lead = string(req.input("standard_lead_days", "2 - 4 business days")).trim();
+        let exp_lead = string(req.input("express_lead_days", "Within 24 hours")).trim();
+
+        self.upsert_setting("shipping.flat_minor", string(std_minor), "shipping");
+        self.upsert_setting("shipping.express_minor", string(exp_minor), "shipping");
+        self.upsert_setting("shipping.free_threshold_minor", string(free_minor), "shipping");
+        if std_lead != "" { self.upsert_setting("shipping.standard_lead_days", std_lead, "shipping"); }
+        if exp_lead != "" { self.upsert_setting("shipping.express_lead_days", exp_lead, "shipping"); }
+
+        return json({"data": {"saved": true, "message": "Shipping flat rate settings updated."}});
+    }
+
+    fn upsert_setting(self, key: string, val: string, grp: string) {
+        let existing = DB.table("settings").where("setting_key", "=", key).first();
+        if existing != null {
+            DB.table("settings").where("setting_key", "=", key).update({"value": val, "setting_group": grp});
+        } else {
+            DB.table("settings").insert({"setting_key": key, "value": val, "setting_group": grp});
+        }
     }
 
     // ---- administration: fulfilment ----

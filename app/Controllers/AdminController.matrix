@@ -16,6 +16,7 @@ import "app/Support/Images" as Images;
 import "app/Repositories/OrderRepository";
 import "app/Repositories/CatalogRepository";
 import "app/Support/Money" as Money;
+import "app/Support/CatalogCache" as CatalogCache;
 
 let identity = row => row;
 
@@ -109,7 +110,7 @@ public class AdminController {
             "admin_active_products": page == "products",
             "admin_active_inventory": page == "inventory",
             "admin_active_dashboard": page == "dashboard",
-            "csrf": ""
+            "csrf": req.auth.csrf()
         };
         base["admin_navigation"] = [
             {"label": "Overview", "url": "/admin/dashboard", "active": page == "dashboard", "icon": "dashboard"},
@@ -474,15 +475,20 @@ public class AdminController {
             // intentionally not exposed until its own update routes exist.
             let rows = DB.table("inventory").whereNull("variant_id").orderBy("product_id", "ASC").get();
             let list = [];
+            let total_on_hand = 0;
+            let total_reserved = 0;
+            let count_in = 0;
+            let count_low = 0;
+            let count_out = 0;
             let i = 0;
             while i < rows.len() {
                 let product = DB.table("products").where("id", "=", rows[i]["product_id"]).first();
                 let pname = "Product #" + string(rows[i]["product_id"]);
-                if product != null {
-                    pname = string(product["name"]);
-                }
+                let psku = "";
                 let product_status = "missing";
                 if product != null {
+                    pname = string(product["name"]);
+                    psku = string(product["sku"]);
                     product_status = string(product["status"]);
                 }
                 let qty = int(rows[i]["quantity"]);
@@ -500,9 +506,24 @@ public class AdminController {
                 if primary != null {
                     thumb = Images.public_image_url(primary["path"]);
                 }
+
+                total_on_hand = total_on_hand + qty;
+                total_reserved = total_reserved + reserved;
+                let is_out = qty <= 0;
+                let is_low = qty > 0 and qty <= threshold;
+                let is_in = qty > threshold;
+                if is_out {
+                    count_out = count_out + 1;
+                } elif is_low {
+                    count_low = count_low + 1;
+                } else {
+                    count_in = count_in + 1;
+                }
+
                 list.push({
                     "product_id": rows[i]["product_id"],
                     "product_name": pname,
+                    "product_sku": psku,
                     "product_url": "/admin/products/" + string(rows[i]["product_id"]),
                     "product_status": product_status,
                     "quantity": qty,
@@ -510,6 +531,8 @@ public class AdminController {
                     "reserved": reserved,
                     "low_stock_threshold": threshold,
                     "is_low_stock": qty <= threshold,
+                    "is_out_of_stock": is_out,
+                    "is_in_stock": is_in,
                     "thumb": thumb,
                     "has_thumb": thumb != ""
                 });
@@ -517,6 +540,14 @@ public class AdminController {
             }
             extra["inventory_rows"] = list;
             extra["has_inventory_rows"] = list.len() > 0;
+            extra["inventory_stats"] = {
+                "total_products": list.len(),
+                "total_on_hand": total_on_hand,
+                "total_reserved": total_reserved,
+                "in_stock": count_in,
+                "low_stock": count_low,
+                "out_of_stock": count_out
+            };
         } elif name == "customers" {
             let rows = self.admin.customers();
             let list = [];
@@ -849,10 +880,177 @@ public class AdminController {
 
     public fn reports(self, req) {
         let stats = self.admin.dashboard();
+        let curr = self.store_currency();
+        let settled = ["paid", "processing", "packed", "shipped", "delivered"];
+
+        // 1. Settled financial metrics
+        let settled_orders = DB.table("orders").whereIn("status", settled).orderBy("id", "DESC").get();
+        let revenue_minor = 0;
+        let subtotal_minor = 0;
+        let shipping_minor = 0;
+        let tax_minor = 0;
+        let discount_minor = 0;
+        let si = 0;
+        while si < settled_orders.len() {
+            let so = settled_orders[si];
+            revenue_minor += int(so["total_minor"]);
+            subtotal_minor += int(so["subtotal_minor"]);
+            shipping_minor += int(so["shipping_minor"]);
+            tax_minor += int(so["tax_minor"]);
+            discount_minor += int(so["discount_minor"]);
+            si += 1;
+        }
+
+        let settled_count = settled_orders.len();
+        let all_count = int(stats["orders"]);
+        let aov_minor = 0;
+        if settled_count > 0 {
+            aov_minor = revenue_minor / settled_count;
+        }
+
+        let settled_rate = 0;
+        if all_count > 0 {
+            settled_rate = (settled_count * 100) / all_count;
+        }
+
+        // 2. Recent settled transactions
+        let recent_settled = [];
+        let ri = 0;
+        let r_max = 8;
+        if settled_orders.len() < r_max {
+            r_max = settled_orders.len();
+        }
+        while ri < r_max {
+            let row = settled_orders[ri];
+            let c_name = "Guest Customer";
+            if row["user_id"] != null {
+                let u = DB.table("users").where("id", "=", row["user_id"]).first();
+                if u != null {
+                    c_name = string(u["name"]);
+                }
+            } else {
+                let addr_raw = row["shipping_address_json"];
+                if addr_raw != null and string(addr_raw) != "" and string(addr_raw) != "{}" {
+                    c_name = "Guest Checkout";
+                }
+            }
+            let item_cnt = DB.table("order_items").where("order_id", "=", row["id"]).count();
+            let date_str = string(row["placed_at"]);
+            if date_str == "" or date_str == "null" {
+                date_str = string(row["created_at"]);
+            }
+            recent_settled.push({
+                "id": row["id"],
+                "order_number": row["order_number"],
+                "customer_name": c_name,
+                "status": row["status"],
+                "status_label": string(row["status"]).replace("_", " "),
+                "items_count": item_cnt,
+                "total_display": Money.format(int(row["total_minor"]), self.order_currency(row)),
+                "date_display": date_str
+            });
+            ri += 1;
+        }
+
+        // 3. Top products by sales
+        let top_products = [];
+        let item_rows = DB.table("order_items").get();
+        let grouped_items = {};
+        let ii = 0;
+        while ii < item_rows.len() {
+            let item = item_rows[ii];
+            let pid = int(item["product_id"]);
+            let key = "p_" + string(pid);
+            if not grouped_items.has(key) {
+                grouped_items[key] = {
+                    "product_id": pid,
+                    "name": string(item["name_snapshot"]),
+                    "sku": string(item["sku_snapshot"]),
+                    "quantity": 0,
+                    "sales_minor": 0
+                };
+            }
+            let cur = grouped_items[key];
+            cur["quantity"] = cur["quantity"] + int(item["quantity"]);
+            cur["sales_minor"] = cur["sales_minor"] + int(item["line_total_minor"]);
+            grouped_items[key] = cur;
+            ii += 1;
+        }
+
+        let g_keys = grouped_items.keys();
+        let gi = 0;
+        while gi < g_keys.len() {
+            let itm = grouped_items[g_keys[gi]];
+            top_products.push({
+                "product_id": itm["product_id"],
+                "name": itm["name"],
+                "sku": itm["sku"],
+                "quantity": itm["quantity"],
+                "sales_display": Money.format(int(itm["sales_minor"]), curr)
+            });
+            gi += 1;
+        }
+
+        // 4. Payment method counts
+        let payment_rows = DB.table("payments").get();
+        let payment_summary = [];
+        let p_methods = {};
+        let pi = 0;
+        while pi < payment_rows.len() {
+            let p = payment_rows[pi];
+            let prov = string(p["provider"]);
+            if prov == "" { prov = "other"; }
+            if not p_methods.has(prov) {
+                p_methods[prov] = {"provider": prov, "count": 0, "amount_minor": 0};
+            }
+            let cur_p = p_methods[prov];
+            cur_p["count"] = cur_p["count"] + 1;
+            cur_p["amount_minor"] = cur_p["amount_minor"] + int(p["amount_minor"]);
+            p_methods[prov] = cur_p;
+            pi += 1;
+        }
+        let pm_keys = p_methods.keys();
+        let pmi = 0;
+        while pmi < pm_keys.len() {
+            let pm = p_methods[pm_keys[pmi]];
+            payment_summary.push({
+                "provider": pm["provider"],
+                "provider_title": string(pm["provider"]).toUpperCase(),
+                "count": pm["count"],
+                "amount_display": Money.format(int(pm["amount_minor"]), curr)
+            });
+            pmi += 1;
+        }
+
+        let active_pipeline_count = int(stats["pipeline_processing"]) + int(stats["pipeline_shipped"]);
+
         return view("admin/reports", self.ctx(req, "Reports", "reports", {
-            "revenue_display": Money.format(int(stats["revenue_minor"]), self.store_currency()),
-            "order_count": stats["orders"],
-            "settled_rows": self.admin.report_rows().len(),
+            "revenue_display": Money.format(revenue_minor, curr),
+            "subtotal_display": Money.format(subtotal_minor, curr),
+            "shipping_display": Money.format(shipping_minor, curr),
+            "tax_display": Money.format(tax_minor, curr),
+            "discount_display": Money.format(discount_minor, curr),
+            "aov_display": Money.format(aov_minor, curr),
+            "order_count": all_count,
+            "settled_count": settled_count,
+            "settled_rows": settled_count,
+            "settled_rate": settled_rate,
+            "active_pipeline_count": active_pipeline_count,
+            "pipeline_delivered": stats["pipeline_delivered"],
+            "pipeline_shipped": stats["pipeline_shipped"],
+            "pipeline_processing": stats["pipeline_processing"],
+            "pipeline_pending": stats["pipeline_pending"],
+            "pipeline_cancelled": stats["pipeline_cancelled"],
+            "pct_delivered": stats["pct_delivered"],
+            "pct_shipped": stats["pct_shipped"],
+            "pct_processing": stats["pct_processing"],
+            "pct_pending": stats["pct_pending"],
+            "has_recent_settled": recent_settled.len() > 0,
+            "recent_settled": recent_settled,
+            "has_top_products": top_products.len() > 0,
+            "top_products": top_products,
+            "has_payment_summary": payment_summary.len() > 0,
+            "payment_summary": payment_summary,
             "csrf": req.auth.csrf()
         }));
     }
@@ -1954,9 +2152,11 @@ public class AdminController {
     public fn api_inventory_list(self, req) {
         let q = string(req.input("q", "")).trim();
         let low = string(req.input("low", "")).trim();
+        let stock_status = string(req.input("stock_status", "")).trim();
+        let sort = string(req.input("sort", "default")).trim();
         let pid_map = {};
         if q != "" {
-            let matched = DB.table("products").where("name", "LIKE", "%" + q + "%").get();
+            let matched = DB.table("products").where("name", "LIKE", "%" + q + "%").orWhere("sku", "LIKE", "%" + q + "%").get();
             let mi = 0;
             while mi < matched.len() {
                 pid_map[string(matched[mi]["id"])] = true;
@@ -1964,21 +2164,26 @@ public class AdminController {
             }
         }
         let rows = DB.table("inventory").whereNull("variant_id").orderBy("product_id", "ASC").get();
-        let data = [];
+        let all_rows = [];
+        let total_on_hand = 0;
+        let total_reserved = 0;
+        let count_in = 0;
+        let count_low = 0;
+        let count_out = 0;
         let i = 0;
         while i < rows.len() {
             let inv = rows[i];
             let pid = int(inv["product_id"]);
-            if q != "" and not pid_map.has(string(pid)) {
-                i += 1;
-                continue;
-            }
             let product = DB.table("products").where("id", "=", pid).first();
             let pname = "Product #" + string(pid);
+            let psku = "";
+            let pslug = "";
             let pstatus = "missing";
             let price_display = "";
             if product != null {
                 pname = string(product["name"]);
+                psku = string(product["sku"]);
+                pslug = string(product["slug"]);
                 pstatus = string(product["status"]);
                 price_display = Money.format(int(product["price_minor"]), self.store_currency());
             }
@@ -1989,42 +2194,103 @@ public class AdminController {
             if available < 0 {
                 available = 0;
             }
-            let is_low = qty <= threshold;
-            if low == "1" and not is_low {
+            let is_out = qty <= 0;
+            let is_low = qty > 0 and qty <= threshold;
+            let is_in = qty > threshold;
+
+            total_on_hand = total_on_hand + qty;
+            total_reserved = total_reserved + reserved;
+            if is_out {
+                count_out = count_out + 1;
+            } elif is_low {
+                count_low = count_low + 1;
+            } else {
+                count_in = count_in + 1;
+            }
+
+            if q != "" and not pid_map.has(string(pid)) {
                 i += 1;
                 continue;
             }
+            if (low == "1" or stock_status == "low") and not is_low {
+                i += 1;
+                continue;
+            }
+            if stock_status == "in" and not is_in {
+                i += 1;
+                continue;
+            }
+            if stock_status == "out" and not is_out {
+                i += 1;
+                continue;
+            }
+
             let thumb = "";
             let primary = DB.table("product_images").where("product_id", "=", pid).orderBy("sort_order", "ASC").first();
             if primary != null {
                 thumb = Images.public_image_url(primary["path"]);
             }
-            data.push({
+            all_rows.push({
                 "product_id": pid,
                 "product_name": pname,
+                "sku": psku,
+                "slug": pslug,
                 "product_status": pstatus,
                 "quantity": qty,
                 "available": available,
                 "reserved": reserved,
                 "low_stock_threshold": threshold,
-                "is_low_stock": is_low,
+                "is_low_stock": qty <= threshold,
+                "is_out_of_stock": is_out,
+                "is_in_stock": is_in,
                 "thumb": thumb,
                 "has_thumb": thumb != "",
                 "price_display": price_display
             });
             i += 1;
         }
+
+        if sort == "stock_asc" {
+            let si = 0;
+            while si < all_rows.len() {
+                let sj = si + 1;
+                while sj < all_rows.len() {
+                    if int(all_rows[sj]["quantity"]) < int(all_rows[si]["quantity"]) {
+                        let tmp = all_rows[si];
+                        all_rows[si] = all_rows[sj];
+                        all_rows[sj] = tmp;
+                    }
+                    sj += 1;
+                }
+                si += 1;
+            }
+        } elif sort == "stock_desc" {
+            let si = 0;
+            while si < all_rows.len() {
+                let sj = si + 1;
+                while sj < all_rows.len() {
+                    if int(all_rows[sj]["quantity"]) > int(all_rows[si]["quantity"]) {
+                        let tmp = all_rows[si];
+                        all_rows[si] = all_rows[sj];
+                        all_rows[sj] = tmp;
+                    }
+                    sj += 1;
+                }
+                si += 1;
+            }
+        }
+
         let per_page = 15;
         let page = int(req.input("page", 1));
         if page < 1 {
             page = 1;
         }
-        let total = data.len();
+        let total = all_rows.len();
         let start = (page - 1) * per_page;
         let sliced = [];
         let k = start;
         while k < total and k < start + per_page {
-            sliced.push(data[k]);
+            sliced.push(all_rows[k]);
             k += 1;
         }
         let last_page = 1;
@@ -2037,7 +2303,15 @@ public class AdminController {
             "page": page,
             "per_page": per_page,
             "last_page": last_page,
-            "has_more": page < last_page
+            "has_more": page < last_page,
+            "stats": {
+                "total_products": rows.len(),
+                "total_on_hand": total_on_hand,
+                "total_reserved": total_reserved,
+                "in_stock": count_in,
+                "low_stock": count_low,
+                "out_of_stock": count_out
+            }
         }});
     }
 
@@ -2241,8 +2515,38 @@ public class AdminController {
 
     public fn category_delete_form(self, req) {
         let id = int(req.params["id"]);
+        let cat = DB.table("categories").where("id", "=", id).first();
+        if cat == null {
+            throw not_found("Category not found.");
+        }
+
+        let reassign_to = req.input("reassign_to", null);
+        if reassign_to != null and string(reassign_to).trim() != "" {
+            let target_id = int(reassign_to);
+            if target_id == id {
+                throw validation_failed({"category": "Cannot reassign products to the category being deleted."});
+            }
+            let target = DB.table("categories").where("id", "=", target_id).first();
+            if target == null {
+                throw validation_failed({"category": "Target category does not exist."});
+            }
+            DB.table("products").where("category_id", "=", id).update({"category_id": target_id});
+            DB.table("categories").where("parent_id", "=", id).update({"parent_id": target_id});
+        }
+
+        let prod_count = DB.table("products").where("category_id", "=", id).count();
+        if prod_count > 0 {
+            throw validation_failed({"category": "Category has " + string(prod_count) + " product(s) assigned. Reassign them to another category before deleting."});
+        }
+
+        let child_count = DB.table("categories").where("parent_id", "=", id).count();
+        if child_count > 0 {
+            DB.table("categories").where("parent_id", "=", id).update({"parent_id": cat["parent_id"]});
+        }
+
         self.categories.delete(id);
-        self.audit(req, "category.delete", "categories", id, {});
+        CatalogCache.bump_catalog_version();
+        self.audit(req, "category.delete", "categories", id, {"name": cat["name"]});
         if req.input("format", "") != "json" {
             return redirect("/admin/categories");
         }
@@ -2251,8 +2555,13 @@ public class AdminController {
 
     public fn brand_delete_form(self, req) {
         let id = int(req.params["id"]);
+        let br = DB.table("brands").where("id", "=", id).first();
+        if br == null {
+            throw not_found("Brand not found.");
+        }
         self.brands.delete(id);
-        self.audit(req, "brand.delete", "brands", id, {});
+        CatalogCache.bump_catalog_version();
+        self.audit(req, "brand.delete", "brands", id, {"name": br["name"]});
         if req.input("format", "") != "json" {
             return redirect("/admin/brands");
         }

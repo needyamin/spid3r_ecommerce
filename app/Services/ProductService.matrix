@@ -204,27 +204,31 @@ public class ProductService {
         if product == null {
             throw not_found("Product not found.");
         }
-        // A product that already appears in an order or in a live cart
-        // must NOT be deleted (the FK would reject it). Archiving keeps
-        // the order history intact — tell the admin to archive instead.
+        // A product that already appears in a past customer order
+        // must NOT be hard-deleted to preserve order history and invoices.
         let ordered = DB.table("order_items").where("product_id", "=", id).count();
         if ordered > 0 {
             throw validation_failed({
-                "product": "This product is part of " + string(ordered) + " order line(s) and cannot be deleted — archive it instead."
-            });
-        }
-        let in_carts = DB.table("cart_items").where("product_id", "=", id).count();
-        if in_carts > 0 {
-            throw validation_failed({
-                "product": "This product is still in " + string(in_carts) + " shopping cart(s) and cannot be deleted — archive it instead."
+                "product": "This product is part of " + string(ordered) + " order line(s) and cannot be deleted. Unpublish or archive it instead."
             });
         }
         let image_rows = DB.table("product_images").where("product_id", "=", id).get();
         let removed = DB.transaction(fn() {
-            DB.table("product_images").where("product_id", "=", id).delete();
-            DB.table("product_variants").where("product_id", "=", id).delete();
-            DB.table("inventory").where("product_id", "=", id).delete();
+            // 1. Delete dependent customer activity and cart references
+            DB.table("wishlists").where("product_id", "=", id).delete();
+            DB.table("recently_viewed").where("product_id", "=", id).delete();
+            DB.table("reviews").where("product_id", "=", id).delete();
+            DB.table("cart_items").where("product_id", "=", id).delete();
+
+            // 2. Delete inventory and stock movements before variants (inventory.variant_id FK)
             DB.table("stock_movements").where("product_id", "=", id).delete();
+            DB.table("inventory").where("product_id", "=", id).delete();
+
+            // 3. Delete variants and images
+            DB.table("product_variants").where("product_id", "=", id).delete();
+            DB.table("product_images").where("product_id", "=", id).delete();
+
+            // 4. Delete the product
             let ok = DB.table("products").where("id", "=", id).delete() > 0;
             CatalogCache.bump_catalog_version();
             return ok;

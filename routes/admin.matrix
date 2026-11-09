@@ -29,7 +29,7 @@ public fn register_admin_routes() {
     Route.get("/admin/roles", req => ctl.page(req, "roles")).middleware("role:admin");
     Route.get("/admin/coupons", req => ctl.page(req, "coupons")).middleware("role:admin");
     Route.get("/admin/settings", req => ctl.page(req, "settings")).middleware("role:admin");
-    Route.get("/admin/shipping", req => ctl.page(req, "shipping")).middleware("role:admin");
+    // Route.get("/admin/shipping") is registered with dedicated ShippingController in routes/shipping.matrix
     Route.get("/admin/payments", req => ctl.page(req, "payments")).middleware("role:admin");
     Route.get("/admin/audit", req => ctl.page(req, "audit")).middleware("role:admin");
 

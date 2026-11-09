@@ -149,101 +149,149 @@
 
       <!-- ---------------- images ---------------- -->
       <div class="dz-card dz-editor-card p-3 p-lg-4 my-3 dz-gallery-card-highlight" id="product-gallery-section" data-product-id="{{ product.id }}">
-        <div class="d-flex justify-content-between align-items-center mb-1">
-          <h2 class="h6 mb-0">Gallery</h2>
+        <div class="dz-editor-card-head mb-3">
+          <div class="dz-card-title-group">
+            <div class="dz-card-icon" style="background: rgba(248, 86, 6, 0.1); color: var(--dz-orange);">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
+            </div>
+            <div>
+              <h2 class="h6 fw-bold mb-0">Product Gallery</h2>
+              <span class="small text-secondary">Manage photos, reorder, or set primary cover photo</span>
+            </div>
+          </div>
           <span class="badge text-bg-light border">Max 2 MB / image</span>
         </div>
-        <p class="small text-secondary mb-3">Images are validated by their file signature (PNG, JPEG, GIF, WEBP) and capped at 2 MB. The cover image is the first one in the gallery and the photo shown on product cards.</p>
 @if(has_gallery)
-        <div class="dz-gallery-grid mb-3">
+        <div class="dz-gallery-grid mb-3" id="p-gallery-grid">
 @foreach(img in gallery)
-          <figure class="dz-gallery-item" data-id="{{ img.id }}">
-            <img class="dz-gallery-thumb" src="{{ img.url }}" alt="{{ img.alt_text }}" loading="lazy" decoding="async">
-            <div class="dz-gallery-meta">
-              <p class="small text-secondary mb-1">
+          <figure class="dz-gallery-item@if(img.is_primary) is-cover@endif" data-id="{{ img.id }}">
+            <div class="dz-gallery-media">
+              <img class="dz-gallery-thumb" src="{{ img.url }}" alt="{{ img.alt_text }}" loading="lazy" decoding="async">
+              <div class="dz-gallery-badges">
 @if(img.is_primary)
-                <span class="badge text-bg-primary">{{ img.position_label }}</span>
+                <span class="dz-badge-cover"><svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>Cover</span>
 @else
-                <span class="badge text-bg-light">{{ img.position_label }}</span>
+                <span class="dz-badge-pos">{{ img.position_label }}</span>
 @endif
-              </p>
-              <form method="post" action="/admin/api/images/{{ img.id }}/update-form" data-ajax="admin" class="d-flex gap-1 mb-1">
+              </div>
+              <form method="post" action="/admin/api/images/{{ img.id }}/delete-form" data-ajax="admin" class="dz-gallery-quick-del-form" data-confirm="Remove this image from the gallery?">
                 <input type="hidden" name="_csrf" value="{{ csrf }}">
                 <input type="hidden" name="product_id" value="{{ product.id }}">
-                <input class="form-control form-control-sm" name="alt_text" value="{{ img.alt_text }}" placeholder="Alt text" aria-label="Alt text">
-                <button class="btn btn-light border btn-sm" type="submit">Save</button>
+                <button class="dz-gallery-quick-del" type="submit" title="Delete photo">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                </button>
               </form>
-              <div class="dz-gallery-buttons">
+            </div>
+            <figcaption class="dz-gallery-caption">
+              <form method="post" action="/admin/api/images/{{ img.id }}/update-form" data-ajax="admin" class="dz-gallery-alt-form mb-1">
+                <input type="hidden" name="_csrf" value="{{ csrf }}">
+                <input type="hidden" name="product_id" value="{{ product.id }}">
+                <div class="input-group input-group-sm">
+                  <span class="input-group-text bg-white px-2 text-secondary"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg></span>
+                  <input class="form-control form-control-sm" name="alt_text" value="{{ img.alt_text }}" placeholder="Alt text for SEO" aria-label="Alt text">
+                  <button class="btn btn-light border btn-sm px-2" type="submit" title="Save alt text">Save</button>
+                </div>
+              </form>
+              <div class="dz-gallery-btn-row">
 @if(img.is_primary)
-                <span class="badge text-bg-primary">Cover</span>
+                <span class="dz-cover-indicator"><svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>Cover</span>
 @else
                 <form method="post" action="/admin/api/images/{{ img.id }}/primary-form" data-ajax="admin" class="d-inline">
                   <input type="hidden" name="_csrf" value="{{ csrf }}">
                   <input type="hidden" name="product_id" value="{{ product.id }}">
-                  <button class="btn btn-light border btn-sm py-0 px-2" type="submit">Make cover</button>
+                  <button class="btn btn-sm dz-btn-make-cover" type="submit" title="Set as cover photo">
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
+                    <span>Cover</span>
+                  </button>
                 </form>
 @endif
-@if(img.is_first)
-                <button class="btn btn-light border btn-sm py-0 px-1" type="button" aria-label="Already first image" disabled>↑</button>
+                <div class="dz-gallery-nav-group ms-auto d-flex gap-1">
+@if(!img.is_first)
+                  <form method="post" action="/admin/api/images/{{ img.id }}/move-form" data-ajax="admin" class="d-inline">
+                    <input type="hidden" name="_csrf" value="{{ csrf }}">
+                    <input type="hidden" name="product_id" value="{{ product.id }}">
+                    <input type="hidden" name="direction" value="-1">
+                    <button class="btn btn-light border btn-sm dz-btn-arrow" type="submit" aria-label="Move image earlier" title="Move earlier">
+                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"></polyline></svg>
+                    </button>
+                  </form>
 @else
-                <form method="post" action="/admin/api/images/{{ img.id }}/move-form" data-ajax="admin" class="d-inline">
-                  <input type="hidden" name="_csrf" value="{{ csrf }}">
-                  <input type="hidden" name="product_id" value="{{ product.id }}">
-                  <input type="hidden" name="direction" value="-1">
-                  <button class="btn btn-light border btn-sm py-0 px-1" type="submit" aria-label="Move image earlier" title="Move earlier">↑</button>
-                </form>
+                  <button class="btn btn-light border btn-sm dz-btn-arrow" type="button" disabled>
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"></polyline></svg>
+                  </button>
 @endif
-@if(img.is_last)
-                <button class="btn btn-light border btn-sm py-0 px-1" type="button" aria-label="Already last image" disabled>↓</button>
+@if(!img.is_last)
+                  <form method="post" action="/admin/api/images/{{ img.id }}/move-form" data-ajax="admin" class="d-inline">
+                    <input type="hidden" name="_csrf" value="{{ csrf }}">
+                    <input type="hidden" name="product_id" value="{{ product.id }}">
+                    <input type="hidden" name="direction" value="1">
+                    <button class="btn btn-light border btn-sm dz-btn-arrow" type="submit" aria-label="Move image later" title="Move later">
+                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                    </button>
+                  </form>
 @else
-                <form method="post" action="/admin/api/images/{{ img.id }}/move-form" data-ajax="admin" class="d-inline">
-                  <input type="hidden" name="_csrf" value="{{ csrf }}">
-                  <input type="hidden" name="product_id" value="{{ product.id }}">
-                  <input type="hidden" name="direction" value="1">
-                  <button class="btn btn-light border btn-sm py-0 px-1" type="submit" aria-label="Move image later" title="Move later">↓</button>
-                </form>
+                  <button class="btn btn-light border btn-sm dz-btn-arrow" type="button" disabled>
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                  </button>
 @endif
-                <form method="post" action="/admin/api/images/{{ img.id }}/delete-form" data-ajax="admin" class="d-inline" data-confirm="Remove this image from the gallery?">
-                  <input type="hidden" name="_csrf" value="{{ csrf }}">
-                  <input type="hidden" name="product_id" value="{{ product.id }}">
-                  <button class="btn btn-outline-danger btn-sm py-0 px-2" type="submit">Delete</button>
-                </form>
+                </div>
               </div>
-            </div>
+            </figcaption>
           </figure>
 @endforeach
         </div>
 @else
-        <p class="empty-note mb-3">No images yet — the storefront shows a placeholder box.</p>
+        <div class="dz-gallery-empty mb-3">
+          <div class="dz-gallery-empty-icon">
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
+          </div>
+          <div class="fw-semibold text-dark small mb-1">No product photos yet</div>
+          <div class="small text-secondary">Upload images below to showcase your product in the storefront.</div>
+        </div>
 @endif
 
-        <h3 class="h6 mt-4 mb-2">Add an image</h3>
-        <form method="post" action="/admin/api/products/{{ product.id }}/images-form" data-ajax="admin" id="product-gallery-upload-form">
-          <input type="hidden" name="_csrf" value="{{ csrf }}">
-          <input type="hidden" name="image" id="p-image-b64" value="">
-          <div class="dz-upload-dropzone mb-2" id="standalone-gallery-dropzone">
-            <input id="p-image-file" type="file" accept="image/png,image/jpeg,image/gif,image/webp" class="form-control" data-base64-target="p-image-b64" data-preview-target="p-image-preview">
-            <div class="dz-upload-dropzone-icon">📷</div>
-            <div class="fw-medium small text-dark">Drag & drop product photo here, or click to browse</div>
-            <div class="small text-secondary">PNG, JPEG, GIF or WEBP · max 2 MB</div>
+        <div class="dz-upload-box p-3 rounded-3 border">
+          <div class="d-flex align-items-center justify-content-between mb-2">
+            <strong class="small text-dark fw-semibold d-inline-flex align-items-center gap-1">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+              Add New Photo
+            </strong>
+            <span class="badge bg-white text-secondary border">Max 2 MB</span>
           </div>
-          <div class="row g-2 align-items-end">
-            <div class="col-12 col-lg-7">
-              <label class="form-label small text-secondary mb-1" for="p-image-alt">Alt text</label>
-              <input id="p-image-alt" name="alt_text" class="form-control" placeholder="Describe the product photo for accessibility & SEO">
+          <form method="post" action="/admin/api/products/{{ product.id }}/images-form" data-ajax="admin" id="product-gallery-upload-form" class="dz-upload-form">
+            <input type="hidden" name="_csrf" value="{{ csrf }}">
+            <input type="hidden" name="image" id="p-image-b64" value="">
+            <div class="dz-upload-dropzone mb-3" id="standalone-gallery-dropzone">
+              <input id="p-image-file" type="file" accept="image/png,image/jpeg,image/gif,image/webp" class="form-control" data-base64-target="p-image-b64" data-preview-target="p-image-preview">
+              <div class="dz-upload-dropzone-icon">
+                <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+              </div>
+              <div class="fw-semibold text-dark small mb-1">Click to browse or drag and drop image here</div>
+              <div class="text-secondary small">PNG, JPEG, GIF or WEBP · up to 2 MB</div>
             </div>
-            <div class="col-6 col-lg-3">
-              <div class="form-check mt-3">
-                <input class="form-check-input" type="checkbox" name="is_primary" value="1" id="p-image-primary">
-                <label class="form-check-label small" for="p-image-primary">Make cover photo</label>
+            <div class="row g-2 align-items-center">
+              <div class="col-12 col-md-6">
+                <div class="input-group input-group-sm">
+                  <span class="input-group-text bg-white text-secondary"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg></span>
+                  <input id="p-image-alt" name="alt_text" class="form-control" placeholder="Alt text / description for SEO">
+                </div>
+              </div>
+              <div class="col-6 col-md-3">
+                <div class="form-check form-check-inline m-0">
+                  <input class="form-check-input" type="checkbox" name="is_primary" value="1" id="p-image-primary">
+                  <label class="form-check-label small text-secondary" for="p-image-primary">Set as cover</label>
+                </div>
+              </div>
+              <div class="col-6 col-md-3 text-end">
+                <button class="btn btn-primary btn-sm w-100 d-inline-flex align-items-center justify-content-center gap-1" type="submit">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+                  <span>Upload</span>
+                </button>
               </div>
             </div>
-            <div class="col-6 col-lg-2">
-              <button class="btn btn-primary w-100" type="submit">Upload</button>
-            </div>
-          </div>
-          <div id="p-image-preview" class="dz-preview mt-2"></div>
-        </form>
+            <div id="p-image-preview" class="dz-preview mt-2"></div>
+          </form>
+        </div>
       </div>
 
       <!-- ---------------- variants ---------------- -->
@@ -336,105 +384,195 @@
     <div class="col-12 col-xl-4">
       <!-- ---------------- inventory ---------------- -->
       <div class="dz-card dz-editor-card p-3 p-lg-4 my-3">
-        <h2 class="h6 mb-3">Inventory</h2>
-        <div class="row g-2 mb-3">
-          <div class="col-6 col-md-3">
-            <div class="dz-stat"><span>On hand</span><strong>{{ stock.quantity }}</strong></div>
+        <div class="dz-editor-card-head">
+          <div class="dz-card-title-group">
+            <div class="dz-card-icon dz-icon-inventory-box">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg>
+            </div>
+            <div>
+              <h2 class="h6 fw-bold mb-0">Inventory</h2>
+              <span class="small text-secondary">Stock levels and restock management</span>
+            </div>
           </div>
-          <div class="col-6 col-md-3">
-            <div class="dz-stat"><span>Available</span><strong>{{ stock_available }}</strong></div>
+@if(stock.low_stock)
+          <span class="badge bg-warning-subtle text-warning border border-warning-subtle"><span class="dz-status-dot me-1"></span>Low stock alert</span>
+@else
+          <span class="badge bg-success-subtle text-success border border-success-subtle"><span class="dz-status-dot me-1"></span>In stock</span>
+@endif
+        </div>
+
+        <div class="dz-inv-tiles-grid mb-3">
+          <div class="dz-inv-tile">
+            <span class="dz-inv-tile-lbl">On hand</span>
+            <strong class="dz-inv-tile-val">{{ stock.quantity }}</strong>
+            <span class="dz-inv-tile-sub">Total physical</span>
           </div>
-          <div class="col-6 col-md-3">
-            <div class="dz-stat"><span>Reserved</span><strong>{{ stock.reserved }}</strong></div>
+          <div class="dz-inv-tile is-available">
+            <span class="dz-inv-tile-lbl">Available</span>
+            <strong class="dz-inv-tile-val text-success">{{ stock_available }}</strong>
+            <span class="dz-inv-tile-sub">Ready to sell</span>
           </div>
-          <div class="col-6 col-md-3">
-            <div class="dz-stat"><span>Low at</span><strong>{{ stock.low_stock_threshold }}</strong></div>
+          <div class="dz-inv-tile">
+            <span class="dz-inv-tile-lbl">Reserved</span>
+            <strong class="dz-inv-tile-val text-secondary">{{ stock.reserved }}</strong>
+            <span class="dz-inv-tile-sub">In active carts</span>
+          </div>
+          <div class="dz-inv-tile">
+            <span class="dz-inv-tile-lbl">Low Stock At</span>
+            <strong class="dz-inv-tile-val text-warning">{{ stock.low_stock_threshold }}</strong>
+            <span class="dz-inv-tile-sub">Warning alert</span>
           </div>
         </div>
+
 @if(stock.low_stock)
-        <p class="alert alert-warning py-2 small">Low stock — the storefront shows an out-of-stock badge at this level.</p>
+        <div class="alert alert-warning py-2 px-3 small d-flex align-items-center gap-2 mb-3">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+          <span>Low stock warning: inventory is at or below alert threshold.</span>
+        </div>
 @endif
 
-        <h3 class="h6 mt-3 mb-2">Add stock</h3>
-        <form method="post" action="/admin/api/products/{{ product.id }}/inventory/restock-form" data-ajax="admin" class="d-flex align-items-end gap-2 mb-3">
-          <input type="hidden" name="_csrf" value="{{ csrf }}">
-          <div class="flex-grow-1">
-            <label class="form-label small text-secondary mb-1" for="i-add">Units to add</label>
-            <input id="i-add" name="quantity" type="number" min="1" value="1" class="form-control" required>
+        <div class="dz-inv-section-box mb-2">
+          <div class="dz-inv-section-title">
+            <span>Quick Restock</span>
+            <span class="badge bg-light text-secondary border">Add units</span>
           </div>
-          <button class="btn btn-primary" type="submit">Restock</button>
-        </form>
-
-        <h3 class="h6 mb-2">Set exact quantity</h3>
-        <form method="post" action="/admin/api/products/{{ product.id }}/inventory/set-form" data-ajax="admin" class="mb-3">
-          <input type="hidden" name="_csrf" value="{{ csrf }}">
-          <div class="row g-2">
-            <div class="col-6">
-              <label class="form-label small text-secondary mb-1" for="i-set">On hand</label>
-              <input id="i-set" name="quantity" type="number" min="0" value="{{ stock.quantity }}" class="form-control" required>
+          <form method="post" action="/admin/api/products/{{ product.id }}/inventory/restock-form" data-ajax="admin" class="d-flex align-items-end gap-2">
+            <input type="hidden" name="_csrf" value="{{ csrf }}">
+            <div class="flex-grow-1">
+              <label class="form-label small text-secondary mb-1" for="i-add">Units to add</label>
+              <input id="i-add" name="quantity" type="number" min="1" value="10" class="form-control form-control-sm" required>
             </div>
-            <div class="col-6">
-              <label class="form-label small text-secondary mb-1" for="i-threshold">Low-stock at</label>
-              <input id="i-threshold" name="low_stock_threshold" type="number" min="0" value="{{ stock.low_stock_threshold }}" class="form-control" required>
-            </div>
-          </div>
-          <div class="form-text">Sets the on-hand count to this number — it replaces the current count, it does not add to it.</div>
-          <button class="btn btn-primary mt-2" type="submit" data-confirm="Replace the current stock count?">Save stock</button>
-        </form>
+            <button class="btn btn-primary btn-sm px-3" type="submit">Restock</button>
+          </form>
+        </div>
 
-        <h3 class="h6 mb-2">Low-stock alert</h3>
-        <form method="post" action="/admin/api/products/{{ product.id }}/inventory/threshold-form" data-ajax="admin" class="d-flex align-items-end gap-2 mb-3">
-          <input type="hidden" name="_csrf" value="{{ csrf }}">
-          <div class="flex-grow-1">
-            <label class="form-label small text-secondary mb-1" for="i-threshold-only">Warn at</label>
-            <input id="i-threshold-only" name="low_stock_threshold" type="number" min="0" value="{{ stock.low_stock_threshold }}" class="form-control" required>
+        <div class="dz-inv-section-box mb-2">
+          <div class="dz-inv-section-title">
+            <span>Set Exact Quantity</span>
+            <span class="badge bg-light text-secondary border">Replace</span>
           </div>
-          <button class="btn btn-light border" type="submit">Save threshold</button>
-        </form>
+          <form method="post" action="/admin/api/products/{{ product.id }}/inventory/set-form" data-ajax="admin">
+            <input type="hidden" name="_csrf" value="{{ csrf }}">
+            <div class="row g-2 mb-2">
+              <div class="col-6">
+                <label class="form-label small text-secondary mb-1" for="i-set">On hand</label>
+                <input id="i-set" name="quantity" type="number" min="0" value="{{ stock.quantity }}" class="form-control form-control-sm" required>
+              </div>
+              <div class="col-6">
+                <label class="form-label small text-secondary mb-1" for="i-threshold">Low-stock at</label>
+                <input id="i-threshold" name="low_stock_threshold" type="number" min="0" value="{{ stock.low_stock_threshold }}" class="form-control form-control-sm" required>
+              </div>
+            </div>
+            <div class="d-flex justify-content-between align-items-center">
+              <small class="text-secondary">Replaces existing count</small>
+              <button class="btn btn-light border btn-sm" type="submit" data-confirm="Replace the current stock count?">Save Stock</button>
+            </div>
+          </form>
+        </div>
+
+        <div class="dz-inv-section-box">
+          <div class="dz-inv-section-title">
+            <span>Low-Stock Warning Level</span>
+          </div>
+          <form method="post" action="/admin/api/products/{{ product.id }}/inventory/threshold-form" data-ajax="admin" class="d-flex align-items-end gap-2">
+            <input type="hidden" name="_csrf" value="{{ csrf }}">
+            <div class="flex-grow-1">
+              <label class="form-label small text-secondary mb-1" for="i-threshold-only">Warn at</label>
+              <input id="i-threshold-only" name="low_stock_threshold" type="number" min="0" value="{{ stock.low_stock_threshold }}" class="form-control form-control-sm" required>
+            </div>
+            <button class="btn btn-light border btn-sm" type="submit">Save Threshold</button>
+          </form>
+        </div>
 
 @if(has_movements)
-        <h3 class="h6 mb-2">Recent stock movements</h3>
-        <ul class="dz-movements">
+        <div class="mt-3 pt-3 border-top">
+          <h3 class="h6 mb-2">Recent stock movements</h3>
+          <ul class="dz-movements">
 @foreach(m in movements)
-          <li><span>{{ m.delta }}</span> · {{ m.reason }} · {{ m.created_at }}</li>
+            <li><span>{{ m.delta }}</span> · {{ m.reason }} · {{ m.created_at }}</li>
 @endforeach
-        </ul>
+          </ul>
+        </div>
 @endif
       </div>
 
       <!-- ---------------- seo ---------------- -->
       <div class="dz-card dz-editor-card p-3 p-lg-4 my-3">
-        <h2 class="h6 mb-3">Search engine listing</h2>
+        <div class="dz-editor-card-head">
+          <div class="dz-card-title-group">
+            <div class="dz-card-icon dz-icon-seo-box">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+            </div>
+            <div>
+              <h2 class="h6 fw-bold mb-0">Search listing (SEO)</h2>
+              <span class="small text-secondary">Google & search engine preview</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Google SERP Preview Box -->
+        <div class="dz-serp-preview">
+          <div class="dz-serp-url">/product/{{ product.slug }}</div>
+          <div class="dz-serp-title">{{ product.meta_title }}</div>
+          <div class="dz-serp-desc">{{ product.meta_description }}</div>
+        </div>
+
         <form method="post" action="/admin/api/products/{{ product.id }}/update" data-ajax="admin">
           <input type="hidden" name="_csrf" value="{{ csrf }}">
-          <div class="mb-2">
-            <label class="form-label small text-secondary mb-1" for="p-meta-title">Meta title</label>
-            <input id="p-meta-title" name="meta_title" class="form-control" value="{{ product.meta_title }}">
+          <div class="mb-3">
+            <label class="form-label small fw-medium text-dark mb-1" for="p-meta-title">Meta title</label>
+            <input id="p-meta-title" name="meta_title" class="form-control form-control-sm" value="{{ product.meta_title }}" placeholder="Search page title">
+            <small class="form-text text-secondary">Recommended: 50-60 characters</small>
           </div>
-          <div class="mb-2">
-            <label class="form-label small text-secondary mb-1" for="p-meta-desc">Meta description</label>
-            <textarea id="p-meta-desc" name="meta_description" rows="3" class="form-control">{{ product.meta_description }}</textarea>
+          <div class="mb-3">
+            <label class="form-label small fw-medium text-dark mb-1" for="p-meta-desc">Meta description</label>
+            <textarea id="p-meta-desc" name="meta_description" rows="3" class="form-control form-control-sm" placeholder="Brief summary of product for search engine snippets...">{{ product.meta_description }}</textarea>
+            <small class="form-text text-secondary">Recommended: 120-160 characters</small>
           </div>
-          <button class="btn btn-primary" type="submit">Save SEO fields</button>
+          <button class="btn btn-primary btn-sm px-3" type="submit">Save SEO fields</button>
         </form>
       </div>
 
       <!-- ---------------- danger zone ---------------- -->
       <div class="dz-card dz-editor-card p-3 p-lg-4 my-3">
-        <h2 class="h6 mb-2">More actions</h2>
-        <div class="d-flex flex-wrap gap-2">
-          <form method="post" action="/admin/api/products/{{ product.id }}/featured-form" data-ajax="admin" class="d-inline">
+        <div class="dz-editor-card-head mb-3">
+          <div class="dz-card-title-group">
+            <div class="dz-card-icon">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+            </div>
+            <div>
+              <h2 class="h6 fw-bold mb-0">Product Status & Actions</h2>
+              <span class="small text-secondary">Spotlight and deletion controls</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="d-flex justify-content-between align-items-center p-3 bg-light rounded border mb-3">
+          <div>
+            <strong class="d-block text-dark small">Featured Product Spotlight</strong>
+            <small class="text-secondary">Highlight this item on the store homepage.</small>
+          </div>
+          <form method="post" action="/admin/api/products/{{ product.id }}/featured-form" data-ajax="admin" class="d-inline m-0">
             <input type="hidden" name="_csrf" value="{{ csrf }}">
 @if(product_featured)
-            <button class="btn btn-light border" type="submit">Remove featured status</button>
+            <button class="btn btn-warning btn-sm text-dark fw-semibold" type="submit">★ Featured</button>
 @else
-            <button class="btn btn-light border" type="submit">Mark as featured</button>
+            <button class="btn btn-light border btn-sm" type="submit">☆ Mark Featured</button>
 @endif
           </form>
-          <form method="post" action="/admin/api/products/{{ product.id }}/delete-form" data-ajax="admin" data-success-redirect="/admin/products" class="d-inline">
-            <input type="hidden" name="_csrf" value="{{ csrf }}">
-            <button class="btn btn-outline-danger" type="submit" data-confirm="Delete this product? Products that belong to an order cannot be deleted.">Delete product</button>
-          </form>
+        </div>
+
+        <div class="p-3 rounded border border-danger-subtle bg-danger-subtle bg-opacity-10">
+          <div class="d-flex justify-content-between align-items-center">
+            <div>
+              <strong class="d-block text-danger small">Delete Product</strong>
+              <small class="text-secondary">Products tied to past orders cannot be deleted.</small>
+            </div>
+            <form method="post" action="/admin/api/products/{{ product.id }}/delete-form" data-ajax="admin" data-success-redirect="/admin/products" class="d-inline m-0">
+              <input type="hidden" name="_csrf" value="{{ csrf }}">
+              <button class="btn btn-outline-danger btn-sm" type="submit" data-confirm="Delete this product? Products that belong to an order cannot be deleted.">Delete</button>
+            </form>
+          </div>
         </div>
       </div>
     </div>

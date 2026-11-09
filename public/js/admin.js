@@ -92,7 +92,14 @@
 
   // ---------------------------------------------------------------- requests
   function request(method, url, params, data) {
-    var opts = { method: method, headers: { Accept: "application/json" }, credentials: "same-origin" };
+    var opts = {
+      method: method,
+      headers: {
+        Accept: "application/json",
+        "X-CSRF-TOKEN": ADMIN.csrf || ""
+      },
+      credentials: "same-origin"
+    };
     if (params) {
       var q = [];
       for (var k in params) {
@@ -102,19 +109,21 @@
       }
       if (q.length) url += (url.indexOf("?") >= 0 ? "&" : "?") + q.join("&");
     }
-    if (data && method !== "GET") {
+    if (method !== "GET" && method !== "HEAD") {
       var body = new URLSearchParams();
-      for (var k2 in data) {
-        if (data[k2] !== undefined && data[k2] !== null) body.set(k2, data[k2]);
+      if (data && typeof data === "object") {
+        for (var k2 in data) {
+          if (data[k2] !== undefined && data[k2] !== null) body.set(k2, data[k2]);
+        }
       }
-      body.set("_csrf", ADMIN.csrf);
+      if (ADMIN.csrf) body.set("_csrf", ADMIN.csrf);
       body.set("format", "json");
       opts.body = body;
     }
     return fetch(url, opts).then(function (res) {
       if (res.status === 401) { window.location.href = "/login"; return { ok: false, auth: true }; }
       return res.json().then(function (j) { return { ok: res.ok, status: res.status, data: j }; })
-        .catch(function () { return { ok: false, status: res.status, data: {} }; });
+        .catch(function () { return { ok: res.ok, status: res.status, data: {} }; });
     }).catch(function () { return { ok: false, status: 0, data: {} }; });
   }
 
@@ -132,6 +141,12 @@
         if (res.data && res.data.errors) fields = res.data.errors;
         if (res.data && res.data.message) message = res.data.message;
         if (res.data && res.data.error) message = res.data.error;
+        if (fields && typeof fields === "object") {
+          var firstKey = Object.keys(fields)[0];
+          if (firstKey && fields[firstKey]) {
+            message = fields[firstKey];
+          }
+        }
         var e = new Error(message);
         e.fields = fields;
         throw e;
@@ -234,6 +249,13 @@
     form.className = "dz-admin-form";
     form.setAttribute("novalidate", "");
     (cfg.fields || []).forEach(function (f) {
+      if (f.type === "html") {
+        var wrapHtml = document.createElement("div");
+        wrapHtml.className = "dz-form-group mb-3";
+        wrapHtml.innerHTML = f.html || "";
+        form.appendChild(wrapHtml);
+        return;
+      }
       var wrap = document.createElement("div");
       wrap.className = "dz-form-group mb-3";
       var id = "f-" + f.name;
@@ -295,7 +317,7 @@
     foot.className = "dz-admin-form-actions d-flex gap-2 align-items-center flex-wrap";
     var submit = document.createElement("button");
     submit.type = "submit";
-    submit.className = "btn " + (cfg.danger ? "btn-outline-danger" : "btn-primary");
+    submit.className = "btn " + (cfg.submitClass || (cfg.danger ? "btn-outline-danger" : "btn-primary"));
     submit.textContent = cfg.submitLabel || "Save";
     foot.appendChild(submit);
     if (cfg.onCancel) {
@@ -316,7 +338,9 @@
       var ok = true;
       var data = {};
       (cfg.fields || []).forEach(function (f) {
+        if (f.type === "html") return;
         var input = form.querySelector("#f-" + f.name);
+        if (!input) return;
         var errEl = input.parentNode.querySelector(".dz-field-error");
         var val = f.type === "checkbox" ? (input.checked ? 1 : 0) : input.value;
         if (f.type === "number" && val === "") val = "";
@@ -577,12 +601,7 @@
       rowActions: function (row) {
         return [
           { label: "Edit", cls: "btn-light border", onClick: function (r) { self.openEdit(r); } },
-          { label: "Delete", cls: "btn-outline-danger", danger: true, confirm: "Delete this category? Products assigned to it keep their link until reassigned.",
-            confirmLabel: "Delete", onClick: function (r, reload) {
-              ADMIN.act("POST", "/admin/api/categories/" + r.id + "/delete-form").then(function () {
-                ADMIN.toast("Category deleted.", true); reload();
-              }).catch(function (e) { ADMIN.toast(e.message, false); });
-            } }
+          { label: "Delete", cls: "btn-outline-danger", danger: true, onClick: function (r, reload) { self.deleteCategory(r, reload); } }
         ];
       },
       onAdd: function () { self.openCreate(); }
@@ -635,6 +654,76 @@
           onCancel: function () { ADMIN.modal.close(); }
         });
         ADMIN.modal.open("Edit Category — " + ADMIN.esc(row.name), form, "");
+      });
+    };
+    self.deleteCategory = function (r, reload) {
+      var count = parseInt(r.product_count || 0, 10);
+      ADMIN.loadOptions().then(function (opt) {
+        var otherCats = (opt.categories || []).filter(function (c) { return String(c.id) !== String(r.id); });
+        if (count > 0) {
+          if (!otherCats.length) {
+            ADMIN.confirm({
+              title: "Cannot Delete Category",
+              message: "Category \"" + r.name + "\" contains " + count + " product(s), and no other category exists to reassign them to. Please create another category or reassign/delete the products first.",
+              confirmLabel: "Understood",
+              danger: false
+            });
+            return;
+          }
+          var form = ADMIN.buildForm({
+            fields: [
+              {
+                name: "_notice",
+                label: "",
+                type: "html",
+                html: '<div class="alert alert-warning py-2 px-3 small mb-0">' +
+                  '<strong>Category in use:</strong> &ldquo;' + ADMIN.esc(r.name) + '&rdquo; currently has <strong>' + count + ' product(s)</strong> assigned. ' +
+                  'Select a destination category below to move those products into before deleting.' +
+                  '</div>'
+              },
+              {
+                name: "reassign_to",
+                label: "Move products to",
+                type: "select",
+                required: true,
+                options: otherCats.map(function (c) { return { value: c.id, label: c.name }; })
+              }
+            ],
+            values: { reassign_to: otherCats[0].id },
+            submitLabel: "Reassign & Delete Category",
+            submitClass: "btn-danger",
+            onSubmit: function (data) {
+              return ADMIN.act("POST", "/admin/api/categories/" + r.id + "/delete-form", null, {
+                reassign_to: data.reassign_to
+              }).then(function () {
+                ADMIN.toast("Products reassigned and category deleted.", true);
+                ADMIN.modal.close();
+                OPTIONS = null;
+                reload();
+              }).catch(function (e) {
+                ADMIN.toast(e.message, false);
+              });
+            },
+            onCancel: function () { ADMIN.modal.close(); }
+          });
+          ADMIN.modal.open("Delete Category — " + ADMIN.esc(r.name), form, "");
+        } else {
+          ADMIN.confirm({
+            title: "Delete Category",
+            message: "Are you sure you want to delete category \"" + r.name + "\"? This action cannot be undone.",
+            confirmLabel: "Delete Category",
+            danger: true
+          }).then(function (yes) {
+            if (!yes) return;
+            ADMIN.act("POST", "/admin/api/categories/" + r.id + "/delete-form").then(function () {
+              ADMIN.toast("Category deleted.", true);
+              OPTIONS = null;
+              reload();
+            }).catch(function (e) {
+              ADMIN.toast(e.message, false);
+            });
+          });
+        }
       });
     };
     self.mount();
@@ -750,68 +839,602 @@
     var self = new ListModule(root, {});
     self.module = "inventory";
     var cfg = {
-      module: "inventory", title: "Inventory", eyebrow: "Stock",
-      description: "On-hand, available and reserved units for every product.",
-      endpoint: "/admin/api/list/inventory", searchPlaceholder: "Search product",
+      module: "inventory", title: "Inventory", eyebrow: "Stock Control & Fulfillment",
+      description: "Track physical on-hand stock, active reservations, and configure reorder thresholds.",
+      endpoint: "/admin/api/list/inventory", searchPlaceholder: "Search product name or SKU…",
       addLabel: null, emptyText: "No inventory tracked yet — create a product first.",
-      filters: [{ key: "low", label: "Stock level", options: [
-        { value: "1", label: "Low stock only" }
-      ] }],
-      columns: [
-        { label: "Product", render: function (r) {
-            var img = r.has_thumb ? '<img class="dz-admin-thumb" src="' + ADMIN.esc(r.thumb) + '" alt="">' :
-              '<span class="dz-admin-thumb dz-admin-thumb-empty">—</span>';
-            return img + '<div class="dz-inv-name"><strong>' + ADMIN.esc(r.product_name) + "</strong>" +
-              '<span class="small text-secondary">' + ADMIN.esc(r.product_status) + "</span></div>";
-          } },
-        { label: "On hand", render: function (r) { return "<strong>" + ADMIN.esc(r.quantity) + "</strong>"; } },
-        { label: "Available", render: function (r) { return ADMIN.esc(r.available); } },
-        { label: "Reserved", render: function (r) { return ADMIN.esc(r.reserved); } },
-        { label: "Low at", render: function (r) {
-            return r.is_low_stock ? '<span class="badge text-bg-warning">Low · ' + ADMIN.esc(r.low_stock_threshold) + "</span>"
-              : '<span class="badge text-bg-light border">' + ADMIN.esc(r.low_stock_threshold) + "</span>";
-          } }
-      ],
-      rowActions: function (row) {
-        return [
-          { label: "Restock", cls: "btn-light border", onClick: function (r) { self.restock(r); } },
-          { label: "Set exact", cls: "btn-primary", onClick: function (r) { self.setExact(r); } }
-        ];
-      }
+      filters: [{ key: "stock_status", label: "Stock level", options: [
+        { value: "in", label: "In Stock" },
+        { value: "low", label: "Low Stock Alert" },
+        { value: "out", label: "Out of Stock" }
+      ] }]
     };
     self.applyConfig(cfg);
+
+    self.renderShell = function () {
+      self.root.innerHTML =
+        '<div class="dz-admin-page-head mb-4">' +
+          '<div class="d-flex align-items-center gap-3">' +
+            '<div class="dz-head-icon-box">' +
+              '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg>' +
+            '</div>' +
+            '<div>' +
+              '<span class="dz-eyebrow">Stock Control & Fulfillment</span>' +
+              '<div class="d-flex align-items-center gap-2 mt-1">' +
+                '<h1 class="page-title mb-0">Inventory</h1>' +
+                '<span class="badge text-bg-light border ms-1" id="inv-head-total">Loading…</span>' +
+              '</div>' +
+              '<p class="page-description mb-0 mt-1">Real-time on-hand stock, cart reservations, and automated reorder alerts.</p>' +
+            '</div>' +
+          '</div>' +
+          '<div class="dz-admin-page-head-actions">' +
+            '<a class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center gap-1" href="/admin/products">' +
+              '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg>' +
+              '<span>Catalog Products</span>' +
+            '</a>' +
+          '</div>' +
+        '</div>' +
+        '<div id="inventory-stats" class="mb-4"></div>' +
+        '<div class="dz-admin-toolbar-card mb-4" id="inventory-toolbar"></div>' +
+        '<div class="dz-admin-list-wrap" id="inventory-list"></div>';
+      self.renderToolbar();
+    };
+
+    self.renderStats = function (stats) {
+      var host = self.root.querySelector("#inventory-stats");
+      if (!host || !stats) return;
+      var curStock = self.state.filters.stock_status || (self.state.filters.low === "1" ? "low" : "");
+      var isAllActive = !curStock;
+
+      var totalBadge = self.root.querySelector("#inv-head-total");
+      if (totalBadge && stats.total_products != null) {
+        totalBadge.textContent = stats.total_products + (stats.total_products === 1 ? " product" : " products");
+      }
+
+      host.innerHTML =
+        '<div class="dz-stat-grid">' +
+          '<div class="dz-stat-card-modern' + (isAllActive ? " is-active" : "") + '" data-stat-stock="" title="View all tracked products">' +
+            '<div class="dz-stat-card-header">' +
+              '<div class="dz-stat-icon-wrap dz-stat-icon-all">' +
+                '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg>' +
+              '</div>' +
+              '<span class="dz-stat-badge-tag">Total</span>' +
+            '</div>' +
+            '<div class="dz-stat-card-body">' +
+              '<div class="dz-stat-num">' + ADMIN.esc(stats.total_products || 0) + '</div>' +
+              '<div class="dz-stat-sub">Tracked Products</div>' +
+            '</div>' +
+          '</div>' +
+          '<div class="dz-stat-card-modern" title="Total units on hand across catalog">' +
+            '<div class="dz-stat-card-header">' +
+              '<div class="dz-stat-icon-wrap dz-stat-icon-units">' +
+                '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"></rect><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path></svg>' +
+              '</div>' +
+              '<span class="dz-stat-badge-tag">Physical</span>' +
+            '</div>' +
+            '<div class="dz-stat-card-body">' +
+              '<div class="dz-stat-num text-dark">' + ADMIN.esc(stats.total_on_hand || 0) + '</div>' +
+              '<div class="dz-stat-sub">Total Units On Hand</div>' +
+            '</div>' +
+          '</div>' +
+          '<div class="dz-stat-card-modern' + (curStock === "in" ? " is-active" : "") + '" data-stat-stock="in" title="Filter by in-stock products">' +
+            '<div class="dz-stat-card-header">' +
+              '<div class="dz-stat-icon-wrap dz-stat-icon-in">' +
+                '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>' +
+              '</div>' +
+              '<span class="dz-stat-badge-tag text-success">Healthy</span>' +
+            '</div>' +
+            '<div class="dz-stat-card-body">' +
+              '<div class="dz-stat-num text-success">' + ADMIN.esc(stats.in_stock || 0) + '</div>' +
+              '<div class="dz-stat-sub">In Stock</div>' +
+            '</div>' +
+          '</div>' +
+          '<div class="dz-stat-card-modern' + (curStock === "low" ? " is-active" : "") + '" data-stat-stock="low" title="Filter by low stock alert">' +
+            '<div class="dz-stat-card-header">' +
+              '<div class="dz-stat-icon-wrap dz-stat-icon-low">' +
+                '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>' +
+              '</div>' +
+              '<span class="dz-stat-badge-tag text-warning">Alert</span>' +
+            '</div>' +
+            '<div class="dz-stat-card-body">' +
+              '<div class="dz-stat-num text-warning">' + ADMIN.esc(stats.low_stock || 0) + '</div>' +
+              '<div class="dz-stat-sub">Low Stock Alert</div>' +
+            '</div>' +
+          '</div>' +
+          '<div class="dz-stat-card-modern' + (curStock === "out" ? " is-active" : "") + '" data-stat-stock="out" title="Filter by out of stock">' +
+            '<div class="dz-stat-card-header">' +
+              '<div class="dz-stat-icon-wrap dz-stat-icon-out">' +
+                '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>' +
+              '</div>' +
+              '<span class="dz-stat-badge-tag text-danger">Depleted</span>' +
+            '</div>' +
+            '<div class="dz-stat-card-body">' +
+              '<div class="dz-stat-num text-danger">' + ADMIN.esc(stats.out_of_stock || 0) + '</div>' +
+              '<div class="dz-stat-sub">Out of Stock</div>' +
+            '</div>' +
+          '</div>' +
+        '</div>';
+
+      host.querySelectorAll("[data-stat-stock]").forEach(function (card) {
+        card.addEventListener("click", function () {
+          var targetStock = card.getAttribute("data-stat-stock");
+          self.state.filters.stock_status = targetStock;
+          delete self.state.filters.low;
+          self.state.page = 1;
+          self.renderToolbar();
+          self.load();
+        });
+      });
+    };
+
+    self.renderToolbar = function () {
+      var tb = self.root.querySelector("#inventory-toolbar");
+      if (!tb) return;
+      var curStock = self.state.filters.stock_status || (self.state.filters.low === "1" ? "low" : "");
+      var curSort = self.state.filters.sort || "default";
+      var curQ = self.state.q || "";
+
+      var hasFilters = Boolean(curQ || curStock || (curSort && curSort !== "default"));
+
+      var chipsHtml = "";
+      if (curQ) {
+        chipsHtml += '<span class="dz-filter-chip" data-clear-chip="q">Search: "' + ADMIN.esc(curQ) + '" <span class="dz-chip-x" aria-hidden="true">&times;</span></span>';
+      }
+      if (curStock) {
+        var stockLabels = { in: "In Stock", low: "Low Stock Alert", out: "Out of Stock" };
+        chipsHtml += '<span class="dz-filter-chip" data-clear-chip="stock_status">Stock: ' + (stockLabels[curStock] || curStock) + ' <span class="dz-chip-x" aria-hidden="true">&times;</span></span>';
+      }
+      if (curSort && curSort !== "default") {
+        var sortLabels = { stock_asc: "Stock: Lowest First", stock_desc: "Stock: Highest First" };
+        chipsHtml += '<span class="dz-filter-chip" data-clear-chip="sort">Sort: ' + (sortLabels[curSort] || curSort) + ' <span class="dz-chip-x" aria-hidden="true">&times;</span></span>';
+      }
+
+      var html =
+        '<div class="dz-toolbar-wrap">' +
+          '<div class="dz-toolbar-row">' +
+            '<div class="dz-search-box">' +
+              '<span class="dz-search-icon" aria-hidden="true">' +
+                '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>' +
+              '</span>' +
+              '<input type="search" class="dz-search-input" id="inventory-search" placeholder="Search product name or SKU…" value="' + ADMIN.esc(curQ) + '">' +
+              (curQ ? '<button type="button" class="dz-search-clear" id="inventory-search-clear" title="Clear search" aria-label="Clear search">&times;</button>' : '') +
+            '</div>' +
+
+            '<div class="dz-toolbar-filters">' +
+              '<div class="dz-filter-item">' +
+                '<select class="dz-filter-select dz-admin-filter' + (curStock ? " is-filtered" : "") + '" id="inv-stock-filter" data-filter="stock_status">' +
+                  '<option value="">All Stock Levels</option>' +
+                  '<option value="in"' + (curStock === "in" ? " selected" : "") + '>In Stock</option>' +
+                  '<option value="low"' + (curStock === "low" ? " selected" : "") + '>Low Stock (Alert)</option>' +
+                  '<option value="out"' + (curStock === "out" ? " selected" : "") + '>Out of Stock</option>' +
+                '</select>' +
+              '</div>' +
+
+              '<div class="dz-filter-item">' +
+                '<select class="dz-filter-select dz-admin-filter' + (curSort && curSort !== "default" ? " is-filtered" : "") + '" id="inv-sort-filter" data-filter="sort">' +
+                  '<option value="default"' + (curSort === "default" ? " selected" : "") + '>Sort: Default (ID)</option>' +
+                  '<option value="stock_asc"' + (curSort === "stock_asc" ? " selected" : "") + '>Stock: Lowest First</option>' +
+                  '<option value="stock_desc"' + (curSort === "stock_desc" ? " selected" : "") + '>Stock: Highest First</option>' +
+                '</select>' +
+              '</div>' +
+
+              '<button class="btn btn-light border dz-toolbar-btn dz-btn-icon-only" id="inv-refresh-btn" type="button" title="Refresh stock list">' +
+                '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6"></path><path d="M1 20v-6h6"></path><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>' +
+              '</button>' +
+
+              (hasFilters ? '<button class="btn btn-outline-secondary btn-sm dz-toolbar-btn" id="inv-reset-btn" type="button"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg> Reset</button>' : '') +
+            '</div>' +
+          '</div>' +
+
+          (chipsHtml ? '<div class="dz-active-chips-bar"><span class="dz-active-chips-label">Active filters:</span>' + chipsHtml + '<button class="dz-clear-all-link" id="inv-clear-all" type="button">Clear all</button></div>' : '') +
+        '</div>';
+
+      tb.innerHTML = html;
+
+      var searchInp = tb.querySelector("#inventory-search");
+      var t;
+      if (searchInp) {
+        searchInp.addEventListener("input", function () {
+          clearTimeout(t);
+          t = setTimeout(function () {
+            self.state.q = searchInp.value.trim();
+            self.state.page = 1;
+            self.renderToolbar();
+            self.load();
+          }, 280);
+        });
+      }
+
+      var clearBtn = tb.querySelector("#inventory-search-clear");
+      if (clearBtn) {
+        clearBtn.addEventListener("click", function () {
+          self.state.q = "";
+          self.state.page = 1;
+          self.renderToolbar();
+          self.load();
+        });
+      }
+
+      var stockSelect = tb.querySelector("#inv-stock-filter");
+      if (stockSelect) {
+        stockSelect.addEventListener("change", function () {
+          self.state.filters.stock_status = stockSelect.value;
+          delete self.state.filters.low;
+          self.state.page = 1;
+          self.renderToolbar();
+          self.load();
+        });
+      }
+
+      var sortSelect = tb.querySelector("#inv-sort-filter");
+      if (sortSelect) {
+        sortSelect.addEventListener("change", function () {
+          self.state.filters.sort = sortSelect.value;
+          self.state.page = 1;
+          self.renderToolbar();
+          self.load();
+        });
+      }
+
+      var refreshBtn = tb.querySelector("#inv-refresh-btn");
+      if (refreshBtn) {
+        refreshBtn.addEventListener("click", function () {
+          self.load();
+        });
+      }
+
+      var resetAll = function () {
+        self.state.q = "";
+        self.state.filters = {};
+        self.state.page = 1;
+        self.renderToolbar();
+        self.load();
+      };
+
+      var resetBtn = tb.querySelector("#inv-reset-btn");
+      if (resetBtn) resetBtn.addEventListener("click", resetAll);
+
+      var clearAll = tb.querySelector("#inv-clear-all");
+      if (clearAll) clearAll.addEventListener("click", resetAll);
+
+      tb.querySelectorAll("[data-clear-chip]").forEach(function (btn) {
+        btn.addEventListener("click", function () {
+          var key = btn.getAttribute("data-clear-chip");
+          if (key === "q") {
+            self.state.q = "";
+          } else if (key === "stock_status") {
+            delete self.state.filters.stock_status;
+            delete self.state.filters.low;
+          } else if (key === "sort") {
+            self.state.filters.sort = "default";
+          } else {
+            delete self.state.filters[key];
+          }
+          self.state.page = 1;
+          self.renderToolbar();
+          self.load();
+        });
+      });
+    };
+
+    self.renderRow = function (r) {
+      var pid = r.product_id;
+      var thumbHtml = r.has_thumb
+        ? '<img class="dz-product-thumb" src="' + ADMIN.esc(r.thumb) + '" alt="' + ADMIN.esc(r.product_name) + '" loading="lazy">'
+        : '<div class="dz-product-thumb-placeholder"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg></div>';
+
+      var skuHtml = r.sku ? '<code class="dz-sku-pill ms-2">' + ADMIN.esc(r.sku) + '</code>' : '';
+
+      var productCell =
+        '<div class="dz-product-cell">' +
+          thumbHtml +
+          '<div class="dz-product-meta">' +
+            '<a href="/admin/products/' + pid + '" class="dz-product-title fw-semibold text-dark text-decoration-none" title="Edit in product manager">' + ADMIN.esc(r.product_name) + '</a>' +
+            '<div class="dz-product-tags mt-1 d-flex align-items-center">' +
+              ADMIN.badge(r.product_status) +
+              skuHtml +
+            '</div>' +
+          '</div>' +
+        '</div>';
+
+      var healthPill = '';
+      if (r.quantity <= 0) {
+        healthPill = '<span class="dz-stock-pill-out"><span class="dz-status-dot"></span>Out of stock</span>';
+      } else if (r.is_low_stock) {
+        healthPill = '<span class="dz-stock-pill-low"><span class="dz-status-dot"></span>Low stock (' + ADMIN.esc(r.quantity) + ' left)</span>';
+      } else {
+        healthPill = '<span class="dz-stock-pill-in"><span class="dz-status-dot"></span>In stock</span>';
+      }
+      var healthCell =
+        '<div class="dz-stock-badge-wrap">' +
+          healthPill +
+          '<small class="text-secondary d-block mt-1">Alert at &le; ' + ADMIN.esc(r.low_stock_threshold) + ' units</small>' +
+        '</div>';
+
+      var onHandCell =
+        '<div class="dz-inv-count-cell">' +
+          '<strong class="fs-6 text-dark">' + ADMIN.esc(r.quantity) + '</strong>' +
+          '<span>total units</span>' +
+        '</div>';
+
+      var availCell =
+        '<div class="dz-inv-count-cell">' +
+          '<strong class="fs-6 ' + (r.available > 0 ? "text-success" : "text-danger") + '">' + ADMIN.esc(r.available) + '</strong>' +
+          '<span>ready to ship</span>' +
+        '</div>';
+
+      var reservedCell =
+        '<div class="dz-inv-count-cell">' +
+          '<strong class="fs-6 ' + (r.reserved > 0 ? "text-warning" : "text-secondary") + '">' + ADMIN.esc(r.reserved) + '</strong>' +
+          '<span>held in carts</span>' +
+        '</div>';
+
+      var thresholdCell =
+        '<span class="badge text-bg-light border">&le; ' + ADMIN.esc(r.low_stock_threshold) + ' units</span>';
+
+      var actsHtml =
+        '<div class="d-flex align-items-center gap-1">' +
+          '<button class="btn btn-sm btn-primary d-inline-flex align-items-center gap-1" data-inv-act="restock" data-id="' + pid + '" title="Quick restock units">' +
+            '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>' +
+            '<span>Restock</span>' +
+          '</button>' +
+          '<button class="btn btn-sm btn-light border d-inline-flex align-items-center gap-1" data-inv-act="set-exact" data-id="' + pid + '" title="Set exact count and alert threshold">' +
+            '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>' +
+            '<span>Set exact</span>' +
+          '</button>' +
+          '<a class="btn btn-sm btn-light border" href="/admin/products/' + pid + '" title="Full product editor">Edit</a>' +
+        '</div>';
+
+      return '<tr data-id="' + pid + '">' +
+        '<td>' + productCell + '</td>' +
+        '<td>' + healthCell + '</td>' +
+        '<td>' + onHandCell + '</td>' +
+        '<td>' + availCell + '</td>' +
+        '<td>' + reservedCell + '</td>' +
+        '<td>' + thresholdCell + '</td>' +
+        '<td>' + actsHtml + '</td>' +
+      '</tr>';
+    };
+
+    self.load = function () {
+      var list = self.root.querySelector("#inventory-list");
+      list.innerHTML = ADMIN.loadingHTML;
+      var params = { page: self.state.page, q: self.state.q };
+      for (var k in self.state.filters) params[k] = self.state.filters[k];
+
+      ADMIN.get("/admin/api/list/inventory", params).then(function (res) {
+        if (res.auth) return;
+        if (!res.ok) { list.innerHTML = ADMIN.errorHTML("Could not load inventory."); return; }
+        var body = res.data || {};
+        var meta = body.meta || {};
+        var rows = body.data || [];
+        self.rowsById = {};
+        rows.forEach(function (r) { self.rowsById[String(r.product_id)] = r; });
+
+        if (meta.stats) {
+          self.renderStats(meta.stats);
+        }
+
+        var filtered = Boolean(self.state.q !== "" || Object.keys(self.state.filters).some(function (k) { return self.state.filters[k] !== ""; }));
+        if (rows.length === 0) {
+          list.innerHTML =
+            '<div class="dz-card p-5 text-center dz-empty-state-card">' +
+              '<div class="dz-empty-icon mb-3">' +
+                '<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="1.5"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>' +
+              '</div>' +
+              '<h3 class="h5 fw-bold mb-1">No inventory records found</h3>' +
+              '<p class="text-secondary small mb-3">' +
+                (filtered ? "No products match your current search or stock filter. Try resetting your filters." : "No inventory tracked yet. Create a product in the catalog to get started.") +
+              '</p>' +
+              (filtered ? '<button class="btn btn-outline-primary btn-sm" id="empty-clear-inv-filters">Reset filters</button>' : '<a class="btn btn-primary btn-sm" href="/admin/products">Go to products</a>') +
+            '</div>';
+          var emptyClear = list.querySelector("#empty-clear-inv-filters");
+          if (emptyClear) {
+            emptyClear.addEventListener("click", function () {
+              self.state.q = "";
+              self.state.filters = {};
+              self.state.page = 1;
+              self.renderToolbar();
+              self.load();
+            });
+          }
+          return;
+        }
+
+        var thead =
+          '<thead><tr>' +
+            '<th scope="col">Product</th>' +
+            '<th scope="col">Stock Status</th>' +
+            '<th scope="col">On Hand</th>' +
+            '<th scope="col">Available</th>' +
+            '<th scope="col">Reserved</th>' +
+            '<th scope="col">Alert Level</th>' +
+            '<th scope="col">Quick Actions</th>' +
+          '</tr></thead>';
+
+        var tbody = '<tbody>' + rows.map(function (row) { return self.renderRow(row); }).join("") + '</tbody>';
+
+        list.innerHTML =
+          '<div class="dz-card p-0 dz-table-card">' +
+            '<div class="dz-table-header-bar p-3 d-flex justify-content-between align-items-center">' +
+              '<div class="small text-secondary">Showing <strong class="text-dark">' + rows.length + '</strong> of <strong class="text-dark">' + (meta.total || rows.length) + '</strong> inventory items</div>' +
+            '</div>' +
+            '<div class="table-responsive">' +
+              '<table class="table dz-admin-table align-middle mb-0">' + thead + tbody + '</table>' +
+            '</div>' +
+            ADMIN.paginationHTML(meta) +
+          '</div>';
+
+        self.bindInventoryActions(list);
+      }).catch(function () {
+        list.innerHTML = ADMIN.errorHTML("Network error while loading inventory.");
+      });
+    };
+
+    self.bindInventoryActions = function (list) {
+      list.querySelectorAll("[data-inv-act]").forEach(function (btn) {
+        btn.addEventListener("click", function () {
+          var pid = btn.getAttribute("data-id");
+          var row = self.rowsById[String(pid)];
+          if (!row) return;
+          var act = btn.getAttribute("data-inv-act");
+          if (act === "restock") self.restock(row);
+          else if (act === "set-exact") self.setExact(row);
+        });
+      });
+
+      list.querySelectorAll("[data-page]").forEach(function (b) {
+        b.addEventListener("click", function () {
+          self.state.page = parseInt(b.getAttribute("data-page"), 10);
+          self.load();
+        });
+      });
+    };
+
     self.restock = function (row) {
-      var body = '<form id="invForm"><div class="mb-2"><label class="form-label small">Units to add to ' +
-        ADMIN.esc(row.product_name) + '</label><input name="quantity" type="number" min="1" value="1" class="form-control"></div></form>';
-      var footer = '<button class="btn btn-light border" data-cc>Cancel</button>' +
-        '<button class="btn btn-primary" data-cy>Restock</button>';
-      ADMIN.modal.open("Restock " + ADMIN.esc(row.product_name), body, footer);
+      ADMIN.ensureModalHost();
+      var thumbHtml = row.has_thumb
+        ? '<img src="' + ADMIN.esc(row.thumb) + '" style="width:44px;height:44px;object-fit:cover;border-radius:8px;border:1px solid #e2e8f0;">'
+        : '<div style="width:44px;height:44px;border-radius:8px;background:#f1f5f9;display:flex;align-items:center;justify-content:center;color:#94a3b8;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg></div>';
+
+      var body =
+        '<div class="d-flex align-items-center gap-3 p-3 bg-light rounded-3 border mb-3">' +
+          thumbHtml +
+          '<div class="min-w-0 flex-grow-1">' +
+            '<h4 class="h6 fw-bold mb-1 text-truncate">' + ADMIN.esc(row.product_name) + '</h4>' +
+            '<div class="small text-secondary d-flex align-items-center gap-2">' +
+              '<span>Current On Hand: <strong class="text-dark">' + ADMIN.esc(row.quantity) + '</strong></span>' +
+              '<span>·</span>' +
+              '<span>Available: <strong class="text-success">' + ADMIN.esc(row.available) + '</strong></span>' +
+            '</div>' +
+          '</div>' +
+        '</div>' +
+        '<form id="invRestockForm">' +
+          '<div class="mb-3">' +
+            '<label class="form-label small fw-semibold text-dark">Units to Add</label>' +
+            '<div class="input-group">' +
+              '<input name="quantity" id="restockInput" type="number" min="1" value="10" class="form-control" required>' +
+              '<span class="input-group-text bg-light text-secondary">units</span>' +
+            '</div>' +
+            '<div class="dz-quick-qty-pills">' +
+              '<button type="button" class="dz-qty-pill-btn" data-add="5">+5 units</button>' +
+              '<button type="button" class="dz-qty-pill-btn" data-add="10">+10 units</button>' +
+              '<button type="button" class="dz-qty-pill-btn" data-add="25">+25 units</button>' +
+              '<button type="button" class="dz-qty-pill-btn" data-add="50">+50 units</button>' +
+              '<button type="button" class="dz-qty-pill-btn" data-add="100">+100 units</button>' +
+            '</div>' +
+          '</div>' +
+          '<div class="p-2 px-3 bg-success-subtle border border-success-subtle rounded-3 small d-flex justify-content-between align-items-center">' +
+            '<span class="text-success fw-medium">Projected new on-hand total:</span>' +
+            '<strong class="text-success fs-6" id="restockProjectedVal">' + (row.quantity + 10) + ' units</strong>' +
+          '</div>' +
+        '</form>';
+
+      var footer =
+        '<button class="btn btn-light border" data-cc>Cancel</button>' +
+        '<button class="btn btn-primary" id="invRestockConfirm">Add Stock</button>';
+
+      ADMIN.modal.open("Quick Restock — " + ADMIN.esc(row.product_name), body, footer);
       var modalEl = document.getElementById("adminModal");
-      modalEl.querySelector("[data-cy]").onclick = function () {
-        var qty = parseInt(modalEl.querySelector('[name="quantity"]').value, 10);
-        if (!qty || qty < 1) { ADMIN.toast("Enter a quantity of 1 or more.", false); return; }
+      var input = modalEl.querySelector("#restockInput");
+      var projected = modalEl.querySelector("#restockProjectedVal");
+
+      function updateProjected() {
+        var add = parseInt(input.value, 10) || 0;
+        projected.textContent = (row.quantity + add) + " units";
+      }
+
+      input.addEventListener("input", updateProjected);
+
+      modalEl.querySelectorAll("[data-add]").forEach(function (pill) {
+        pill.addEventListener("click", function () {
+          var val = parseInt(pill.getAttribute("data-add"), 10);
+          input.value = val;
+          updateProjected();
+        });
+      });
+
+      modalEl.querySelector("#invRestockConfirm").onclick = function () {
+        var qty = parseInt(input.value, 10);
+        if (!qty || qty < 1) { ADMIN.toast("Please enter a quantity of 1 or more.", false); return; }
+        var btn = modalEl.querySelector("#invRestockConfirm");
+        btn.disabled = true;
+        btn.textContent = "Updating…";
+
         ADMIN.act("POST", "/admin/api/products/" + row.product_id + "/inventory/restock", null, { quantity: qty })
-          .then(function () { ADMIN.modal.close(); ADMIN.toast("Stock added.", true); self.load(); })
-          .catch(function (e) { ADMIN.toast(e.message, false); });
+          .then(function () {
+            ADMIN.modal.close();
+            ADMIN.toast("Successfully added " + qty + " units to " + row.product_name, true);
+            self.load();
+          })
+          .catch(function (e) {
+            btn.disabled = false;
+            btn.textContent = "Add Stock";
+            ADMIN.toast(e.message, false);
+          });
       };
     };
+
     self.setExact = function (row) {
-      var body = '<form id="invForm"><div class="row g-2"><div class="col-6"><label class="form-label small">On hand</label>' +
-        '<input name="quantity" type="number" min="0" value="' + ADMIN.esc(row.quantity) + '" class="form-control"></div>' +
-        '<div class="col-6"><label class="form-label small">Low-stock at</label>' +
-        '<input name="low_stock_threshold" type="number" min="0" value="' + ADMIN.esc(row.low_stock_threshold) + '" class="form-control"></div></div></form>';
-      var footer = '<button class="btn btn-light border" data-cc>Cancel</button>' +
-        '<button class="btn btn-primary" data-cy>Save stock</button>';
-      ADMIN.modal.open("Set exact stock — " + ADMIN.esc(row.product_name), body, footer);
+      ADMIN.ensureModalHost();
+      var thumbHtml = row.has_thumb
+        ? '<img src="' + ADMIN.esc(row.thumb) + '" style="width:44px;height:44px;object-fit:cover;border-radius:8px;border:1px solid #e2e8f0;">'
+        : '<div style="width:44px;height:44px;border-radius:8px;background:#f1f5f9;display:flex;align-items:center;justify-content:center;color:#94a3b8;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg></div>';
+
+      var body =
+        '<div class="d-flex align-items-center gap-3 p-3 bg-light rounded-3 border mb-3">' +
+          thumbHtml +
+          '<div class="min-w-0 flex-grow-1">' +
+            '<h4 class="h6 fw-bold mb-1 text-truncate">' + ADMIN.esc(row.product_name) + '</h4>' +
+            '<div class="small text-secondary">' +
+              '<span>SKU: <code>' + (row.sku ? ADMIN.esc(row.sku) : "—") + '</code> · Reserved in carts: <strong>' + ADMIN.esc(row.reserved) + '</strong></span>' +
+            '</div>' +
+          '</div>' +
+        '</div>' +
+        '<form id="invSetExactForm">' +
+          '<div class="row g-3">' +
+            '<div class="col-12 col-sm-6">' +
+              '<label class="form-label small fw-semibold text-dark">Exact On-Hand Quantity</label>' +
+              '<input name="quantity" id="setExactQty" type="number" min="0" value="' + ADMIN.esc(row.quantity) + '" class="form-control" required>' +
+              '<span class="form-text text-secondary small">Total physical inventory units</span>' +
+            '</div>' +
+            '<div class="col-12 col-sm-6">' +
+              '<label class="form-label small fw-semibold text-dark">Low-Stock Alert Level</label>' +
+              '<input name="low_stock_threshold" id="setExactThr" type="number" min="0" value="' + ADMIN.esc(row.low_stock_threshold) + '" class="form-control" required>' +
+              '<span class="form-text text-secondary small">Triggers warning alert when &le;</span>' +
+            '</div>' +
+          '</div>' +
+        '</form>';
+
+      var footer =
+        '<button class="btn btn-light border" data-cc>Cancel</button>' +
+        '<button class="btn btn-primary" id="invSetExactConfirm">Save Exact Count</button>';
+
+      ADMIN.modal.open("Set Exact Stock — " + ADMIN.esc(row.product_name), body, footer);
       var modalEl = document.getElementById("adminModal");
-      modalEl.querySelector("[data-cy]").onclick = function () {
-        var qty = parseInt(modalEl.querySelector('[name="quantity"]').value, 10);
-        var thr = parseInt(modalEl.querySelector('[name="low_stock_threshold"]').value, 10);
-        if (qty == null || qty < 0) { ADMIN.toast("Enter a quantity of zero or more.", false); return; }
-        ADMIN.act("POST", "/admin/api/products/" + row.product_id + "/inventory/set-form", null,
-          { quantity: qty, low_stock_threshold: (thr || 0) })
-          .then(function () { ADMIN.modal.close(); ADMIN.toast("Stock updated.", true); self.load(); })
-          .catch(function (e) { ADMIN.toast(e.message, false); });
+
+      modalEl.querySelector("#invSetExactConfirm").onclick = function () {
+        var qty = parseInt(modalEl.querySelector("#setExactQty").value, 10);
+        var thr = parseInt(modalEl.querySelector("#setExactThr").value, 10);
+        if (qty == null || qty < 0) { ADMIN.toast("Please enter a valid on-hand quantity.", false); return; }
+        var btn = modalEl.querySelector("#invSetExactConfirm");
+        btn.disabled = true;
+        btn.textContent = "Saving…";
+
+        ADMIN.act("POST", "/admin/api/products/" + row.product_id + "/inventory/set-form", null, {
+          quantity: qty,
+          low_stock_threshold: (thr != null && thr >= 0 ? thr : 0)
+        })
+          .then(function () {
+            ADMIN.modal.close();
+            ADMIN.toast("Inventory counts updated.", true);
+            self.load();
+          })
+          .catch(function (e) {
+            btn.disabled = false;
+            btn.textContent = "Save Exact Count";
+            ADMIN.toast(e.message, false);
+          });
       };
     };
     self.mount();
@@ -1034,52 +1657,19 @@
     self.module = "products";
     self.cachedCategories = [];
     var cfg = {
-      module: "products", title: "Products", eyebrow: "Catalog",
+      module: "products", title: "Products", eyebrow: "Catalog Management",
       description: "Create products, manage visibility, stock inventory, media and variants.",
-      endpoint: "/admin/api/list/products", searchPlaceholder: "Search product name or SKU",
+      endpoint: "/admin/api/list/products", searchPlaceholder: "Search product name or SKU…",
       addLabel: "Add product", emptyText: "No products yet — add your first one.",
       filters: [{ key: "status", label: "Status", options: [
         { value: "draft", label: "Draft" }, { value: "published", label: "Published" }, { value: "archived", label: "Archived" }
       ] }],
       columns: [
-        { label: "Image", render: function (r) {
-            return '<div class="dz-product-thumb-wrap">' +
-              (r.has_thumb ? '<img src="' + ADMIN.esc(r.thumb) + '" alt="' + ADMIN.esc(r.name) + '" loading="lazy">'
-                : '<span class="text-secondary small">📷</span>') +
-              '</div>';
-          } },
-        { label: "Product", render: function (r) {
-            return "<div><strong>" + ADMIN.esc(r.name) + "</strong>" +
-              (r.is_featured ? ' <span class="badge text-bg-warning ms-1">Featured</span>' : "") +
-              '<div class="small text-secondary mt-1">' +
-              '<span class="badge bg-light text-dark border me-1">' + ADMIN.esc(r.category_name || "Uncategorized") + '</span>' +
-              (r.brand_name ? '<span class="text-secondary me-1">· ' + ADMIN.esc(r.brand_name) + '</span>' : '') +
-              '</div></div>';
-          } },
-        { label: "SKU", render: function (r) { return '<code class="fw-semibold">' + ADMIN.esc(r.sku) + "</code>"; } },
-        { label: "Price", render: function (r) { return "<strong>" + ADMIN.esc(r.price_display) + "</strong>"; } },
-        { label: "Stock", render: function (r) {
-            var badge = '';
-            if (r.stock <= 0) {
-              badge = '<span class="badge text-bg-danger ms-1">Out of Stock</span>';
-            } else if (r.is_low_stock) {
-              badge = '<span class="badge bg-warning-subtle text-warning border border-warning-subtle ms-1">Low (' + ADMIN.esc(r.available) + ' left)</span>';
-            } else {
-              badge = '<span class="badge bg-success-subtle text-success border border-success-subtle ms-1">In Stock</span>';
-            }
-            return '<div class="d-flex align-items-center gap-1 flex-wrap"><strong>' + ADMIN.esc(r.available) + '</strong> <span class="small text-secondary">avail</span> ' + badge +
-              ' <button class="btn btn-light border btn-sm py-0 px-2 ms-1 text-primary fw-medium" data-quick-restock="' + r.id + '" title="Quick Restock">+Stock</button></div>';
-          } },
-        { label: "Status", render: function (r) {
-            if (r.status === "published") {
-              return '<button class="btn btn-sm btn-outline-success py-0 px-2 d-inline-flex align-items-center gap-1" data-toggle-status="' + r.id + '" data-current-status="published" title="Click to unpublish (switch to draft)">' +
-                '<span class="badge bg-success p-1 rounded-circle"></span> Published <span class="small opacity-50 ms-1">✕</span></button>';
-            } else if (r.status === "draft") {
-              return '<button class="btn btn-sm btn-outline-secondary py-0 px-2 d-inline-flex align-items-center gap-1" data-toggle-status="' + r.id + '" data-current-status="draft" title="Click to publish live">' +
-                '<span class="badge bg-secondary p-1 rounded-circle"></span> Draft <span class="small text-primary fw-bold ms-1">↑ Publish</span></button>';
-            }
-            return ADMIN.badge(r.status);
-          } }
+        { label: "Product" },
+        { label: "SKU" },
+        { label: "Price" },
+        { label: "Stock" },
+        { label: "Visibility" }
       ],
       rowActions: function (row) {
         var acts = [
@@ -1106,22 +1696,116 @@
     };
     self.applyConfig(cfg);
 
+    self.renderRow = function (row) {
+      var id = row.id != null ? row.id : (row.product_id != null ? row.product_id : "");
+      var thumbHtml = row.has_thumb
+        ? '<img class="dz-product-thumb" src="' + ADMIN.esc(row.thumb) + '" alt="' + ADMIN.esc(row.name) + '" loading="lazy">'
+        : '<div class="dz-product-thumb-placeholder"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg></div>';
+
+      var featuredBadge = row.is_featured
+        ? '<span class="dz-badge-featured"><svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg> Featured</span>'
+        : '';
+      var catBadge = '<span class="dz-badge-cat">' + ADMIN.esc(row.category_name || "Uncategorized") + '</span>';
+      var brandText = row.brand_name ? '<span class="dz-badge-brand">· ' + ADMIN.esc(row.brand_name) + '</span>' : '';
+
+      var productCell =
+        '<div class="dz-product-cell">' +
+          thumbHtml +
+          '<div class="dz-product-meta">' +
+            '<a href="javascript:void(0)" class="dz-product-title" data-act="0" title="Edit product ' + ADMIN.esc(row.name) + '">' + ADMIN.esc(row.name) + '</a>' +
+            '<div class="dz-product-tags">' + catBadge + brandText + featuredBadge + '</div>' +
+          '</div>' +
+        '</div>';
+
+      var skuCell = '<code class="dz-sku-pill">' + ADMIN.esc(row.sku) + '</code>';
+      var priceCell = '<div class="dz-price-cell"><strong>' + ADMIN.esc(row.price_display) + '</strong></div>';
+
+      var stockBadge = '';
+      if (row.stock <= 0) {
+        stockBadge = '<span class="dz-stock-pill dz-stock-pill-out"><span class="dz-stock-dot"></span> Out of Stock</span>';
+      } else if (row.is_low_stock) {
+        stockBadge = '<span class="dz-stock-pill dz-stock-pill-low"><span class="dz-stock-dot"></span> Low (' + ADMIN.esc(row.available) + ' left)</span>';
+      } else {
+        stockBadge = '<span class="dz-stock-pill dz-stock-pill-in"><span class="dz-stock-dot"></span> ' + ADMIN.esc(row.available) + ' in stock</span>';
+      }
+
+      var stockCell =
+        '<div class="dz-stock-badge-wrap">' +
+          stockBadge +
+          '<button class="dz-quick-restock-btn" data-quick-restock="' + row.id + '" title="Quick Restock">+ Restock</button>' +
+        '</div>';
+
+      var statusCell = '';
+      if (row.status === "published") {
+        statusCell =
+          '<button class="dz-status-toggle is-published" data-toggle-status="' + row.id + '" data-current-status="published" title="Click to unpublish (switch to draft)">' +
+            '<span class="dz-status-dot"></span>' +
+            '<span class="dz-toggle-text-main">Published</span>' +
+            '<span class="dz-toggle-text-alt">Unpublish ✕</span>' +
+          '</button>';
+      } else if (row.status === "draft") {
+        statusCell =
+          '<button class="dz-status-toggle is-draft" data-toggle-status="' + row.id + '" data-current-status="draft" title="Click to publish live">' +
+            '<span class="dz-status-dot"></span>' +
+            '<span class="dz-toggle-text-main">Draft</span>' +
+            '<span class="dz-toggle-text-alt">Publish ↑</span>' +
+          '</button>';
+      } else {
+        statusCell = ADMIN.badge(row.status);
+      }
+
+      var actions = self.cfg.rowActions ? self.cfg.rowActions(row) : [];
+      var actsHtml = '<div class="dz-actions-group justify-content-end">';
+      actions.forEach(function (a, i) {
+        var icon = '';
+        if (a.label === "Manage") {
+          icon = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg> ';
+        } else if (a.label === "View") {
+          icon = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg> ';
+        } else if (a.label === "Delete") {
+          icon = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg> ';
+        }
+        actsHtml += '<button class="btn btn-sm ' + (a.cls || "btn-light border") + '" data-act="' + i + '">' + icon + ADMIN.esc(a.label) + '</button>';
+      });
+      actsHtml += '</div>';
+
+      return '<tr data-id="' + ADMIN.esc(id) + '">' +
+        '<td>' + productCell + '</td>' +
+        '<td>' + skuCell + '</td>' +
+        '<td>' + priceCell + '</td>' +
+        '<td>' + stockCell + '</td>' +
+        '<td>' + statusCell + '</td>' +
+        '<td class="text-end">' + actsHtml + '</td>' +
+      '</tr>';
+    };
+
     self.renderShell = function () {
       self.root.innerHTML =
-        '<div class="dz-admin-page-head mb-3">' +
-          '<div>' +
-            '<span class="dz-eyebrow">Catalog</span>' +
-            '<h1 class="page-title mb-1">Products</h1>' +
-            '<p class="page-description mb-0">Create products, manage visibility, stock inventory, media and variants.</p>' +
+        '<div class="dz-admin-page-head mb-4">' +
+          '<div class="d-flex align-items-center gap-3">' +
+            '<div class="dz-head-icon-box">' +
+              '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg>' +
+            '</div>' +
+            '<div>' +
+              '<div class="d-flex align-items-center gap-2">' +
+                '<span class="dz-eyebrow mb-0">Catalog Management</span>' +
+              '</div>' +
+              '<h1 class="page-title mb-0 d-flex align-items-center gap-2">' +
+                'Products' +
+                '<span class="badge bg-secondary-subtle text-secondary rounded-pill fs-6 fw-semibold" id="products-head-total">Loading…</span>' +
+              '</h1>' +
+              '<p class="page-description mt-1 mb-0">Manage catalog inventory, pricing, visibility, and product variants.</p>' +
+            '</div>' +
           '</div>' +
           '<div class="dz-admin-page-head-actions">' +
-            '<button class="btn btn-primary" id="btn-add-product">' +
-              '<span class="me-1">＋</span> Add product' +
+            '<button class="btn btn-primary d-inline-flex align-items-center gap-2 shadow-sm" id="btn-add-product">' +
+              '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>' +
+              '<span>Add product</span>' +
             '</button>' +
           '</div>' +
         '</div>' +
         '<div class="dz-admin-stats-host mb-3" id="products-stats"></div>' +
-        '<div class="dz-admin-toolbar mb-3" id="products-toolbar"></div>' +
+        '<div class="dz-admin-toolbar-card mb-4" id="products-toolbar"></div>' +
         '<div class="dz-admin-list-wrap" id="products-list"></div>';
 
       var addBtn = self.root.querySelector("#btn-add-product");
@@ -1136,27 +1820,76 @@
       var curStock = self.state.filters.stock_status || "";
       var isAllActive = curStatus === "" && curStock === "";
 
+      var totalBadge = self.root.querySelector("#products-head-total");
+      if (totalBadge && stats.total != null) {
+        totalBadge.textContent = stats.total + " products";
+      }
+
       host.innerHTML =
         '<div class="dz-stat-grid">' +
-          '<div class="dz-card dz-stat-card is-clickable' + (isAllActive ? " is-active" : "") + '" data-stat-filter="all" title="View all products">' +
-            '<div class="dz-stat-value">' + ADMIN.esc(stats.total || 0) + '</div>' +
-            '<div class="dz-stat-label">Total Products</div>' +
+          '<div class="dz-stat-card-modern' + (isAllActive ? " is-active" : "") + '" data-stat-filter="all" title="View all products">' +
+            '<div class="dz-stat-card-header">' +
+              '<div class="dz-stat-icon-wrap dz-stat-icon-all">' +
+                '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg>' +
+              '</div>' +
+              '<span class="dz-stat-badge-tag">Catalog</span>' +
+            '</div>' +
+            '<div class="dz-stat-card-body">' +
+              '<div class="dz-stat-num">' + ADMIN.esc(stats.total || 0) + '</div>' +
+              '<div class="dz-stat-sub">Total Products</div>' +
+            '</div>' +
           '</div>' +
-          '<div class="dz-card dz-stat-card is-clickable' + (curStatus === "published" ? " is-active" : "") + '" data-stat-filter="published" title="Filter published products">' +
-            '<div class="dz-stat-value text-success">' + ADMIN.esc(stats.published || 0) + '</div>' +
-            '<div class="dz-stat-label">Published</div>' +
+
+          '<div class="dz-stat-card-modern' + (curStatus === "published" ? " is-active" : "") + '" data-stat-filter="published" title="Filter published products">' +
+            '<div class="dz-stat-card-header">' +
+              '<div class="dz-stat-icon-wrap dz-stat-icon-published">' +
+                '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>' +
+              '</div>' +
+              '<span class="badge bg-success-subtle text-success border border-success-subtle">Live</span>' +
+            '</div>' +
+            '<div class="dz-stat-card-body">' +
+              '<div class="dz-stat-num text-success">' + ADMIN.esc(stats.published || 0) + '</div>' +
+              '<div class="dz-stat-sub">Published</div>' +
+            '</div>' +
           '</div>' +
-          '<div class="dz-card dz-stat-card is-clickable' + (curStatus === "draft" ? " is-active" : "") + '" data-stat-filter="draft" title="Filter draft products">' +
-            '<div class="dz-stat-value text-secondary">' + ADMIN.esc(stats.draft || 0) + '</div>' +
-            '<div class="dz-stat-label">Drafts</div>' +
+
+          '<div class="dz-stat-card-modern' + (curStatus === "draft" ? " is-active" : "") + '" data-stat-filter="draft" title="Filter draft products">' +
+            '<div class="dz-stat-card-header">' +
+              '<div class="dz-stat-icon-wrap dz-stat-icon-draft">' +
+                '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>' +
+              '</div>' +
+              '<span class="badge bg-light text-secondary border">Draft</span>' +
+            '</div>' +
+            '<div class="dz-stat-card-body">' +
+              '<div class="dz-stat-num text-secondary">' + ADMIN.esc(stats.draft || 0) + '</div>' +
+              '<div class="dz-stat-sub">Drafts</div>' +
+            '</div>' +
           '</div>' +
-          '<div class="dz-card dz-stat-card is-clickable' + (curStock === "low" ? " is-active" : "") + '" data-stat-filter="low_stock" title="Filter low stock items">' +
-            '<div class="dz-stat-value text-warning">' + ADMIN.esc(stats.low_stock || 0) + '</div>' +
-            '<div class="dz-stat-label">Low Stock</div>' +
+
+          '<div class="dz-stat-card-modern' + (curStock === "low" ? " is-active" : "") + '" data-stat-filter="low_stock" title="Filter low stock items">' +
+            '<div class="dz-stat-card-header">' +
+              '<div class="dz-stat-icon-wrap dz-stat-icon-low">' +
+                '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>' +
+              '</div>' +
+              '<span class="badge bg-warning-subtle text-warning border border-warning-subtle">Reorder</span>' +
+            '</div>' +
+            '<div class="dz-stat-card-body">' +
+              '<div class="dz-stat-num text-warning">' + ADMIN.esc(stats.low_stock || 0) + '</div>' +
+              '<div class="dz-stat-sub">Low Stock</div>' +
+            '</div>' +
           '</div>' +
-          '<div class="dz-card dz-stat-card is-clickable' + (curStock === "out" ? " is-active" : "") + '" data-stat-filter="out_of_stock" title="Filter out of stock items">' +
-            '<div class="dz-stat-value text-danger">' + ADMIN.esc(stats.out_of_stock || 0) + '</div>' +
-            '<div class="dz-stat-label">Out of Stock</div>' +
+
+          '<div class="dz-stat-card-modern' + (curStock === "out" ? " is-active" : "") + '" data-stat-filter="out_of_stock" title="Filter out of stock items">' +
+            '<div class="dz-stat-card-header">' +
+              '<div class="dz-stat-icon-wrap dz-stat-icon-out">' +
+                '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>' +
+              '</div>' +
+              '<span class="badge bg-danger-subtle text-danger border border-danger-subtle">Alert</span>' +
+            '</div>' +
+            '<div class="dz-stat-card-body">' +
+              '<div class="dz-stat-num text-danger">' + ADMIN.esc(stats.out_of_stock || 0) + '</div>' +
+              '<div class="dz-stat-sub">Out of Stock</div>' +
+            '</div>' +
           '</div>' +
         '</div>';
 
@@ -1194,51 +1927,121 @@
         return '<option value="' + c.id + '"' + (String(self.state.filters.category_id) === String(c.id) ? " selected" : "") + '>' + ADMIN.esc(c.name) + '</option>';
       }).join("");
 
-      var html =
-        '<div class="dz-admin-search">' +
-          '<span class="dz-admin-search-icon" aria-hidden="true">🔍</span>' +
-          '<input type="search" class="form-control form-control-sm" id="products-search" placeholder="Search product name or SKU…" value="' + ADMIN.esc(self.state.q || "") + '">' +
-        '</div>' +
-        '<select class="form-select form-select-sm dz-admin-filter" data-filter="category_id">' +
-          '<option value="">All Categories</option>' +
-          catOptions +
-        '</select>' +
-        '<select class="form-select form-select-sm dz-admin-filter" data-filter="status">' +
-          '<option value="">All Statuses</option>' +
-          '<option value="published"' + (self.state.filters.status === "published" ? " selected" : "") + '>Published</option>' +
-          '<option value="draft"' + (self.state.filters.status === "draft" ? " selected" : "") + '>Draft</option>' +
-          '<option value="archived"' + (self.state.filters.status === "archived" ? " selected" : "") + '>Archived</option>' +
-        '</select>' +
-        '<select class="form-select form-select-sm dz-admin-filter" data-filter="stock_status">' +
-          '<option value="">All Stock Levels</option>' +
-          '<option value="in"' + (self.state.filters.stock_status === "in" ? " selected" : "") + '>In Stock</option>' +
-          '<option value="low"' + (self.state.filters.stock_status === "low" ? " selected" : "") + '>Low Stock</option>' +
-          '<option value="out"' + (self.state.filters.stock_status === "out" ? " selected" : "") + '>Out of Stock</option>' +
-        '</select>' +
-        '<select class="form-select form-select-sm dz-admin-filter" data-filter="sort">' +
-          '<option value="newest"' + (self.state.filters.sort === "newest" || !self.state.filters.sort ? " selected" : "") + '>Sort: Newest</option>' +
-          '<option value="price_asc"' + (self.state.filters.sort === "price_asc" ? " selected" : "") + '>Sort: Price (Low → High)</option>' +
-          '<option value="price_desc"' + (self.state.filters.sort === "price_desc" ? " selected" : "") + '>Sort: Price (High → Low)</option>' +
-          '<option value="name_asc"' + (self.state.filters.sort === "name_asc" ? " selected" : "") + '>Sort: Name (A → Z)</option>' +
-        '</select>' +
-        '<button class="btn btn-light border btn-sm" data-admin-refresh type="button" title="Refresh list">Refresh</button>';
+      var curStatus = self.state.filters.status || "";
+      var curStock = self.state.filters.stock_status || "";
+      var curCat = self.state.filters.category_id || "";
+      var curSort = self.state.filters.sort || "newest";
+      var curQ = self.state.q || "";
 
-      var hasFilters = self.state.q || Object.keys(self.state.filters).some(function (k) { return self.state.filters[k]; });
-      if (hasFilters) {
-        html += '<button class="btn btn-outline-secondary btn-sm" id="products-clear-filters" type="button">Clear</button>';
+      var activeCatName = "";
+      if (curCat) {
+        var foundCat = catList.find(function (c) { return String(c.id) === String(curCat); });
+        activeCatName = foundCat ? foundCat.name : "Category #" + curCat;
       }
+
+      var hasFilters = Boolean(curQ || curStatus || curStock || curCat || (curSort && curSort !== "newest"));
+
+      var chipsHtml = "";
+      if (curQ) {
+        chipsHtml += '<span class="dz-filter-chip" data-clear-chip="q">Search: "' + ADMIN.esc(curQ) + '" <span class="dz-chip-x" aria-hidden="true">&times;</span></span>';
+      }
+      if (curCat) {
+        chipsHtml += '<span class="dz-filter-chip" data-clear-chip="category_id">Category: ' + ADMIN.esc(activeCatName) + ' <span class="dz-chip-x" aria-hidden="true">&times;</span></span>';
+      }
+      if (curStatus) {
+        chipsHtml += '<span class="dz-filter-chip" data-clear-chip="status">Status: ' + ADMIN.esc(curStatus) + ' <span class="dz-chip-x" aria-hidden="true">&times;</span></span>';
+      }
+      if (curStock) {
+        var stockLabels = { in: "In Stock", low: "Low Stock", out: "Out of Stock" };
+        chipsHtml += '<span class="dz-filter-chip" data-clear-chip="stock_status">Stock: ' + (stockLabels[curStock] || curStock) + ' <span class="dz-chip-x" aria-hidden="true">&times;</span></span>';
+      }
+      if (curSort && curSort !== "newest") {
+        var sortLabels = { price_asc: "Price (Low → High)", price_desc: "Price (High → Low)", name_asc: "Name (A → Z)" };
+        chipsHtml += '<span class="dz-filter-chip" data-clear-chip="sort">Sort: ' + (sortLabels[curSort] || curSort) + ' <span class="dz-chip-x" aria-hidden="true">&times;</span></span>';
+      }
+
+      var html =
+        '<div class="dz-toolbar-wrap">' +
+          '<div class="dz-toolbar-row">' +
+            '<div class="dz-search-box">' +
+              '<span class="dz-search-icon" aria-hidden="true">' +
+                '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>' +
+              '</span>' +
+              '<input type="search" class="dz-search-input" id="products-search" placeholder="Search product name or SKU…" value="' + ADMIN.esc(curQ) + '">' +
+              (curQ ? '<button type="button" class="dz-search-clear" id="products-search-clear" title="Clear search" aria-label="Clear search">&times;</button>' : '') +
+            '</div>' +
+
+            '<div class="dz-toolbar-filters">' +
+              '<div class="dz-filter-item">' +
+                '<select class="dz-filter-select dz-admin-filter' + (curCat ? " is-filtered" : "") + '" data-filter="category_id">' +
+                  '<option value="">All Categories</option>' +
+                  catOptions +
+                '</select>' +
+              '</div>' +
+
+              '<div class="dz-filter-item">' +
+                '<select class="dz-filter-select dz-admin-filter' + (curStatus ? " is-filtered" : "") + '" data-filter="status">' +
+                  '<option value="">All Statuses</option>' +
+                  '<option value="published"' + (curStatus === "published" ? " selected" : "") + '>Published</option>' +
+                  '<option value="draft"' + (curStatus === "draft" ? " selected" : "") + '>Draft</option>' +
+                  '<option value="archived"' + (curStatus === "archived" ? " selected" : "") + '>Archived</option>' +
+                '</select>' +
+              '</div>' +
+
+              '<div class="dz-filter-item">' +
+                '<select class="dz-filter-select dz-admin-filter' + (curStock ? " is-filtered" : "") + '" data-filter="stock_status">' +
+                  '<option value="">All Stock Levels</option>' +
+                  '<option value="in"' + (curStock === "in" ? " selected" : "") + '>In Stock</option>' +
+                  '<option value="low"' + (curStock === "low" ? " selected" : "") + '>Low Stock</option>' +
+                  '<option value="out"' + (curStock === "out" ? " selected" : "") + '>Out of Stock</option>' +
+                '</select>' +
+              '</div>' +
+
+              '<div class="dz-filter-item">' +
+                '<select class="dz-filter-select dz-admin-filter' + (curSort && curSort !== "newest" ? " is-filtered" : "") + '" data-filter="sort">' +
+                  '<option value="newest"' + (curSort === "newest" ? " selected" : "") + '>Sort: Newest</option>' +
+                  '<option value="price_asc"' + (curSort === "price_asc" ? " selected" : "") + '>Price: Low → High</option>' +
+                  '<option value="price_desc"' + (curSort === "price_desc" ? " selected" : "") + '>Price: High → Low</option>' +
+                  '<option value="name_asc"' + (curSort === "name_asc" ? " selected" : "") + '>Name: A → Z</option>' +
+                '</select>' +
+              '</div>' +
+
+              '<button class="btn btn-light border dz-toolbar-btn dz-btn-icon-only" data-admin-refresh type="button" title="Refresh products list">' +
+                '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6"></path><path d="M1 20v-6h6"></path><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>' +
+              '</button>' +
+
+              (hasFilters ? '<button class="btn btn-outline-secondary btn-sm dz-toolbar-btn" id="products-clear-filters" type="button"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg> Reset</button>' : '') +
+            '</div>' +
+          '</div>' +
+
+          (chipsHtml ? '<div class="dz-active-chips-bar"><span class="dz-active-chips-label">Active filters:</span>' + chipsHtml + '<button class="dz-clear-all-link" id="products-clear-all-link" type="button">Clear all</button></div>' : '') +
+        '</div>';
+
       tb.innerHTML = html;
 
       var search = tb.querySelector("#products-search");
       var t;
-      search.addEventListener("input", function () {
-        clearTimeout(t);
-        t = setTimeout(function () {
-          self.state.q = search.value.trim();
+      if (search) {
+        search.addEventListener("input", function () {
+          clearTimeout(t);
+          t = setTimeout(function () {
+            self.state.q = search.value.trim();
+            self.state.page = 1;
+            self.renderToolbar();
+            self.load();
+          }, 300);
+        });
+      }
+
+      var searchClear = tb.querySelector("#products-search-clear");
+      if (searchClear) {
+        searchClear.addEventListener("click", function () {
+          self.state.q = "";
           self.state.page = 1;
+          self.renderToolbar();
           self.load();
-        }, 300);
-      });
+        });
+      }
 
       tb.querySelectorAll("[data-filter]").forEach(function (sel) {
         sel.addEventListener("change", function () {
@@ -1246,21 +2049,41 @@
           if (sel.value) self.state.filters[k] = sel.value;
           else delete self.state.filters[k];
           self.state.page = 1;
+          self.renderToolbar();
           self.load();
         });
       });
 
-      tb.querySelector("[data-admin-refresh]").addEventListener("click", function () { self.load(); });
+      var refreshBtn = tb.querySelector("[data-admin-refresh]");
+      if (refreshBtn) {
+        refreshBtn.addEventListener("click", function () { self.load(); });
+      }
+
+      var clearAllFn = function () {
+        self.state.q = "";
+        self.state.filters = {};
+        self.state.page = 1;
+        self.renderToolbar();
+        self.load();
+      };
+
       var clearBtn = tb.querySelector("#products-clear-filters");
-      if (clearBtn) {
-        clearBtn.addEventListener("click", function () {
-          self.state.q = "";
-          self.state.filters = {};
+      if (clearBtn) clearBtn.addEventListener("click", clearAllFn);
+
+      var clearLink = tb.querySelector("#products-clear-all-link");
+      if (clearLink) clearLink.addEventListener("click", clearAllFn);
+
+      tb.querySelectorAll("[data-clear-chip]").forEach(function (chip) {
+        chip.addEventListener("click", function () {
+          var key = chip.getAttribute("data-clear-chip");
+          if (key === "q") self.state.q = "";
+          else if (key === "sort") self.state.filters.sort = "newest";
+          else delete self.state.filters[key];
           self.state.page = 1;
           self.renderToolbar();
           self.load();
         });
-      }
+      });
     };
 
     self.load = function (page) {
@@ -1284,20 +2107,69 @@
           self.renderStats(meta.stats);
         }
 
-        var filtered = self.state.q !== "" || Object.keys(self.state.filters).some(function (key) { return self.state.filters[key] !== ""; });
+        var filtered = Boolean(self.state.q !== "" || Object.keys(self.state.filters).some(function (key) { return self.state.filters[key] !== ""; }));
         if (rows.length === 0) {
-          list.innerHTML = ADMIN.emptyHTML(filtered ? "No products match your search or filter criteria." : self.cfg.emptyText);
+          list.innerHTML =
+            '<div class="dz-card p-5 text-center dz-empty-state-card">' +
+              '<div class="dz-empty-icon mb-3">' +
+                '<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="1.5"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>' +
+              '</div>' +
+              '<h3 class="h5 fw-bold mb-1">No products found</h3>' +
+              '<p class="text-secondary small mb-3">' +
+                (filtered ? "No products match your current search or filter criteria. Try resetting your filters." : "Your catalog is empty. Create your first product to get started.") +
+              '</p>' +
+              (filtered
+                ? '<button class="btn btn-outline-primary btn-sm" id="empty-clear-filters">Reset filters</button>'
+                : '<button class="btn btn-primary btn-sm" id="empty-add-product">+ Add product</button>') +
+            '</div>';
+          var emptyClear = list.querySelector("#empty-clear-filters");
+          if (emptyClear) {
+            emptyClear.addEventListener("click", function () {
+              self.state.q = "";
+              self.state.filters = {};
+              self.state.page = 1;
+              self.renderToolbar();
+              self.load();
+            });
+          }
+          var emptyAdd = list.querySelector("#empty-add-product");
+          if (emptyAdd) {
+            emptyAdd.addEventListener("click", function () { self.openCreate(); });
+          }
           return;
         }
 
         rows.forEach(function (r) { self.rowsById[String(r.id)] = r; });
-        var thead = "<thead><tr>" + self.cfg.columns.map(function (c) {
-          return "<th>" + ADMIN.esc(c.label) + "</th>";
-        }).join("") + '<th style="min-width:180px;">Actions</th></tr></thead>';
+        var thead =
+          "<thead><tr>" +
+            '<th style="width: 34%;">Product</th>' +
+            '<th style="width: 14%;">SKU</th>' +
+            '<th style="width: 14%;">Price</th>' +
+            '<th style="width: 16%;">Stock</th>' +
+            '<th style="width: 10%;">Visibility</th>' +
+            '<th style="width: 12%; text-align: right; min-width: 140px;">Actions</th>' +
+          "</tr></thead>";
         var tbody = "<tbody>" + rows.map(function (row) { return self.renderRow(row); }).join("") + "</tbody>";
+
+        var tableCardHeader =
+          '<div class="dz-table-header-bar p-3 d-flex justify-content-between align-items-center flex-wrap gap-2">' +
+            '<div class="d-flex align-items-center gap-2">' +
+              '<span class="fw-bold text-dark fs-6">Catalog List</span>' +
+              '<span class="badge bg-light text-secondary border">' + (meta.total || rows.length) + ' items</span>' +
+            '</div>' +
+            '<div class="text-secondary small">' +
+              (filtered ? '<span class="text-primary fw-medium">Filtered results</span>' : 'Showing page ' + (meta.page || 1) + ' of ' + (meta.last_page || 1)) +
+            '</div>' +
+          '</div>';
+
         list.innerHTML =
-          '<div class="dz-card p-0 dz-table-card"><div class="table-responsive"><table class="table dz-admin-table align-middle mb-0">' +
-          thead + tbody + "</table></div>" + ADMIN.paginationHTML(meta) + "</div>";
+          '<div class="dz-card p-0 dz-table-card shadow-sm">' +
+            tableCardHeader +
+            '<div class="table-responsive"><table class="table dz-admin-table align-middle mb-0">' +
+              thead + tbody +
+            '</table></div>' +
+            ADMIN.paginationHTML(meta) +
+          '</div>';
         self.bindTable(list);
         self.bindCustomProductActions(list);
       }).catch(function () {
@@ -1423,22 +2295,55 @@
 
     self.renderGalleryHTML = function (images, productId) {
       if (!images || images.length === 0) {
-        return '<p class="empty-note w-100">No images yet — upload photos below.</p>';
+        return '<div class="dz-gallery-empty">' +
+          '<div class="dz-gallery-empty-icon">' +
+            '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>' +
+          '</div>' +
+          '<div class="fw-semibold text-dark small mb-1">No product photos yet</div>' +
+          '<div class="small text-secondary">Upload images below or click "Upload in modal".</div>' +
+        '</div>';
       }
       return images.map(function (img, i) {
-        return '<figure class="dz-gallery-item' + (img.is_primary ? " is-cover" : "") + '" data-id="' + img.id + '">' +
-          '<img class="dz-gallery-thumb" src="' + ADMIN.esc(img.url) + '" alt="' + ADMIN.esc(img.alt_text) + '">' +
-          '<figcaption class="small">' +
-          (img.is_primary ? '<span class="badge text-bg-primary">Cover Photo</span>' : '<span class="text-secondary small">Photo #' + (i + 1) + '</span>') +
-          (img.alt_text ? '<span class="text-truncate small text-secondary" title="' + ADMIN.esc(img.alt_text) + '">' + ADMIN.esc(img.alt_text) + '</span>' : '') +
-          '<div class="d-flex flex-wrap gap-1 mt-1">' +
-          (img.is_primary ? "" : '<button class="btn btn-light border btn-sm py-0 px-2" type="button" data-act="img-cover" data-id="' + img.id + '" title="Set as cover photo">Cover</button>') +
-          '<button class="btn btn-light border btn-sm py-0 px-2" type="button" data-act="img-alt" data-id="' + img.id + '" title="Edit alt text">Alt</button>' +
-          (i > 0 ? '<button class="btn btn-light border btn-sm py-0 px-1" type="button" data-act="img-up" data-id="' + img.id + '" title="Move up">↑</button>' : "") +
-          (i < images.length - 1 ? '<button class="btn btn-light border btn-sm py-0 px-1" type="button" data-act="img-down" data-id="' + img.id + '" title="Move down">↓</button>' : "") +
-          '<button class="btn btn-outline-danger btn-sm py-0 px-2" type="button" data-act="img-del" data-id="' + img.id + '" title="Delete photo">Delete</button>' +
+        var isCover = !!img.is_primary;
+        var alt = img.alt_text ? ADMIN.esc(img.alt_text) : "";
+        var isFirst = i === 0;
+        var isLast = i === images.length - 1;
+        return '<figure class="dz-gallery-item' + (isCover ? " is-cover" : "") + '" data-id="' + img.id + '">' +
+          '<div class="dz-gallery-media">' +
+            '<img class="dz-gallery-thumb" src="' + ADMIN.esc(img.url) + '" alt="' + alt + '" loading="lazy">' +
+            '<div class="dz-gallery-badges">' +
+              (isCover
+                ? '<span class="dz-badge-cover"><svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>Cover</span>'
+                : '<span class="dz-badge-pos">#' + (i + 1) + '</span>') +
+            '</div>' +
+            '<button class="dz-gallery-quick-del" type="button" data-act="img-del" data-id="' + img.id + '" title="Delete photo">' +
+              '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>' +
+            '</button>' +
           '</div>' +
-          "</figcaption></figure>";
+          '<figcaption class="dz-gallery-caption">' +
+            '<button class="dz-gallery-alt-bar' + (alt ? "" : " is-empty") + '" type="button" data-act="img-alt" data-id="' + img.id + '" title="' + (alt ? 'Click to edit alt text: ' + alt : 'Click to add alt text for SEO') + '">' +
+              '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" class="flex-shrink-0"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>' +
+              '<span class="dz-gallery-alt-text">' + (alt ? alt : 'Add alt text') + '</span>' +
+              (alt ? '<span class="dz-gallery-alt-edit-tag">Edit</span>' : '') +
+            '</button>' +
+            '<div class="dz-gallery-btn-row">' +
+              (isCover
+                ? '<span class="dz-cover-indicator"><svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>Cover</span>'
+                : '<button class="btn btn-sm dz-btn-make-cover" type="button" data-act="img-cover" data-id="' + img.id + '" title="Set as primary cover photo">' +
+                    '<svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>' +
+                    '<span>Cover</span>' +
+                  '</button>') +
+              '<div class="dz-gallery-nav-group ms-auto">' +
+                '<button class="btn btn-light border btn-sm dz-btn-arrow" type="button" data-act="img-up" data-id="' + img.id + '" title="Move earlier"' + (isFirst ? " disabled" : "") + '>' +
+                  '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"></polyline></svg>' +
+                '</button>' +
+                '<button class="btn btn-light border btn-sm dz-btn-arrow" type="button" data-act="img-down" data-id="' + img.id + '" title="Move later"' + (isLast ? " disabled" : "") + '>' +
+                  '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"></polyline></svg>' +
+                '</button>' +
+              '</div>' +
+            '</div>' +
+          '</figcaption>' +
+        '</figure>';
       }).join("");
     };
 
@@ -1450,6 +2355,8 @@
         if (!res.ok) return;
         var images = res.data && res.data.data ? res.data.data : [];
         grid.innerHTML = self.renderGalleryHTML(images, id);
+        var countEl = section.querySelector(".dz-gallery-count-badge");
+        if (countEl) countEl.textContent = images.length + (images.length === 1 ? " photo" : " photos");
         // Reset upload form inside gallery section
         var uploadForm = section ? section.querySelector('[data-form="upload"]') : null;
         if (uploadForm) {
@@ -1463,7 +2370,7 @@
           var submitBtn = uploadForm.querySelector('button[type="submit"]');
           if (submitBtn) {
             submitBtn.disabled = false;
-            submitBtn.textContent = "Upload";
+            submitBtn.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg><span>Upload</span>';
           }
         }
         var dropzone = section.querySelector("#gallery-dropzone");
@@ -1536,27 +2443,68 @@
                 textfield("description", "Description", p.description, 4) +
                 '<button class="btn btn-primary mt-3" type="submit">Save details</button>' +
               "</form></div>" +
-            '<div class="dz-card p-3 p-lg-4 mb-3" id="product-gallery-section">' +
-              '<div class="d-flex justify-content-between align-items-center mb-2">' +
-                '<div><h3 class="h6 fw-bold mb-0">Gallery</h3><span class="small text-secondary">Manage photos, reorder, or set cover photo.</span></div>' +
-                '<button class="btn btn-outline-primary btn-sm" type="button" data-act="upload-modal">Upload in modal</button>' +
+            '<div class="dz-card dz-editor-card p-3 p-lg-4 mb-3 dz-gallery-card-highlight" id="product-gallery-section">' +
+              '<div class="dz-editor-card-head mb-3">' +
+                '<div class="dz-card-title-group">' +
+                  '<div class="dz-card-icon" style="background: rgba(248, 86, 6, 0.1); color: var(--dz-orange);">' +
+                    '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>' +
+                  '</div>' +
+                  '<div>' +
+                    '<h3 class="h6 fw-bold mb-0">Product Gallery</h3>' +
+                    '<span class="small text-secondary">Manage photos, reorder, or set primary cover photo</span>' +
+                  '</div>' +
+                '</div>' +
+                '<div class="d-flex align-items-center gap-2">' +
+                  '<span class="badge bg-light text-secondary border dz-gallery-count-badge">' + ((d.images && d.images.length) || 0) + (((d.images && d.images.length) === 1) ? ' photo' : ' photos') + '</span>' +
+                  '<button class="btn btn-outline-primary btn-sm d-inline-flex align-items-center gap-1" type="button" data-act="upload-modal">' +
+                    '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>' +
+                    '<span>Upload modal</span>' +
+                  '</button>' +
+                '</div>' +
               '</div>' +
               '<div class="dz-gallery-grid mb-3" id="p-gallery-grid">' + gallery + "</div>" +
-              '<form data-form="upload" class="dz-upload-form">' +
-                '<div class="dz-upload-dropzone mb-2" id="gallery-dropzone">' +
-                  '<input type="file" accept="image/png,image/jpeg,image/gif,image/webp" data-base64-target="p-img-b64" data-preview-target="p-img-preview" id="p-gallery-file-input">' +
-                  '<div class="dz-upload-dropzone-icon">📷</div>' +
-                  '<div class="fw-medium small text-dark">Drag & drop product photo here, or click to browse</div>' +
-                  '<div class="small text-secondary">PNG, JPEG, GIF or WEBP · max 2 MB</div>' +
+              '<div class="dz-upload-box p-3 rounded-3 border">' +
+                '<div class="d-flex align-items-center justify-content-between mb-2">' +
+                  '<strong class="small text-dark fw-semibold d-inline-flex align-items-center gap-1">' +
+                    '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>' +
+                    'Add New Photo' +
+                  '</strong>' +
+                  '<span class="badge bg-white text-secondary border">Max 2 MB</span>' +
                 '</div>' +
-                '<div class="row g-2 align-items-end">' +
-                  '<div class="col-12 col-lg-7"><label class="form-label small">Alt text</label><input name="alt_text" class="form-control" placeholder="Describe the photo for SEO"></div>' +
-                  '<div class="col-6 col-lg-3"><div class="form-check mt-3"><input class="form-check-input" type="checkbox" name="is_primary" value="1" id="p-img-primary"><label class="form-check-label small" for="p-img-primary">Make cover photo</label></div></div>' +
-                  '<div class="col-6 col-lg-2"><button class="btn btn-primary w-100" type="submit">Upload</button></div>' +
-                "</div>" +
-                '<input type="hidden" name="image" id="p-img-b64" value="">' +
-                '<div id="p-img-preview" class="dz-preview mt-2"></div>' +
-              "</form></div>" +
+                '<form data-form="upload" class="dz-upload-form">' +
+                  '<div class="dz-upload-dropzone mb-3" id="gallery-dropzone">' +
+                    '<input type="file" accept="image/png,image/jpeg,image/gif,image/webp" data-base64-target="p-img-b64" data-preview-target="p-img-preview" id="p-gallery-file-input">' +
+                    '<div class="dz-upload-dropzone-icon">' +
+                      '<svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>' +
+                    '</div>' +
+                    '<div class="fw-semibold text-dark small mb-1">Click to browse or drag and drop image here</div>' +
+                    '<div class="text-secondary small">PNG, JPEG, GIF or WEBP · up to 2 MB</div>' +
+                  '</div>' +
+                  '<div class="row g-2 align-items-center">' +
+                    '<div class="col-12 col-md-6">' +
+                      '<div class="input-group input-group-sm">' +
+                        '<span class="input-group-text bg-white text-secondary"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg></span>' +
+                        '<input name="alt_text" class="form-control" placeholder="Alt text / description for SEO">' +
+                      '</div>' +
+                    '</div>' +
+                    '<div class="col-6 col-md-3">' +
+                      '<div class="form-check form-check-inline m-0">' +
+                        '<input class="form-check-input" type="checkbox" name="is_primary" value="1" id="p-img-primary">' +
+                        '<label class="form-check-label small text-secondary" for="p-img-primary">Set as cover</label>' +
+                      '</div>' +
+                    '</div>' +
+                    '<div class="col-6 col-md-3 text-end">' +
+                      '<button class="btn btn-primary btn-sm w-100 d-inline-flex align-items-center justify-content-center gap-1" type="submit">' +
+                        '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>' +
+                        '<span>Upload</span>' +
+                      '</button>' +
+                    '</div>' +
+                  '</div>' +
+                  '<input type="hidden" name="image" id="p-img-b64" value="">' +
+                  '<div id="p-img-preview" class="dz-preview mt-2"></div>' +
+                '</form>' +
+              '</div>' +
+            '</div>' +
             '<div class="dz-card p-3 p-lg-4"><div class="d-flex justify-content-between align-items-center mb-2"><h3 class="h6 fw-bold mb-0">Variants</h3><button class="btn btn-outline-primary btn-sm" type="button" data-act="var-add-modal">Add in modal</button></div>' +
               '<div class="table-responsive"><table class="table dz-admin-table mb-2"><thead><tr><th>Name</th><th>SKU</th><th>Price</th><th>State</th><th>Actions</th></tr></thead><tbody>' +
               (variants || '<tr><td colspan="5" class="text-secondary">No variants.</td></tr>') + "</tbody></table></div>" +
@@ -1569,26 +2517,99 @@
               "</form></div>" +
           "</div>" +
           '<div class="col-12 col-lg-5">' +
-            '<div class="dz-card p-3 p-lg-4 mb-3"><h3 class="h6 fw-bold">Inventory</h3>' +
-              '<div class="dz-stats-row mb-3">' +
-                statBox("On hand", inv.quantity) + statBox("Available", avail) + statBox("Reserved", inv.reserved) + statBox("Low at", inv.low_stock_threshold) +
-              "</div>" +
-              (inv.low_stock ? '<p class="alert alert-warning py-2 small">Low stock alert.</p>' : "") +
-              '<form data-form="restock" class="dz-inv-row"><input name="quantity" type="number" min="1" value="1" class="form-control form-control-sm"><button class="btn btn-primary btn-sm" type="submit">Restock</button></form>' +
-              '<form data-form="set-exact" class="dz-inv-row"><input name="quantity" type="number" min="0" value="' + inv.quantity + '" class="form-control form-control-sm"><input name="low_stock_threshold" type="number" min="0" value="' + inv.low_stock_threshold + '" class="form-control form-control-sm"><button class="btn btn-light border btn-sm" type="submit">Set exact</button></form>' +
-              '<form data-form="threshold" class="dz-inv-row"><input name="low_stock_threshold" type="number" min="0" value="' + inv.low_stock_threshold + '" class="form-control form-control-sm"><button class="btn btn-light border btn-sm" type="submit">Threshold</button></form>' +
+            // 1. Inventory Card
+            '<div class="dz-card dz-editor-card p-3 p-lg-4 mb-3">' +
+              '<div class="dz-editor-card-head">' +
+                '<div class="dz-card-title-group">' +
+                  '<div class="dz-card-icon dz-icon-inventory-box">' +
+                    '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg>' +
+                  '</div>' +
+                  '<div><h3 class="h6 fw-bold mb-0">Inventory</h3><span class="small text-secondary">Stock levels and restock management</span></div>' +
+                '</div>' +
+                (inv.quantity <= 0
+                  ? '<span class="badge bg-danger-subtle text-danger border border-danger-subtle"><span class="dz-status-dot me-1"></span>Out of stock</span>'
+                  : (inv.low_stock
+                    ? '<span class="badge bg-warning-subtle text-warning border border-warning-subtle"><span class="dz-status-dot me-1"></span>Low stock alert</span>'
+                    : '<span class="badge bg-success-subtle text-success border border-success-subtle"><span class="dz-status-dot me-1"></span>In stock</span>')) +
+              '</div>' +
+              '<div class="dz-inv-tiles-grid mb-3">' +
+                '<div class="dz-inv-tile"><span class="dz-inv-tile-lbl">On hand</span><strong class="dz-inv-tile-val">' + ADMIN.esc(inv.quantity) + '</strong><span class="dz-inv-tile-sub">Total physical units</span></div>' +
+                '<div class="dz-inv-tile is-available"><span class="dz-inv-tile-lbl">Available</span><strong class="dz-inv-tile-val text-success">' + ADMIN.esc(avail) + '</strong><span class="dz-inv-tile-sub">Ready to sell</span></div>' +
+                '<div class="dz-inv-tile"><span class="dz-inv-tile-lbl">Reserved</span><strong class="dz-inv-tile-val text-secondary">' + ADMIN.esc(inv.reserved) + '</strong><span class="dz-inv-tile-sub">In active carts</span></div>' +
+                '<div class="dz-inv-tile"><span class="dz-inv-tile-lbl">Low Stock At</span><strong class="dz-inv-tile-val text-warning">' + ADMIN.esc(inv.low_stock_threshold) + '</strong><span class="dz-inv-tile-sub">Warning alert</span></div>' +
+              '</div>' +
+              (inv.low_stock ? '<div class="alert alert-warning py-2 px-3 small d-flex align-items-center gap-2 mb-3"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg><span>Low stock warning: inventory is at or below alert threshold.</span></div>' : '') +
+              '<div class="dz-inv-section-box mb-2">' +
+                '<div class="dz-inv-section-title"><span>Quick Restock</span><span class="badge bg-light text-secondary border">Add units</span></div>' +
+                '<form data-form="restock" class="d-flex align-items-end gap-2">' +
+                  '<div class="flex-grow-1"><label class="form-label small text-secondary mb-1">Units to add</label><input name="quantity" type="number" min="1" value="10" class="form-control form-control-sm" required></div>' +
+                  '<button class="btn btn-primary btn-sm px-3" type="submit">Restock</button>' +
+                '</form>' +
+              '</div>' +
+              '<div class="dz-inv-section-box mb-2">' +
+                '<div class="dz-inv-section-title"><span>Set Exact Quantity</span><span class="badge bg-light text-secondary border">Replace</span></div>' +
+                '<form data-form="set-exact">' +
+                  '<div class="row g-2 mb-2">' +
+                    '<div class="col-6"><label class="form-label small text-secondary mb-1">Physical On Hand</label><input name="quantity" type="number" min="0" value="' + inv.quantity + '" class="form-control form-control-sm" required></div>' +
+                    '<div class="col-6"><label class="form-label small text-secondary mb-1">Alert Threshold</label><input name="low_stock_threshold" type="number" min="0" value="' + inv.low_stock_threshold + '" class="form-control form-control-sm" required></div>' +
+                  '</div>' +
+                  '<div class="d-flex justify-content-between align-items-center"><small class="text-secondary">Replaces existing count</small><button class="btn btn-light border btn-sm" type="submit">Set Exact</button></div>' +
+                '</form>' +
+              '</div>' +
+              '<div class="dz-inv-section-box">' +
+                '<div class="dz-inv-section-title"><span>Low-Stock Warning Alert</span></div>' +
+                '<form data-form="threshold" class="d-flex align-items-end gap-2">' +
+                  '<div class="flex-grow-1"><label class="form-label small text-secondary mb-1">Threshold units</label><input name="low_stock_threshold" type="number" min="0" value="' + inv.low_stock_threshold + '" class="form-control form-control-sm" required></div>' +
+                  '<button class="btn btn-light border btn-sm" type="submit">Save Alert</button>' +
+                '</form>' +
+              '</div>' +
               '<div class="dz-form-feedback small text-secondary mt-2" data-feedback></div>' +
-            "</div>" +
-            '<div class="dz-card p-3 p-lg-4 mb-3"><h3 class="h6 fw-bold">Search listing (SEO)</h3>' +
+            '</div>' +
+
+            // 2. SEO Card
+            '<div class="dz-card dz-editor-card p-3 p-lg-4 mb-3">' +
+              '<div class="dz-editor-card-head">' +
+                '<div class="dz-card-title-group">' +
+                  '<div class="dz-card-icon dz-icon-seo-box">' +
+                    '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>' +
+                  '</div>' +
+                  '<div><h3 class="h6 fw-bold mb-0">Search listing (SEO)</h3><span class="small text-secondary">Google & search preview</span></div>' +
+                '</div>' +
+              '</div>' +
+              '<div class="dz-serp-preview">' +
+                '<div class="dz-serp-url">' + window.location.origin + '/product/' + ADMIN.esc(p.slug || "product") + '</div>' +
+                '<div class="dz-serp-title">' + ADMIN.esc(p.meta_title || p.name) + '</div>' +
+                '<div class="dz-serp-desc">' + ADMIN.esc(p.meta_description || p.short_description || "Add a meta description to see how this product appears in search engine results.") + '</div>' +
+              '</div>' +
               '<form data-form="seo">' +
-                field("meta_title", "Meta title", "text", p.meta_title) +
-                textfield("meta_description", "Meta description", p.meta_description, 3) +
-                '<button class="btn btn-primary mt-2" type="submit">Save SEO</button>' +
-              "</form></div>" +
-            '<div class="dz-card p-3 p-lg-4"><h3 class="h6 fw-bold">More actions</h3>' +
-              '<button class="btn btn-light border mb-2" data-act="featured">Toggle featured</button> ' +
-              '<button class="btn btn-outline-danger" data-act="delete-product">Delete product</button></div>' +
-          "</div>" +
+                '<div class="mb-3"><label class="form-label small fw-medium text-dark mb-1">Meta title</label><input name="meta_title" type="text" class="form-control form-control-sm" value="' + ADMIN.esc(p.meta_title || "") + '" placeholder="e.g. ' + ADMIN.esc(p.name) + '"><small class="text-secondary">Recommended: 50-60 characters</small></div>' +
+                '<div class="mb-3"><label class="form-label small fw-medium text-dark mb-1">Meta description</label><textarea name="meta_description" rows="3" class="form-control form-control-sm" placeholder="Brief summary of product for search engine snippets...">' + ADMIN.esc(p.meta_description || "") + '</textarea><small class="text-secondary">Recommended: 120-160 characters</small></div>' +
+                '<button class="btn btn-primary btn-sm px-3" type="submit">Save SEO</button>' +
+              '</form>' +
+            '</div>' +
+
+            // 3. More Actions Card
+            '<div class="dz-card dz-editor-card p-3 p-lg-4">' +
+              '<div class="dz-editor-card-head mb-3">' +
+                '<div class="dz-card-title-group">' +
+                  '<div class="dz-card-icon">' +
+                    '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>' +
+                  '</div>' +
+                  '<div><h3 class="h6 fw-bold mb-0">Product Status & Actions</h3><span class="small text-secondary">Spotlight and deletion controls</span></div>' +
+                '</div>' +
+              '</div>' +
+              '<div class="d-flex justify-content-between align-items-center p-3 bg-light rounded border mb-3">' +
+                '<div><strong class="d-block text-dark small">Featured Product Spotlight</strong><small class="text-secondary">Highlight this item on the store homepage.</small></div>' +
+                '<button class="btn btn-sm ' + (p.is_featured ? 'btn-warning text-dark fw-semibold' : 'btn-light border') + '" data-act="featured">' + (p.is_featured ? '★ Featured' : '☆ Mark Featured') + '</button>' +
+              '</div>' +
+              '<div class="p-3 rounded border border-danger-subtle bg-danger-subtle bg-opacity-10">' +
+                '<div class="d-flex justify-content-between align-items-center">' +
+                  '<div><strong class="d-block text-danger small">Delete Product</strong><small class="text-secondary">Products tied to past orders cannot be deleted.</small></div>' +
+                  '<button class="btn btn-outline-danger btn-sm" data-act="delete-product">Delete</button>' +
+                '</div>' +
+              '</div>' +
+            '</div>' +
+          '</div>' +
         "</div>";
       self.bindEditor(list, p.id);
     };
@@ -1675,7 +2696,7 @@
               if (hidden) hidden.value = String(ev.target.result);
               var prev = list.querySelector("#p-img-preview");
               if (prev) {
-                prev.innerHTML = '<div class="d-flex align-items-center gap-2 p-2 bg-light rounded border"><img src="' + ev.target.result + '" alt="preview" style="max-height:54px;border-radius:6px;"><div class="small"><strong>' + ADMIN.esc(file.name) + '</strong> (' + Math.round(file.size / 1024) + ' KB)<div class="text-success small">Ready to upload</div></div></div>';
+                prev.innerHTML = '<div class="d-flex align-items-center gap-2 p-2 bg-white rounded-3 border mt-2 shadow-sm"><img src="' + ev.target.result + '" alt="preview" style="width:48px;height:48px;object-fit:cover;border-radius:6px;border:1px solid #e2e8f0;"><div class="small min-w-0"><div class="fw-semibold text-truncate text-dark">' + ADMIN.esc(file.name) + '</div><div class="text-secondary">' + Math.round(file.size / 1024) + ' KB · <span class="text-success fw-medium">Ready to upload</span></div></div></div>';
               }
             };
             reader.readAsDataURL(file);
@@ -1719,7 +2740,7 @@
           if (hidden) hidden.value = String(ev.target.result);
           var prev = list.querySelector("#" + input.getAttribute("data-preview-target"));
           if (prev) {
-            prev.innerHTML = '<div class="d-flex align-items-center gap-2 p-2 bg-light rounded border"><img src="' + ev.target.result + '" alt="preview" style="max-height:54px;border-radius:6px;"><div class="small"><strong>' + ADMIN.esc(file.name) + '</strong> (' + Math.round(file.size / 1024) + ' KB)<div class="text-success small">Ready to upload</div></div></div>';
+            prev.innerHTML = '<div class="d-flex align-items-center gap-2 p-2 bg-white rounded-3 border mt-2 shadow-sm"><img src="' + ev.target.result + '" alt="preview" style="width:48px;height:48px;object-fit:cover;border-radius:6px;border:1px solid #e2e8f0;"><div class="small min-w-0"><div class="fw-semibold text-truncate text-dark">' + ADMIN.esc(file.name) + '</div><div class="text-secondary">' + Math.round(file.size / 1024) + ' KB · <span class="text-success fw-medium">Ready to upload</span></div></div></div>';
           }
         };
         reader.readAsDataURL(file);
@@ -2909,6 +3930,311 @@
     self.mount();
   }
 
+  // ---------------------------------------------------------------- shipping & delivery
+  function ShippingModule(root) {
+    var self = {
+      root: root,
+      state: { q: "", status: "" }
+    };
+
+    self.mount = function () {
+      self.bindEvents();
+    };
+
+    self.bindEvents = function () {
+      var searchInp = self.root.querySelector("#shipping-search");
+      if (searchInp) {
+        var t;
+        searchInp.addEventListener("input", function () {
+          clearTimeout(t);
+          t = setTimeout(function () {
+            self.state.q = searchInp.value.trim().toLowerCase();
+            self.filterDOM();
+          }, 200);
+        });
+      }
+
+      var searchClear = self.root.querySelector("#shipping-search-clear");
+      if (searchClear) {
+        searchClear.addEventListener("click", function () {
+          if (searchInp) searchInp.value = "";
+          self.state.q = "";
+          self.filterDOM();
+        });
+      }
+
+      var statusFilter = self.root.querySelector("#shipping-status-filter");
+      if (statusFilter) {
+        statusFilter.addEventListener("change", function () {
+          self.state.status = statusFilter.value;
+          self.filterDOM();
+        });
+      }
+
+      var resetBtn = self.root.querySelector("#shipping-reset-btn");
+      if (resetBtn) {
+        resetBtn.addEventListener("click", function () {
+          if (searchInp) searchInp.value = "";
+          if (statusFilter) statusFilter.value = "";
+          self.state.q = "";
+          self.state.status = "";
+          self.filterDOM();
+        });
+      }
+
+      self.root.addEventListener("click", function (e) {
+        var btn = e.target.closest("button[data-act], a[data-act]");
+        if (!btn) return;
+        var act = btn.getAttribute("data-act");
+
+        if (act === "new-zone") {
+          self.openZoneModal(null);
+        } else if (act === "edit-zone") {
+          var zid = btn.getAttribute("data-id");
+          var z = self.findZone(zid);
+          self.openZoneModal(z);
+        } else if (act === "toggle-zone") {
+          var zid2 = btn.getAttribute("data-id");
+          self.toggleZone(zid2, btn);
+        } else if (act === "new-rate") {
+          var targetZid = btn.getAttribute("data-zone-id");
+          self.openRateModal(targetZid);
+        } else if (act === "toggle-rate") {
+          var rid = btn.getAttribute("data-id");
+          self.toggleRate(rid, btn);
+        } else if (act === "del-rate") {
+          var rid2 = btn.getAttribute("data-id");
+          self.deleteRate(rid2, btn);
+        } else if (act === "edit-fallback") {
+          self.openFallbackModal();
+        }
+      });
+    };
+
+    self.findZone = function (id) {
+      var card = self.root.querySelector('.dz-zone-card[data-zone-id="' + id + '"]');
+      if (!card) return null;
+      return {
+        id: id,
+        name: card.getAttribute("data-zone-name") || "",
+        country: card.getAttribute("data-zone-country") || "Bangladesh",
+        districts: card.getAttribute("data-zone-districts") || "",
+        is_active: parseInt(card.getAttribute("data-zone-active") || "1", 10)
+      };
+    };
+
+    self.filterDOM = function () {
+      var q = self.state.q || "";
+      var status = self.state.status || "";
+      var cards = self.root.querySelectorAll(".dz-zone-card");
+      var visible = 0;
+      cards.forEach(function (card) {
+        var name = (card.getAttribute("data-zone-name") || "").toLowerCase();
+        var country = (card.getAttribute("data-zone-country") || "").toLowerCase();
+        var districts = (card.getAttribute("data-zone-districts") || "").toLowerCase();
+        var isActive = card.getAttribute("data-zone-active") === "1";
+
+        var matchQ = !q || name.indexOf(q) >= 0 || country.indexOf(q) >= 0 || districts.indexOf(q) >= 0;
+        var matchStatus = !status || (status === "active" && isActive) || (status === "inactive" && !isActive);
+
+        if (matchQ && matchStatus) {
+          card.style.display = "";
+          visible++;
+        } else {
+          card.style.display = "none";
+        }
+      });
+
+      var noMatch = self.root.querySelector("#shipping-no-match");
+      if (noMatch) {
+        noMatch.style.display = (visible === 0 && cards.length > 0) ? "" : "none";
+      }
+    };
+
+    self.openZoneModal = function (zone) {
+      var isEdit = Boolean(zone && zone.id);
+      var form = ADMIN.buildForm({
+        fields: [
+          { name: "name", label: "Zone Name", required: true, placeholder: "e.g. Dhaka Metro, Chittagong Division, Sylhet" },
+          { name: "country", label: "Country", value: "Bangladesh", placeholder: "Country name" },
+          { name: "districts", label: "Covered Districts / Cities", type: "textarea", placeholder: "Dhaka, Gazipur, Narayanganj (comma-separated). Leave empty to apply nationwide." },
+          { name: "is_active", label: "Zone is Active", type: "checkbox" }
+        ],
+        values: {
+          name: zone ? zone.name : "",
+          country: zone ? zone.country : "Bangladesh",
+          districts: zone ? zone.districts : "",
+          is_active: zone ? zone.is_active === 1 : true
+        },
+        submitLabel: isEdit ? "Save Zone Changes" : "Create Shipping Zone",
+        onSubmit: function (vals) {
+          var payload = {
+            name: vals.name,
+            country: vals.country || "Bangladesh",
+            districts: vals.districts || "",
+            is_active: vals.is_active ? 1 : 0
+          };
+          if (isEdit) payload.id = zone.id;
+          return ADMIN.act("POST", "/admin/api/shipping/zones", null, payload).then(function () {
+            ADMIN.modal.close();
+            ADMIN.toast(isEdit ? "Shipping zone updated." : "Shipping zone created.", true);
+            window.location.reload();
+          });
+        },
+        onCancel: function () { ADMIN.modal.close(); }
+      });
+      ADMIN.modal.open(isEdit ? "Edit Shipping Zone — " + ADMIN.esc(zone.name) : "Create Shipping Zone", form, "Define regional borders by listing covered districts, or leave empty for all nationwide addresses.");
+    };
+
+    self.toggleZone = function (zid, btn) {
+      if (btn) btn.disabled = true;
+      ADMIN.act("POST", "/admin/api/shipping/zones/" + zid + "/toggle").then(function () {
+        if (btn) btn.disabled = false;
+        ADMIN.toast("Zone status updated.", true);
+        window.location.reload();
+      }).catch(function (err) {
+        if (btn) btn.disabled = false;
+        ADMIN.toast(err.message || "Failed to update zone status.", false);
+      });
+    };
+
+    self.openRateModal = function (preselectedZoneId) {
+      var cards = self.root.querySelectorAll(".dz-zone-card");
+      var zoneOpts = [];
+      cards.forEach(function (c) {
+        var id = c.getAttribute("data-zone-id");
+        var name = c.getAttribute("data-zone-name");
+        zoneOpts.push({ value: id, label: name + " (#" + id + ")" });
+      });
+
+      var form = ADMIN.buildForm({
+        fields: [
+          { name: "zone_id", label: "Target Delivery Zone", type: "select", required: true, options: zoneOpts },
+          { name: "method", label: "Delivery Method", type: "select", required: true, options: [
+            { value: "standard", label: "Standard Delivery" },
+            { value: "express", label: "Express Delivery (Priority)" }
+          ] },
+          { name: "fee_major", label: "Delivery Fee (" + (window.ADMIN.storeCurrency || "BDT") + ")", required: true, type: "number", step: "0.01", min: "0", placeholder: "e.g. 60.00 (Enter 0 for Free Delivery)" },
+          { name: "min_order_major", label: "Minimum Order Subtotal (Optional)", type: "number", step: "0.01", min: "0", placeholder: "0.00 for all orders" },
+          { name: "max_order_major", label: "Maximum Order Subtotal (Optional)", type: "number", step: "0.01", min: "0", placeholder: "Leave empty for no maximum" },
+          { name: "estimated_days_min", label: "Min Transit Days", type: "number", min: "0", value: "2" },
+          { name: "estimated_days_max", label: "Max Transit Days", type: "number", min: "0", value: "4" },
+          { name: "is_active", label: "Rate Tier is Active", type: "checkbox" }
+        ],
+        values: {
+          zone_id: preselectedZoneId || (zoneOpts[0] ? zoneOpts[0].value : "1"),
+          method: "standard",
+          fee_major: "60.00",
+          min_order_major: "0.00",
+          max_order_major: "",
+          estimated_days_min: "2",
+          estimated_days_max: "4",
+          is_active: true
+        },
+        submitLabel: "Save Delivery Rate",
+        onSubmit: function (vals) {
+          var feeNum = parseFloat(vals.fee_major);
+          if (isNaN(feeNum) || feeNum < 0) {
+            throw new Error("Enter a valid non-negative delivery fee.");
+          }
+          var minNum = parseFloat(vals.min_order_major) || 0;
+          var maxNum = vals.max_order_major ? parseFloat(vals.max_order_major) : null;
+          var payload = {
+            zone_id: parseInt(vals.zone_id, 10),
+            method: vals.method,
+            fee_minor: Math.round(feeNum * 100),
+            min_order_minor: Math.round(minNum * 100),
+            max_order_minor: maxNum != null ? Math.round(maxNum * 100) : null,
+            estimated_days_min: parseInt(vals.estimated_days_min || 2, 10),
+            estimated_days_max: parseInt(vals.estimated_days_max || 4, 10),
+            is_active: vals.is_active ? 1 : 0
+          };
+          return ADMIN.act("POST", "/admin/api/shipping/rates", null, payload).then(function () {
+            ADMIN.modal.close();
+            ADMIN.toast("Delivery rate saved.", true);
+            window.location.reload();
+          });
+        },
+        onCancel: function () { ADMIN.modal.close(); }
+      });
+      ADMIN.modal.open("Add Delivery Rate Tier", form, "Tier delivery charges based on cart subtotal or shipping method for this zone.");
+    };
+
+    self.toggleRate = function (rid, btn) {
+      if (btn) btn.disabled = true;
+      ADMIN.act("POST", "/admin/api/shipping/rates/" + rid + "/toggle").then(function () {
+        if (btn) btn.disabled = false;
+        ADMIN.toast("Rate status updated.", true);
+        window.location.reload();
+      }).catch(function (err) {
+        if (btn) btn.disabled = false;
+        ADMIN.toast(err.message || "Failed to update rate status.", false);
+      });
+    };
+
+    self.deleteRate = function (rid, btn) {
+      if (!window.confirm("Deactivate this delivery rate tier?")) return;
+      if (btn) btn.disabled = true;
+      ADMIN.act("POST", "/admin/api/shipping/rates/" + rid + "/deactivate").then(function () {
+        if (btn) btn.disabled = false;
+        ADMIN.toast("Delivery rate deactivated.", true);
+        window.location.reload();
+      }).catch(function (err) {
+        if (btn) btn.disabled = false;
+        ADMIN.toast(err.message || "Failed to deactivate rate.", false);
+      });
+    };
+
+    self.openFallbackModal = function () {
+      var fb = self.root.querySelector("#shipping-fallback-card");
+      var curStd = fb ? fb.getAttribute("data-flat-standard") : "60.00";
+      var curExp = fb ? fb.getAttribute("data-flat-express") : "120.00";
+      var curFree = fb ? fb.getAttribute("data-free-threshold") : "2000.00";
+      var curStdLead = fb ? fb.getAttribute("data-std-lead") : "2 - 4 business days";
+      var curExpLead = fb ? fb.getAttribute("data-exp-lead") : "Within 24 hours";
+
+      var form = ADMIN.buildForm({
+        fields: [
+          { name: "flat_standard_major", label: "Standard Flat Delivery Fee (" + (window.ADMIN.storeCurrency || "BDT") + ")", required: true, type: "number", step: "0.01", min: "0" },
+          { name: "flat_express_major", label: "Express Flat Delivery Fee (" + (window.ADMIN.storeCurrency || "BDT") + ")", required: true, type: "number", step: "0.01", min: "0" },
+          { name: "free_threshold_major", label: "Free Standard Shipping Threshold (" + (window.ADMIN.storeCurrency || "BDT") + ")", type: "number", step: "0.01", min: "0", placeholder: "0.00 to disable" },
+          { name: "standard_lead_days", label: "Standard Delivery Lead Time Window", type: "text", placeholder: "e.g. 2 - 4 business days" },
+          { name: "express_lead_days", label: "Express Delivery Lead Time Window", type: "text", placeholder: "e.g. Within 24 hours" }
+        ],
+        values: {
+          flat_standard_major: curStd,
+          flat_express_major: curExp,
+          free_threshold_major: curFree,
+          standard_lead_days: curStdLead,
+          express_lead_days: curExpLead
+        },
+        submitLabel: "Save Fallback Rates",
+        onSubmit: function (vals) {
+          var std = parseFloat(vals.flat_standard_major) || 0;
+          var exp = parseFloat(vals.flat_express_major) || 0;
+          var free = parseFloat(vals.free_threshold_major) || 0;
+          var payload = {
+            flat_standard_minor: Math.round(std * 100),
+            flat_express_minor: Math.round(exp * 100),
+            free_threshold_minor: Math.round(free * 100),
+            standard_lead_days: vals.standard_lead_days,
+            express_lead_days: vals.express_lead_days
+          };
+          return ADMIN.act("POST", "/admin/api/shipping/flat-rates", null, payload).then(function () {
+            ADMIN.modal.close();
+            ADMIN.toast("Global fallback shipping settings updated.", true);
+            window.location.reload();
+          });
+        },
+        onCancel: function () { ADMIN.modal.close(); }
+      });
+      ADMIN.modal.open("Configure Global Fallback Rates", form, "When a customer's address does not match any custom delivery zone, these store-wide fallback rates automatically apply.");
+    };
+
+    self.mount();
+    return self;
+  }
+
   // ---------------------------------------------------------------- chrome (sidebar toggle)
   function bindChrome() {
     var btn = document.getElementById("adminMenuBtn");
@@ -3031,6 +4357,12 @@
         if (btn) btn.disabled = false;
         if (!out.ok) {
           var msg = (out.data && (out.data.message || out.data.error)) || "Operation failed.";
+          if (out.data && out.data.errors && typeof out.data.errors === "object") {
+            var firstErrKey = Object.keys(out.data.errors)[0];
+            if (firstErrKey && out.data.errors[firstErrKey]) {
+              msg = out.data.errors[firstErrKey];
+            }
+          }
           ADMIN.toast(msg, false);
           return;
         }
@@ -3125,6 +4457,7 @@
     else if (name === "roles") mod = RolesModule(root);
     else if (name === "coupons") mod = CouponsModule(root);
     else if (name === "settings") mod = SettingsModule(root);
+    else if (name === "shipping") mod = ShippingModule(root);
     ADMIN.activeModule = mod;
     return mod;
   }
