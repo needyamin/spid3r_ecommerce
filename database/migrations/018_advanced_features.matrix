@@ -122,18 +122,18 @@ public class AdvancedFeatureTables extends Migration {
         // switcher to be meaningful.
         // ---------------------------------------------------------------
         let nav_translations = [
-            ["en", "nav", "account", "Account"],
-            ["en", "nav", "cart", "Cart"],
-            ["en", "nav", "catalog", "Catalog"],
-            ["en", "nav", "support", "Support"],
-            ["en", "nav", "track", "Track order"],
-            ["en", "nav", "wishlist", "Wishlist"],
-            ["bn", "nav", "account", "অ্যাকাউন্ট"],
-            ["bn", "nav", "cart", "কার্ট"],
-            ["bn", "nav", "catalog", "ক্যাটালগ"],
-            ["bn", "nav", "support", "সাপোর্ট"],
-            ["bn", "nav", "track", "অর্ডার ট্র্যাক করুন"],
-            ["bn", "nav", "wishlist", "ইচ্ছেতালিকা"]
+        ["en", "nav", "account", "Account"],
+        ["en", "nav", "cart", "Cart"],
+        ["en", "nav", "catalog", "Catalog"],
+        ["en", "nav", "support", "Support"],
+        ["en", "nav", "track", "Track order"],
+        ["en", "nav", "wishlist", "Wishlist"],
+        ["bn", "nav", "account", "অ্যাকাউন্ট"],
+        ["bn", "nav", "cart", "কার্ট"],
+        ["bn", "nav", "catalog", "ক্যাটালগ"],
+        ["bn", "nav", "support", "সাপোর্ট"],
+        ["bn", "nav", "track", "অর্ডার ট্র্যাক করুন"],
+        ["bn", "nav", "wishlist", "ইচ্ছেতালিকা"]
         ];
         let ti = 0;
         while ti < nav_translations.len() {

@@ -86,12 +86,12 @@ public class IdentityAccessTables extends Migration {
         // migrated database is correctly provisioned.
         // ---------------------------------------------------------------
         let now = string(unix_time());
-        let customer_role = DB.table("roles").insert({
+        DB.table("roles").insert({
             "name": "Customer", "slug": "customer",
             "description": "Default storefront account",
             "created_at": now, "updated_at": now
         });
-        let staff_role = DB.table("roles").insert({
+        DB.table("roles").insert({
             "name": "Staff", "slug": "staff",
             "description": "Store staff — scoped permissions",
             "created_at": now, "updated_at": now
@@ -103,8 +103,9 @@ public class IdentityAccessTables extends Migration {
         });
 
         let perm_slugs = ["catalog.manage", "orders.manage", "customers.manage",
-                          "settings.manage", "reports.view", "payments.manage"];
-        let perm_ids = {};
+        "settings.manage", "reports.view", "payments.manage"];
+        let perm_ids = {
+        };
         let pi = 0;
         while pi < perm_slugs.len() {
             let slug = perm_slugs[pi];
