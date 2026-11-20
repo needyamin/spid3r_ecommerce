@@ -12,11 +12,14 @@ import "framework/Database/DB";
 import "framework/Http/HttpException";
 
 public class CampaignService {
-    fn new() {}
+    fn new () {
+        let _ = self;
+    }
 
     // The first campaign that is active, inside its window and under its
     // usage cap — or null when nothing applies.
     public fn active(self) {
+        let _ = self;
         let now = string(unix_time());
         let rows = DB.table("campaigns").where("is_active", "=", 1).get();
         let i = 0;
@@ -66,21 +69,36 @@ public class CampaignService {
 
     // Record one use (called when an order is placed).
     public fn consume(self, campaign_id) -> bool {
+        let _ = self;
         return DB.table("campaigns").where("id", "=", campaign_id).increment("uses", 1) > 0;
     }
 
     public fn list(self) {
+        let _ = self;
         return DB.table("campaigns").orderBy("id", "DESC").limit(100).get();
     }
 
     // Create or update a campaign by code.
-    public fn save(self, code: string, name: string, kind: string, value_minor: int, min_order_minor: int, is_active: int) {
+    public fn save(
+        self,
+        code: string,
+        name: string,
+        kind: string,
+        value_minor: int,
+        min_order_minor: int,
+        is_active: int
+    ) {
+        let _ = self;
         let key = string(code).trim().upper();
         if key == "" {
-            throw validation_failed({"code": "A campaign code is required."});
+            throw validation_failed({
+                "code": "A campaign code is required."
+            });
         }
         if kind != "percent" and kind != "fixed" {
-            throw validation_failed({"type": "Campaign type must be percent or fixed."});
+            throw validation_failed({
+                "type": "Campaign type must be percent or fixed."
+            });
         }
         let existing = DB.table("campaigns").where("code", "=", key).first();
         let data = {

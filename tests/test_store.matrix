@@ -16,10 +16,15 @@ fn test_store_home_and_health() {
     assert(res["status"] == 200, "store home answers 200");
     assert(string(res["body"]).contains("Spid3r Store"), "home renders the store name");
 
-    let health = app.handle_request(map("method", "GET", "path", "/health", "headers", map()));
+    let health = app.handle_request(
+        map("method", "GET", "path", "/health", "headers", map())
+    );
     assert(health["status"] == 200, "health answers 200");
     let health_body = string(health["body"]);
-    assert(health_body.contains("\"status\"") and health_body.contains("\"ok\""), "health reports ok");
+    assert(
+        health_body.contains("\"status\"") and health_body.contains("\"ok\""),
+        "health reports ok"
+    );
 
     // Store settings came through the container from the provider.
     let settings = Container.make("store.settings");
@@ -27,7 +32,9 @@ fn test_store_home_and_health() {
 
     // Double registration must be harmless (boot guard).
     register_web_routes();
-    let again = app.handle_request(map("method", "GET", "path", "/health", "headers", map()));
+    let again = app.handle_request(
+        map("method", "GET", "path", "/health", "headers", map())
+    );
     assert(again["status"] == 200, "re-registration stays healthy");
     println("  [PASS] test_store_home_and_health");
 }
@@ -39,7 +46,10 @@ fn test_money_helpers() {
     assert(Money.to_minor("-9.99") == -999, "to_minor handles negatives");
     assert(Money.to_major(123456) == "1234.56", "to_major formats minor units");
     assert(Money.to_major(5) == "0.05", "to_major pads the fraction");
-    assert(Money.format(123456, "BDT") == "৳1,234.56", "format groups thousands with symbol");
+    assert(
+        Money.format(123456, "BDT") == "৳1,234.56",
+        "format groups thousands with symbol"
+    );
     assert(Money.format(999, "USD") == "$9.99", "format switches currency symbol");
     assert(Money.format(-123456, "BDT") == "-৳1,234.56", "format keeps the sign");
     println("  [PASS] test_money_helpers");

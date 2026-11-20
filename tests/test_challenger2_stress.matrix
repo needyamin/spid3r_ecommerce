@@ -26,17 +26,25 @@ fn call(app, method: string, path: string, data, cookie: string) {
             payload[k] = data[k];
         }
     }
-    return app.handle_request(map(
-        "method", method, "path", path,
-        "headers", headers, "data", payload
-    ));
+    return app.handle_request(
+        map(
+            "method",
+            method,
+            "path",
+            path,
+            "headers",
+            headers,
+            "data",
+            payload
+        )
+    );
 }
 
 fn body(res) {
     return json_parse(string(res["body"]));
 }
 
-fn admin_session(app, tag: string) {
+fn admin_session(_app, tag: string) {
     let svc = new AuthService();
     let email = "challenger2-" + tag + "@example.test";
     let user = svc.register("Challenger2 Admin", email, "secret-pass-ch2");
@@ -45,9 +53,14 @@ fn admin_session(app, tag: string) {
     let token = svc.login(email, "secret-pass-ch2");
     let rows = DB.select("SELECT payload FROM sessions WHERE token = ?", [token]);
     return map(
-        "cookie", "spid3r_session=" + token,
-        "csrf", string(rows[0]["payload"]),
-        "email", email, "id", user["id"]
+        "cookie",
+        "spid3r_session=" + token,
+        "csrf",
+        string(rows[0]["payload"]),
+        "email",
+        email,
+        "id",
+        user["id"]
     );
 }
 
@@ -62,51 +75,105 @@ fn test_abnormal_status_codes(app, adm) {
     assert(unauth["status"] == 401, "API without session cookie returns 401");
 
     // 1.2 CSRF token mismatch -> 419
-    let bad_csrf = call(app, "POST", "/admin/api/categories/create", map(
-        "name", "Bad CSRF Category",
-        "_csrf", "totally_bogus_csrf_token_12345",
-        "format", "json"
-    ), adm["cookie"]);
+    let bad_csrf = call(
+        app,
+        "POST",
+        "/admin/api/categories/create",
+        map(
+            "name",
+            "Bad CSRF Category",
+            "_csrf",
+            "totally_bogus_csrf_token_12345",
+            "format",
+            "json"
+        ),
+        adm["cookie"]
+    );
     assert(bad_csrf["status"] == 419, "POST with mismatched CSRF returns 419 status");
 
     // 1.3 Validation errors -> 422
     // Empty category name
-    let empty_cat = call(app, "POST", "/admin/api/categories/create", map(
-        "name", "",
-        "_csrf", adm["csrf"],
-        "format", "json"
-    ), adm["cookie"]);
+    let empty_cat = call(
+        app,
+        "POST",
+        "/admin/api/categories/create",
+        map(
+            "name",
+            "",
+            "_csrf",
+            adm["csrf"],
+            "format",
+            "json"
+        ),
+        adm["cookie"]
+    );
     assert(empty_cat["status"] == 422, "Empty category name returns 422");
 
     // Empty brand name
-    let empty_brand = call(app, "POST", "/admin/api/brands/create", map(
-        "name", "",
-        "_csrf", adm["csrf"],
-        "format", "json"
-    ), adm["cookie"]);
+    let empty_brand = call(
+        app,
+        "POST",
+        "/admin/api/brands/create",
+        map(
+            "name",
+            "",
+            "_csrf",
+            adm["csrf"],
+            "format",
+            "json"
+        ),
+        adm["cookie"]
+    );
     assert(empty_brand["status"] == 422, "Empty brand name returns 422");
 
     // Negative inventory restock
-    let bad_restock = call(app, "POST", "/admin/api/products/999999/inventory/restock", map(
-        "quantity", -5,
-        "_csrf", adm["csrf"],
-        "format", "json"
-    ), adm["cookie"]);
-    assert(bad_restock["status"] == 422 or bad_restock["status"] == 404, "Invalid restock quantity returns 422 or 404");
+    let bad_restock = call(
+        app,
+        "POST",
+        "/admin/api/products/999999/inventory/restock",
+        map(
+            "quantity",
+            -5,
+            "_csrf",
+            adm["csrf"],
+            "format",
+            "json"
+        ),
+        adm["cookie"]
+    );
+    assert(
+        bad_restock["status"] == 422 or bad_restock["status"] == 404,
+        "Invalid restock quantity returns 422 or 404"
+    );
 
     // Invalid customer status transition
-    let bad_cust = call(app, "POST", "/admin/api/customers/" + string(adm["id"]) + "/status", map(
-        "status", "nonexistent_status_xyz",
-        "_csrf", adm["csrf"],
-        "format", "json"
-    ), adm["cookie"]);
+    let bad_cust = call(
+        app,
+        "POST",
+        "/admin/api/customers/" + string(adm["id"]) + "/status",
+        map(
+            "status",
+            "nonexistent_status_xyz",
+            "_csrf",
+            adm["csrf"],
+            "format",
+            "json"
+        ),
+        adm["cookie"]
+    );
     assert(bad_cust["status"] == 422, "Invalid customer status returns 422");
 
     // 1.4 Not Found -> 404
     let not_found_order = call(app, "GET", "/admin/api/order/99999999", null, adm["cookie"]);
     assert(not_found_order["status"] == 404, "Nonexistent order returns 404");
 
-    let not_found_prod = call(app, "GET", "/admin/api/product-full/99999999", null, adm["cookie"]);
+    let not_found_prod = call(
+        app,
+        "GET",
+        "/admin/api/product-full/99999999",
+        null,
+        adm["cookie"]
+    );
     assert(not_found_prod["status"] == 404, "Nonexistent product returns 404");
 
     println("  [PASS] Abnormal status codes correctly handled with 401, 419, 422, 404");
@@ -119,24 +186,46 @@ fn test_xss_and_boundary_payloads(app, adm, tag: string) {
     println("--- Testing XSS Payloads & Boundary Text Inputs ---");
 
     let xss_payload = "<script>alert('xss-" + tag + "')</script><img src=x onerror=alert(1)>\" onfocus=\"alert(2)";
-    
+
     // Create category with XSS payload in name and description
-    let cat_res = call(app, "POST", "/admin/api/categories/create", map(
-        "name", "XSS Cat " + xss_payload,
-        "description", "Description with " + xss_payload,
-        "_csrf", adm["csrf"],
-        "format", "json"
-    ), adm["cookie"]);
-    assert(cat_res["status"] == 201, "Category with XSS characters accepted and stored without crash");
+    let cat_res = call(
+        app,
+        "POST",
+        "/admin/api/categories/create",
+        map(
+            "name",
+            "XSS Cat " + xss_payload,
+            "description",
+            "Description with " + xss_payload,
+            "_csrf",
+            adm["csrf"],
+            "format",
+            "json"
+        ),
+        adm["cookie"]
+    );
+    assert(
+        cat_res["status"] == 201,
+        "Category with XSS characters accepted and stored without crash"
+    );
     let cid = int(body(cat_res)["data"]["id"]);
 
     // Verify list API returns JSON payload cleanly
-    let list_res = call(app, "GET", "/admin/api/list/categories?q=" + url_encode("XSS Cat"), null, adm["cookie"]);
+    let list_res = call(
+        app,
+        "GET",
+        "/admin/api/list/categories?q=" + url_encode("XSS Cat"),
+        null,
+        adm["cookie"]
+    );
     assert(list_res["status"] == 200, "Category list returns 200");
     let lb = body(list_res);
     assert(lb["data"].len() >= 1, "Category with XSS found");
     let stored_cat = lb["data"][0];
-    assert(string(stored_cat["name"]).contains("<script>"), "Raw name preserved intact in JSON API");
+    assert(
+        string(stored_cat["name"]).contains("<script>"),
+        "Raw name preserved intact in JSON API"
+    );
 
     // Create brand with extreme long string (1,000 characters)
     let long_desc = "";
@@ -146,12 +235,22 @@ fn test_xss_and_boundary_payloads(app, adm, tag: string) {
         j += 1;
     }
     let brand_name = "LongBrand-" + tag;
-    let brand_res = call(app, "POST", "/admin/api/brands/create", map(
-        "name", brand_name,
-        "description", long_desc,
-        "_csrf", adm["csrf"],
-        "format", "json"
-    ), adm["cookie"]);
+    let brand_res = call(
+        app,
+        "POST",
+        "/admin/api/brands/create",
+        map(
+            "name",
+            brand_name,
+            "description",
+            long_desc,
+            "_csrf",
+            adm["csrf"],
+            "format",
+            "json"
+        ),
+        adm["cookie"]
+    );
     assert(brand_res["status"] == 201, "Brand with long description created successfully");
     let bid = int(body(brand_res)["data"]["id"]);
 
@@ -162,24 +261,48 @@ fn test_xss_and_boundary_payloads(app, adm, tag: string) {
     // Create product with special characters & symbols in name
     let prod_name = "Prod $#@! & < > \" ' " + tag;
     let prod_sku = "SKU-SYM-" + tag;
-    let prod_res = call(app, "POST", "/admin/api/products/create", map(
-        "name", prod_name,
-        "sku", prod_sku,
-        "category_id", cid,
-        "brand_id", bid,
-        "price", "199.99",
-        "stock", 10,
-        "status", "draft",
-        "_csrf", adm["csrf"],
-        "format", "json"
-    ), adm["cookie"]);
+    let prod_res = call(
+        app,
+        "POST",
+        "/admin/api/products/create",
+        map(
+            "name",
+            prod_name,
+            "sku",
+            prod_sku,
+            "category_id",
+            cid,
+            "brand_id",
+            bid,
+            "price",
+            "199.99",
+            "stock",
+            10,
+            "status",
+            "draft",
+            "_csrf",
+            adm["csrf"],
+            "format",
+            "json"
+        ),
+        adm["cookie"]
+    );
     assert(prod_res["status"] == 201, "Product with special characters created");
     let pid = int(body(prod_res)["data"]["id"]);
 
-    let prod_full = call(app, "GET", "/admin/api/product-full/" + string(pid), null, adm["cookie"]);
+    let prod_full = call(
+        app,
+        "GET",
+        "/admin/api/product-full/" + string(pid),
+        null,
+        adm["cookie"]
+    );
     assert(prod_full["status"] == 200, "Full product API returns 200");
     let pb = body(prod_full)["data"];
-    assert(pb["product"]["name"] == prod_name, "Product special character name preserved in full view");
+    assert(
+        pb["product"]["name"] == prod_name,
+        "Product special character name preserved in full view"
+    );
 
     // Clean up
     DB.table("inventory").where("product_id", "=", pid).delete();
@@ -269,10 +392,22 @@ fn test_pagination_and_filtering(app, adm) {
     assert(int(m2["page"]) == 2, "Meta page is 2");
 
     // Filtering by status
-    let f_draft = call(app, "GET", "/admin/api/list/products?status=draft", null, adm["cookie"]);
+    let f_draft = call(
+        app,
+        "GET",
+        "/admin/api/list/products?status=draft",
+        null,
+        adm["cookie"]
+    );
     assert(f_draft["status"] == 200, "Products status filter draft returns 200");
 
-    let f_pub = call(app, "GET", "/admin/api/list/products?status=published", null, adm["cookie"]);
+    let f_pub = call(
+        app,
+        "GET",
+        "/admin/api/list/products?status=published",
+        null,
+        adm["cookie"]
+    );
     assert(f_pub["status"] == 200, "Products status filter published returns 200");
 
     // Inventory low-stock filter

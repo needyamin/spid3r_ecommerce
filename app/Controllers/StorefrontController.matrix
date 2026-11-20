@@ -25,7 +25,7 @@ public class StorefrontController {
     public let currencies;
     public let campaigns;
 
-    fn new() {
+    fn new () {
         self.service = new StorefrontService();
         self.settings = Container.make("store.settings");
         self.categories = new CategoryRepository();
@@ -93,6 +93,7 @@ public class StorefrontController {
 
     // The currently filtered category slug, so the filter bar preselects it.
     fn requested_category(self, req) -> string {
+        let _ = self;
         if req != null and req.query_params.has("category") {
             return string(req.query_params["category"]).trim();
         }
@@ -100,6 +101,7 @@ public class StorefrontController {
     }
 
     fn requested_brand(self, req) -> string {
+        let _ = self;
         if req != null and req.query_params.has("brand") {
             return string(req.query_params["brand"]).trim();
         }
@@ -124,7 +126,12 @@ public class StorefrontController {
 
     public fn catalog(self, req) {
         let code = self.display_currency(req);
-        let ctx = self.service.catalog_context(req.query_params, "/catalog", code, self.fx_context());
+        let ctx = self.service.catalog_context(
+            req.query_params,
+            "/catalog",
+            code,
+            self.fx_context()
+        );
         ctx["heading"] = "All products";
         ctx["description"] = "";
         ctx["meta_description"] = "Browse all products at " + self.settings["name"] + " — filter by category, brand and price.";
@@ -138,7 +145,12 @@ public class StorefrontController {
 
     public fn search(self, req) {
         let code = self.display_currency(req);
-        let ctx = self.service.catalog_context(req.query_params, "/search", code, self.fx_context());
+        let ctx = self.service.catalog_context(
+            req.query_params,
+            "/search",
+            code,
+            self.fx_context()
+        );
         let q = "";
         if req.query_params.has("q") {
             q = string(req.query_params["q"]).trim();
@@ -184,14 +196,21 @@ public class StorefrontController {
         if cat == null {
             throw not_found("Category not found.");
         }
-        let params = {"category": slug, "path": req.path};
+        let params = {
+            "category": slug, "path": req.path
+        };
         for k in req.query_params.keys() {
             if k != "category" {
                 params[k] = req.query_params[k];
             }
         }
         let code = self.display_currency(req);
-        let ctx = self.service.catalog_context(params, "/category/" + slug, code, self.fx_context());
+        let ctx = self.service.catalog_context(
+            params,
+            "/category/" + slug,
+            code,
+            self.fx_context()
+        );
         ctx["heading"] = string(cat["name"]);
         ctx["description"] = string(cat["description"]);
         ctx["meta_description"] = string(cat["meta_description"]);
@@ -209,14 +228,21 @@ public class StorefrontController {
         if brand == null {
             throw not_found("Brand not found.");
         }
-        let params = {"brand": slug};
+        let params = {
+            "brand": slug
+        };
         for k in req.query_params.keys() {
             if k != "brand" {
                 params[k] = req.query_params[k];
             }
         }
         let code = self.display_currency(req);
-        let ctx = self.service.catalog_context(params, "/brand/" + slug, code, self.fx_context());
+        let ctx = self.service.catalog_context(
+            params,
+            "/brand/" + slug,
+            code,
+            self.fx_context()
+        );
         ctx["heading"] = string(brand["name"]);
         ctx["form_action"] = "/catalog";
         ctx["category_options"] = self.category_options(self.requested_category(req));
@@ -244,7 +270,11 @@ public class StorefrontController {
         ctx["rating"] = self.advanced.rating_summary(product_id);
 
         // Phase 10 — recommendations from the same category.
-        let recommendations = self.service.decorate(self.advanced.recommendations(product_id, 4), code, fx);
+        let recommendations = self.service.decorate(
+            self.advanced.recommendations(product_id, 4),
+            code,
+            fx
+        );
         ctx["recommendations"] = recommendations;
         ctx["has_recommendations"] = recommendations.len() > 0;
 
@@ -280,13 +310,13 @@ public class StorefrontController {
         return res;
     }
 
-    public fn sitemap(self, req) {
+    public fn sitemap(self, _req) {
         let res = response(self.service.sitemap_xml(), 200);
         res.header("content-type", "application/xml; charset=utf-8");
         return res;
     }
 
-    public fn robots(self, req) {
+    public fn robots(self, _req) {
         let res = response(self.service.robots_txt(), 200);
         res.header("content-type", "text/plain; charset=utf-8");
         return res;

@@ -9,7 +9,7 @@ import "app/Policies/AccessPolicy";
 public class RequireRoleMiddleware {
     public let role;
 
-    fn new(role: string = "customer") {
+    fn new (role: string = "customer") {
         self.role = role;
     }
 
@@ -42,7 +42,7 @@ public class RequireRoleMiddleware {
 public class RequirePermissionMiddleware {
     public let permission;
 
-    fn new(permission: string = "") {
+    fn new (permission: string = "") {
         self.permission = permission;
     }
 

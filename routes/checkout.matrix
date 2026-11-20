@@ -17,7 +17,7 @@ public fn register_checkout_routes() {
     Route.get("/checkout/confirmation/:number", req => checkout.confirmation(req));
 
     // Authenticated customer area.
-    Route.get("/addresses", req => redirect("/account#saved-addresses")).middleware("auth");
+    Route.get("/addresses", _req => redirect("/account#saved-addresses")).middleware("auth");
     Route.post("/account/addresses", req => checkout.store_address(req)).middleware("auth");
     Route.post("/account/addresses/:id/delete", req => checkout.delete_address(req)).middleware("auth");
     Route.get("/orders", req => orders.index(req)).middleware("auth");

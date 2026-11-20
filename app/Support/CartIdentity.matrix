@@ -33,5 +33,7 @@ public fn cart_identity(req) {
     if req != null and req.auth != null and req.auth.check() {
         uid = req.auth.id();
     }
-    return {"user_id": uid, "key": key};
+    return {
+        "user_id": uid, "key": key
+    };
 }

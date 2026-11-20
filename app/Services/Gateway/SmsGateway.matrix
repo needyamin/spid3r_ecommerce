@@ -33,7 +33,7 @@ public class SmsGateway {
     public let driver;
     public let sender_id;
 
-    fn new() {
+    fn new () {
         let d = env_value("SMS_DRIVER", "log").lower();
         if d != "log" and d != "http" {
             d = "log";
@@ -55,10 +55,14 @@ public class SmsGateway {
     public fn send(self, to: string, message: string) -> bool {
         let number = string(to).trim();
         if number == "" {
-            throw validation_failed({"phone": "A phone number is required."});
+            throw validation_failed({
+                "phone": "A phone number is required."
+            });
         }
         if len(string(message).trim()) == 0 {
-            throw validation_failed({"message": "The message body is empty."});
+            throw validation_failed({
+                "message": "The message body is empty."
+            });
         }
         if self.driver == "log" {
             Log.info("[sms] to=" + number + " body=" + string(message));
@@ -93,7 +97,7 @@ public class SmsGateway {
         let parsed = null;
         try {
             parsed = json_parse(string(out["body"]));
-        } catch (e) {
+        } catch (_e) {
             throw bad_request("SMS gateway returned an invalid response.");
         }
         if type_of(parsed) != "map" {

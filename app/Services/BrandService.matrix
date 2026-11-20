@@ -10,18 +10,21 @@ import "app/Support/Slug" as Slug;
 public class BrandService {
     public let brands;
 
-    fn new() {
+    fn new () {
         self.brands = new BrandRepository();
     }
 
     fn slug_taken(self, slug: string) -> bool {
+        let _ = self;
         return DB.table("brands").where("slug", "=", slug).count() > 0;
     }
 
     public fn create(self, data) {
         let name = string(data["name"]).trim();
         if DB.table("brands").where("name", "=", name).count() > 0 {
-            throw validation_failed({"name": "Brand already exists."});
+            throw validation_failed({
+                "name": "Brand already exists."
+            });
         }
         let svc = self;
         let slug = Slug.unique(name, s => svc.slug_taken(s));
@@ -40,7 +43,8 @@ public class BrandService {
         if self.brands.find(id) == null {
             throw not_found("Brand not found.");
         }
-        let changes = {};
+        let changes = {
+        };
         let keys = ["name", "description", "is_active"];
         let i = 0;
         while i < keys.len() {
@@ -52,7 +56,9 @@ public class BrandService {
         if changes.has("is_active") {
             let v = changes["is_active"];
             let flag = 0;
-            if v == 1 or v == true or v == "1" { flag = 1; }
+            if v == 1 or v == true or v == "1" {
+                flag = 1;
+            }
             changes["is_active"] = flag;
         }
         if changes.len() > 0 {
@@ -67,7 +73,9 @@ public class BrandService {
             throw not_found("Brand not found.");
         }
         if DB.table("products").where("brand_id", "=", id).count() > 0 {
-            throw validation_failed({"id": "Brand still has products."});
+            throw validation_failed({
+                "id": "Brand still has products."
+            });
         }
         return self.brands.delete(id);
     }

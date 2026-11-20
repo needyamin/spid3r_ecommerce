@@ -21,12 +21,13 @@ public class ReturnService {
     public let orders;
     public let inventory;
 
-    fn new() {
+    fn new () {
         self.orders = new OrderRepository();
         self.inventory = new InventoryRepository();
     }
 
     fn window_days(self) -> int {
+        let _ = self;
         let row = DB.table("settings").where("setting_key", "=", "returns.window_days").first();
         if row == null {
             return 14;
@@ -42,9 +43,9 @@ public class ReturnService {
     // shipment, or the order's own updated_at when nothing was ever shipped.
     fn delivered_at_for(self, order_id) {
         let rows = DB.table("shipments")
-            .where("order_id", "=", order_id)
-            .orderBy("id", "DESC")
-            .get();
+        .where("order_id", "=", order_id)
+        .orderBy("id", "DESC")
+        .get();
         let i = 0;
         while i < rows.len() {
             if rows[i]["delivered_at"] != null {
@@ -60,6 +61,7 @@ public class ReturnService {
     }
 
     public fn request_for(self, return_id, user_id) {
+        let _ = self;
         let row = DB.table("returns").where("id", "=", return_id).first();
         if row == null or row["user_id"] == null or user_id == null or int(row["user_id"]) != int(user_id) {
             throw not_found("Return request not found.");
@@ -68,6 +70,7 @@ public class ReturnService {
     }
 
     public fn for_customer(self, user_id) {
+        let _ = self;
         if user_id == null {
             return [];
         }
@@ -75,19 +78,34 @@ public class ReturnService {
     }
 
     public fn all(self) {
+        let _ = self;
         return DB.table("returns").orderBy("id", "DESC").limit(100).get();
     }
 
     // Customer request. `order_item_id` may be null for a whole-order return.
-    public fn request(self, number: string, user_id, order_item_id, quantity: int, reason: string, kind: string) {
+    public fn request(
+        self,
+        number: string,
+        user_id,
+        order_item_id,
+        quantity: int,
+        reason: string,
+        kind: string
+    ) {
         if len(string(reason).trim()) < 10 {
-            throw validation_failed({"reason": "Please describe the problem in at least 10 characters."});
+            throw validation_failed({
+                "reason": "Please describe the problem in at least 10 characters."
+            });
         }
         if string(kind).trim() != "return" and string(kind).trim() != "exchange" {
-            throw validation_failed({"kind": "Choose return or exchange."});
+            throw validation_failed({
+                "kind": "Choose return or exchange."
+            });
         }
         if quantity <= 0 {
-            throw validation_failed({"quantity": "The quantity must be positive."});
+            throw validation_failed({
+                "quantity": "The quantity must be positive."
+            });
         }
         return DB.transaction(fn() {
             let order = self.orders.find_by_number(number);
@@ -95,13 +113,17 @@ public class ReturnService {
                 throw not_found("Order not found.");
             }
             if string(order["status"]) != "delivered" {
-                throw validation_failed({"order": "Only delivered orders can be returned."});
+                throw validation_failed({
+                    "order": "Only delivered orders can be returned."
+                });
             }
             let delivered_at = self.delivered_at_for(order["id"]);
             if delivered_at != null {
                 let deadline = int(delivered_at) + self.window_days() * 86400;
                 if unix_time() > deadline {
-                    throw validation_failed({"order": "The return window has closed."});
+                    throw validation_failed({
+                        "order": "The return window has closed."
+                    });
                 }
             }
             let item = null;
@@ -112,7 +134,9 @@ public class ReturnService {
                     throw not_found("Order item not found.");
                 }
                 if quantity > int(item["quantity"]) {
-                    throw validation_failed({"quantity": "You cannot return more than you bought."});
+                    throw validation_failed({
+                        "quantity": "You cannot return more than you bought."
+                    });
                 }
                 item_ref = item["id"];
             }
@@ -130,9 +154,13 @@ public class ReturnService {
 
     // Administrator decision. Returns the updated row.
     public fn resolve(self, return_id, new_status: string, refund_minor: int) {
-        let allowed = {"approved": 1, "rejected": 1, "received": 1, "refunded": 1};
+        let allowed = {
+            "approved": 1, "rejected": 1, "received": 1, "refunded": 1
+        };
         if not allowed.has(new_status) {
-            throw validation_failed({"status": "Unknown return decision."});
+            throw validation_failed({
+                "status": "Unknown return decision."
+            });
         }
         return DB.transaction(fn() {
             let row = DB.table("returns").where("id", "=", return_id).first();
@@ -149,9 +177,10 @@ public class ReturnService {
                 ok = new_status == "refunded";
             }
             if not ok {
-                throw validation_failed({"status": "A return cannot move from " + current + " to " + new_status + "."});
+                throw validation_failed({
+                    "status": "A return cannot move from " + current + " to " + new_status + "."
+                });
             }
-
             let amount = int(row["refund_minor"]);
             if new_status == "refunded" {
                 amount = self.refund_amount(row, refund_minor);
@@ -171,6 +200,7 @@ public class ReturnService {
     // The refunded amount: staff-supplied, capped at the historical line
     // value. Never more than the customer actually paid for the items.
     fn refund_amount(self, row, requested: int) -> int {
+        let _ = self;
         let line_total = 0;
         if row["order_item_id"] != null {
             let item = DB.table("order_items").where("id", "=", row["order_item_id"]).first();
@@ -211,6 +241,7 @@ public class ReturnService {
     // Record the refund in the payment ledger when a payment exists (COD
     // orders have none — staff settle those offline).
     fn record_refund(self, row, amount_minor: int) -> bool {
+        let _ = self;
         if amount_minor <= 0 {
             return false;
         }

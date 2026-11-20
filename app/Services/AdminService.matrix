@@ -5,9 +5,12 @@ import "framework/Database/DB";
 import "framework/Http/HttpException";
 
 public class AdminService {
-    fn new() {}
+    fn new () {
+        let _ = self;
+    }
 
     fn count(self, table_name: string, field: string = "", value = null) -> int {
+        let _ = self;
         if field != "" {
             return DB.table(table_name).where(field, "=", value).count();
         }
@@ -121,7 +124,16 @@ public class AdminService {
     // SECURITY: never return raw user rows — they carry the password hash.
     // Lists select an explicit column whitelist.
     public fn customers(self, query: string = "") {
-        let q = DB.table("users").select(["id", "name", "email", "phone", "status", "loyalty_points", "created_at"]).orderBy("id", "DESC");
+        let _ = self;
+        let q = DB.table("users").select(
+            ["id",
+            "name",
+            "email",
+            "phone",
+            "status",
+            "loyalty_points",
+            "created_at"]
+        ).orderBy("id", "DESC");
         if query != "" {
             q.where("email", "LIKE", "%" + query + "%");
         }
@@ -129,29 +141,38 @@ public class AdminService {
     }
 
     public fn set_customer_status(self, user_id, status: string) -> bool {
+        let _ = self;
         if status != "active" and status != "suspended" {
-            throw validation_failed({"status": "Invalid account status."});
+            throw validation_failed({
+                "status": "Invalid account status."
+            });
         }
         let user = DB.table("users").where("id", "=", user_id).first();
         if user == null {
             throw not_found("Customer not found.");
         }
-        return DB.table("users").where("id", "=", user_id).update({"status": status}) > 0;
+        return DB.table("users").where("id", "=", user_id).update({
+            "status": status
+        }) > 0;
     }
 
     // Staff = users holding at least one non-customer role. Each row carries
     // the user's staff role so the admin UI can show and revoke it.
     // `query` filters by name or email (admin SPA search box).
     public fn staff(self, query: string = "") {
+        let _ = self;
         let links = DB.table("user_roles").get();
-        let by_user = {};
+        let by_user = {
+        };
         let i = 0;
         while i < links.len() {
             let role = DB.table("roles").where("id", "=", links[i]["role_id"]).first();
             if role != null and role["slug"] != "customer" {
                 let uid = int(links[i]["user_id"]);
                 if not by_user.has(uid) {
-                    by_user[uid] = {"slug": string(role["slug"]), "name": string(role["name"])};
+                    by_user[uid] = {
+                        "slug": string(role["slug"]), "name": string(role["name"])
+                    };
                 }
             }
             i += 1;
@@ -188,6 +209,7 @@ public class AdminService {
     }
 
     public fn assign_role(self, user_id, role_slug: string) -> bool {
+        let _ = self;
         let role = DB.table("roles").where("slug", "=", role_slug).first();
         if role == null {
             throw not_found("Role not found.");
@@ -196,13 +218,15 @@ public class AdminService {
             throw not_found("User not found.");
         }
         let exists = DB.table("user_roles")
-            .where("user_id", "=", user_id)
-            .where("role_id", "=", role["id"])
-            .count();
+        .where("user_id", "=", user_id)
+        .where("role_id", "=", role["id"])
+        .count();
         if exists > 0 {
             return false;
         }
-        DB.table("user_roles").insert({"user_id": user_id, "role_id": role["id"]});
+        DB.table("user_roles").insert({
+            "user_id": user_id, "role_id": role["id"]
+        });
         return true;
     }
 
@@ -211,6 +235,7 @@ public class AdminService {
     // - the user must actually hold the role;
     // - the LAST admin can never be demoted (lockout protection).
     public fn remove_role(self, user_id, role_slug: string) -> bool {
+        let _ = self;
         let role = DB.table("roles").where("slug", "=", role_slug).first();
         if role == null {
             throw not_found("Role not found.");
@@ -219,31 +244,36 @@ public class AdminService {
             throw not_found("User not found.");
         }
         let link = DB.table("user_roles")
-            .where("user_id", "=", user_id)
-            .where("role_id", "=", role["id"]);
+        .where("user_id", "=", user_id)
+        .where("role_id", "=", role["id"]);
         if link.count() == 0 {
-            throw validation_failed({"role": "This user does not hold the " + role_slug + " role."});
+            throw validation_failed({
+                "role": "This user does not hold the " + role_slug + " role."
+            });
         }
         if role_slug == "admin" {
             let admins = DB.table("user_roles").where("role_id", "=", role["id"]).get();
             if admins.len() <= 1 {
-                throw validation_failed({"role": "Cannot remove the last admin — promote another admin first."});
+                throw validation_failed({
+                    "role": "Cannot remove the last admin — promote another admin first."
+                });
             }
         }
         return link.delete() > 0;
     }
 
     public fn roles(self) {
+        let _ = self;
         let rows = DB.table("roles").orderBy("id", "ASC").get();
         let out = [];
         let i = 0;
         while i < rows.len() {
             let role = rows[i];
             role["permission_count"] = DB.table("role_permissions")
-                .where("role_id", "=", role["id"]).count();
+            .where("role_id", "=", role["id"]).count();
             // Permission slugs for the admin SPA's per-role checkboxes.
             let links = DB.table("role_permissions")
-                .where("role_id", "=", role["id"]).get();
+            .where("role_id", "=", role["id"]).get();
             let slugs = [];
             let j = 0;
             while j < links.len() {
@@ -261,10 +291,12 @@ public class AdminService {
     }
 
     public fn permissions(self) {
+        let _ = self;
         return DB.table("permissions").orderBy("slug", "ASC").get();
     }
 
     public fn toggle_permission(self, role_id, permission_slug: string, enabled: bool) -> bool {
+        let _ = self;
         let perm = DB.table("permissions").where("slug", "=", permission_slug).first();
         if perm == null {
             throw not_found("Permission not found.");
@@ -273,13 +305,15 @@ public class AdminService {
             throw not_found("Role not found.");
         }
         let link = DB.table("role_permissions")
-            .where("role_id", "=", role_id)
-            .where("permission_id", "=", perm["id"]);
+        .where("role_id", "=", role_id)
+        .where("permission_id", "=", perm["id"]);
         if enabled {
             if link.count() > 0 {
                 return false;
             }
-            DB.table("role_permissions").insert({"role_id": role_id, "permission_id": perm["id"]});
+            DB.table("role_permissions").insert({
+                "role_id": role_id, "permission_id": perm["id"]
+            });
             return true;
         }
         return link.delete() > 0;
@@ -287,6 +321,7 @@ public class AdminService {
 
     // ---- coupons ----
     public fn coupons(self, query: string = "") {
+        let _ = self;
         let q = DB.table("coupons").orderBy("id", "DESC");
         if query != "" {
             q.where("code", "LIKE", "%" + query + "%");
@@ -295,29 +330,40 @@ public class AdminService {
     }
 
     public fn save_coupon(self, data, coupon_id) {
+        let _ = self;
         let code = string(data["code"]).trim().upper();
         if code == "" {
-            throw validation_failed({"code": "A coupon code is required."});
+            throw validation_failed({
+                "code": "A coupon code is required."
+            });
         }
         // Format whitelist (audit F-5): codes feed URLs, lookups and CSV
         // exports — keep them short and alphanumeric.
         if not regex_match("^[A-Z0-9_-]{1,32}$", code) {
-            throw validation_failed({"code": "Codes are 1-32 chars: letters, numbers, dash or underscore."});
+            throw validation_failed({
+                "code": "Codes are 1-32 chars: letters, numbers, dash or underscore."
+            });
         }
         let kind = string(data["type"]).trim();
         if kind != "fixed" and kind != "percent" {
-            throw validation_failed({"type": "Type must be fixed or percent."});
+            throw validation_failed({
+                "type": "Type must be fixed or percent."
+            });
         }
         // Percent codes are stored in basis points — cap at 100% (audit F-4).
         if kind == "percent" and int(data["value_minor"]) > 10000 {
-            throw validation_failed({"value_minor": "A percent discount cannot exceed 100%."});
+            throw validation_failed({
+                "value_minor": "A percent discount cannot exceed 100%."
+            });
         }
         let clash = DB.table("coupons").where("code", "=", code);
         if coupon_id != null {
             clash.where("id", "!=", coupon_id);
         }
         if clash.count() > 0 {
-            throw validation_failed({"code": "That coupon code already exists."});
+            throw validation_failed({
+                "code": "That coupon code already exists."
+            });
         }
         // On create a coupon starts active. On update, keep the stored
         // active state unless the caller explicitly passes is_active —
@@ -349,7 +395,9 @@ public class AdminService {
             "is_active": active
         };
         if int(values["value_minor"]) < 0 or int(values["min_order_minor"]) < 0 or int(values["max_uses"]) < 0 {
-            throw validation_failed({"value_minor": "Coupon values cannot be negative."});
+            throw validation_failed({
+                "value_minor": "Coupon values cannot be negative."
+            });
         }
         if coupon_id == null {
             let id = DB.table("coupons").insert(values);
@@ -362,6 +410,7 @@ public class AdminService {
     // Activate / deactivate a coupon. Deactivation is the safe alternative
     // for coupons that already have usages and therefore cannot be deleted.
     public fn set_coupon_active(self, coupon_id, active: bool) -> bool {
+        let _ = self;
         if DB.table("coupons").where("id", "=", coupon_id).first() == null {
             throw not_found("Coupon not found.");
         }
@@ -369,21 +418,27 @@ public class AdminService {
         if active == true {
             flag = 1;
         }
-        return DB.table("coupons").where("id", "=", coupon_id).update({"is_active": flag}) > 0;
+        return DB.table("coupons").where("id", "=", coupon_id).update({
+            "is_active": flag
+        }) > 0;
     }
 
     public fn delete_coupon(self, coupon_id) -> bool {
+        let _ = self;
         if DB.table("coupons").where("id", "=", coupon_id).first() == null {
             throw not_found("Coupon not found.");
         }
         if DB.table("coupon_usages").where("coupon_id", "=", coupon_id).count() > 0 {
-            throw validation_failed({"id": "Used coupons cannot be deleted; deactivate them instead."});
+            throw validation_failed({
+                "id": "Used coupons cannot be deleted; deactivate them instead."
+            });
         }
         return DB.table("coupons").where("id", "=", coupon_id).delete() > 0;
     }
 
     // ---- settings (shipping / payment / store configuration) ----
     public fn settings(self, group: string = "") {
+        let _ = self;
         let q = DB.table("settings").orderBy("setting_key", "ASC");
         if group != "" {
             q.where("setting_group", "=", group);
@@ -392,9 +447,12 @@ public class AdminService {
     }
 
     public fn update_setting(self, key: string, value: string, group: string = "general") -> bool {
+        let _ = self;
         let clean = string(key).trim();
         if clean == "" {
-            throw validation_failed({"key": "A setting key is required."});
+            throw validation_failed({
+                "key": "A setting key is required."
+            });
         }
         let existing = DB.table("settings").where("setting_key", "=", clean).first();
         if existing == null {
@@ -411,6 +469,7 @@ public class AdminService {
 
     // ---- audit log ----
     public fn log(self, user_id, action: string, entity_type: string, entity_id, payload) {
+        let _ = self;
         return DB.table("audit_logs").insert({
             "user_id": user_id,
             "action": action,
@@ -422,11 +481,13 @@ public class AdminService {
     }
 
     public fn audit(self, limit_count: int = 50) {
+        let _ = self;
         return DB.table("audit_logs").orderBy("id", "DESC").limit(limit_count).get();
     }
 
     // ---- reports / export ----
     public fn report_rows(self) {
+        let _ = self;
         let settled = ["paid", "processing", "packed", "shipped", "delivered"];
         let rows = DB.table("orders").whereIn("status", settled).orderBy("id", "ASC").get();
         let out = [];
@@ -451,7 +512,7 @@ public class AdminService {
         while i < rows.len() {
             let r = rows[i];
             csv = csv + string(r["order_number"]) + "," + string(r["status"]) + ","
-                + string(r["total_minor"]) + "," + string(r["placed_at"]) + "\n";
+            + string(r["total_minor"]) + "," + string(r["placed_at"]) + "\n";
             i += 1;
         }
         return csv;

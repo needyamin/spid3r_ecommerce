@@ -19,24 +19,64 @@ import "app/Services/AuthService";
 import "app/Services/ShippingService";
 import "framework/Log/Log";
 
-fn ensure_product(cat_id, name: string, slug: string, sku: string, price: int, blurb: string) {
+fn ensure_product(
+    cat_id,
+    name: string,
+    slug: string,
+    sku: string,
+    price: int,
+    blurb: string
+) {
     let hit = DB.table("products").where("slug", "=", slug).first();
     if hit != null {
         return hit["id"];
     }
-    let id = DB.table("products").insert(map(
-        "category_id", cat_id, "name", name, "slug", slug, "sku", sku,
-        "short_description", blurb,
-        "description", blurb + " Ships in recyclable packaging with a 14-day return window.",
-        "price_minor", price, "compare_at_minor", null,
-        "status", "published", "currency", "BDT",
-        "tax_rate_bps", 0, "weight_grams", 500,
-        "meta_title", name, "meta_description", blurb
-    ));
-    DB.table("inventory").insert(map(
-        "product_id", id, "variant_id", null,
-        "quantity", 25, "reserved", 0, "low_stock_threshold", 5
-    ));
+    let id = DB.table("products").insert(
+        map(
+            "category_id",
+            cat_id,
+            "name",
+            name,
+            "slug",
+            slug,
+            "sku",
+            sku,
+            "short_description",
+            blurb,
+            "description",
+            blurb + " Ships in recyclable packaging with a 14-day return window.",
+            "price_minor",
+            price,
+            "compare_at_minor",
+            null,
+            "status",
+            "published",
+            "currency",
+            "BDT",
+            "tax_rate_bps",
+            0,
+            "weight_grams",
+            500,
+            "meta_title",
+            name,
+            "meta_description",
+            blurb
+        )
+    );
+    DB.table("inventory").insert(
+        map(
+            "product_id",
+            id,
+            "variant_id",
+            null,
+            "quantity",
+            25,
+            "reserved",
+            0,
+            "low_stock_threshold",
+            5
+        )
+    );
     return id;
 }
 
@@ -64,41 +104,103 @@ fn main() {
     // ---- catalog (idempotent on slug) ----
     let audio = DB.table("categories").where("slug", "=", "demo-audio").first();
     if audio == null {
-        DB.table("categories").insert(map(
-            "name", "Demo Audio", "slug", "demo-audio",
-            "description", "Headphones and speakers from the demo catalog.",
-            "sort_order", 1, "is_active", 1,
-            "meta_title", "Demo Audio", "meta_description", "Demo audio gear"
-        ));
+        DB.table("categories").insert(
+            map(
+                "name",
+                "Demo Audio",
+                "slug",
+                "demo-audio",
+                "description",
+                "Headphones and speakers from the demo catalog.",
+                "sort_order",
+                1,
+                "is_active",
+                1,
+                "meta_title",
+                "Demo Audio",
+                "meta_description",
+                "Demo audio gear"
+            )
+        );
         audio = DB.table("categories").where("slug", "=", "demo-audio").first();
     }
     let desk = DB.table("categories").where("slug", "=", "demo-desk").first();
     if desk == null {
-        DB.table("categories").insert(map(
-            "name", "Demo Desk Gear", "slug", "demo-desk",
-            "description", "Everyday desk essentials from the demo catalog.",
-            "sort_order", 2, "is_active", 1,
-            "meta_title", "Demo Desk Gear", "meta_description", "Demo desk gear"
-        ));
+        DB.table("categories").insert(
+            map(
+                "name",
+                "Demo Desk Gear",
+                "slug",
+                "demo-desk",
+                "description",
+                "Everyday desk essentials from the demo catalog.",
+                "sort_order",
+                2,
+                "is_active",
+                1,
+                "meta_title",
+                "Demo Desk Gear",
+                "meta_description",
+                "Demo desk gear"
+            )
+        );
         desk = DB.table("categories").where("slug", "=", "demo-desk").first();
     }
 
-    ensure_product(audio["id"], "Spid3r Wireless Headphones", "demo-headphones", "DEMO-HP-1",
-        1200000, "Over-ear wireless headphones with 30-hour battery life.");
-    ensure_product(audio["id"], "Spid3r Desk Speaker", "demo-speaker", "DEMO-SP-2",
-        650000, "A compact desk speaker with a surprisingly big sound.");
-    ensure_product(desk["id"], "Spid3r Mechanical Keyboard", "demo-keyboard", "DEMO-KB-3",
-        950000, "Tenkeyless mechanical keyboard with hot-swappable switches.");
-    ensure_product(desk["id"], "Spid3r Desk Lamp", "demo-lamp", "DEMO-LP-4",
-        320000, "Warm-to-cool LED desk lamp with a memory dial.");
+    ensure_product(
+        audio["id"],
+        "Spid3r Wireless Headphones",
+        "demo-headphones",
+        "DEMO-HP-1",
+        1200000,
+        "Over-ear wireless headphones with 30-hour battery life."
+    );
+    ensure_product(
+        audio["id"],
+        "Spid3r Desk Speaker",
+        "demo-speaker",
+        "DEMO-SP-2",
+        650000,
+        "A compact desk speaker with a surprisingly big sound."
+    );
+    ensure_product(
+        desk["id"],
+        "Spid3r Mechanical Keyboard",
+        "demo-keyboard",
+        "DEMO-KB-3",
+        950000,
+        "Tenkeyless mechanical keyboard with hot-swappable switches."
+    );
+    ensure_product(
+        desk["id"],
+        "Spid3r Desk Lamp",
+        "demo-lamp",
+        "DEMO-LP-4",
+        320000,
+        "Warm-to-cool LED desk lamp with a memory dial."
+    );
     println("  catalog      4 demo products in 2 categories (with stock)");
 
     // ---- a coupon (idempotent on code) ----
     if DB.table("coupons").where("code", "=", "WELCOME10").count() == 0 {
-        DB.table("coupons").insert(map(
-            "code", "WELCOME10", "type", "percent", "value_minor", 1000,
-            "min_order_minor", 100000, "max_uses", 0, "uses", 0, "is_active", 1
-        ));
+        DB.table("coupons").insert(
+            map(
+                "code",
+                "WELCOME10",
+                "type",
+                "percent",
+                "value_minor",
+                1000,
+                "min_order_minor",
+                100000,
+                "max_uses",
+                0,
+                "uses",
+                0,
+                "is_active",
+                1
+            )
+        );
     }
     println("  coupon       WELCOME10 — 10% off orders over 1,000.00");
 

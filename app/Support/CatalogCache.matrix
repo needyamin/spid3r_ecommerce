@@ -21,6 +21,6 @@ public fn catalog_version() -> int {
 
 public fn bump_catalog_version() -> int {
     let next = catalog_version() + 1;
-    Cache.put("store:catalog:version", next, 0);   // 0 = forever
+    Cache.put("store:catalog:version", next, 0);  // 0 = forever
     return next;
 }

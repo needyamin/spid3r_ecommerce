@@ -13,7 +13,7 @@ import "framework/Http/HttpException";
 public class ShippingService {
     public let methods;
 
-    fn new() {
+    fn new () {
         self.methods = ["standard", "express"];
     }
 
@@ -30,6 +30,7 @@ public class ShippingService {
     }
 
     fn setting(self, key: string, fallback: int) -> int {
+        let _ = self;
         let row = DB.table("settings").where("setting_key", "=", key).first();
         if row == null {
             return fallback;
@@ -40,19 +41,23 @@ public class ShippingService {
     // ---- zones ----
 
     public fn zones(self) {
+        let _ = self;
         return DB.table("shipping_zones").where("is_active", "=", 1).orderBy("id", "ASC").get();
     }
 
     public fn all_zones(self) {
+        let _ = self;
         return DB.table("shipping_zones").orderBy("id", "ASC").get();
     }
 
     public fn zone(self, zone_id) {
+        let _ = self;
         return DB.table("shipping_zones").where("id", "=", zone_id).first();
     }
 
     // Does a comma-separated district list name this district?
     fn list_has(self, raw: string, needle: string) -> bool {
+        let _ = self;
         let parts = string(raw).split(",");
         let i = 0;
         while i < parts.len() {
@@ -113,18 +118,21 @@ public class ShippingService {
     // ---- rates ----
 
     public fn rates_for_zone(self, zone_id) {
+        let _ = self;
         return DB.table("shipping_rates")
-            .where("zone_id", "=", zone_id)
-            .where("is_active", "=", 1)
-            .orderBy("min_order_minor", "ASC")
-            .get();
+        .where("zone_id", "=", zone_id)
+        .where("is_active", "=", 1)
+        .orderBy("min_order_minor", "ASC")
+        .get();
     }
 
     public fn all_rates(self) {
+        let _ = self;
         return DB.table("shipping_rates").orderBy("zone_id", "ASC").orderBy("min_order_minor", "ASC").get();
     }
 
     public fn rate(self, rate_id) {
+        let _ = self;
         return DB.table("shipping_rates").where("id", "=", rate_id).first();
     }
 
@@ -161,7 +169,9 @@ public class ShippingService {
             return self.setting("shipping.express_minor", 12000);
         }
         if not self.is_method(method) {
-            throw validation_failed({"shipping_method": "Choose a valid shipping method."});
+            throw validation_failed({
+                "shipping_method": "Choose a valid shipping method."
+            });
         }
         let free_threshold = self.setting("shipping.free_threshold_minor", 200000);
         if after_discount >= free_threshold {
@@ -175,7 +185,9 @@ public class ShippingService {
     // plus a delivery estimate.
     public fn quote(self, address, method: string, order_value_minor: int) {
         if not self.is_method(method) {
-            throw validation_failed({"shipping_method": "Choose a valid shipping method."});
+            throw validation_failed({
+                "shipping_method": "Choose a valid shipping method."
+            });
         }
         let zone = self.zone_for_address(address);
         if zone != null {
@@ -218,10 +230,19 @@ public class ShippingService {
     // ---- administration ----
 
     // Create or update a zone by name.
-    public fn save_zone(self, name: string, country: string, districts: string, is_active: int) {
+    public fn save_zone(
+        self,
+        name: string,
+        country: string,
+        districts: string,
+        is_active: int
+    ) {
+        let _ = self;
         let key = string(name).trim();
         if key == "" {
-            throw validation_failed({"name": "A zone name is required."});
+            throw validation_failed({
+                "name": "A zone name is required."
+            });
         }
         let data = {
             "name": key,
@@ -238,19 +259,35 @@ public class ShippingService {
     }
 
     // Create or update a rate for a zone/method/value tier.
-    public fn save_rate(self, zone_id, method: string, fee_minor: int, min_order_minor: int, max_order_minor, days_min: int, days_max: int, is_active: int) {
+    public fn save_rate(
+        self,
+        zone_id,
+        method: string,
+        fee_minor: int,
+        min_order_minor: int,
+        max_order_minor,
+        days_min: int,
+        days_max: int,
+        is_active: int
+    ) {
         let zone = self.zone(zone_id);
         if zone == null {
             throw not_found("Shipping zone not found.");
         }
         if not self.is_method(method) {
-            throw validation_failed({"method": "Unknown shipping method."});
+            throw validation_failed({
+                "method": "Unknown shipping method."
+            });
         }
         if fee_minor < 0 {
-            throw validation_failed({"fee_minor": "The fee cannot be negative."});
+            throw validation_failed({
+                "fee_minor": "The fee cannot be negative."
+            });
         }
         if days_min < 0 or days_max < days_min {
-            throw validation_failed({"estimated_days": "The estimate window is invalid."});
+            throw validation_failed({
+                "estimated_days": "The estimate window is invalid."
+            });
         }
         return DB.table("shipping_rates").insert({
             "zone_id": zone["id"],
@@ -265,10 +302,16 @@ public class ShippingService {
     }
 
     public fn deactivate_rate(self, rate_id) -> bool {
-        return DB.table("shipping_rates").where("id", "=", rate_id).update({"is_active": 0}) > 0;
+        let _ = self;
+        return DB.table("shipping_rates").where("id", "=", rate_id).update({
+            "is_active": 0
+        }) > 0;
     }
 
     public fn deactivate_zone(self, zone_id) -> bool {
-        return DB.table("shipping_zones").where("id", "=", zone_id).update({"is_active": 0}) > 0;
+        let _ = self;
+        return DB.table("shipping_zones").where("id", "=", zone_id).update({
+            "is_active": 0
+        }) > 0;
     }
 }

@@ -13,16 +13,18 @@ public class ProductService {
     public let products;
     public let inventory;
 
-    fn new() {
+    fn new () {
         self.products = new ProductRepository();
         self.inventory = new InventoryRepository();
     }
 
     fn slug_taken(self, slug: string) -> bool {
+        let _ = self;
         return DB.table("products").where("slug", "=", slug).count() > 0;
     }
 
     fn sku_taken(self, sku: string, except_id) -> bool {
+        let _ = self;
         let q = DB.table("products").where("sku", "=", sku);
         if except_id != null {
             q.where("id", "!=", except_id);
@@ -41,14 +43,20 @@ public class ProductService {
         let name = string(data["name"]).trim();
         let sku = string(data["sku"]).trim().upper();
         if int(data["price_minor"]) <= 0 {
-            throw validation_failed({"price_minor": "Price must be a positive amount."});
+            throw validation_failed({
+                "price_minor": "Price must be a positive amount."
+            });
         }
         if self.sku_taken(sku, null) {
-            throw validation_failed({"sku": "That SKU is already in use."});
+            throw validation_failed({
+                "sku": "That SKU is already in use."
+            });
         }
         let category = DB.table("categories").where("id", "=", data["category_id"]).first();
         if category == null {
-            throw validation_failed({"category_id": "Unknown category."});
+            throw validation_failed({
+                "category_id": "Unknown category."
+            });
         }
         let svc = self;
         let slug = Slug.unique(name, s => svc.slug_taken(s));
@@ -56,7 +64,9 @@ public class ProductService {
         if data.has("compare_at_minor") and data["compare_at_minor"] != null {
             compare = int(data["compare_at_minor"]);
             if compare <= int(data["price_minor"]) {
-                throw validation_failed({"compare_at_minor": "Discount price must be higher than the sale price."});
+                throw validation_failed({
+                    "compare_at_minor": "Discount price must be higher than the sale price."
+                });
             }
         }
         let status = "draft";
@@ -64,13 +74,17 @@ public class ProductService {
             status = string(data["status"]);
         }
         if status != "draft" and status != "published" and status != "archived" {
-            throw validation_failed({"status": "Invalid publication status."});
+            throw validation_failed({
+                "status": "Invalid publication status."
+            });
         }
         let cost = 0;
         if data.has("cost_minor") and data["cost_minor"] != null {
             cost = int(data["cost_minor"]);
             if cost < 0 {
-                throw validation_failed({"cost_minor": "Cost cannot be negative."});
+                throw validation_failed({
+                    "cost_minor": "Cost cannot be negative."
+                });
             }
         }
         return DB.transaction(fn() {
@@ -112,9 +126,10 @@ public class ProductService {
             throw not_found("Product not found.");
         }
         let allowed = ["name", "category_id", "brand_id", "short_description", "description",
-                       "price_minor", "compare_at_minor", "cost_minor", "tax_rate_bps", "weight_grams",
-                       "meta_title", "meta_description", "status", "is_featured"];
-        let changes = {};
+        "price_minor", "compare_at_minor", "cost_minor", "tax_rate_bps", "weight_grams",
+        "meta_title", "meta_description", "status", "is_featured"];
+        let changes = {
+        };
         let i = 0;
         while i < allowed.len() {
             let key = allowed[i];
@@ -125,10 +140,14 @@ public class ProductService {
                     continue;
                 }
                 if key == "price_minor" and int(data[key]) <= 0 {
-                    throw validation_failed({"price_minor": "Price must be positive."});
+                    throw validation_failed({
+                        "price_minor": "Price must be positive."
+                    });
                 }
                 if key == "cost_minor" and int(data[key]) < 0 {
-                    throw validation_failed({"cost_minor": "Cost cannot be negative."});
+                    throw validation_failed({
+                        "cost_minor": "Cost cannot be negative."
+                    });
                 }
                 if key == "compare_at_minor" and data[key] != null {
                     // The compare-at price must stay ABOVE the sale price,
@@ -140,13 +159,17 @@ public class ProductService {
                         sale = int(product["price_minor"]);
                     }
                     if int(data[key]) > 0 and int(data[key]) <= sale {
-                        throw validation_failed({"compare_at_minor": "Compare-at price must be higher than the sale price."});
+                        throw validation_failed({
+                            "compare_at_minor": "Compare-at price must be higher than the sale price."
+                        });
                     }
                 }
                 if key == "status" {
                     let st = string(data[key]);
                     if st != "draft" and st != "published" and st != "archived" {
-                        throw validation_failed({"status": "Invalid publication status."});
+                        throw validation_failed({
+                            "status": "Invalid publication status."
+                        });
                     }
                 }
                 changes[key] = data[key];
@@ -156,7 +179,9 @@ public class ProductService {
         if changes.has("is_featured") {
             let v = changes["is_featured"];
             let flag = 0;
-            if v == 1 or v == true or v == "1" { flag = 1; }
+            if v == 1 or v == true or v == "1" {
+                flag = 1;
+            }
             changes["is_featured"] = flag;
         }
         if changes.len() > 0 {
@@ -175,7 +200,9 @@ public class ProductService {
         if publish {
             status = "published";
         }
-        DB.table("products").where("id", "=", id).update({"status": status});
+        DB.table("products").where("id", "=", id).update({
+            "status": status
+        });
         CatalogCache.bump_catalog_version();
         return self.products.find(id);
     }
@@ -219,15 +246,12 @@ public class ProductService {
             DB.table("recently_viewed").where("product_id", "=", id).delete();
             DB.table("reviews").where("product_id", "=", id).delete();
             DB.table("cart_items").where("product_id", "=", id).delete();
-
             // 2. Delete inventory and stock movements before variants (inventory.variant_id FK)
             DB.table("stock_movements").where("product_id", "=", id).delete();
             DB.table("inventory").where("product_id", "=", id).delete();
-
             // 3. Delete variants and images
             DB.table("product_variants").where("product_id", "=", id).delete();
             DB.table("product_images").where("product_id", "=", id).delete();
-
             // 4. Delete the product
             let ok = DB.table("products").where("id", "=", id).delete() > 0;
             CatalogCache.bump_catalog_version();

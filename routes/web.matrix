@@ -12,7 +12,7 @@ public fn register_web_routes() {
     register_store_routes();
 
     // Framework bootstrap contract endpoint (spid3rinfo() diagnostics page).
-    Route.get("/info", fn(req) {
+    Route.get("/info", fn(_req) {
         return html(string(spid3rinfo()));
     }).name("info");
 }

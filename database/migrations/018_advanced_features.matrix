@@ -8,11 +8,13 @@ import "framework/Database/Migration";
 import "framework/Database/DB";
 
 public class AdvancedFeatureTables extends Migration {
-    fn new(name: string = "018_advanced_features") {
+    fn new (name: string = "018_advanced_features") {
+        let _ = self;
         super(name);
     }
 
     public fn up(self) {
+        let _ = self;
         // The Phase 2 wishlists schema was already created. Add metadata
         // only where the existing table does not already provide it.
         Schema.create("recently_viewed", table => {
@@ -67,7 +69,7 @@ public class AdvancedFeatureTables extends Migration {
             table.integer("gift_card_id");
             table.integer("order_id").nullable();
             table.bigint("amount_minor");
-            table.string("kind", 24);   // issue | redeem | refund
+            table.string("kind", 24);  // issue | redeem | refund
             table.timestamps();
             table.foreign("gift_card_id", "gift_cards", "id", "CASCADE", "CASCADE");
             table.foreign("order_id", "orders", "id", "SET NULL", "CASCADE");
@@ -92,10 +94,10 @@ public class AdvancedFeatureTables extends Migration {
             table.id();
             table.string("code", 48).unique();
             table.string("name", 128);
-            table.string("type", 24).default("percent");   // percent | fixed
-            table.bigint("value_minor").default(0);         // fixed minor, or bps for percent
+            table.string("type", 24).default("percent");  // percent | fixed
+            table.bigint("value_minor").default(0);  // fixed minor, or bps for percent
             table.bigint("min_order_minor").default(0);
-            table.integer("max_uses").default(0);            // 0 = unlimited
+            table.integer("max_uses").default(0);  // 0 = unlimited
             table.integer("uses").default(0);
             table.string("starts_at", 32).nullable();
             table.string("ends_at", 32).nullable();
@@ -127,6 +129,7 @@ public class AdvancedFeatureTables extends Migration {
     }
 
     public fn down(self) {
+        let _ = self;
         Schema.dropIfExists("currencies");
         Schema.dropIfExists("translations");
         Schema.dropIfExists("support_tickets");

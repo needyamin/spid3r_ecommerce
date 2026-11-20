@@ -12,7 +12,7 @@
 
 fn is_digit(ch: string) -> bool {
     return ch == "0" or ch == "1" or ch == "2" or ch == "3" or ch == "4"
-        or ch == "5" or ch == "6" or ch == "7" or ch == "8" or ch == "9";
+    or ch == "5" or ch == "6" or ch == "7" or ch == "8" or ch == "9";
 }
 
 public fn to_minor(amount_str) -> int {
@@ -35,7 +35,7 @@ public fn to_minor(amount_str) -> int {
         }
         if ch == "." {
             if seen_dot {
-                return 0;   // two decimal points -> not an amount
+                return 0;  // two decimal points -> not an amount
             }
             seen_dot = true;
             cleaned = cleaned + ch;
@@ -48,11 +48,11 @@ public fn to_minor(amount_str) -> int {
             continue;
         }
         if ch == "-" and i == 0 {
-            cleaned = cleaned + ch;   // a leading sign only
+            cleaned = cleaned + ch;  // a leading sign only
             i += 1;
             continue;
         }
-        return 0;   // any other character -> not an amount
+        return 0;  // any other character -> not an amount
     }
     let neg = false;
     if cleaned.starts_with("-") {
@@ -73,7 +73,7 @@ public fn to_minor(amount_str) -> int {
         frac = frac + "0";
     }
     if len(frac) > 2 {
-        frac = frac.slice(0, 2);   // truncate beyond minor precision
+        frac = frac.slice(0, 2);  // truncate beyond minor precision
     }
     if major == "" {
         major = "0";

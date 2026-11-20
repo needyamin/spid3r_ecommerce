@@ -8,11 +8,13 @@ import "framework/Database/Migration";
 import "framework/Database/DB";
 
 public class InventoryTables extends Migration {
-    fn new(name: string = "012_inventory") {
+    fn new (name: string = "012_inventory") {
+        let _ = self;
         super(name);
     }
 
     public fn up(self) {
+        let _ = self;
         Schema.create("inventory", table => {
             table.id();
             table.integer("product_id");
@@ -32,7 +34,7 @@ public class InventoryTables extends Migration {
             table.integer("product_id");
             table.integer("variant_id").nullable();
             table.integer("delta");
-            table.string("reason", 48);          // sale | restock | return | adjustment
+            table.string("reason", 48);  // sale | restock | return | adjustment
             table.string("reference_type", 48).nullable();
             table.string("reference_id", 64).nullable();
             table.integer("created_by").nullable();
@@ -45,6 +47,7 @@ public class InventoryTables extends Migration {
     }
 
     public fn down(self) {
+        let _ = self;
         Schema.dropIfExists("stock_movements");
         Schema.dropIfExists("inventory");
     }

@@ -15,7 +15,7 @@ public class PaymentService {
     public let order_service;
     public let gateways;
 
-    fn new() {
+    fn new () {
         self.payments = new PaymentRepository();
         self.orders = new OrderRepository();
         self.order_service = new OrderService();
@@ -27,6 +27,7 @@ public class PaymentService {
     }
 
     public fn is_provider_enabled(self, provider: string) -> bool {
+        let _ = self;
         let p = string(provider).trim().lower();
         let row = DB.table("settings").where("setting_key", "=", "payments." + p + "_enabled").first();
         if row != null and string(row["value"]).trim() == "0" {
@@ -44,7 +45,11 @@ public class PaymentService {
             if self.is_provider_enabled(p) {
                 let eligible = true;
                 if p == "cod" and order != null {
-                    let max_row = DB.table("settings").where("setting_key", "=", "payments.cod_max_limit_minor").first();
+                    let max_row = DB.table("settings").where(
+                        "setting_key",
+                        "=",
+                        "payments.cod_max_limit_minor"
+                    ).first();
                     if max_row != null and string(max_row["value"]).trim() != "" {
                         let limit = int(max_row["value"]);
                         let total = 0;
@@ -79,7 +84,9 @@ public class PaymentService {
         }
         let status = string(order["status"]);
         if status == "cancelled" or status == "refunded" or status == "delivered" {
-            throw validation_failed({"order": "This order cannot be paid."});
+            throw validation_failed({
+                "order": "This order cannot be paid."
+            });
         }
         return order;
     }
@@ -87,14 +94,22 @@ public class PaymentService {
     public fn initiate(self, number: string, provider: string, user_id) {
         let order = self.order_for(number, user_id);
         if not self.is_provider_enabled(provider) {
-            throw validation_failed({"provider": "That payment method is currently disabled."});
+            throw validation_failed({
+                "provider": "That payment method is currently disabled."
+            });
         }
         if provider == "cod" {
-            let max_row = DB.table("settings").where("setting_key", "=", "payments.cod_max_limit_minor").first();
+            let max_row = DB.table("settings").where(
+                "setting_key",
+                "=",
+                "payments.cod_max_limit_minor"
+            ).first();
             if max_row != null and string(max_row["value"]).trim() != "" {
                 let limit = int(max_row["value"]);
                 if limit > 0 and int(order["total_minor"]) > limit {
-                    throw validation_failed({"provider": "Order total exceeds maximum limit for Cash on Delivery."});
+                    throw validation_failed({
+                        "provider": "Order total exceeds maximum limit for Cash on Delivery."
+                    });
                 }
             }
         }
@@ -103,10 +118,15 @@ public class PaymentService {
         // same row (idempotency), it never creates a second charge.
         let key = "pay-" + string(order["id"]) + "-" + string(gateway.name);
         let payment = self.payments.initiate(
-            order["id"], string(gateway.name), int(order["total_minor"]), key
+            order["id"],
+            string(gateway.name),
+            int(order["total_minor"]),
+            key
         );
         if payment["status"] == "paid" {
-            return {"payment": payment, "redirect_url": "", "already_paid": true};
+            return {
+                "payment": payment, "redirect_url": "", "already_paid": true
+            };
         }
         if payment["status"] != "initiated" {
             // Never call a gateway twice for the same payment row.
@@ -145,14 +165,20 @@ public class PaymentService {
             throw not_found("Payment not found.");
         }
         if payment["status"] == "paid" {
-            return {"verified": false, "duplicate": true, "payment": payment};
+            return {
+                "verified": false, "duplicate": true, "payment": payment
+            };
         }
         let gateway = self.gateways.resolve(string(payment["provider"]));
         let result = gateway.verify(payment);
         if not result["verified"] {
             throw bad_request("Gateway did not confirm this payment.");
         }
-        let changed = self.payments.mark_verified(payment_id, string(result["transaction_id"]), string(result["payload"]));
+        let changed = self.payments.mark_verified(
+            payment_id,
+            string(result["transaction_id"]),
+            string(result["payload"])
+        );
         if changed {
             self.order_service.set_status(payment["order_id"], "paid");
         }
@@ -178,7 +204,7 @@ public class PaymentService {
         let event = null;
         try {
             event = json_parse(raw_body);
-        } catch (e) {
+        } catch (_e) {
             throw bad_request("Invalid webhook payload.");
         }
         if type_of(event) != "map" or not event.has("payment_id") {
@@ -196,7 +222,9 @@ public class PaymentService {
             state = string(event["status"]).lower();
         }
         if not (state == "paid" or state == "success" or state == "completed") {
-            return {"ignored": true, "reason": "non-success event"};
+            return {
+                "ignored": true, "reason": "non-success event"
+            };
         }
         if event.has("amount_minor") and int(event["amount_minor"]) != int(payment["amount_minor"]) {
             throw bad_request("Webhook amount does not match the payment.");
@@ -208,30 +236,42 @@ public class PaymentService {
             throw bad_request("Gateway did not confirm this payment.");
         }
         let changed = self.payments.mark_verified(
-            payment["id"], string(confirmation["transaction_id"]), string(confirmation["payload"])
+            payment["id"],
+            string(confirmation["transaction_id"]),
+            string(confirmation["payload"])
         );
         if changed {
             self.order_service.set_status(payment["order_id"], "paid");
         }
-        return {"verified": changed, "duplicate": not changed, "payment_id": payment["id"]};
+        return {
+            "verified": changed, "duplicate": not changed, "payment_id": payment["id"]
+        };
     }
 
     public fn refund(self, payment_id, amount_minor: int, reason: string) {
         if amount_minor <= 0 {
-            throw validation_failed({"amount_minor": "Refund amount must be positive."});
+            throw validation_failed({
+                "amount_minor": "Refund amount must be positive."
+            });
         }
         let payment = DB.table("payments").where("id", "=", payment_id).first();
         if payment == null {
             throw not_found("Payment not found.");
         }
         if payment["status"] == "refunded" {
-            return {"duplicate": true, "payment": payment};
+            return {
+                "duplicate": true, "payment": payment
+            };
         }
         if payment["status"] != "paid" {
-            throw validation_failed({"payment": "Only paid payments can be refunded."});
+            throw validation_failed({
+                "payment": "Only paid payments can be refunded."
+            });
         }
         if amount_minor > int(payment["amount_minor"]) {
-            throw validation_failed({"amount_minor": "Refund exceeds the payment amount."});
+            throw validation_failed({
+                "amount_minor": "Refund exceeds the payment amount."
+            });
         }
         let gateway = self.gateways.resolve(string(payment["provider"]));
         let result = gateway.refund(payment, amount_minor);
@@ -246,7 +286,9 @@ public class PaymentService {
                 "status": "completed",
                 "gateway_refund_id": result["reference"]
             });
-            DB.table("payments").where("id", "=", payment_id).update({"status": "refunded"});
+            DB.table("payments").where("id", "=", payment_id).update({
+                "status": "refunded"
+            });
             self.order_service.set_status(payment["order_id"], "refunded");
             return {
                 "refunded": true,
@@ -270,13 +312,19 @@ public class PaymentService {
             let p = paid[i];
             let order = self.orders.find(p["order_id"]);
             if order == null {
-                mismatches.push({"payment_id": p["id"], "issue": "order missing"});
+                mismatches.push({
+                    "payment_id": p["id"], "issue": "order missing"
+                });
             } elif int(order["total_minor"]) != int(p["amount_minor"]) {
-                mismatches.push({"payment_id": p["id"], "issue": "amount mismatch"});
+                mismatches.push({
+                    "payment_id": p["id"], "issue": "amount mismatch"
+                });
             } else {
                 let st = string(order["status"]);
                 if st != "paid" and st != "processing" and st != "packed" and st != "shipped" and st != "delivered" {
-                    mismatches.push({"payment_id": p["id"], "issue": "order status " + st});
+                    mismatches.push({
+                        "payment_id": p["id"], "issue": "order status " + st
+                    });
                 }
             }
             i += 1;

@@ -6,11 +6,13 @@ import "framework/Database/Migration";
 import "framework/Database/DB";
 
 public class CatalogTables extends Migration {
-    fn new(name: string = "011_catalog") {
+    fn new (name: string = "011_catalog") {
+        let _ = self;
         super(name);
     }
 
     public fn up(self) {
+        let _ = self;
         Schema.create("categories", table => {
             table.id();
             table.integer("parent_id").nullable();
@@ -93,6 +95,7 @@ public class CatalogTables extends Migration {
     }
 
     public fn down(self) {
+        let _ = self;
         Schema.dropIfExists("product_images");
         Schema.dropIfExists("product_variants");
         Schema.dropIfExists("products");

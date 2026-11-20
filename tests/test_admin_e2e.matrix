@@ -30,17 +30,25 @@ fn call(app, method: string, path: string, data, cookie: string) {
             payload[k] = data[k];
         }
     }
-    return app.handle_request(map(
-        "method", method, "path", path,
-        "headers", headers, "data", payload
-    ));
+    return app.handle_request(
+        map(
+            "method",
+            method,
+            "path",
+            path,
+            "headers",
+            headers,
+            "data",
+            payload
+        )
+    );
 }
 
 fn body(res) {
     return json_parse(string(res["body"]));
 }
 
-fn admin_session(app, tag: string) {
+fn admin_session(_app, tag: string) {
     let svc = new AuthService();
     let email = "e2e-admin-" + tag + "@example.test";
     let user = svc.register("E2E Admin", email, "admin-secret-pass");
@@ -49,9 +57,14 @@ fn admin_session(app, tag: string) {
     let token = svc.login(email, "admin-secret-pass");
     let rows = DB.select("SELECT payload FROM sessions WHERE token = ?", [token]);
     return map(
-        "cookie", "spid3r_session=" + token,
-        "csrf", string(rows[0]["payload"]),
-        "email", email, "id", user["id"]
+        "cookie",
+        "spid3r_session=" + token,
+        "csrf",
+        string(rows[0]["payload"]),
+        "email",
+        email,
+        "id",
+        user["id"]
     );
 }
 
@@ -73,7 +86,10 @@ fn test_overview_module(app, adm) {
 
     let page = call(app, "GET", "/admin/dashboard", null, adm["cookie"]);
     assert(page["status"] == 200, "admin dashboard renders 200");
-    assert(string(page["body"]).contains("Revenue"), "dashboard HTML contains revenue section");
+    assert(
+        string(page["body"]).contains("Revenue"),
+        "dashboard HTML contains revenue section"
+    );
     println("  [PASS] test_overview_module");
 }
 
@@ -81,38 +97,80 @@ fn test_overview_module(app, adm) {
 // 2. Module: Orders
 // -----------------------------------------------------------------------------
 fn test_orders_module(app, adm, tag: string) {
-    let cat_id = DB.table("categories").insert(map("name", "OrderCat " + tag, "slug", "ordercat-" + tag));
-    let prod_id = DB.table("products").insert(map(
-        "category_id", cat_id, "name", "OrderProd " + tag, "slug", "orderprod-" + tag,
-        "sku", "OP-" + tag, "price_minor", 50000, "status", "published", "currency", "BDT"
-    ));
+    let cat_id = DB.table("categories").insert(
+        map("name", "OrderCat " + tag, "slug", "ordercat-" + tag)
+    );
+    let prod_id = DB.table("products").insert(
+        map(
+            "category_id",
+            cat_id,
+            "name",
+            "OrderProd " + tag,
+            "slug",
+            "orderprod-" + tag,
+            "sku",
+            "OP-" + tag,
+            "price_minor",
+            50000,
+            "status",
+            "published",
+            "currency",
+            "BDT"
+        )
+    );
     let order_num = "E2E-ORD-" + tag;
-    let order_id = DB.table("orders").insert(map(
-        "order_number", order_num,
-        "user_id", adm["id"],
-        "status", "pending",
-        "subtotal_minor", 50000,
-        "discount_minor", 0,
-        "shipping_minor", 6000,
-        "tax_minor", 0,
-        "total_minor", 56000,
-        "currency", "BDT",
-        "shipping_address_json", "{\"name\":\"Recipient\",\"city\":\"Dhaka\",\"address_line1\":\"Gulshan\"}",
-        "billing_address_json", "{}",
-        "placed_at", string(unix_time())
-    ));
-    DB.table("order_items").insert(map(
-        "order_id", order_id,
-        "product_id", prod_id,
-        "variant_id", null,
-        "name_snapshot", "Test Item " + tag,
-        "sku_snapshot", "ITEM-" + tag,
-        "unit_price_minor", 50000,
-        "quantity", 1,
-        "discount_minor", 0,
-        "tax_minor", 0,
-        "line_total_minor", 50000
-    ));
+    let order_id = DB.table("orders").insert(
+        map(
+            "order_number",
+            order_num,
+            "user_id",
+            adm["id"],
+            "status",
+            "pending",
+            "subtotal_minor",
+            50000,
+            "discount_minor",
+            0,
+            "shipping_minor",
+            6000,
+            "tax_minor",
+            0,
+            "total_minor",
+            56000,
+            "currency",
+            "BDT",
+            "shipping_address_json",
+            "{\"name\":\"Recipient\",\"city\":\"Dhaka\",\"address_line1\":\"Gulshan\"}",
+            "billing_address_json",
+            "{}",
+            "placed_at",
+            string(unix_time())
+        )
+    );
+    DB.table("order_items").insert(
+        map(
+            "order_id",
+            order_id,
+            "product_id",
+            prod_id,
+            "variant_id",
+            null,
+            "name_snapshot",
+            "Test Item " + tag,
+            "sku_snapshot",
+            "ITEM-" + tag,
+            "unit_price_minor",
+            50000,
+            "quantity",
+            1,
+            "discount_minor",
+            0,
+            "tax_minor",
+            0,
+            "line_total_minor",
+            50000
+        )
+    );
 
     // List orders
     let list = call(app, "GET", "/admin/api/list/orders", null, adm["cookie"]);
@@ -121,7 +179,13 @@ fn test_orders_module(app, adm, tag: string) {
     assert(b["data"].len() >= 1, "orders list contains at least one order");
 
     // Filter by status
-    let filter = call(app, "GET", "/admin/api/list/orders?status=pending", null, adm["cookie"]);
+    let filter = call(
+        app,
+        "GET",
+        "/admin/api/list/orders?status=pending",
+        null,
+        adm["cookie"]
+    );
     assert(filter["status"] == 200, "orders filter by status returns 200");
     let fb = body(filter);
     let found = false;
@@ -135,33 +199,75 @@ fn test_orders_module(app, adm, tag: string) {
     assert(found, "filtered orders contains newly created order");
 
     // Show order details
-    let detail = call(app, "GET", "/admin/api/order/" + string(order_id), null, adm["cookie"]);
+    let detail = call(
+        app,
+        "GET",
+        "/admin/api/order/" + string(order_id),
+        null,
+        adm["cookie"]
+    );
     assert(detail["status"] == 200, "order detail API returns 200");
     let db = body(detail)["data"];
-    assert(string(db["order"]["order_number"]) == order_num, "order detail returns matching order number");
+    assert(
+        string(db["order"]["order_number"]) == order_num,
+        "order detail returns matching order number"
+    );
     assert(db["items"].len() >= 1, "order detail includes line items");
     assert(string(db["items"][0]["sku"]) == "ITEM-" + tag, "item sku matches");
 
     // Update order status via singular route
-    let upd = call(app, "POST", "/admin/api/order/" + string(order_id) + "/status", map(
-        "status", "processing", "_csrf", adm["csrf"], "format", "json"
-    ), adm["cookie"]);
+    let upd = call(
+        app,
+        "POST",
+        "/admin/api/order/" + string(order_id) + "/status",
+        map(
+            "status",
+            "processing",
+            "_csrf",
+            adm["csrf"],
+            "format",
+            "json"
+        ),
+        adm["cookie"]
+    );
     assert(upd["status"] == 200, "order status updated to processing");
     let row = DB.table("orders").where("id", "=", order_id).first();
     assert(string(row["status"]) == "processing", "order status persisted in DB");
 
     // Update order status via plural route
-    let upd2 = call(app, "POST", "/admin/api/orders/" + string(order_id) + "/status", map(
-        "status", "delivered", "_csrf", adm["csrf"], "format", "json"
-    ), adm["cookie"]);
+    let upd2 = call(
+        app,
+        "POST",
+        "/admin/api/orders/" + string(order_id) + "/status",
+        map(
+            "status",
+            "delivered",
+            "_csrf",
+            adm["csrf"],
+            "format",
+            "json"
+        ),
+        adm["cookie"]
+    );
     assert(upd2["status"] == 200, "plural route order status updated to delivered");
     let row2 = DB.table("orders").where("id", "=", order_id).first();
     assert(string(row2["status"]) == "delivered", "order status updated to delivered in DB");
 
     // Reject invalid status
-    let bad = call(app, "POST", "/admin/api/order/" + string(order_id) + "/status", map(
-        "status", "unknown_bogus_status", "_csrf", adm["csrf"], "format", "json"
-    ), adm["cookie"]);
+    let bad = call(
+        app,
+        "POST",
+        "/admin/api/order/" + string(order_id) + "/status",
+        map(
+            "status",
+            "unknown_bogus_status",
+            "_csrf",
+            adm["csrf"],
+            "format",
+            "json"
+        ),
+        adm["cookie"]
+    );
     assert(bad["status"] == 422, "invalid order status rejected with 422");
 
     // Cleanup
@@ -176,35 +282,63 @@ fn test_orders_module(app, adm, tag: string) {
 // 3. Module: Products
 // -----------------------------------------------------------------------------
 fn test_products_module(app, adm, tag: string) {
-    let cat_id = DB.table("categories").insert(map("name", "ProdCat " + tag, "slug", "prodcat-" + tag));
-    let brand_id = DB.table("brands").insert(map("name", "ProdBrand " + tag, "slug", "prodbrand-" + tag));
+    let cat_id = DB.table("categories").insert(
+        map("name", "ProdCat " + tag, "slug", "prodcat-" + tag)
+    );
+    let brand_id = DB.table("brands").insert(
+        map("name", "ProdBrand " + tag, "slug", "prodbrand-" + tag)
+    );
 
     // Create product via AJAX API
     let sku = "SKU-E2E-" + tag;
-    let create_res = call(app, "POST", "/admin/api/products/create", map(
-        "name", "E2E Product " + tag,
-        "sku", sku,
-        "category_id", cat_id,
-        "brand_id", brand_id,
-        "price", "350.00",
-        "compare_at", "400.00",
-        "cost", "200.00",
-        "tax_percent", "5.00",
-        "weight_kg", "1.250",
-        "stock", 25,
-        "status", "draft",
-        "short_description", "Short note",
-        "description", "Detailed description",
-        "_csrf", adm["csrf"],
-        "format", "json"
-    ), adm["cookie"]);
+    let create_res = call(
+        app,
+        "POST",
+        "/admin/api/products/create",
+        map(
+            "name",
+            "E2E Product " + tag,
+            "sku",
+            sku,
+            "category_id",
+            cat_id,
+            "brand_id",
+            brand_id,
+            "price",
+            "350.00",
+            "compare_at",
+            "400.00",
+            "cost",
+            "200.00",
+            "tax_percent",
+            "5.00",
+            "weight_kg",
+            "1.250",
+            "stock",
+            25,
+            "status",
+            "draft",
+            "short_description",
+            "Short note",
+            "description",
+            "Detailed description",
+            "_csrf",
+            adm["csrf"],
+            "format",
+            "json"
+        ),
+        adm["cookie"]
+    );
     assert(create_res["status"] == 201, "product created via AJAX API with 201");
     let pid = int(body(create_res)["data"]["id"]);
 
     // Verify DB integrity
     let p_row = DB.table("products").where("id", "=", pid).first();
     assert(int(p_row["price_minor"]) == 35000, "price stored in minor units (35000)");
-    assert(int(p_row["compare_at_minor"]) == 40000, "compare_at stored in minor units (40000)");
+    assert(
+        int(p_row["compare_at_minor"]) == 40000,
+        "compare_at stored in minor units (40000)"
+    );
     assert(int(p_row["cost_minor"]) == 20000, "cost stored in minor units (20000)");
     assert(string(p_row["status"]) == "draft", "status is draft");
     let inv_row = DB.table("inventory").where("product_id", "=", pid).first();
@@ -218,52 +352,123 @@ fn test_products_module(app, adm, tag: string) {
     assert(string(lb["data"][0]["sku"]) == sku, "SKU matches");
 
     // Full product details API
-    let full_res = call(app, "GET", "/admin/api/product-full/" + string(pid), null, adm["cookie"]);
+    let full_res = call(
+        app,
+        "GET",
+        "/admin/api/product-full/" + string(pid),
+        null,
+        adm["cookie"]
+    );
     assert(full_res["status"] == 200, "product-full API returns 200");
     let fb = body(full_res)["data"];
-    assert(fb["product"]["name"] == "E2E Product " + tag, "product name in full detail matches");
+    assert(
+        fb["product"]["name"] == "E2E Product " + tag,
+        "product name in full detail matches"
+    );
     assert(int(fb["inventory"]["quantity"]) == 25, "inventory in full detail matches");
     assert(fb["categories"].len() >= 1, "categories options included");
     assert(fb["brands"].len() >= 1, "brands options included");
 
     // Update product details
-    let upd_res = call(app, "POST", "/admin/api/products/" + string(pid) + "/update", map(
-        "name", "E2E Product Renamed " + tag,
-        "price", "375.50",
-        "short_description", "Updated short",
-        "_csrf", adm["csrf"],
-        "format", "json"
-    ), adm["cookie"]);
+    let upd_res = call(
+        app,
+        "POST",
+        "/admin/api/products/" + string(pid) + "/update",
+        map(
+            "name",
+            "E2E Product Renamed " + tag,
+            "price",
+            "375.50",
+            "short_description",
+            "Updated short",
+            "_csrf",
+            adm["csrf"],
+            "format",
+            "json"
+        ),
+        adm["cookie"]
+    );
     assert(upd_res["status"] == 200, "product updated via update API");
     let updated_row = DB.table("products").where("id", "=", pid).first();
-    assert(string(updated_row["name"]) == "E2E Product Renamed " + tag, "product name updated in DB");
+    assert(
+        string(updated_row["name"]) == "E2E Product Renamed " + tag,
+        "product name updated in DB"
+    );
     assert(int(updated_row["price_minor"]) == 37550, "updated price converted to 37550");
 
     // Toggle featured
-    call(app, "POST", "/admin/api/products/" + string(pid) + "/featured-form", map(
-        "_csrf", adm["csrf"], "format", "json"
-    ), adm["cookie"]);
+    call(
+        app,
+        "POST",
+        "/admin/api/products/" + string(pid) + "/featured-form",
+        map(
+            "_csrf",
+            adm["csrf"],
+            "format",
+            "json"
+        ),
+        adm["cookie"]
+    );
     let feat_row = DB.table("products").where("id", "=", pid).first();
     assert(int(feat_row["is_featured"]) == 1, "product marked as featured");
 
     // Publish & Unpublish
-    call(app, "POST", "/admin/api/products/" + string(pid) + "/publish-form", map(
-        "_csrf", adm["csrf"], "format", "json"
-    ), adm["cookie"]);
-    assert(string(DB.table("products").where("id", "=", pid).first()["status"]) == "published", "product published");
+    call(
+        app,
+        "POST",
+        "/admin/api/products/" + string(pid) + "/publish-form",
+        map(
+            "_csrf",
+            adm["csrf"],
+            "format",
+            "json"
+        ),
+        adm["cookie"]
+    );
+    assert(
+        string(DB.table("products").where("id", "=", pid).first()["status"]) == "published",
+        "product published"
+    );
 
-    call(app, "POST", "/admin/api/products/" + string(pid) + "/unpublish-form", map(
-        "_csrf", adm["csrf"], "format", "json"
-    ), adm["cookie"]);
-    assert(string(DB.table("products").where("id", "=", pid).first()["status"]) == "draft", "product unpublished to draft");
+    call(
+        app,
+        "POST",
+        "/admin/api/products/" + string(pid) + "/unpublish-form",
+        map(
+            "_csrf",
+            adm["csrf"],
+            "format",
+            "json"
+        ),
+        adm["cookie"]
+    );
+    assert(
+        string(DB.table("products").where("id", "=", pid).first()["status"]) == "draft",
+        "product unpublished to draft"
+    );
 
     // Delete product
-    let del_res = call(app, "POST", "/admin/api/products/" + string(pid) + "/delete-form", map(
-        "_csrf", adm["csrf"], "format", "json"
-    ), adm["cookie"]);
+    let del_res = call(
+        app,
+        "POST",
+        "/admin/api/products/" + string(pid) + "/delete-form",
+        map(
+            "_csrf",
+            adm["csrf"],
+            "format",
+            "json"
+        ),
+        adm["cookie"]
+    );
     assert(del_res["status"] == 200, "product deleted via delete-form");
-    assert(DB.table("products").where("id", "=", pid).first() == null, "product removed from DB");
-    assert(DB.table("inventory").where("product_id", "=", pid).first() == null, "inventory cleaned up");
+    assert(
+        DB.table("products").where("id", "=", pid).first() == null,
+        "product removed from DB"
+    );
+    assert(
+        DB.table("inventory").where("product_id", "=", pid).first() == null,
+        "inventory cleaned up"
+    );
 
     // Cleanup
     DB.table("categories").where("id", "=", cat_id).delete();
@@ -276,33 +481,78 @@ fn test_products_module(app, adm, tag: string) {
 // -----------------------------------------------------------------------------
 fn test_categories_module(app, adm, tag: string) {
     let name = "E2E Category " + tag;
-    let create_res = call(app, "POST", "/admin/api/categories/create", map(
-        "name", name, "description", "Category desc",
-        "_csrf", adm["csrf"], "format", "json"
-    ), adm["cookie"]);
+    let create_res = call(
+        app,
+        "POST",
+        "/admin/api/categories/create",
+        map(
+            "name",
+            name,
+            "description",
+            "Category desc",
+            "_csrf",
+            adm["csrf"],
+            "format",
+            "json"
+        ),
+        adm["cookie"]
+    );
     assert(create_res["status"] == 201, "category created via API");
     let cid = int(body(create_res)["data"]["id"]);
 
     // List categories API
-    let list_res = call(app, "GET", "/admin/api/list/categories?q=" + url_encode(name), null, adm["cookie"]);
+    let list_res = call(
+        app,
+        "GET",
+        "/admin/api/list/categories?q=" + url_encode(name),
+        null,
+        adm["cookie"]
+    );
     assert(list_res["status"] == 200, "categories list API returns 200");
     let b = body(list_res);
     assert(b["data"].len() >= 1, "categories list includes new category");
 
     // Update category
-    let upd_res = call(app, "POST", "/admin/api/categories/" + string(cid) + "/update", map(
-        "name", name + " Updated", "description", "New desc",
-        "_csrf", adm["csrf"], "format", "json"
-    ), adm["cookie"]);
+    let upd_res = call(
+        app,
+        "POST",
+        "/admin/api/categories/" + string(cid) + "/update",
+        map(
+            "name",
+            name + " Updated",
+            "description",
+            "New desc",
+            "_csrf",
+            adm["csrf"],
+            "format",
+            "json"
+        ),
+        adm["cookie"]
+    );
     assert(upd_res["status"] == 200, "category updated via API");
-    assert(string(DB.table("categories").where("id", "=", cid).first()["name"]) == name + " Updated", "category name updated in DB");
+    assert(
+        string(DB.table("categories").where("id", "=", cid).first()["name"]) == name + " Updated",
+        "category name updated in DB"
+    );
 
     // Delete category
-    let del_res = call(app, "POST", "/admin/api/categories/" + string(cid) + "/delete-form", map(
-        "_csrf", adm["csrf"], "format", "json"
-    ), adm["cookie"]);
+    let del_res = call(
+        app,
+        "POST",
+        "/admin/api/categories/" + string(cid) + "/delete-form",
+        map(
+            "_csrf",
+            adm["csrf"],
+            "format",
+            "json"
+        ),
+        adm["cookie"]
+    );
     assert(del_res["status"] == 200, "category deleted via delete-form API");
-    assert(DB.table("categories").where("id", "=", cid).first() == null, "category removed from DB");
+    assert(
+        DB.table("categories").where("id", "=", cid).first() == null,
+        "category removed from DB"
+    );
     println("  [PASS] test_categories_module");
 }
 
@@ -311,33 +561,78 @@ fn test_categories_module(app, adm, tag: string) {
 // -----------------------------------------------------------------------------
 fn test_brands_module(app, adm, tag: string) {
     let name = "E2E Brand " + tag;
-    let create_res = call(app, "POST", "/admin/api/brands/create", map(
-        "name", name, "description", "Brand desc",
-        "_csrf", adm["csrf"], "format", "json"
-    ), adm["cookie"]);
+    let create_res = call(
+        app,
+        "POST",
+        "/admin/api/brands/create",
+        map(
+            "name",
+            name,
+            "description",
+            "Brand desc",
+            "_csrf",
+            adm["csrf"],
+            "format",
+            "json"
+        ),
+        adm["cookie"]
+    );
     assert(create_res["status"] == 201, "brand created via API");
     let bid = int(body(create_res)["data"]["id"]);
 
     // List brands API
-    let list_res = call(app, "GET", "/admin/api/list/brands?q=" + url_encode(name), null, adm["cookie"]);
+    let list_res = call(
+        app,
+        "GET",
+        "/admin/api/list/brands?q=" + url_encode(name),
+        null,
+        adm["cookie"]
+    );
     assert(list_res["status"] == 200, "brands list API returns 200");
     let b = body(list_res);
     assert(b["data"].len() >= 1, "brands list includes new brand");
 
     // Update brand
-    let upd_res = call(app, "POST", "/admin/api/brands/" + string(bid) + "/update", map(
-        "name", name + " Updated", "description", "New desc",
-        "_csrf", adm["csrf"], "format", "json"
-    ), adm["cookie"]);
+    let upd_res = call(
+        app,
+        "POST",
+        "/admin/api/brands/" + string(bid) + "/update",
+        map(
+            "name",
+            name + " Updated",
+            "description",
+            "New desc",
+            "_csrf",
+            adm["csrf"],
+            "format",
+            "json"
+        ),
+        adm["cookie"]
+    );
     assert(upd_res["status"] == 200, "brand updated via API");
-    assert(string(DB.table("brands").where("id", "=", bid).first()["name"]) == name + " Updated", "brand name updated in DB");
+    assert(
+        string(DB.table("brands").where("id", "=", bid).first()["name"]) == name + " Updated",
+        "brand name updated in DB"
+    );
 
     // Delete brand
-    let del_res = call(app, "POST", "/admin/api/brands/" + string(bid) + "/delete-form", map(
-        "_csrf", adm["csrf"], "format", "json"
-    ), adm["cookie"]);
+    let del_res = call(
+        app,
+        "POST",
+        "/admin/api/brands/" + string(bid) + "/delete-form",
+        map(
+            "_csrf",
+            adm["csrf"],
+            "format",
+            "json"
+        ),
+        adm["cookie"]
+    );
     assert(del_res["status"] == 200, "brand deleted via delete-form API");
-    assert(DB.table("brands").where("id", "=", bid).first() == null, "brand removed from DB");
+    assert(
+        DB.table("brands").where("id", "=", bid).first() == null,
+        "brand removed from DB"
+    );
     println("  [PASS] test_brands_module");
 }
 
@@ -345,17 +640,50 @@ fn test_brands_module(app, adm, tag: string) {
 // 6. Module: Inventory
 // -----------------------------------------------------------------------------
 fn test_inventory_module(app, adm, tag: string) {
-    let cat_id = DB.table("categories").insert(map("name", "InvCat " + tag, "slug", "invcat-" + tag));
-    let pid = DB.table("products").insert(map(
-        "category_id", cat_id, "name", "InvProduct " + tag, "slug", "invprod-" + tag,
-        "sku", "INV-" + tag, "price_minor", 10000, "status", "published", "currency", "BDT"
-    ));
-    DB.table("inventory").insert(map(
-        "product_id", pid, "variant_id", null, "quantity", 10, "reserved", 2, "low_stock_threshold", 5
-    ));
+    let cat_id = DB.table("categories").insert(
+        map("name", "InvCat " + tag, "slug", "invcat-" + tag)
+    );
+    let pid = DB.table("products").insert(
+        map(
+            "category_id",
+            cat_id,
+            "name",
+            "InvProduct " + tag,
+            "slug",
+            "invprod-" + tag,
+            "sku",
+            "INV-" + tag,
+            "price_minor",
+            10000,
+            "status",
+            "published",
+            "currency",
+            "BDT"
+        )
+    );
+    DB.table("inventory").insert(
+        map(
+            "product_id",
+            pid,
+            "variant_id",
+            null,
+            "quantity",
+            10,
+            "reserved",
+            2,
+            "low_stock_threshold",
+            5
+        )
+    );
 
     // List inventory API
-    let list_res = call(app, "GET", "/admin/api/list/inventory?q=" + url_encode("InvProduct " + tag), null, adm["cookie"]);
+    let list_res = call(
+        app,
+        "GET",
+        "/admin/api/list/inventory?q=" + url_encode("InvProduct " + tag),
+        null,
+        adm["cookie"]
+    );
     assert(list_res["status"] == 200, "inventory list API returns 200");
     let b = body(list_res);
     assert(b["data"].len() == 1, "inventory list returns created product");
@@ -365,16 +693,45 @@ fn test_inventory_module(app, adm, tag: string) {
     assert(int(item["reserved"]) == 2, "reserved is 2");
 
     // Restock API
-    let restock_res = call(app, "POST", "/admin/api/products/" + string(pid) + "/inventory/restock", map(
-        "quantity", 5, "_csrf", adm["csrf"], "format", "json"
-    ), adm["cookie"]);
+    let restock_res = call(
+        app,
+        "POST",
+        "/admin/api/products/" + string(pid) + "/inventory/restock",
+        map(
+            "quantity",
+            5,
+            "_csrf",
+            adm["csrf"],
+            "format",
+            "json"
+        ),
+        adm["cookie"]
+    );
     assert(restock_res["status"] == 200, "restock API returns 200");
-    assert(int(DB.table("inventory").where("product_id", "=", pid).first()["quantity"]) == 15, "quantity updated to 15");
+    assert(
+        int(
+            DB.table("inventory").where("product_id", "=", pid).first()["quantity"]
+        ) == 15,
+        "quantity updated to 15"
+    );
 
     // Set exact stock API
-    let set_res = call(app, "POST", "/admin/api/products/" + string(pid) + "/inventory/set-form", map(
-        "quantity", 4, "low_stock_threshold", 6, "_csrf", adm["csrf"], "format", "json"
-    ), adm["cookie"]);
+    let set_res = call(
+        app,
+        "POST",
+        "/admin/api/products/" + string(pid) + "/inventory/set-form",
+        map(
+            "quantity",
+            4,
+            "low_stock_threshold",
+            6,
+            "_csrf",
+            adm["csrf"],
+            "format",
+            "json"
+        ),
+        adm["cookie"]
+    );
     assert(set_res["status"] == 200, "set exact stock API returns 200");
     let inv_after = DB.table("inventory").where("product_id", "=", pid).first();
     assert(int(inv_after["quantity"]) == 4, "exact quantity set to 4");
@@ -411,30 +768,75 @@ fn test_customers_module(app, adm, tag: string) {
     let cid = cust["id"];
 
     // List customers API
-    let list_res = call(app, "GET", "/admin/api/list/customers?q=" + url_encode(email), null, adm["cookie"]);
+    let list_res = call(
+        app,
+        "GET",
+        "/admin/api/list/customers?q=" + url_encode(email),
+        null,
+        adm["cookie"]
+    );
     assert(list_res["status"] == 200, "customers list API returns 200");
     let b = body(list_res);
     assert(b["data"].len() == 1, "searched customer returned");
     assert(string(b["data"][0]["status"]) == "active", "default status is active");
 
     // Suspend customer
-    let susp_res = call(app, "POST", "/admin/api/customers/" + string(cid) + "/status", map(
-        "status", "suspended", "_csrf", adm["csrf"], "format", "json"
-    ), adm["cookie"]);
+    let susp_res = call(
+        app,
+        "POST",
+        "/admin/api/customers/" + string(cid) + "/status",
+        map(
+            "status",
+            "suspended",
+            "_csrf",
+            adm["csrf"],
+            "format",
+            "json"
+        ),
+        adm["cookie"]
+    );
     assert(susp_res["status"] == 200, "customer suspended via status API");
-    assert(string(DB.table("users").where("id", "=", cid).first()["status"]) == "suspended", "status suspended in DB");
+    assert(
+        string(DB.table("users").where("id", "=", cid).first()["status"]) == "suspended",
+        "status suspended in DB"
+    );
 
     // Re-activate customer
-    let act_res = call(app, "POST", "/admin/api/customers/" + string(cid) + "/status", map(
-        "status", "active", "_csrf", adm["csrf"], "format", "json"
-    ), adm["cookie"]);
+    let act_res = call(
+        app,
+        "POST",
+        "/admin/api/customers/" + string(cid) + "/status",
+        map(
+            "status",
+            "active",
+            "_csrf",
+            adm["csrf"],
+            "format",
+            "json"
+        ),
+        adm["cookie"]
+    );
     assert(act_res["status"] == 200, "customer re-activated via status API");
-    assert(string(DB.table("users").where("id", "=", cid).first()["status"]) == "active", "status active in DB");
+    assert(
+        string(DB.table("users").where("id", "=", cid).first()["status"]) == "active",
+        "status active in DB"
+    );
 
     // Reject invalid status
-    let bad_res = call(app, "POST", "/admin/api/customers/" + string(cid) + "/status", map(
-        "status", "illegal_value", "_csrf", adm["csrf"], "format", "json"
-    ), adm["cookie"]);
+    let bad_res = call(
+        app,
+        "POST",
+        "/admin/api/customers/" + string(cid) + "/status",
+        map(
+            "status",
+            "illegal_value",
+            "_csrf",
+            adm["csrf"],
+            "format",
+            "json"
+        ),
+        adm["cookie"]
+    );
     assert(bad_res["status"] == 422, "invalid status rejected with 422");
 
     // Cleanup
@@ -452,10 +854,24 @@ fn test_settings_module(app, adm, tag: string) {
     let key = "store.e2e.test." + tag;
 
     // Save setting
-    let put_res = call(app, "POST", "/admin/api/settings", map(
-        "setting_key", key, "value", "e2e_val_" + tag, "group", "general",
-        "_csrf", adm["csrf"], "format", "json"
-    ), adm["cookie"]);
+    let put_res = call(
+        app,
+        "POST",
+        "/admin/api/settings",
+        map(
+            "setting_key",
+            key,
+            "value",
+            "e2e_val_" + tag,
+            "group",
+            "general",
+            "_csrf",
+            adm["csrf"],
+            "format",
+            "json"
+        ),
+        adm["cookie"]
+    );
     assert(put_res["status"] == 200, "settings update API returns 200");
 
     // Verify in DB

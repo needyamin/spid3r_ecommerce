@@ -11,8 +11,9 @@ import "framework/Foundation/Config";
 
 public class StoreServiceProvider extends ServiceProvider {
     public fn register(self, container) {
+        let _ = self;
         // Store settings, resolved once: name, currency, locale.
-        container.singleton("store.settings", fn(c) {
+        container.singleton("store.settings", fn(_c) {
             let currency = string(Config.get("store.currency", "BDT")).trim().upper();
             if currency == "" {
                 currency = "BDT";
@@ -26,7 +27,7 @@ public class StoreServiceProvider extends ServiceProvider {
 
         // Catalog cache keys/ttl defaults live here so Phase 5 tuning is
         // one-place-only.
-        container.singleton("store.cache", fn(c) {
+        container.singleton("store.cache", fn(_c) {
             return {
                 "product_ttl": 300,
                 "home_ttl": 120
@@ -34,7 +35,8 @@ public class StoreServiceProvider extends ServiceProvider {
         });
     }
 
-    public fn boot(self, container) {
+    public fn boot(self, _container) {
+        let _ = self;
         // Event listeners are registered in later phases (audit logs,
         // order notifications). Kept as the single wiring point.
         return null;

@@ -19,11 +19,12 @@ import "app/Repositories/UserRepository";
 public class AuthService {
     public let users;
 
-    fn new() {
+    fn new () {
         self.users = new UserRepository();
     }
 
     fn fresh_token(self) -> string {
+        let _ = self;
         return hex_encode(random_bytes(24).unwrap());
     }
 
@@ -33,20 +34,21 @@ public class AuthService {
         if user == null {
             return null;
         }
-        let token = self.issue_email_verification(user["id"]);
+        let _token = self.issue_email_verification(user["id"]);
         return user;
     }
 
     // Returns the session token on success, null on bad credentials or
     // disabled accounts.
     public fn login(self, email: string, password: string) {
+        let _ = self;
         let clean = string(email).trim().lower();
         let row = DB.table("users").where("email", "=", clean).first();
         if row == null {
             return null;
         }
         if row.has("status") and row["status"] != null and string(row["status"]) != "active" {
-            return null;   // suspended/banned accounts cannot authenticate
+            return null;  // suspended/banned accounts cannot authenticate
         }
         if not Auth.attempt(clean, password) {
             return null;
@@ -56,10 +58,11 @@ public class AuthService {
 
     // Revoke the session identified by the request's cookie/bearer token.
     public fn logout(self, token: string) -> bool {
+        let _ = self;
         if token != "" {
             try {
                 DB.statement("DELETE FROM sessions WHERE token = ?", [token]);
-            } catch (e) {
+            } catch (_e) {
                 // sessions table optional in minimal installs
             }
         }
@@ -68,7 +71,10 @@ public class AuthService {
     }
 
     public fn set_status(self, user_id, status: string) -> bool {
-        return DB.table("users").where("id", "=", user_id).update({"status": status}) > 0;
+        let _ = self;
+        return DB.table("users").where("id", "=", user_id).update({
+            "status": status
+        }) > 0;
     }
 
     // Password reset: returns the RAW token for the queued email; the DB
@@ -77,7 +83,7 @@ public class AuthService {
         let clean = string(email).trim().lower();
         let user = DB.table("users").where("email", "=", clean).first();
         if user == null {
-            return null;   // controller still renders the generic message
+            return null;  // controller still renders the generic message
         }
         let token = self.fresh_token();
         let now = unix_time();
@@ -90,11 +96,14 @@ public class AuthService {
             });
             return true;
         });
-        Queue.push("store.password_reset", {"email": clean, "token": token});
+        Queue.push("store.password_reset", {
+            "email": clean, "token": token
+        });
         return token;
     }
 
     public fn reset_password(self, token: string, new_password: string) -> bool {
+        let _ = self;
         let rows = DB.table("password_resets").whereNull("used_at").get();
         let match_row = null;
         let i = 0;
@@ -134,12 +143,15 @@ public class AuthService {
         });
         let user = DB.table("users").where("id", "=", user_id).first();
         if user != null {
-            Queue.push("store.email_verification", {"email": user["email"], "token": token});
+            Queue.push("store.email_verification", {
+                "email": user["email"], "token": token
+            });
         }
         return token;
     }
 
     public fn verify_email(self, token: string) -> bool {
+        let _ = self;
         let rows = DB.table("email_verifications").whereNull("verified_at").get();
         let match_row = null;
         let i = 0;

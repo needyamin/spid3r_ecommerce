@@ -19,7 +19,7 @@ import "app/Support/CartIdentity" as CartIdentity;
 public class CurrencyService {
     public let base_code;
 
-    fn new(base_code: string = "BDT") {
+    fn new (base_code: string = "BDT") {
         let code = string(base_code).trim().upper();
         if code == "" {
             code = "BDT";
@@ -31,7 +31,8 @@ public class CurrencyService {
     // rate regardless of what the table says.
     public fn rates(self) {
         let rows = DB.table("currencies").where("is_active", "=", 1).get();
-        let out = {};
+        let out = {
+        };
         let i = 0;
         while i < rows.len() {
             let code = string(rows[i]["code"]).trim().upper();
@@ -48,7 +49,9 @@ public class CurrencyService {
         // Rebuild the base entry explicitly: the base currency is always
         // 1:1 with itself, whatever rate the table happens to hold.
         let bkey = self.base_code;
-        let base_meta = {"digits": 2, "rate_bps": 10000, "symbol": "", "name": bkey};
+        let base_meta = {
+            "digits": 2, "rate_bps": 10000, "symbol": "", "name": bkey
+        };
         if out.has(bkey) {
             let existing = out[bkey];
             base_meta = {
@@ -90,7 +93,9 @@ public class CurrencyService {
             i += 1;
         }
         if base_row == null {
-            base_row = {"code": bkey, "name": bkey, "symbol": ""};
+            base_row = {
+                "code": bkey, "name": bkey, "symbol": ""
+            };
         }
         let base_flag = 0;
         if chosen == "" or chosen == bkey {
@@ -139,11 +144,14 @@ public class CurrencyService {
         if rates.len() <= 1 {
             return null;
         }
-        return {"base": self.base_code, "rates": rates};
+        return {
+            "base": self.base_code, "rates": rates
+        };
     }
 
     // Convert base-currency minor units into `code` minor units.
     public fn convert(self, minor: int, code: string, ctx) -> int {
+        let _ = self;
         if ctx == null {
             return minor;
         }

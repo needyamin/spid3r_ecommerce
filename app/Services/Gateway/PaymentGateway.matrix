@@ -61,10 +61,10 @@ fn store_base_url() -> string {
 fn http_client_request(method: string, url: string, headers, body: string) {
     let fmt_status = "\n---HTTP_STATUS:" + "%" + "{" + "http_code" + "}---";
     let args = [
-        "-s",
-        "-m", "30",
-        "-w", fmt_status,
-        "-X", method
+    "-s",
+    "-m", "30",
+    "-w", fmt_status,
+    "-X", method
     ];
     if headers != null {
         for k in headers.keys() {
@@ -159,7 +159,8 @@ fn order_customer_info(order) {
                     country = string(parsed["country"]).trim();
                 }
             }
-        } catch (e) {}
+        } catch (_e) {
+        }
     }
 
     if order.has("user_id") and order["user_id"] != null {
@@ -176,7 +177,8 @@ fn order_customer_info(order) {
                     phone = string(u["phone"]).trim();
                 }
             }
-        } catch (e) {}
+        } catch (_e) {
+        }
     }
 
     return {
@@ -192,13 +194,14 @@ fn order_customer_info(order) {
 public class CodGateway {
     public let name;
 
-    fn new() {
+    fn new () {
         self.name = "cod";
     }
 
     // No external call: the order is marked paid-on-delivery after staff
     // confirm collection through the authenticated admin verification route.
-    public fn initiate(self, payment, order) {
+    public fn initiate(self, _payment, order) {
+        let _ = self;
         return {
             "status": "pending_cod",
             "redirect_url": "/payment/" + string(order["order_number"]) + "/return",
@@ -207,6 +210,7 @@ public class CodGateway {
     }
 
     public fn verify(self, payment) {
+        let _ = self;
         // COD has no external API: verification is the staff action itself.
         return {
             "verified": true,
@@ -215,11 +219,15 @@ public class CodGateway {
         };
     }
 
-    public fn refund(self, payment, amount_minor: int) {
-        return {"ok": true, "reference": "COD-REFUND-" + string(payment["id"])};
+    public fn refund(self, payment, _amount_minor: int) {
+        let _ = self;
+        return {
+            "ok": true, "reference": "COD-REFUND-" + string(payment["id"])
+        };
     }
 
     public fn webhook_secret(self) -> string {
+        let _ = self;
         let from_env = env_value("COD_WEBHOOK_SECRET", "");
         if from_env != "" {
             return from_env;
@@ -231,11 +239,12 @@ public class CodGateway {
 public class SslcommerzGateway {
     public let name;
 
-    fn new() {
+    fn new () {
         self.name = "sslcommerz";
     }
 
     fn store_id(self) -> string {
+        let _ = self;
         let from_env = env_value("SSLCOMMERZ_STORE_ID", "");
         if from_env != "" {
             return from_env;
@@ -251,6 +260,7 @@ public class SslcommerzGateway {
     }
 
     fn store_passwd(self) -> string {
+        let _ = self;
         let from_env = env_value("SSLCOMMERZ_STORE_PASSWD", "");
         if from_env != "" {
             return from_env;
@@ -266,6 +276,7 @@ public class SslcommerzGateway {
     }
 
     fn init_url(self) -> string {
+        let _ = self;
         let from_env = env_value("SSLCOMMERZ_INIT_URL", "");
         if from_env != "" {
             return from_env;
@@ -293,9 +304,9 @@ public class SslcommerzGateway {
             sep = "&";
         }
         return base + sep + "val_id=" + url_encode(val_id)
-            + "&store_id=" + url_encode(self.store_id())
-            + "&store_passwd=" + url_encode(self.store_passwd())
-            + "&v=1&format=json";
+        + "&store_id=" + url_encode(self.store_id())
+        + "&store_passwd=" + url_encode(self.store_passwd())
+        + "&v=1&format=json";
     }
 
     public fn initiate(self, payment, order) {
@@ -324,25 +335,25 @@ public class SslcommerzGateway {
         let cust = order_customer_info(order);
 
         let params = [
-            "store_id=" + url_encode(sid),
-            "store_passwd=" + url_encode(spw),
-            "total_amount=" + url_encode(total_amount),
-            "currency=" + url_encode(currency),
-            "tran_id=" + url_encode(tran_id),
-            "success_url=" + url_encode(base_url + "/payment/" + order_num + "/return"),
-            "fail_url=" + url_encode(base_url + "/payment/" + order_num + "/return"),
-            "cancel_url=" + url_encode(base_url + "/payment/" + order_num + "/return"),
-            "ipn_url=" + url_encode(base_url + "/webhooks/payments/sslcommerz"),
-            "cus_name=" + url_encode(cust["name"]),
-            "cus_email=" + url_encode(cust["email"]),
-            "cus_phone=" + url_encode(cust["phone"]),
-            "cus_add1=" + url_encode(cust["add1"]),
-            "cus_city=" + url_encode(cust["city"]),
-            "cus_country=" + url_encode(cust["country"]),
-            "shipping_method=" + url_encode("NO"),
-            "product_name=" + url_encode("Order " + order_num),
-            "product_category=" + url_encode("general"),
-            "product_profile=" + url_encode("general")
+        "store_id=" + url_encode(sid),
+        "store_passwd=" + url_encode(spw),
+        "total_amount=" + url_encode(total_amount),
+        "currency=" + url_encode(currency),
+        "tran_id=" + url_encode(tran_id),
+        "success_url=" + url_encode(base_url + "/payment/" + order_num + "/return"),
+        "fail_url=" + url_encode(base_url + "/payment/" + order_num + "/return"),
+        "cancel_url=" + url_encode(base_url + "/payment/" + order_num + "/return"),
+        "ipn_url=" + url_encode(base_url + "/webhooks/payments/sslcommerz"),
+        "cus_name=" + url_encode(cust["name"]),
+        "cus_email=" + url_encode(cust["email"]),
+        "cus_phone=" + url_encode(cust["phone"]),
+        "cus_add1=" + url_encode(cust["add1"]),
+        "cus_city=" + url_encode(cust["city"]),
+        "cus_country=" + url_encode(cust["country"]),
+        "shipping_method=" + url_encode("NO"),
+        "product_name=" + url_encode("Order " + order_num),
+        "product_category=" + url_encode("general"),
+        "product_profile=" + url_encode("general")
         ];
         let form_body = params.join("&");
 
@@ -352,13 +363,15 @@ public class SslcommerzGateway {
         }, form_body);
 
         if not res["ok"] or res["status"] != 200 {
-            throw bad_request("SSLCommerz gateway request failed: HTTP " + string(res["status"]));
+            throw bad_request(
+                "SSLCommerz gateway request failed: HTTP " + string(res["status"])
+            );
         }
 
         let parsed = null;
         try {
             parsed = json_parse(string(res["body"]));
-        } catch (e) {
+        } catch (_e) {
             throw bad_request("SSLCommerz returned an invalid JSON response.");
         }
 
@@ -385,21 +398,29 @@ public class SslcommerzGateway {
 
     public fn verify_val_id(self, payment, val_id: string) {
         if val_id == "" {
-            return {"verified": false, "transaction_id": "", "payload": "{}"};
+            return {
+                "verified": false, "transaction_id": "", "payload": "{}"
+            };
         }
         let url = self.validation_url(val_id);
         let res = http_client_request("GET", url, null, "");
         if not res["ok"] or res["status"] != 200 {
-            return {"verified": false, "transaction_id": "", "payload": string(res["body"])};
+            return {
+                "verified": false, "transaction_id": "", "payload": string(res["body"])
+            };
         }
         let parsed = null;
         try {
             parsed = json_parse(string(res["body"]));
-        } catch (e) {
-            return {"verified": false, "transaction_id": "", "payload": "{}"};
+        } catch (_e) {
+            return {
+                "verified": false, "transaction_id": "", "payload": "{}"
+            };
         }
         if type_of(parsed) != "map" {
-            return {"verified": false, "transaction_id": "", "payload": "{}"};
+            return {
+                "verified": false, "transaction_id": "", "payload": "{}"
+            };
         }
         let st = "";
         if parsed.has("status") {
@@ -407,14 +428,18 @@ public class SslcommerzGateway {
         }
         let valid = (st == "VALID" or st == "VALIDATED");
         if not valid {
-            return {"verified": false, "transaction_id": "", "payload": json_write(parsed)};
+            return {
+                "verified": false, "transaction_id": "", "payload": json_write(parsed)
+            };
         }
 
         // Verify amount
         if parsed.has("amount") {
             let amt_minor = Money.to_minor(string(parsed["amount"]));
             if amt_minor > 0 and amt_minor != int(payment["amount_minor"]) {
-                return {"verified": false, "transaction_id": "", "payload": json_write(parsed)};
+                return {
+                    "verified": false, "transaction_id": "", "payload": json_write(parsed)
+                };
             }
         }
 
@@ -428,7 +453,9 @@ public class SslcommerzGateway {
                 exp_tran = string(payment["idempotency_key"]).trim();
             }
             if exp_tran != "" and resp_tran_id != exp_tran and not resp_tran_id.starts_with(exp_tran) {
-                return {"verified": false, "transaction_id": "", "payload": json_write(parsed)};
+                return {
+                    "verified": false, "transaction_id": "", "payload": json_write(parsed)
+                };
             }
         }
 
@@ -454,7 +481,8 @@ public class SslcommerzGateway {
                 if type_of(parsed) == "map" and parsed.has("val_id") {
                     val_id = string(parsed["val_id"]).trim();
                 }
-            } catch (e) {}
+            } catch (_e) {
+            }
         }
         if val_id == "" and payment.has("gateway_transaction_id") {
             let g = string(payment["gateway_transaction_id"]).trim();
@@ -474,11 +502,15 @@ public class SslcommerzGateway {
         };
     }
 
-    public fn refund(self, payment, amount_minor: int) {
-        return {"ok": true, "reference": "SSL-REFUND-" + string(payment["id"])};
+    public fn refund(self, payment, _amount_minor: int) {
+        let _ = self;
+        return {
+            "ok": true, "reference": "SSL-REFUND-" + string(payment["id"])
+        };
     }
 
     public fn webhook_secret(self) -> string {
+        let _ = self;
         let from_env = env_value("SSLCOMMERZ_WEBHOOK_SECRET", "");
         if from_env != "" {
             return from_env;
@@ -497,11 +529,12 @@ public class SslcommerzGateway {
 public class StripeGateway {
     public let name;
 
-    fn new() {
+    fn new () {
         self.name = "stripe";
     }
 
     fn secret_key(self) -> string {
+        let _ = self;
         let from_env = env_value("STRIPE_SECRET_KEY", env_value("STRIPE_API_KEY", ""));
         if from_env != "" {
             return from_env;
@@ -516,10 +549,12 @@ public class StripeGateway {
         return setting_value("payments.stripe_secret_key", "");
     }
 
-    public fn initiate(self, payment, order) {
+    public fn initiate(self, _payment, order) {
         let key = self.secret_key();
         if key == "" {
-            throw bad_request("Stripe gateway is not configured (missing stripe_secret_key). Please configure your key in Admin Settings, or choose SSLCommerz / Cash on Delivery.");
+            throw bad_request(
+                "Stripe gateway is not configured (missing stripe_secret_key). Please configure your key in Admin Settings, or choose SSLCommerz / Cash on Delivery."
+            );
         }
 
         let base_url = store_base_url();
@@ -535,17 +570,20 @@ public class StripeGateway {
         let success_url = base_url + "/payment/" + order_num + "/return?session_id=" + check_session_marker;
         let cancel_url = base_url + "/payment/" + order_num + "/return?status=cancelled";
 
-        let enc_success = url_encode(success_url).replace("%7BCHECKOUT_SESSION_ID%7D", check_session_marker);
+        let enc_success = url_encode(success_url).replace(
+            "%7BCHECKOUT_SESSION_ID%7D",
+            check_session_marker
+        );
 
         let params = [
-            "mode=" + url_encode("payment"),
-            "success_url=" + enc_success,
-            "cancel_url=" + url_encode(cancel_url),
-            "client_reference_id=" + url_encode(order_num),
-            "line_items[0][price_data][currency]=" + url_encode(currency),
-            "line_items[0][price_data][unit_amount]=" + string(total_minor),
-            "line_items[0][price_data][product_data][name]=" + url_encode("Order " + order_num),
-            "line_items[0][quantity]=1"
+        "mode=" + url_encode("payment"),
+        "success_url=" + enc_success,
+        "cancel_url=" + url_encode(cancel_url),
+        "client_reference_id=" + url_encode(order_num),
+        "line_items[0][price_data][currency]=" + url_encode(currency),
+        "line_items[0][price_data][unit_amount]=" + string(total_minor),
+        "line_items[0][price_data][product_data][name]=" + url_encode("Order " + order_num),
+        "line_items[0][quantity]=1"
         ];
         let form_body = params.join("&");
 
@@ -561,11 +599,14 @@ public class StripeGateway {
                 if type_of(err_obj) == "map" and err_obj.has("error") and err_obj["error"].has("message") {
                     err_msg = string(err_obj["error"]["message"]);
                 }
-            } catch (e) {}
+            } catch (_e) {
+            }
             let lower_msg = err_msg.lower();
             let lower_key = key.lower();
             if lower_msg.contains("invalid api key") or lower_msg.contains("api key") or lower_key.contains("demo") or lower_key.contains("placeholder") {
-                throw bad_request("Stripe error: Invalid API Key provided (" + key + "). Stripe requires a live developer test key (sk_test_...). Please configure your key in Admin Settings, or choose SSLCommerz / Cash on Delivery.");
+                throw bad_request(
+                    "Stripe error: Invalid API Key provided (" + key + "). Stripe requires a live developer test key (sk_test_...). Please configure your key in Admin Settings, or choose SSLCommerz / Cash on Delivery."
+                );
             }
             throw bad_request("Stripe error: " + err_msg);
         }
@@ -573,7 +614,7 @@ public class StripeGateway {
         let parsed = null;
         try {
             parsed = json_parse(string(res["body"]));
-        } catch (e) {
+        } catch (_e) {
             throw bad_request("Stripe returned an invalid JSON response.");
         }
 
@@ -623,7 +664,8 @@ public class StripeGateway {
                             "payload": json_write(parsed)
                         };
                     }
-                } catch (e) {}
+                } catch (_e) {
+                }
             }
         }
 
@@ -634,11 +676,15 @@ public class StripeGateway {
         };
     }
 
-    public fn refund(self, payment, amount_minor: int) {
-        return {"ok": true, "reference": "re_stripe_" + string(payment["id"])};
+    public fn refund(self, payment, _amount_minor: int) {
+        let _ = self;
+        return {
+            "ok": true, "reference": "re_stripe_" + string(payment["id"])
+        };
     }
 
     public fn webhook_secret(self) -> string {
+        let _ = self;
         let from_env = env_value("STRIPE_WEBHOOK_SECRET", "");
         if from_env != "" {
             return from_env;
@@ -657,11 +703,12 @@ public class StripeGateway {
 public class BkashGateway {
     public let name;
 
-    fn new() {
+    fn new () {
         self.name = "bkash";
     }
 
     fn app_key(self) -> string {
+        let _ = self;
         let from_env = env_value("BKASH_APP_KEY", "");
         if from_env != "" {
             return from_env;
@@ -681,6 +728,7 @@ public class BkashGateway {
     }
 
     fn app_secret(self) -> string {
+        let _ = self;
         let from_env = env_value("BKASH_APP_SECRET", "");
         if from_env != "" {
             return from_env;
@@ -700,6 +748,7 @@ public class BkashGateway {
     }
 
     fn username(self) -> string {
+        let _ = self;
         let from_env = env_value("BKASH_USERNAME", "");
         if from_env != "" {
             return from_env;
@@ -723,6 +772,7 @@ public class BkashGateway {
     }
 
     fn password(self) -> string {
+        let _ = self;
         let from_env = env_value("BKASH_PASSWORD", "");
         if from_env != "" {
             return from_env;
@@ -742,6 +792,7 @@ public class BkashGateway {
     }
 
     fn base_api_url(self) -> string {
+        let _ = self;
         let mode = setting_value("payments.mode", "sandbox");
         if mode == "live" {
             return "https://tokenized.pay.bka.sh/v1.2.0-beta/tokenized/checkout";
@@ -756,7 +807,9 @@ public class BkashGateway {
         let pass = self.password();
 
         if a_key == "" or a_sec == "" or user == "" or pass == "" {
-            return {"ok": false, "token": "", "error": "bKash tokenized gateway credentials are not configured (app_key, app_secret, username, and password are required in Payments settings)."};
+            return {
+                "ok": false, "token": "", "error": "bKash tokenized gateway credentials are not configured (app_key, app_secret, username, and password are required in Payments settings)."
+            };
         }
 
         let api_base = self.base_api_url();
@@ -777,15 +830,20 @@ public class BkashGateway {
                 if type_of(err_obj) == "map" and err_obj.has("statusMessage") {
                     msg = string(err_obj["statusMessage"]);
                 }
-            } catch (e) {}
-            return {"ok": false, "token": "", "error": "bKash token grant failed: " + msg};
+            } catch (_e) {
+            }
+            return {
+                "ok": false, "token": "", "error": "bKash token grant failed: " + msg
+            };
         }
 
         let grant_parsed = null;
         try {
             grant_parsed = json_parse(string(grant_res["body"]));
-        } catch (e) {
-            return {"ok": false, "token": "", "error": "bKash returned an invalid JSON response during token grant."};
+        } catch (_e) {
+            return {
+                "ok": false, "token": "", "error": "bKash returned an invalid JSON response during token grant."
+            };
         }
 
         if type_of(grant_parsed) != "map" or not grant_parsed.has("id_token") {
@@ -793,13 +851,17 @@ public class BkashGateway {
             if type_of(grant_parsed) == "map" and grant_parsed.has("statusMessage") {
                 msg = string(grant_parsed["statusMessage"]);
             }
-            return {"ok": false, "token": "", "error": "bKash token grant failed: " + msg};
+            return {
+                "ok": false, "token": "", "error": "bKash token grant failed: " + msg
+            };
         }
 
-        return {"ok": true, "token": string(grant_parsed["id_token"]), "error": ""};
+        return {
+            "ok": true, "token": string(grant_parsed["id_token"]), "error": ""
+        };
     }
 
-    public fn initiate(self, payment, order) {
+    public fn initiate(self, _payment, order) {
         let gres = self.grant_token();
         if not gres["ok"] {
             throw bad_request(string(gres["error"]));
@@ -837,14 +899,15 @@ public class BkashGateway {
                 if type_of(err_obj) == "map" and err_obj.has("statusMessage") {
                     msg = string(err_obj["statusMessage"]);
                 }
-            } catch (e) {}
+            } catch (_e) {
+            }
             throw bad_request("bKash create payment failed: " + msg);
         }
 
         let create_parsed = null;
         try {
             create_parsed = json_parse(string(create_res["body"]));
-        } catch (e) {
+        } catch (_e) {
             throw bad_request("bKash returned invalid JSON during payment creation.");
         }
 
@@ -871,11 +934,15 @@ public class BkashGateway {
 
     public fn verify_payment_id(self, payment, payment_id: string) {
         if payment_id == "" {
-            return {"verified": false, "transaction_id": "", "payload": "{}"};
+            return {
+                "verified": false, "transaction_id": "", "payload": "{}"
+            };
         }
         let gres = self.grant_token();
         if not gres["ok"] {
-            return {"verified": false, "transaction_id": "", "payload": json_write(gres)};
+            return {
+                "verified": false, "transaction_id": "", "payload": json_write(gres)
+            };
         }
         let token = string(gres["token"]);
         let a_key = self.app_key();
@@ -890,16 +957,22 @@ public class BkashGateway {
         }, exec_body);
 
         if not res["ok"] or res["status"] != 200 {
-            return {"verified": false, "transaction_id": "", "payload": string(res["body"])};
+            return {
+                "verified": false, "transaction_id": "", "payload": string(res["body"])
+            };
         }
         let parsed = null;
         try {
             parsed = json_parse(string(res["body"]));
-        } catch (e) {
-            return {"verified": false, "transaction_id": "", "payload": "{}"};
+        } catch (_e) {
+            return {
+                "verified": false, "transaction_id": "", "payload": "{}"
+            };
         }
         if type_of(parsed) != "map" {
-            return {"verified": false, "transaction_id": "", "payload": "{}"};
+            return {
+                "verified": false, "transaction_id": "", "payload": "{}"
+            };
         }
         let code = "";
         if parsed.has("statusCode") {
@@ -911,14 +984,18 @@ public class BkashGateway {
         }
         let ok = (code == "0000" or tx_st == "completed");
         if not ok {
-            return {"verified": false, "transaction_id": "", "payload": json_write(parsed)};
+            return {
+                "verified": false, "transaction_id": "", "payload": json_write(parsed)
+            };
         }
 
         // Verify amount
         if parsed.has("amount") {
             let amt_minor = Money.to_minor(string(parsed["amount"]));
             if amt_minor > 0 and amt_minor != int(payment["amount_minor"]) {
-                return {"verified": false, "transaction_id": "", "payload": json_write(parsed)};
+                return {
+                    "verified": false, "transaction_id": "", "payload": json_write(parsed)
+                };
             }
         }
 
@@ -941,7 +1018,8 @@ public class BkashGateway {
                 if type_of(parsed) == "map" and parsed.has("paymentID") {
                     pid = string(parsed["paymentID"]).trim();
                 }
-            } catch (e) {}
+            } catch (_e) {
+            }
         }
         if pid == "" and payment.has("gateway_transaction_id") {
             let g = string(payment["gateway_transaction_id"]).trim();
@@ -959,11 +1037,15 @@ public class BkashGateway {
         };
     }
 
-    public fn refund(self, payment, amount_minor: int) {
-        return {"ok": true, "reference": "BKASH-REFUND-" + string(payment["id"])};
+    public fn refund(self, payment, _amount_minor: int) {
+        let _ = self;
+        return {
+            "ok": true, "reference": "BKASH-REFUND-" + string(payment["id"])
+        };
     }
 
     public fn webhook_secret(self) -> string {
+        let _ = self;
         let from_env = env_value("BKASH_WEBHOOK_SECRET", "");
         if from_env != "" {
             return from_env;
@@ -982,11 +1064,12 @@ public class BkashGateway {
 public class NagadGateway {
     public let name;
 
-    fn new() {
+    fn new () {
         self.name = "nagad";
     }
 
     fn merchant_id(self) -> string {
+        let _ = self;
         let from_env = env_value("NAGAD_MERCHANT_ID", "");
         if from_env != "" {
             return from_env;
@@ -1006,6 +1089,7 @@ public class NagadGateway {
     }
 
     fn public_key(self) -> string {
+        let _ = self;
         let from_env = env_value("NAGAD_PUBLIC_KEY", "");
         if from_env != "" {
             return from_env;
@@ -1021,6 +1105,7 @@ public class NagadGateway {
     }
 
     fn private_key(self) -> string {
+        let _ = self;
         let from_env = env_value("NAGAD_PRIVATE_KEY", "");
         if from_env != "" {
             return from_env;
@@ -1036,6 +1121,7 @@ public class NagadGateway {
     }
 
     fn init_endpoint_url(self) -> string {
+        let _ = self;
         let from_env = env_value("NAGAD_INIT_URL", "");
         if from_env != "" {
             return from_env;
@@ -1056,6 +1142,7 @@ public class NagadGateway {
     }
 
     public fn webhook_secret(self) -> string {
+        let _ = self;
         let from_env = env_value("NAGAD_WEBHOOK_SECRET", "");
         if from_env != "" {
             return from_env;
@@ -1070,7 +1157,7 @@ public class NagadGateway {
         return setting_value("payments.webhook_secret", "");
     }
 
-    public fn initiate(self, payment, order) {
+    public fn initiate(self, _payment, order) {
         let m_id = self.merchant_id();
         let pub_key = self.public_key();
         let priv_key = self.private_key();
@@ -1085,7 +1172,9 @@ public class NagadGateway {
 
         // Nagad requires uploaded merchant RSA private key and Nagad PG public key for DFS initialization.
         if priv_key == "" or priv_key.contains("demo") or pub_key == "" or pub_key.contains("demo") {
-            throw bad_request("Nagad merchant keys are not uploaded. Please configure your Nagad Merchant ID, Private Key, and Public Key in Admin Settings, or use SSLCommerz / Cash on Delivery.");
+            throw bad_request(
+                "Nagad merchant keys are not uploaded. Please configure your Nagad Merchant ID, Private Key, and Public Key in Admin Settings, or use SSLCommerz / Cash on Delivery."
+            );
         }
 
         let order_num = string(order["order_number"]);
@@ -1116,13 +1205,14 @@ public class NagadGateway {
                 } elif type_of(err_obj) == "map" and err_obj.has("reason") {
                     msg = string(err_obj["reason"]);
                 }
-            } catch (e) {}
+            } catch (_e) {
+            }
             throw bad_request("Nagad initialization failed: " + msg);
         }
         let parsed = null;
         try {
             parsed = json_parse(string(res["body"]));
-        } catch (e) {
+        } catch (_e) {
             throw bad_request("Nagad returned an invalid JSON response.");
         }
         if type_of(parsed) == "map" and parsed.has("callBackUrl") {
@@ -1136,11 +1226,15 @@ public class NagadGateway {
         throw bad_request("Nagad initiation did not return a checkout URL.");
     }
 
-    public fn verify(self, payment) {
-        return {"verified": false, "transaction_id": "", "payload": "{}"};
+    public fn verify(self, _payment) {
+        let _ = self;
+        return {
+            "verified": false, "transaction_id": "", "payload": "{}"
+        };
     }
 
-    public fn refund(self, payment, amount_minor: int) {
+    public fn refund(self, _payment, _amount_minor: int) {
+        let _ = self;
         return {
             "status": "refunded",
             "refund_reference": "NAGAD-REF-" + hex_encode(random_bytes(8).unwrap()),
@@ -1153,7 +1247,7 @@ public class HttpsGateway {
     public let name;
     public let prefix;
 
-    fn new(name: string) {
+    fn new (name: string) {
         self.name = name;
         self.prefix = string(name).upper();
     }
@@ -1170,22 +1264,38 @@ public class HttpsGateway {
         let mode = setting_value("payments.mode", "sandbox");
         if mode == "live" {
             let l1 = setting_value("payments.live_" + self.name + "_app_key", "");
-            if l1 != "" { return l1; }
+            if l1 != "" {
+                return l1;
+            }
             let l2 = setting_value("payments.live_" + self.name + "_merchant_id", "");
-            if l2 != "" { return l2; }
+            if l2 != "" {
+                return l2;
+            }
             let l3 = setting_value("payments.live_" + self.name + "_store_id", "");
-            if l3 != "" { return l3; }
+            if l3 != "" {
+                return l3;
+            }
             let l4 = setting_value("payments.live_" + self.name + "_secret_key", "");
-            if l4 != "" { return l4; }
+            if l4 != "" {
+                return l4;
+            }
         }
         let from_db = setting_value("payments." + self.name + "_app_key", "");
-        if from_db != "" { return from_db; }
+        if from_db != "" {
+            return from_db;
+        }
         let from_db2 = setting_value("payments." + self.name + "_merchant_id", "");
-        if from_db2 != "" { return from_db2; }
+        if from_db2 != "" {
+            return from_db2;
+        }
         let from_db3 = setting_value("payments." + self.name + "_store_id", "");
-        if from_db3 != "" { return from_db3; }
+        if from_db3 != "" {
+            return from_db3;
+        }
         let from_db4 = setting_value("payments." + self.name + "_secret_key", "");
-        if from_db4 != "" { return from_db4; }
+        if from_db4 != "" {
+            return from_db4;
+        }
         return setting_value("payments." + self.name + "_api_key", "");
     }
 
@@ -1209,7 +1319,9 @@ public class HttpsGateway {
         if key == "" {
             throw bad_request(self.name + " gateway is not configured (missing API key).");
         }
-        return {"content-type": "application/json", "authorization": "Bearer " + key};
+        return {
+            "content-type": "application/json", "authorization": "Bearer " + key
+        };
     }
 
     fn post(self, url: string, payload) {
@@ -1223,7 +1335,7 @@ public class HttpsGateway {
         let parsed = null;
         try {
             parsed = json_parse(string(res["body"]));
-        } catch (e) {
+        } catch (_e) {
             throw bad_request(self.name + " gateway returned an invalid response.");
         }
         if type_of(parsed) != "map" {
@@ -1235,7 +1347,9 @@ public class HttpsGateway {
     public fn initiate(self, payment, order) {
         let init_url = self.url_for("INIT", "");
         if init_url == "" {
-            throw bad_request(self.name + " gateway is not configured (missing INIT endpoint URL).");
+            throw bad_request(
+                self.name + " gateway is not configured (missing INIT endpoint URL)."
+            );
         }
         let response = self.post(init_url, {
             "order_number": order["order_number"],
@@ -1291,7 +1405,7 @@ public class HttpsGateway {
             amount = int(response["amount_minor"]);
         }
         let ok = (state == "paid" or state == "success" or state == "completed")
-            and amount == int(payment["amount_minor"]);
+        and amount == int(payment["amount_minor"]);
         let txn = "";
         if response.has("transaction_id") {
             txn = string(response["transaction_id"]);
@@ -1317,14 +1431,19 @@ public class HttpsGateway {
         if response.has("refund_id") {
             ref_id = string(response["refund_id"]);
         }
-        return {"ok": ok, "reference": ref_id};
+        return {
+            "ok": ok, "reference": ref_id
+        };
     }
 }
 
 public class GatewayRegistry {
-    fn new() {}
+    fn new () {
+        let _ = self;
+    }
 
     public fn providers(self) {
+        let _ = self;
         return ["cod", "bkash", "nagad", "sslcommerz", "stripe"];
     }
 
@@ -1339,7 +1458,9 @@ public class GatewayRegistry {
             i += 1;
         }
         if i == all.len() {
-            throw validation_failed({"provider": "Unknown payment provider."});
+            throw validation_failed({
+                "provider": "Unknown payment provider."
+            });
         }
         if p == "cod" {
             return new CodGateway();

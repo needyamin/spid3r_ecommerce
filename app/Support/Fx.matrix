@@ -41,7 +41,9 @@ public fn meta(rates, code: string) {
     if rates != null and rates.has(key) {
         return rates[key];
     }
-    return {"digits": 2, "rate_bps": 10000, "symbol": "", "name": key};
+    return {
+        "digits": 2, "rate_bps": 10000, "symbol": "", "name": key
+    };
 }
 
 // Convert an amount in minor units of `from_code` into minor units of

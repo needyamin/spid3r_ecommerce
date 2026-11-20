@@ -29,7 +29,7 @@ public class AdminCatalogController {
     public let variants;
     public let catalog;
 
-    fn new() {
+    fn new () {
         self.products = new ProductService();
         self.categories = new CategoryService();
         self.brands = new BrandService();
@@ -40,16 +40,18 @@ public class AdminCatalogController {
     }
 
     fn validate(self, req, rules) {
+        let _ = self;
         req.validate_or_fail(rules);
         return true;
     }
 
     fn id_of(self, req) {
+        let _ = self;
         return req.params["id"];
     }
 
     // ---------- products ----------
-    public fn products_index(self, req) {
+    public fn products_index(self, _req) {
         let page = self.catalog.published({
             "page": 1, "per_page": 50
         });
@@ -85,24 +87,36 @@ public class AdminCatalogController {
     }
 
     public fn product_update(self, req) {
-        return json(resource_item(self.products.update(self.id_of(req), req.data), identity));
+        return json(
+            resource_item(self.products.update(self.id_of(req), req.data), identity)
+        );
     }
 
     public fn product_delete(self, req) {
         self.products.delete(self.id_of(req));
-        return json({"data": {"deleted": true}});
+        return json({
+            "data": {
+                "deleted": true
+            }
+        });
     }
 
     public fn product_publish(self, req) {
-        return json(resource_item(self.products.publish(self.id_of(req), true), identity));
+        return json(
+            resource_item(self.products.publish(self.id_of(req), true), identity)
+        );
     }
 
     public fn product_unpublish(self, req) {
-        return json(resource_item(self.products.publish(self.id_of(req), false), identity));
+        return json(
+            resource_item(self.products.publish(self.id_of(req), false), identity)
+        );
     }
 
     public fn product_availability(self, req) {
-        return json(resource_item(self.products.availability(self.id_of(req)), identity));
+        return json(
+            resource_item(self.products.availability(self.id_of(req)), identity)
+        );
     }
 
     // ---------- inventory ----------
@@ -112,18 +126,22 @@ public class AdminCatalogController {
 
     public fn inventory_restock(self, req) {
         self.validate(req, CatalogValidators.restock_rules());
-        return json(resource_item(
-            self.inventory.restock(self.id_of(req), int(req.input("quantity", 0))),
-            identity
-        ));
+        return json(
+            resource_item(
+                self.inventory.restock(self.id_of(req), int(req.input("quantity", 0))),
+                identity
+            )
+        );
     }
 
     public fn inventory_history(self, req) {
-        return json(resource_collection(self.inventory.history(self.id_of(req)), identity));
+        return json(
+            resource_collection(self.inventory.history(self.id_of(req)), identity)
+        );
     }
 
     // ---------- categories / brands ----------
-    public fn categories_index(self, req) {
+    public fn categories_index(self, _req) {
         return json(resource_collection(self.categories.tree(), identity));
     }
 
@@ -141,7 +159,12 @@ public class AdminCatalogController {
     }
 
     public fn category_update(self, req) {
-        return json(resource_item(self.categories.update(self.id_of(req), req.data), identity));
+        return json(
+            resource_item(
+                self.categories.update(self.id_of(req), req.data),
+                identity
+            )
+        );
     }
 
     public fn category_delete(self, req) {
@@ -152,32 +175,48 @@ public class AdminCatalogController {
             if target_id != id {
                 let target = DB.table("categories").where("id", "=", target_id).first();
                 if target != null {
-                    DB.table("products").where("category_id", "=", id).update({"category_id": target_id});
-                    DB.table("categories").where("parent_id", "=", id).update({"parent_id": target_id});
+                    DB.table("products").where("category_id", "=", id).update({
+                        "category_id": target_id
+                    });
+                    DB.table("categories").where("parent_id", "=", id).update({
+                        "parent_id": target_id
+                    });
                 }
             }
         }
         self.categories.delete(id);
-        return json({"data": {"deleted": true}});
+        return json({
+            "data": {
+                "deleted": true
+            }
+        });
     }
 
-    public fn brands_index(self, req) {
+    public fn brands_index(self, _req) {
         return json(resource_collection(self.brands.brands.all(), identity));
     }
 
     public fn brand_store(self, req) {
         self.validate(req, CatalogValidators.brand_rules());
-        let data = {"name": req.input("name", ""), "description": req.input("description", "")};
+        let data = {
+            "name": req.input("name", ""), "description": req.input("description", "")
+        };
         return json(resource_item(self.brands.create(data), identity), 201);
     }
 
     public fn brand_update(self, req) {
-        return json(resource_item(self.brands.update(self.id_of(req), req.data), identity));
+        return json(
+            resource_item(self.brands.update(self.id_of(req), req.data), identity)
+        );
     }
 
     public fn brand_delete(self, req) {
         self.brands.delete(self.id_of(req));
-        return json({"data": {"deleted": true}});
+        return json({
+            "data": {
+                "deleted": true
+            }
+        });
     }
 
     // ---------- browser-form write endpoints ----------
@@ -192,6 +231,7 @@ public class AdminCatalogController {
     // WITHOUT touching a float (money-style exactness for tax percent
     // and weight). "5.5" with 2 decimals -> 550; "1.25" with 3 -> 1250.
     fn scaled_value(self, raw: string, decimals: int) -> int {
+        let _ = self;
         let s = string(raw).trim();
         if s == "" {
             return 0;
@@ -225,7 +265,8 @@ public class AdminCatalogController {
     }
 
     fn product_form_data(self, req) {
-        let data = {};
+        let data = {
+        };
         let name = string(req.input("name", "")).trim();
         if name != "" {
             data["name"] = name;
@@ -257,7 +298,9 @@ public class AdminCatalogController {
             } else {
                 let compare_minor = Money.to_minor(compare);
                 if compare_minor < 0 {
-                    throw validation_failed({"compare_at": "Enter a valid amount, for example 1999.50."});
+                    throw validation_failed({
+                        "compare_at": "Enter a valid amount, for example 1999.50."
+                    });
                 }
                 data["compare_at_minor"] = compare_minor;
             }
@@ -269,7 +312,9 @@ public class AdminCatalogController {
                 cost_minor = Money.to_minor(cost);
             }
             if cost_minor < 0 {
-                throw validation_failed({"cost": "Enter a valid amount, for example 899.00."});
+                throw validation_failed({
+                    "cost": "Enter a valid amount, for example 899.00."
+                });
             }
             data["cost_minor"] = cost_minor;
         }
@@ -317,16 +362,24 @@ public class AdminCatalogController {
         let cat = int(req.input("category_id", 0));
         let price = Money.to_minor(string(req.input("price", "")));
         if len(name) < 2 {
-            throw validation_failed({"name": "Enter a product name."});
+            throw validation_failed({
+                "name": "Enter a product name."
+            });
         }
         if sku == "" {
-            throw validation_failed({"sku": "Enter a SKU."});
+            throw validation_failed({
+                "sku": "Enter a SKU."
+            });
         }
         if cat <= 0 {
-            throw validation_failed({"category_id": "Choose a category."});
+            throw validation_failed({
+                "category_id": "Choose a category."
+            });
         }
         if price <= 0 {
-            throw validation_failed({"price": "Enter a price greater than zero."});
+            throw validation_failed({
+                "price": "Enter a price greater than zero."
+            });
         }
         let brand = null;
         let brand_raw = string(req.input("brand_id", "")).trim();
@@ -349,7 +402,9 @@ public class AdminCatalogController {
             "tax_rate_bps": self.scaled_value(string(req.input("tax_percent", "0")), 2),
             "weight_grams": self.scaled_value(string(req.input("weight_kg", "0")), 3),
             "meta_title": string(req.input("meta_title", name)),
-            "meta_description": string(req.input("meta_description", string(req.input("short_description", "")))),
+            "meta_description": string(
+                req.input("meta_description", string(req.input("short_description", "")))
+            ),
             "status": status
         };
         let compare = string(req.input("compare_at", "")).trim();
@@ -395,7 +450,9 @@ public class AdminCatalogController {
     public fn category_create_form(self, req) {
         let name = string(req.input("name", "")).trim();
         if len(name) < 2 {
-            throw validation_failed({"name": "Enter a category name."});
+            throw validation_failed({
+                "name": "Enter a category name."
+            });
         }
         let parent = null;
         let parent_raw = string(req.input("parent_id", "")).trim();
@@ -418,7 +475,8 @@ public class AdminCatalogController {
     }
 
     public fn category_update_form(self, req) {
-        let data = {};
+        let data = {
+        };
         let name = string(req.input("name", "")).trim();
         if name != "" {
             data["name"] = name;
@@ -441,10 +499,14 @@ public class AdminCatalogController {
     public fn brand_create_form(self, req) {
         let name = string(req.input("name", "")).trim();
         if len(name) < 2 {
-            throw validation_failed({"name": "Enter a brand name."});
+            throw validation_failed({
+                "name": "Enter a brand name."
+            });
         }
         let description = string(req.input("description", ""));
-        let row = self.brands.create({"name": name, "description": description});
+        let row = self.brands.create({
+            "name": name, "description": description
+        });
         if req.input("format", "") != "json" {
             return redirect("/admin/brands");
         }
@@ -452,7 +514,8 @@ public class AdminCatalogController {
     }
 
     public fn brand_update_form(self, req) {
-        let data = {};
+        let data = {
+        };
         let name = string(req.input("name", "")).trim();
         if name != "" {
             data["name"] = name;
@@ -470,7 +533,10 @@ public class AdminCatalogController {
 
     public fn inventory_restock_form(self, req) {
         self.validate(req, CatalogValidators.restock_rules());
-        let row = self.inventory.restock(self.id_of(req), int(req.input("quantity", 0)));
+        let row = self.inventory.restock(
+            self.id_of(req),
+            int(req.input("quantity", 0))
+        );
         if req.input("format", "") != "json" {
             return redirect("/admin/products/" + string(self.id_of(req)));
         }
@@ -481,7 +547,9 @@ public class AdminCatalogController {
     public fn inventory_set_form(self, req) {
         let qty = int(req.input("quantity", -1));
         if qty < 0 {
-            throw validation_failed({"quantity": "Enter a quantity of zero or more."});
+            throw validation_failed({
+                "quantity": "Enter a quantity of zero or more."
+            });
         }
         let threshold = int(req.input("low_stock_threshold", 5));
         let row = self.inventory.set_stock(self.id_of(req), qty, threshold);
@@ -520,7 +588,11 @@ public class AdminCatalogController {
         if req.input("format", "") != "json" {
             return redirect("/admin/products/" + string(req.input("product_id", "0")));
         }
-        return json({"data": {"deleted": true}});
+        return json({
+            "data": {
+                "deleted": true
+            }
+        });
     }
 
     public fn image_primary_form(self, req) {
@@ -528,7 +600,11 @@ public class AdminCatalogController {
         if req.input("format", "") != "json" {
             return redirect("/admin/products/" + string(req.input("product_id", "0")));
         }
-        return json({"data": {"primary": true}});
+        return json({
+            "data": {
+                "primary": true
+            }
+        });
     }
 
     // Update the alt text of an existing image.
@@ -537,27 +613,39 @@ public class AdminCatalogController {
         if req.input("format", "") != "json" {
             return redirect("/admin/products/" + string(req.input("product_id", "0")));
         }
-        return json({"data": {"updated": true}});
+        return json({
+            "data": {
+                "updated": true
+            }
+        });
     }
 
     // Move an image up (-1) or down (+1) in the gallery.
     public fn image_move_form(self, req) {
         let direction = int(req.input("direction", 0));
         if direction != -1 and direction != 1 {
-            throw validation_failed({"direction": "Invalid move direction."});
+            throw validation_failed({
+                "direction": "Invalid move direction."
+            });
         }
         self.images.move(req.params["id"], direction);
         if req.input("format", "") != "json" {
             return redirect("/admin/products/" + string(req.input("product_id", "0")));
         }
-        return json({"data": {"moved": true}});
+        return json({
+            "data": {
+                "moved": true
+            }
+        });
     }
 
     // Set only the low-stock threshold.
     public fn inventory_threshold_form(self, req) {
         let threshold = int(req.input("low_stock_threshold", -1));
         if threshold < 0 {
-            throw validation_failed({"low_stock_threshold": "Enter a threshold of zero or more."});
+            throw validation_failed({
+                "low_stock_threshold": "Enter a threshold of zero or more."
+            });
         }
         let ok = self.inventory.set_threshold(self.id_of(req), threshold);
         if req.input("format", "") != "json" {
@@ -579,12 +667,18 @@ public class AdminCatalogController {
         if current != 1 {
             flag = 1;
         }
-        DB.table("products").where("id", "=", self.id_of(req)).update({"is_featured": flag});
+        DB.table("products").where("id", "=", self.id_of(req)).update({
+            "is_featured": flag
+        });
         CatalogCache.bump_catalog_version();
         if req.input("format", "") != "json" {
             return redirect("/admin/products/" + string(self.id_of(req)));
         }
-        return json({"data": {"is_featured": flag}});
+        return json({
+            "data": {
+                "is_featured": flag
+            }
+        });
     }
 
     // Delete a product — refused when it is referenced by orders/carts.
@@ -593,7 +687,11 @@ public class AdminCatalogController {
         if req.input("format", "") != "json" {
             return redirect("/admin/products");
         }
-        return json({"data": {"deleted": true}});
+        return json({
+            "data": {
+                "deleted": true
+            }
+        });
     }
 
     // ---------- variants (browser forms) ----------
@@ -603,16 +701,24 @@ public class AdminCatalogController {
         let name = string(req.input("name", "")).trim();
         let price = Money.to_minor(string(req.input("price", "")));
         if len(sku) < 2 {
-            throw validation_failed({"sku": "Enter a variant SKU."});
+            throw validation_failed({
+                "sku": "Enter a variant SKU."
+            });
         }
         if len(name) < 2 {
-            throw validation_failed({"name": "Enter a variant name."});
+            throw validation_failed({
+                "name": "Enter a variant name."
+            });
         }
         if price <= 0 {
-            throw validation_failed({"price": "Enter a price greater than zero."});
+            throw validation_failed({
+                "price": "Enter a price greater than zero."
+            });
         }
         if self.variants.sku_exists(sku, null) {
-            throw validation_failed({"sku": "That SKU is already in use."});
+            throw validation_failed({
+                "sku": "That SKU is already in use."
+            });
         }
         let compare = string(req.input("compare_at", "")).trim();
         let data = {
@@ -639,7 +745,8 @@ public class AdminCatalogController {
         if variant == null or int(variant["product_id"]) != int(self.id_of(req)) {
             throw not_found("Variant not found.");
         }
-        let data = {};
+        let data = {
+        };
         let name = string(req.input("name", "")).trim();
         if name != "" {
             data["name"] = name;
@@ -659,7 +766,9 @@ public class AdminCatalogController {
         if req.input("format", "") != "json" {
             return redirect("/admin/products/" + string(self.id_of(req)));
         }
-        return json(resource_item(self.variants.find(req.params["variant_id"]), identity));
+        return json(
+            resource_item(self.variants.find(req.params["variant_id"]), identity)
+        );
     }
 
     public fn variant_delete_form(self, req) {
@@ -671,19 +780,27 @@ public class AdminCatalogController {
         if req.input("format", "") != "json" {
             return redirect("/admin/products/" + string(self.id_of(req)));
         }
-        return json({"data": {"deleted": true}});
+        return json({
+            "data": {
+                "deleted": true
+            }
+        });
     }
 
     // ---------- variants ----------
     public fn variants_index(self, req) {
-        return json(resource_collection(self.variants.for_product(self.id_of(req)), identity));
+        return json(
+            resource_collection(self.variants.for_product(self.id_of(req)), identity)
+        );
     }
 
     public fn variant_store(self, req) {
         self.validate(req, CatalogValidators.variant_rules());
         let sku = string(req.input("sku", "")).trim().upper();
         if self.variants.sku_exists(sku, null) {
-            throw validation_failed({"sku": "That SKU is already in use."});
+            throw validation_failed({
+                "sku": "That SKU is already in use."
+            });
         }
         let pid = self.id_of(req);
         let id = self.variants.create({
@@ -699,7 +816,9 @@ public class AdminCatalogController {
 
     // ---------- images / gallery ----------
     public fn images_index(self, req) {
-        return json(resource_collection(self.images.gallery(self.id_of(req)), identity));
+        return json(
+            resource_collection(self.images.gallery(self.id_of(req)), identity)
+        );
     }
 
     public fn image_store(self, req) {
@@ -710,12 +829,18 @@ public class AdminCatalogController {
             req.input("alt_text", ""),
             int(req.input("is_primary", 0)) == 1
         );
-        let disk_ok = {"id": row["id"], "url": Images.public_image_url(row["path"]), "is_primary": row["is_primary"] == 1 or row["is_primary"] == true};
+        let disk_ok = {
+            "id": row["id"], "url": Images.public_image_url(row["path"]), "is_primary": row["is_primary"] == 1 or row["is_primary"] == true
+        };
         return json(resource_item(disk_ok, identity), 201);
     }
 
     public fn image_delete(self, req) {
         self.images.delete(req.params["id"]);
-        return json({"data": {"deleted": true}});
+        return json({
+            "data": {
+                "deleted": true
+            }
+        });
     }
 }

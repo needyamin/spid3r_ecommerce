@@ -18,7 +18,9 @@ public fn login_rules() {
 }
 
 public fn forgot_rules() {
-    return {"email": "required|email"};
+    return {
+        "email": "required|email"
+    };
 }
 
 public fn reset_rules() {

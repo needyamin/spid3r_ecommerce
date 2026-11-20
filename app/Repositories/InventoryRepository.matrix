@@ -10,12 +10,15 @@ import "framework/Database/DB";
 import "app/Support/CatalogCache" as CatalogCache;
 
 public class InventoryRepository {
-    fn new() {}
+    fn new () {
+        let _ = self;
+    }
 
     fn query_for(self, product_id, variant_id, qty) {
+        let _ = self;
         let q = DB.table("inventory")
-            .where("product_id", "=", product_id)
-            .where("quantity", ">=", qty);
+        .where("product_id", "=", product_id)
+        .where("quantity", ">=", qty);
         if variant_id == null {
             q.whereNull("variant_id");
         } else {
@@ -25,12 +28,13 @@ public class InventoryRepository {
     }
 
     public fn available(self, product_id, variant_id, qty) -> bool {
+        let _ = self;
         if qty <= 0 {
             return false;
         }
         let q = DB.table("inventory")
-            .where("product_id", "=", product_id)
-            .where("quantity", ">=", qty);
+        .where("product_id", "=", product_id)
+        .where("quantity", ">=", qty);
         if variant_id == null {
             q.whereNull("variant_id");
         } else {
@@ -42,7 +46,15 @@ public class InventoryRepository {
     // Reserve/deduct stock. Returns false (and writes nothing) when stock
     // is insufficient. Callers MUST run inside DB.transaction for
     // multi-step checkout operations.
-    public fn reserve(self, product_id, variant_id, qty, reason: string, reference_type: string = "", reference_id: string = "") -> bool {
+    public fn reserve(
+        self,
+        product_id,
+        variant_id,
+        qty,
+        reason: string,
+        reference_type: string = "",
+        reference_id: string = ""
+    ) -> bool {
         if qty <= 0 {
             return false;
         }
@@ -66,6 +78,7 @@ public class InventoryRepository {
 
     // Return stock to the pool (cancellation / failed payment).
     public fn release(self, product_id, variant_id, qty, reason: string) -> bool {
+        let _ = self;
         if qty <= 0 {
             return false;
         }
@@ -99,7 +112,14 @@ public class InventoryRepository {
     // correction, not an addition). The difference is recorded as a
     // stock movement so the history stays auditable. Reserved units are
     // left untouched — they belong to open orders.
-    public fn set_quantity(self, product_id, variant_id, qty: int, reason: string = "adjustment") -> bool {
+    public fn set_quantity(
+        self,
+        product_id,
+        variant_id,
+        qty: int,
+        reason: string = "adjustment"
+    ) -> bool {
+        let _ = self;
         if qty < 0 {
             return false;
         }
@@ -116,8 +136,10 @@ public class InventoryRepository {
             }
             let delta = qty - int(row["quantity"]);
             let changed = DB.table("inventory")
-                .where("id", "=", row["id"])
-                .update({"quantity": qty}) > 0;
+            .where("id", "=", row["id"])
+            .update({
+                "quantity": qty
+            }) > 0;
             if not changed {
                 return false;
             }
@@ -136,19 +158,23 @@ public class InventoryRepository {
 
     // Low-stock alert threshold for a product.
     public fn set_threshold(self, product_id, threshold: int) -> bool {
+        let _ = self;
         if threshold < 0 {
             return false;
         }
         return DB.table("inventory")
-            .where("product_id", "=", product_id)
-            .whereNull("variant_id")
-            .update({"low_stock_threshold": threshold}) > 0;
+        .where("product_id", "=", product_id)
+        .whereNull("variant_id")
+        .update({
+            "low_stock_threshold": threshold
+        }) > 0;
     }
 
     public fn movements_for(self, product_id) {
+        let _ = self;
         return DB.table("stock_movements")
-            .where("product_id", "=", product_id)
-            .orderBy("id", "DESC")
-            .get();
+        .where("product_id", "=", product_id)
+        .orderBy("id", "DESC")
+        .get();
     }
 }

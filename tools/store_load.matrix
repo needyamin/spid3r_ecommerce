@@ -32,23 +32,48 @@ fn iterations() -> int {
 }
 
 fn setup_catalog(tag: string) {
-    let cat = DB.table("categories").insert(map(
-        "name", "Load Category " + tag, "slug", "load-cat-" + tag
-    ));
+    let cat = DB.table("categories").insert(
+        map(
+            "name",
+            "Load Category " + tag,
+            "slug",
+            "load-cat-" + tag
+        )
+    );
     let i = 0;
     while i < 12 {
-        let pid = DB.table("products").insert(map(
-            "category_id", cat,
-            "name", "Load Widget " + string(i) + " " + tag,
-            "slug", "load-widget-" + string(i) + "-" + tag,
-            "sku", "LOAD-" + tag + "-" + string(i),
-            "price_minor", 10000 + i * 1000,
-            "status", "published", "currency", "BDT"
-        ));
-        DB.table("inventory").insert(map(
-            "product_id", pid, "variant_id", null,
-            "quantity", 100, "reserved", 0, "low_stock_threshold", 5
-        ));
+        let pid = DB.table("products").insert(
+            map(
+                "category_id",
+                cat,
+                "name",
+                "Load Widget " + string(i) + " " + tag,
+                "slug",
+                "load-widget-" + string(i) + "-" + tag,
+                "sku",
+                "LOAD-" + tag + "-" + string(i),
+                "price_minor",
+                10000 + i * 1000,
+                "status",
+                "published",
+                "currency",
+                "BDT"
+            )
+        );
+        DB.table("inventory").insert(
+            map(
+                "product_id",
+                pid,
+                "variant_id",
+                null,
+                "quantity",
+                100,
+                "reserved",
+                0,
+                "low_stock_threshold",
+                5
+            )
+        );
         i += 1;
     }
     return "load-widget-0-" + tag;
@@ -79,9 +104,11 @@ fn probe(name: string, requests: int, make_request) {
         avg = int(total / requests);
     }
     println("  " + name);
-    println("    " + string(requests) + " requests in " + string(total)
+    println(
+        "    " + string(requests) + " requests in " + string(total)
         + " ms — " + string(rate) + " req/s · avg " + string(avg)
-        + " ms · worst " + string(worst) + " ms");
+        + " ms · worst " + string(worst) + " ms"
+    );
 }
 
 fn main() {
@@ -99,7 +126,9 @@ fn main() {
     println("\nIterations per endpoint: " + string(iters) + "\n");
 
     probe("GET /health (liveness JSON)", iters, fn() {
-        return app.handle_request(map("method", "GET", "path", "/health", "headers", map()));
+        return app.handle_request(
+            map("method", "GET", "path", "/health", "headers", map())
+        );
     });
 
     probe("GET / (home, featured + catalog cache)", iters, fn() {
@@ -107,15 +136,21 @@ fn main() {
     });
 
     probe("GET /catalog (cached listing)", iters, fn() {
-        return app.handle_request(map("method", "GET", "path", "/catalog", "headers", map()));
+        return app.handle_request(
+            map("method", "GET", "path", "/catalog", "headers", map())
+        );
     });
 
     probe("GET /catalog?q=... (uncached search)", iters, fn() {
-        return app.handle_request(map("method", "GET", "path", "/catalog?q=Load%20Widget%201", "headers", map()));
+        return app.handle_request(
+            map("method", "GET", "path", "/catalog?q=Load%20Widget%201", "headers", map())
+        );
     });
 
     probe("GET /product/:slug (cached detail)", iters, fn() {
-        return app.handle_request(map("method", "GET", "path", "/product/" + slug, "headers", map()));
+        return app.handle_request(
+            map("method", "GET", "path", "/product/" + slug, "headers", map())
+        );
     });
 
     probe("GET /cart (guest)", iters, fn() {
@@ -125,7 +160,11 @@ fn main() {
     // Cleanup.
     let i = 0;
     while i < 12 {
-        let row = DB.table("products").where("slug", "=", "load-widget-" + string(i) + "-" + tag).first();
+        let row = DB.table("products").where(
+            "slug",
+            "=",
+            "load-widget-" + string(i) + "-" + tag
+        ).first();
         if row != null {
             DB.table("inventory").where("product_id", "=", row["id"]).delete();
             DB.table("stock_movements").where("product_id", "=", row["id"]).delete();

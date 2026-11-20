@@ -6,11 +6,13 @@ import "framework/Database/Migration";
 import "framework/Database/DB";
 
 public class SystemTables extends Migration {
-    fn new(name: string = "016_system") {
+    fn new (name: string = "016_system") {
+        let _ = self;
         super(name);
     }
 
     public fn up(self) {
+        let _ = self;
         Schema.create("audit_logs", table => {
             table.id();
             table.integer("user_id").nullable();
@@ -36,6 +38,7 @@ public class SystemTables extends Migration {
     }
 
     public fn down(self) {
+        let _ = self;
         Schema.dropIfExists("settings");
         Schema.dropIfExists("audit_logs");
     }

@@ -10,11 +10,13 @@ import "framework/Database/Migration";
 import "framework/Database/DB";
 
 public class ShippingReturnTables extends Migration {
-    fn new(name: string = "019_shipping_returns") {
+    fn new (name: string = "019_shipping_returns") {
+        let _ = self;
         super(name);
     }
 
     public fn up(self) {
+        let _ = self;
         // Delivery zones: a named region matched by country and (optionally)
         // a district list. The first matching zone wins; an unlisted
         // district falls back to the flat settings-based fee.
@@ -37,7 +39,7 @@ public class ShippingReturnTables extends Migration {
         Schema.create("shipping_rates", table => {
             table.id();
             table.integer("zone_id");
-            table.string("method", 48);                    // standard | express | pickup
+            table.string("method", 48);  // standard | express | pickup
             table.bigint("min_order_minor").default(0);
             table.bigint("max_order_minor").nullable();
             table.bigint("fee_minor");
@@ -66,9 +68,9 @@ public class ShippingReturnTables extends Migration {
             table.integer("user_id").nullable();
             table.integer("order_item_id").nullable();
             table.integer("quantity").default(1);
-            table.string("kind", 24).default("return");    // return | exchange
+            table.string("kind", 24).default("return");  // return | exchange
             table.text("reason");
-            table.string("status", 24).default("requested"); // requested | approved | rejected | received | refunded
+            table.string("status", 24).default("requested");  // requested | approved | rejected | received | refunded
             table.bigint("refund_minor").default(0);
             table.string("resolved_at", 32).nullable();
             table.timestamps();
@@ -81,6 +83,7 @@ public class ShippingReturnTables extends Migration {
     }
 
     public fn down(self) {
+        let _ = self;
         Schema.dropIfExists("returns");
         Schema.dropIfExists("shipping_rates");
         Schema.dropIfExists("shipping_zones");

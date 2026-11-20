@@ -7,11 +7,13 @@ import "framework/Database/Migration";
 import "framework/Database/DB";
 
 public class IdentityAccessTables extends Migration {
-    fn new(name: string = "010_identity_access") {
+    fn new (name: string = "010_identity_access") {
+        let _ = self;
         super(name);
     }
 
     public fn up(self) {
+        let _ = self;
         // Extend the framework's users table for storefront accounts.
         Schema.table("users", table => {
             table.string("phone", 32).nullable();
@@ -77,6 +79,7 @@ public class IdentityAccessTables extends Migration {
     }
 
     public fn down(self) {
+        let _ = self;
         // Reverse dependency order.
         Schema.dropIfExists("addresses");
         Schema.dropIfExists("role_permissions");

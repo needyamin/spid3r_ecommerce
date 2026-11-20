@@ -27,11 +27,15 @@ public fn register_auth_routes() {
     Route.get("/account", req => ctl.account(req)).middleware("auth");
     Route.post("/account/profile", req => ctl.update_profile(req)).middleware("auth");
 
-    Route.group({"prefix": "/admin", "middleware": "role:admin"}, fn() {
+    Route.group({
+        "prefix": "/admin", "middleware": "role:admin"
+    }, fn() {
         let panel = new AdminController();
         Route.get("/", req => panel.dashboard(req)).name("admin.dashboard");
     });
 
     // Permission-gated example used by the RBAC tests & future modules.
-    Route.get("/admin/catalog", req => json({"ok": true, "area": "catalog"})).middleware("permission:catalog.manage");
+    Route.get("/admin/catalog", _req => json({
+        "ok": true, "area": "catalog"
+    })).middleware("permission:catalog.manage");
 }

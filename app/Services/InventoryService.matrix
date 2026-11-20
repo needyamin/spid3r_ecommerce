@@ -9,13 +9,15 @@ import "app/Repositories/InventoryRepository";
 public class InventoryService {
     public let inventory;
 
-    fn new() {
+    fn new () {
         self.inventory = new InventoryRepository();
     }
 
     public fn restock(self, product_id, qty: int) {
         if qty <= 0 {
-            throw validation_failed({"quantity": "Restock quantity must be positive."});
+            throw validation_failed({
+                "quantity": "Restock quantity must be positive."
+            });
         }
         // Every product got an inventory row at creation.
         let ok = self.inventory.restock(product_id, null, qty);
@@ -27,11 +29,20 @@ public class InventoryService {
     }
 
     // Signed adjustment (positive restock, negative correction).
-    public fn adjust(self, product_id, delta: int, reason: string) {
+    public fn adjust(self, product_id, delta: int, _reason: string) {
         if delta < 0 {
-            let ok = self.inventory.reserve(product_id, null, 0 - delta, "adjustment", "admin", string(product_id));
+            let ok = self.inventory.reserve(
+                product_id,
+                null,
+                0 - delta,
+                "adjustment",
+                "admin",
+                string(product_id)
+            );
             if not ok {
-                throw validation_failed({"delta": "Not enough stock for this adjustment."});
+                throw validation_failed({
+                    "delta": "Not enough stock for this adjustment."
+                });
             }
             CatalogCache.bump_catalog_version();
         } else {
@@ -44,7 +55,9 @@ public class InventoryService {
     // low-stock threshold in one call.
     public fn set_stock(self, product_id, qty: int, threshold: int) {
         if qty < 0 {
-            throw validation_failed({"quantity": "Quantity cannot be negative."});
+            throw validation_failed({
+                "quantity": "Quantity cannot be negative."
+            });
         }
         let ok = self.inventory.set_quantity(product_id, null, qty, "correction");
         if not ok {
@@ -66,10 +79,11 @@ public class InventoryService {
     }
 
     public fn status(self, product_id) {
+        let _ = self;
         let inv = DB.table("inventory")
-            .where("product_id", "=", product_id)
-            .whereNull("variant_id")
-            .first();
+        .where("product_id", "=", product_id)
+        .whereNull("variant_id")
+        .first();
         if inv == null {
             throw not_found("Inventory row not found for this product.");
         }

@@ -21,24 +21,40 @@ fn call(app, method: string, path: string, data, cookie: string) {
             payload[k] = data[k];
         }
     }
-    return app.handle_request(map(
-        "method", method, "path", path,
-        "headers", headers, "data", payload
-    ));
+    return app.handle_request(
+        map(
+            "method",
+            method,
+            "path",
+            path,
+            "headers",
+            headers,
+            "data",
+            payload
+        )
+    );
 }
 
 fn raw_post(app, path: string, body: string, headers) {
-    return app.handle_request(map(
-        "method", "POST", "path", path,
-        "headers", headers, "body", body
-    ));
+    return app.handle_request(
+        map(
+            "method",
+            "POST",
+            "path",
+            path,
+            "headers",
+            headers,
+            "body",
+            body
+        )
+    );
 }
 
 fn body(res) {
     return json_parse(string(res["body"]));
 }
 
-fn admin(app, tag: string) {
+fn admin(_app, tag: string) {
     let svc = new AuthService();
     let email = "pay-admin-" + tag + "@example.test";
     let user = svc.register("Pay Admin", email, "pay-admin-pass");
@@ -47,52 +63,109 @@ fn admin(app, tag: string) {
     let token = svc.login(email, "pay-admin-pass");
     let rows = DB.select("SELECT payload FROM sessions WHERE token = ?", [token]);
     return map(
-        "cookie", "spid3r_session=" + token,
-        "csrf", string(rows[0]["payload"]),
-        "email", email
+        "cookie",
+        "spid3r_session=" + token,
+        "csrf",
+        string(rows[0]["payload"]),
+        "email",
+        email
     );
 }
 
 fn make_order(tag: string, suffix: string, user_id) {
-    let cat = DB.table("categories").insert(map(
-        "name", "Payment Category " + tag + suffix, "slug", "pay-cat-" + tag + suffix
-    ));
-    let product = DB.table("products").insert(map(
-        "category_id", cat, "name", "Payment Widget " + tag + suffix,
-        "slug", "pay-widget-" + tag + suffix, "sku", "PAY-" + tag + suffix,
-        "price_minor", 25000, "status", "published", "currency", "BDT"
-    ));
-    DB.table("inventory").insert(map(
-        "product_id", product, "variant_id", null,
-        "quantity", 10, "reserved", 0, "low_stock_threshold", 2
-    ));
+    let cat = DB.table("categories").insert(
+        map(
+            "name",
+            "Payment Category " + tag + suffix,
+            "slug",
+            "pay-cat-" + tag + suffix
+        )
+    );
+    let product = DB.table("products").insert(
+        map(
+            "category_id",
+            cat,
+            "name",
+            "Payment Widget " + tag + suffix,
+            "slug",
+            "pay-widget-" + tag + suffix,
+            "sku",
+            "PAY-" + tag + suffix,
+            "price_minor",
+            25000,
+            "status",
+            "published",
+            "currency",
+            "BDT"
+        )
+    );
+    DB.table("inventory").insert(
+        map(
+            "product_id",
+            product,
+            "variant_id",
+            null,
+            "quantity",
+            10,
+            "reserved",
+            0,
+            "low_stock_threshold",
+            2
+        )
+    );
     let number = "SP-PAY-" + tag + suffix;
-    let order = DB.table("orders").insert(map(
-        "order_number", number,
-        "user_id", user_id,
-        "status", "awaiting_payment",
-        "subtotal_minor", 25000,
-        "discount_minor", 0,
-        "shipping_minor", 0,
-        "tax_minor", 0,
-        "total_minor", 25000,
-        "currency", "BDT",
-        "shipping_address_json", "{}",
-        "billing_address_json", "{}",
-        "placed_at", string(unix_time())
-    ));
-    DB.table("order_items").insert(map(
-        "order_id", order,
-        "product_id", product,
-        "variant_id", null,
-        "name_snapshot", "Payment Widget " + tag + suffix,
-        "sku_snapshot", "PAY-" + tag + suffix,
-        "unit_price_minor", 25000,
-        "quantity", 1,
-        "discount_minor", 0,
-        "tax_minor", 0,
-        "line_total_minor", 25000
-    ));
+    let order = DB.table("orders").insert(
+        map(
+            "order_number",
+            number,
+            "user_id",
+            user_id,
+            "status",
+            "awaiting_payment",
+            "subtotal_minor",
+            25000,
+            "discount_minor",
+            0,
+            "shipping_minor",
+            0,
+            "tax_minor",
+            0,
+            "total_minor",
+            25000,
+            "currency",
+            "BDT",
+            "shipping_address_json",
+            "{}",
+            "billing_address_json",
+            "{}",
+            "placed_at",
+            string(unix_time())
+        )
+    );
+    DB.table("order_items").insert(
+        map(
+            "order_id",
+            order,
+            "product_id",
+            product,
+            "variant_id",
+            null,
+            "name_snapshot",
+            "Payment Widget " + tag + suffix,
+            "sku_snapshot",
+            "PAY-" + tag + suffix,
+            "unit_price_minor",
+            25000,
+            "quantity",
+            1,
+            "discount_minor",
+            0,
+            "tax_minor",
+            0,
+            "line_total_minor",
+            25000
+        )
+    );
     return map("order", order, "number", number, "product", product, "cat", cat);
 }
 
@@ -102,9 +175,20 @@ fn webhook_secret() -> string {
 }
 
 fn initiate_cod(app, number: string) {
-    return call(app, "POST", "/payment/initiate", map(
-        "order_number", number, "provider", "cod", "format", "json"
-    ), "");
+    return call(
+        app,
+        "POST",
+        "/payment/initiate",
+        map(
+            "order_number",
+            number,
+            "provider",
+            "cod",
+            "format",
+            "json"
+        ),
+        ""
+    );
 }
 
 fn test_cod_initiation(app, ids) {
@@ -121,12 +205,18 @@ fn test_cod_initiation(app, ids) {
 
     let again = initiate_cod(app, ids["number"]);
     assert(body(again)["data"]["payment_id"] == pid, "repeat initiation is idempotent");
-    assert(DB.table("payments").where("order_id", "=", ids["order"]).count() == 1, "no duplicate charge row");
+    assert(
+        DB.table("payments").where("order_id", "=", ids["order"]).count() == 1,
+        "no duplicate charge row"
+    );
 
     // A browser return is never proof of payment.
     let back = call(app, "GET", "/payment/" + ids["number"] + "/return", null, "");
     assert(back["status"] == 200, "return page renders");
-    assert(DB.table("orders").where("id", "=", ids["order"]).first()["status"] == "awaiting_payment", "return does NOT mark paid");
+    assert(
+        DB.table("orders").where("id", "=", ids["order"]).first()["status"] == "awaiting_payment",
+        "return does NOT mark paid"
+    );
     println("  [PASS] test_cod_initiation");
     return pid;
 }
@@ -139,79 +229,179 @@ fn test_admin_verification(app, ids, pid, adm) {
     let ok = call(app, "POST", path, map("_csrf", adm["csrf"]), adm["cookie"]);
     assert(ok["status"] == 200, "admin verification succeeds");
     assert(body(ok)["data"]["verified"] == true, "verification reported");
-    assert(DB.table("payments").where("id", "=", pid).first()["status"] == "paid", "payment paid");
-    assert(DB.table("orders").where("id", "=", ids["order"]).first()["status"] == "paid", "order moved to paid");
+    assert(
+        DB.table("payments").where("id", "=", pid).first()["status"] == "paid",
+        "payment paid"
+    );
+    assert(
+        DB.table("orders").where("id", "=", ids["order"]).first()["status"] == "paid",
+        "order moved to paid"
+    );
 
     let repeat = call(app, "POST", path, map("_csrf", adm["csrf"]), adm["cookie"]);
     assert(body(repeat)["data"]["duplicate"] == true, "duplicate verification is a no-op");
-    assert(DB.table("payments").where("order_id", "=", ids["order"]).count() == 1, "still one payment");
+    assert(
+        DB.table("payments").where("order_id", "=", ids["order"]).count() == 1,
+        "still one payment"
+    );
     println("  [PASS] test_admin_verification");
 }
 
-fn test_webhooks(app, ids2, adm) {
+fn test_webhooks(app, ids2, _adm) {
     let pid = body(initiate_cod(app, ids2["number"]))["data"]["payment_id"];
     let secret = webhook_secret();
     let payload = "{\"payment_id\":" + string(pid) + ",\"status\":\"paid\",\"amount_minor\":25000,\"transaction_id\":\"COD-GW-1\"}";
     let sig = hmac_sha256(secret, payload);
 
-    let bad = raw_post(app, "/webhooks/payments/cod", payload, map(
-        "content-type", "application/json", "x-signature", "deadbeef"
-    ));
+    let bad = raw_post(
+        app,
+        "/webhooks/payments/cod",
+        payload,
+        map(
+            "content-type",
+            "application/json",
+            "x-signature",
+            "deadbeef"
+        )
+    );
     assert(bad["status"] == 401, "invalid webhook signature rejected");
 
-    let no_sig = raw_post(app, "/webhooks/payments/cod", payload, map("content-type", "application/json"));
+    let no_sig = raw_post(
+        app,
+        "/webhooks/payments/cod",
+        payload,
+        map("content-type", "application/json")
+    );
     assert(no_sig["status"] == 401, "missing webhook signature rejected");
 
-    let ok = raw_post(app, "/webhooks/payments/cod", payload, map(
-        "content-type", "application/json", "x-signature", sig
-    ));
+    let ok = raw_post(
+        app,
+        "/webhooks/payments/cod",
+        payload,
+        map(
+            "content-type",
+            "application/json",
+            "x-signature",
+            sig
+        )
+    );
     assert(ok["status"] == 200, "signed webhook accepted");
     assert(body(ok)["data"]["verified"] == true, "webhook marks payment paid");
-    assert(DB.table("orders").where("id", "=", ids2["order"]).first()["status"] == "paid", "webhook settles the order");
+    assert(
+        DB.table("orders").where("id", "=", ids2["order"]).first()["status"] == "paid",
+        "webhook settles the order"
+    );
 
-    let duplicate = raw_post(app, "/webhooks/payments/cod", payload, map(
-        "content-type", "application/json", "x-signature", sig
-    ));
+    let duplicate = raw_post(
+        app,
+        "/webhooks/payments/cod",
+        payload,
+        map(
+            "content-type",
+            "application/json",
+            "x-signature",
+            sig
+        )
+    );
     assert(body(duplicate)["data"]["duplicate"] == true, "duplicate callback is a no-op");
 
-    let mismatch = raw_post(app, "/webhooks/payments/bkash", payload, map(
-        "content-type", "application/json", "x-signature", sig
-    ));
-    assert(mismatch["status"] == 400 or mismatch["status"] == 422, "provider/payment mismatch rejected");
+    let mismatch = raw_post(
+        app,
+        "/webhooks/payments/bkash",
+        payload,
+        map(
+            "content-type",
+            "application/json",
+            "x-signature",
+            sig
+        )
+    );
+    assert(
+        mismatch["status"] == 400 or mismatch["status"] == 422,
+        "provider/payment mismatch rejected"
+    );
     println("  [PASS] test_webhooks");
     return pid;
 }
 
 fn test_refunds(app, ids, pid, adm) {
     let path = "/admin/api/payments/" + string(pid) + "/refund";
-    let ok = call(app, "POST", path, map(
-        "amount_minor", 25000, "reason", "Customer request", "_csrf", adm["csrf"]
-    ), adm["cookie"]);
-    assert(ok["status"] == 200 and body(ok)["data"]["refunded"] == true, "refund succeeds");
-    assert(DB.table("refunds").where("payment_id", "=", pid).count() == 1, "refund recorded");
-    assert(DB.table("payments").where("id", "=", pid).first()["status"] == "refunded", "payment refunded");
-    assert(DB.table("orders").where("id", "=", ids["order"]).first()["status"] == "refunded", "order refunded");
+    let ok = call(
+        app,
+        "POST",
+        path,
+        map(
+            "amount_minor",
+            25000,
+            "reason",
+            "Customer request",
+            "_csrf",
+            adm["csrf"]
+        ),
+        adm["cookie"]
+    );
+    assert(
+        ok["status"] == 200 and body(ok)["data"]["refunded"] == true,
+        "refund succeeds"
+    );
+    assert(
+        DB.table("refunds").where("payment_id", "=", pid).count() == 1,
+        "refund recorded"
+    );
+    assert(
+        DB.table("payments").where("id", "=", pid).first()["status"] == "refunded",
+        "payment refunded"
+    );
+    assert(
+        DB.table("orders").where("id", "=", ids["order"]).first()["status"] == "refunded",
+        "order refunded"
+    );
 
-    let repeat = call(app, "POST", path, map(
-        "amount_minor", 25000, "_csrf", adm["csrf"]
-    ), adm["cookie"]);
+    let repeat = call(
+        app,
+        "POST",
+        path,
+        map(
+            "amount_minor",
+            25000,
+            "_csrf",
+            adm["csrf"]
+        ),
+        adm["cookie"]
+    );
     assert(body(repeat)["data"]["duplicate"] == true, "duplicate refund is a no-op");
     println("  [PASS] test_refunds");
 }
 
 fn test_history_and_reconciliation(app, ids, adm) {
-    let report = body(call(app, "GET", "/admin/api/payments/reconciliation", null, adm["cookie"]))["data"];
+    let report = body(
+        call(app, "GET", "/admin/api/payments/reconciliation", null, adm["cookie"])
+    )["data"];
     assert(report.has("healthy"), "reconciliation report produced");
     assert(report["mismatches"].len() == 0, "no mismatches in a consistent ledger");
 
     // Inject a paid payment whose amount disagrees with its order.
-    let bad = DB.table("payments").insert(map(
-        "order_id", ids["order"], "provider", "cod",
-        "amount_minor", 99999, "currency", "BDT",
-        "status", "paid", "idempotency_key", "BAD-RECON-" + string(ids["order"]),
-        "payload_json", "{}"
-    ));
-    let after = body(call(app, "GET", "/admin/api/payments/reconciliation", null, adm["cookie"]))["data"];
+    let bad = DB.table("payments").insert(
+        map(
+            "order_id",
+            ids["order"],
+            "provider",
+            "cod",
+            "amount_minor",
+            99999,
+            "currency",
+            "BDT",
+            "status",
+            "paid",
+            "idempotency_key",
+            "BAD-RECON-" + string(ids["order"]),
+            "payload_json",
+            "{}"
+        )
+    );
+    let after = body(
+        call(app, "GET", "/admin/api/payments/reconciliation", null, adm["cookie"])
+    )["data"];
     assert(after["healthy"] == false, "mismatch detected");
     assert(after["mismatches"].len() >= 1, "mismatch reported");
     DB.table("payments").where("id", "=", bad).delete();
@@ -220,86 +410,194 @@ fn test_history_and_reconciliation(app, ids, adm) {
 
 fn test_simulator_and_sandbox_checkout(app, ids, ids4, ids5, ids6, adm) {
     // 1. GET simulator for bKash
-    let bkash_page = call(app, "GET", "/payment/" + ids["number"] + "/simulator?provider=bkash", null, "");
+    let bkash_page = call(
+        app,
+        "GET",
+        "/payment/" + ids["number"] + "/simulator?provider=bkash",
+        null,
+        ""
+    );
     assert(bkash_page["status"] == 200, "bKash simulator page renders");
     let bkash_body = string(bkash_page["body"]);
-    assert(bkash_body.contains("bKash Payment") or bkash_body.contains("01770618575"), "bKash theme renders with hints");
+    assert(
+        bkash_body.contains("bKash Payment") or bkash_body.contains("01770618575"),
+        "bKash theme renders with hints"
+    );
     assert(bkash_body.contains("123456"), "OTP hint present");
     assert(bkash_body.contains("12121"), "PIN hint present");
 
     // 2. GET simulator for Nagad
-    let nagad_page = call(app, "GET", "/payment/" + ids["number"] + "/simulator?provider=nagad", null, "");
+    let nagad_page = call(
+        app,
+        "GET",
+        "/payment/" + ids["number"] + "/simulator?provider=nagad",
+        null,
+        ""
+    );
     assert(nagad_page["status"] == 200, "Nagad simulator page renders");
     let nagad_body = string(nagad_page["body"]);
-    assert(nagad_body.contains("Nagad") and nagad_body.contains("01812345678"), "Nagad theme renders");
+    assert(
+        nagad_body.contains("Nagad") and nagad_body.contains("01812345678"),
+        "Nagad theme renders"
+    );
 
     // 3. GET simulator for SSLCommerz
-    let ssl_page = call(app, "GET", "/payment/" + ids["number"] + "/simulator?provider=sslcommerz", null, "");
+    let ssl_page = call(
+        app,
+        "GET",
+        "/payment/" + ids["number"] + "/simulator?provider=sslcommerz",
+        null,
+        ""
+    );
     assert(ssl_page["status"] == 200, "SSLCommerz simulator page renders");
     let ssl_body = string(ssl_page["body"]);
-    assert(ssl_body.contains("SSLCOMMERZ") and ssl_body.contains("4242"), "SSLCommerz tabs render");
-    assert(ssl_body.contains("Mobile Banking") and ssl_body.contains("Net Banking"), "SSLCommerz sub-channels present");
+    assert(
+        ssl_body.contains("SSLCOMMERZ") and ssl_body.contains("4242"),
+        "SSLCommerz tabs render"
+    );
+    assert(
+        ssl_body.contains("Mobile Banking") and ssl_body.contains("Net Banking"),
+        "SSLCommerz sub-channels present"
+    );
 
     // 4. GET simulator for Stripe
-    let stripe_page = call(app, "GET", "/payment/" + ids["number"] + "/simulator?provider=stripe", null, "");
+    let stripe_page = call(
+        app,
+        "GET",
+        "/payment/" + ids["number"] + "/simulator?provider=stripe",
+        null,
+        ""
+    );
     assert(stripe_page["status"] == 200, "Stripe simulator page renders");
     let stripe_body = string(stripe_page["body"]);
-    assert(stripe_body.contains("stripe") or stripe_body.contains("TEST MODE"), "Stripe theme renders");
+    assert(
+        stripe_body.contains("stripe") or stripe_body.contains("TEST MODE"),
+        "Stripe theme renders"
+    );
 
     // 5. Rogue GET route for simulate-success must NOT succeed (404/405)
-    let rogue_get = call(app, "GET", "/payment/" + ids["number"] + "/simulate-success", null, "");
-    assert(rogue_get["status"] == 404 or rogue_get["status"] == 405, "GET simulate-success route removed");
+    let rogue_get = call(
+        app,
+        "GET",
+        "/payment/" + ids["number"] + "/simulate-success",
+        null,
+        ""
+    );
+    assert(
+        rogue_get["status"] == 404 or rogue_get["status"] == 405,
+        "GET simulate-success route removed"
+    );
 
     // 6. POST simulate-success with missing test input fails validation (422)
-    let bad_post = call(app, "POST", "/payment/" + ids["number"] + "/simulate-success", map(
-        "provider", "bkash",
-        "account_number", "",
-        "otp", "",
-        "pin", ""
-    ), "");
+    let bad_post = call(
+        app,
+        "POST",
+        "/payment/" + ids["number"] + "/simulate-success",
+        map(
+            "provider",
+            "bkash",
+            "account_number",
+            "",
+            "otp",
+            "",
+            "pin",
+            ""
+        ),
+        ""
+    );
     assert(bad_post["status"] == 422, "Missing test input rejected by validation");
 
-    let bad_stripe = call(app, "POST", "/payment/" + ids["number"] + "/simulate-success", map(
-        "provider", "stripe",
-        "card_number", "",
-        "cvc", ""
-    ), "");
+    let bad_stripe = call(
+        app,
+        "POST",
+        "/payment/" + ids["number"] + "/simulate-success",
+        map(
+            "provider",
+            "stripe",
+            "card_number",
+            "",
+            "cvc",
+            ""
+        ),
+        ""
+    );
     assert(bad_stripe["status"] == 422, "Missing stripe card input rejected by validation");
 
     // 7. CSRF verification for authenticated sessions:
     // Missing CSRF token on authenticated session POST returns 419
-    let no_csrf_post = call(app, "POST", "/payment/" + ids["number"] + "/simulate-success", map(
-        "provider", "bkash",
-        "account_number", "01770618575",
-        "otp", "123456",
-        "pin", "12121",
-        "format", "json"
-    ), adm["cookie"]);
+    let no_csrf_post = call(
+        app,
+        "POST",
+        "/payment/" + ids["number"] + "/simulate-success",
+        map(
+            "provider",
+            "bkash",
+            "account_number",
+            "01770618575",
+            "otp",
+            "123456",
+            "pin",
+            "12121",
+            "format",
+            "json"
+        ),
+        adm["cookie"]
+    );
     assert(no_csrf_post["status"] == 419, "Authenticated POST missing CSRF is rejected with 419");
 
     // Forged CSRF token on authenticated session POST returns 419
-    let bad_csrf_post = call(app, "POST", "/payment/" + ids["number"] + "/simulate-success", map(
-        "provider", "bkash",
-        "account_number", "01770618575",
-        "otp", "123456",
-        "pin", "12121",
-        "_csrf", "evil_forged_token",
-        "format", "json"
-    ), adm["cookie"]);
-    assert(bad_csrf_post["status"] == 419, "Authenticated POST with forged CSRF is rejected with 419");
+    let bad_csrf_post = call(
+        app,
+        "POST",
+        "/payment/" + ids["number"] + "/simulate-success",
+        map(
+            "provider",
+            "bkash",
+            "account_number",
+            "01770618575",
+            "otp",
+            "123456",
+            "pin",
+            "12121",
+            "_csrf",
+            "evil_forged_token",
+            "format",
+            "json"
+        ),
+        adm["cookie"]
+    );
+    assert(
+        bad_csrf_post["status"] == 419,
+        "Authenticated POST with forged CSRF is rejected with 419"
+    );
 
     // 8. POST simulate-success with valid test inputs + valid CSRF succeeds and settles payment
-    let good_post = call(app, "POST", "/payment/" + ids["number"] + "/simulate-success", map(
-        "provider", "bkash",
-        "account_number", "01770618575",
-        "otp", "123456",
-        "pin", "12121",
-        "_csrf", adm["csrf"],
-        "format", "json"
-    ), adm["cookie"]);
+    let good_post = call(
+        app,
+        "POST",
+        "/payment/" + ids["number"] + "/simulate-success",
+        map(
+            "provider",
+            "bkash",
+            "account_number",
+            "01770618575",
+            "otp",
+            "123456",
+            "pin",
+            "12121",
+            "_csrf",
+            adm["csrf"],
+            "format",
+            "json"
+        ),
+        adm["cookie"]
+    );
     assert(good_post["status"] == 200, "POST simulate-success succeeds with CSRF");
     let good_data = body(good_post);
-    assert(good_data["ok"] == true and good_data["status"] == "paid", "Order marked paid in response");
+    assert(
+        good_data["ok"] == true and good_data["status"] == "paid",
+        "Order marked paid in response"
+    );
     let txn_id = string(good_data["transaction_id"]);
     assert(txn_id.starts_with("TRX-BKASH-"), "Realistic transaction ID generated: " + txn_id);
 
@@ -307,78 +605,160 @@ fn test_simulator_and_sandbox_checkout(app, ids, ids4, ids5, ids6, adm) {
     let updated_order = DB.table("orders").where("id", "=", ids["order"]).first();
     assert(string(updated_order["status"]) == "paid", "Order status in DB is paid");
     let pay_record = DB.table("payments").where("order_id", "=", ids["order"]).first();
-    assert(pay_record != null and string(pay_record["status"]) == "paid", "Payment recorded as paid");
-    assert(string(pay_record["gateway_transaction_id"]) == txn_id, "Payment gateway_transaction_id recorded");
+    assert(
+        pay_record != null and string(pay_record["status"]) == "paid",
+        "Payment recorded as paid"
+    );
+    assert(
+        string(pay_record["gateway_transaction_id"]) == txn_id,
+        "Payment gateway_transaction_id recorded"
+    );
 
     // 9. GET simulator on already paid order does NOT redirect away: renders 200 with Paid message
-    let paid_sim = call(app, "GET", "/payment/" + ids["number"] + "/simulator?provider=bkash", null, "");
+    let paid_sim = call(
+        app,
+        "GET",
+        "/payment/" + ids["number"] + "/simulator?provider=bkash",
+        null,
+        ""
+    );
     assert(paid_sim["status"] == 200, "Paid order simulator returns 200 without redirect");
     let paid_sim_body = string(paid_sim["body"]);
-    assert(paid_sim_body.contains("Order Already Paid") or paid_sim_body.contains("already been confirmed"), "Clean paid status rendered with confirmation link");
-    assert(paid_sim_body.contains("/checkout/confirmation/" + ids["number"]), "Link to confirmation receipt present");
+    assert(
+        paid_sim_body.contains("Order Already Paid") or paid_sim_body.contains("already been confirmed"),
+        "Clean paid status rendered with confirmation link"
+    );
+    assert(
+        paid_sim_body.contains("/checkout/confirmation/" + ids["number"]),
+        "Link to confirmation receipt present"
+    );
 
     // 10. Settle Nagad on ids4
-    let nagad_post = call(app, "POST", "/payment/" + ids4["number"] + "/simulate-success", map(
-        "provider", "nagad",
-        "account_number", "01812345678",
-        "otp", "123456",
-        "pin", "1234",
-        "format", "json"
-    ), "");
+    let nagad_post = call(
+        app,
+        "POST",
+        "/payment/" + ids4["number"] + "/simulate-success",
+        map(
+            "provider",
+            "nagad",
+            "account_number",
+            "01812345678",
+            "otp",
+            "123456",
+            "pin",
+            "1234",
+            "format",
+            "json"
+        ),
+        ""
+    );
     assert(nagad_post["status"] == 200, "POST simulate-success Nagad succeeds");
     let nagad_data = body(nagad_post);
     let nagad_txn = string(nagad_data["transaction_id"]);
     assert(nagad_txn.starts_with("NAGAD-TRX-"), "Nagad transaction ID starts with NAGAD-TRX-");
 
     // 11. Settle SSLCommerz MFS channel on ids5
-    let ssl_mfs_post = call(app, "POST", "/payment/" + ids5["number"] + "/simulate-success", map(
-        "provider", "sslcommerz",
-        "ssl_tab", "mfs",
-        "ssl_mfs_provider", "rocket",
-        "ssl_mfs_account", "01770618575",
-        "format", "json"
-    ), "");
+    let ssl_mfs_post = call(
+        app,
+        "POST",
+        "/payment/" + ids5["number"] + "/simulate-success",
+        map(
+            "provider",
+            "sslcommerz",
+            "ssl_tab",
+            "mfs",
+            "ssl_mfs_provider",
+            "rocket",
+            "ssl_mfs_account",
+            "01770618575",
+            "format",
+            "json"
+        ),
+        ""
+    );
     assert(ssl_mfs_post["status"] == 200, "POST simulate-success SSLCommerz MFS succeeds");
     let ssl_data = body(ssl_mfs_post);
     let ssl_txn = string(ssl_data["transaction_id"]);
     assert(ssl_txn.starts_with("SSL-"), "SSL transaction ID starts with SSL-");
     let ssl_pay = DB.table("payments").where("order_id", "=", ids5["order"]).first();
-    assert(string(ssl_pay["method"]).contains("ROCKET"), "SSLCommerz MFS method label recorded correctly: " + string(ssl_pay["method"]));
+    assert(
+        string(ssl_pay["method"]).contains("ROCKET"),
+        "SSLCommerz MFS method label recorded correctly: " + string(ssl_pay["method"])
+    );
 
     // 12. Settle Stripe Elements on ids6
-    let stripe_post = call(app, "POST", "/payment/" + ids6["number"] + "/simulate-success", map(
-        "provider", "stripe",
-        "card_number", "4242 4242 4242 4242",
-        "expiry", "12/28",
-        "cvc", "123",
-        "zip", "1212",
-        "format", "json"
-    ), "");
+    let stripe_post = call(
+        app,
+        "POST",
+        "/payment/" + ids6["number"] + "/simulate-success",
+        map(
+            "provider",
+            "stripe",
+            "card_number",
+            "4242 4242 4242 4242",
+            "expiry",
+            "12/28",
+            "cvc",
+            "123",
+            "zip",
+            "1212",
+            "format",
+            "json"
+        ),
+        ""
+    );
     assert(stripe_post["status"] == 200, "POST simulate-success Stripe succeeds");
     let stripe_data = body(stripe_post);
     let stripe_txn = string(stripe_data["transaction_id"]);
-    assert(stripe_txn.starts_with("ch_stripe_"), "Stripe transaction ID starts with ch_stripe-");
+    assert(
+        stripe_txn.starts_with("ch_stripe_"),
+        "Stripe transaction ID starts with ch_stripe-"
+    );
 
     println("  [PASS] test_simulator_and_sandbox_checkout");
 }
 
 fn test_real_sslcommerz_sandbox_initiation(app, ids) {
-    let res = call(app, "POST", "/payment/initiate", map(
-        "order_number", ids["number"],
-        "provider", "sslcommerz",
-        "format", "json"
-    ), "");
+    let res = call(
+        app,
+        "POST",
+        "/payment/initiate",
+        map(
+            "order_number",
+            ids["number"],
+            "provider",
+            "sslcommerz",
+            "format",
+            "json"
+        ),
+        ""
+    );
     assert(res["status"] == 201, "SSLCommerz payment initiated with HTTP 201");
     let res_body = body(res);
     let redirect_url = string(res_body["data"]["redirect_url"]);
-    assert(not redirect_url.contains("/simulator"), "SSLCommerz redirect does NOT point to mock simulator");
-    assert(redirect_url.starts_with("https://sandbox.sslcommerz.com/EasyCheckOut/"), "SSLCommerz redirect points directly to real vendor sandbox checkout portal: " + redirect_url);
+    assert(
+        not redirect_url.contains("/simulator"),
+        "SSLCommerz redirect does NOT point to mock simulator"
+    );
+    assert(
+        redirect_url.starts_with("https://sandbox.sslcommerz.com/EasyCheckOut/"),
+        "SSLCommerz redirect points directly to real vendor sandbox checkout portal: " + redirect_url
+    );
 
     // Verify return handler with invalid val_id does NOT mark order paid
-    let back = call(app, "GET", "/payment/" + ids["number"] + "/return?val_id=invalid_test_val_id", null, "");
+    let back = call(
+        app,
+        "GET",
+        "/payment/" + ids["number"] + "/return?val_id=invalid_test_val_id",
+        null,
+        ""
+    );
     assert(back["status"] == 200, "return page renders");
     let current_order = DB.table("orders").where("id", "=", ids["order"]).first();
-    assert(string(current_order["status"]) == "awaiting_payment", "Order is NOT marked paid when val_id validation fails");
+    assert(
+        string(current_order["status"]) == "awaiting_payment",
+        "Order is NOT marked paid when val_id validation fails"
+    );
     println("  [PASS] test_real_sslcommerz_sandbox_initiation");
 }
 
@@ -435,7 +815,7 @@ fn main() {
     try {
         let pid = test_cod_initiation(app, ids);
         test_admin_verification(app, ids, pid, adm);
-        let pid2 = test_webhooks(app, ids2, adm);
+        let _pid2 = test_webhooks(app, ids2, adm);
         test_refunds(app, ids, pid, adm);
         test_history_and_reconciliation(app, ids, adm);
         test_simulator_and_sandbox_checkout(app, ids3, ids4, ids5, ids6, adm);

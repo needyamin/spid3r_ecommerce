@@ -21,17 +21,25 @@ fn call(app, method: string, path: string, data, cookie: string) {
             payload[k] = data[k];
         }
     }
-    return app.handle_request(map(
-        "method", method, "path", path,
-        "headers", headers, "data", payload
-    ));
+    return app.handle_request(
+        map(
+            "method",
+            method,
+            "path",
+            path,
+            "headers",
+            headers,
+            "data",
+            payload
+        )
+    );
 }
 
 fn body(res) {
     return json_parse(string(res["body"]));
 }
 
-fn admin_session(app, tag: string) {
+fn admin_session(_app, tag: string) {
     let svc = new AuthService();
     let email = "panel-admin-" + tag + "@example.test";
     let user = svc.register("Panel Admin", email, "panel-admin-pass");
@@ -40,39 +48,100 @@ fn admin_session(app, tag: string) {
     let token = svc.login(email, "panel-admin-pass");
     let rows = DB.select("SELECT payload FROM sessions WHERE token = ?", [token]);
     return map(
-        "cookie", "spid3r_session=" + token,
-        "csrf", string(rows[0]["payload"]),
-        "email", email, "id", user["id"]
+        "cookie",
+        "spid3r_session=" + token,
+        "csrf",
+        string(rows[0]["payload"]),
+        "email",
+        email,
+        "id",
+        user["id"]
     );
 }
 
 fn setup(tag: string) {
-    let cat = DB.table("categories").insert(map(
-        "name", "Admin Category " + tag, "slug", "admin-cat-" + tag
-    ));
-    let product = DB.table("products").insert(map(
-        "category_id", cat, "name", "Admin Widget " + tag,
-        "slug", "admin-widget-" + tag, "sku", "ADM-" + tag,
-        "price_minor", 25000, "status", "published", "currency", "BDT"
-    ));
-    DB.table("inventory").insert(map(
-        "product_id", product, "variant_id", null,
-        "quantity", 20, "reserved", 0, "low_stock_threshold", 2
-    ));
-    let order_id = DB.table("orders").insert(map(
-        "order_number", "ADM-ORDER-" + tag,
-        "user_id", null, "status", "paid",
-        "subtotal_minor", 25000, "discount_minor", 0,
-        "shipping_minor", 0, "tax_minor", 0, "total_minor", 25000,
-        "currency", "BDT", "shipping_address_json", "{}",
-        "billing_address_json", "{}", "placed_at", string(unix_time())
-    ));
+    let cat = DB.table("categories").insert(
+        map(
+            "name",
+            "Admin Category " + tag,
+            "slug",
+            "admin-cat-" + tag
+        )
+    );
+    let product = DB.table("products").insert(
+        map(
+            "category_id",
+            cat,
+            "name",
+            "Admin Widget " + tag,
+            "slug",
+            "admin-widget-" + tag,
+            "sku",
+            "ADM-" + tag,
+            "price_minor",
+            25000,
+            "status",
+            "published",
+            "currency",
+            "BDT"
+        )
+    );
+    DB.table("inventory").insert(
+        map(
+            "product_id",
+            product,
+            "variant_id",
+            null,
+            "quantity",
+            20,
+            "reserved",
+            0,
+            "low_stock_threshold",
+            2
+        )
+    );
+    let order_id = DB.table("orders").insert(
+        map(
+            "order_number",
+            "ADM-ORDER-" + tag,
+            "user_id",
+            null,
+            "status",
+            "paid",
+            "subtotal_minor",
+            25000,
+            "discount_minor",
+            0,
+            "shipping_minor",
+            0,
+            "tax_minor",
+            0,
+            "total_minor",
+            25000,
+            "currency",
+            "BDT",
+            "shipping_address_json",
+            "{}",
+            "billing_address_json",
+            "{}",
+            "placed_at",
+            string(unix_time())
+        )
+    );
     let customer_email = "panel-customer-" + tag + "@example.test";
     let svc = new AuthService();
     let customer = svc.register("Panel Customer", customer_email, "panel-cust-pass");
     return map(
-        "cat", cat, "product", product, "order", order_id,
-        "customer_id", customer["id"], "customer_email", customer_email
+        "cat",
+        cat,
+        "product",
+        product,
+        "order",
+        order_id,
+        "customer_id",
+        customer["id"],
+        "customer_email",
+        customer_email
     );
 }
 
@@ -80,32 +149,76 @@ fn test_dashboard_pages(app, ids, adm) {
     let d = call(app, "GET", "/admin/dashboard", null, adm["cookie"]);
     assert(d["status"] == 200, "admin dashboard renders");
     assert(string(d["body"]).contains("Revenue"), "dashboard shows revenue");
-    assert(string(d["body"]).contains("ADM-ORDER-" + string(ids["tag"])), "dashboard lists recent order");
+    assert(
+        string(d["body"]).contains("ADM-ORDER-" + string(ids["tag"])),
+        "dashboard lists recent order"
+    );
 
     let pages = ["/admin/orders", "/admin/products", "/admin/categories", "/admin/brands",
-                 "/admin/inventory", "/admin/customers", "/admin/staff", "/admin/roles",
-                 "/admin/coupons", "/admin/settings", "/admin/shipping", "/admin/payments",
-                 "/admin/audit", "/admin/reports"];
+    "/admin/inventory", "/admin/customers", "/admin/staff", "/admin/roles",
+    "/admin/coupons", "/admin/settings", "/admin/shipping", "/admin/payments",
+    "/admin/audit", "/admin/reports"];
     let i = 0;
     while i < pages.len() {
         let res = call(app, "GET", pages[i], null, adm["cookie"]);
         assert(res["status"] == 200, "admin page renders: " + pages[i]);
         i += 1;
     }
-    let products_html = string(call(app, "GET", "/admin/products", null, adm["cookie"])["body"]);
-    assert(products_html.contains("/admin/products/" + string(ids["product"])), "product row navigates to product editor");
-    let filtered_page = string(call(app, "GET", "/admin/products?q=" + url_encode("Admin Widget " + string(ids["tag"])), null, adm["cookie"])["body"]);
-    assert(filtered_page.contains("Admin Widget " + string(ids["tag"])), "product list search matches name");
-    assert(not filtered_page.contains("QA curl diagnosis"), "product list search excludes unrelated products");
-    assert(filtered_page.contains("name=\"q\" value=\"Admin Widget " + string(ids["tag"]) + "\""), "product list preserves the search query");
+    let products_html = string(
+        call(app, "GET", "/admin/products", null, adm["cookie"])["body"]
+    );
+    assert(
+        products_html.contains("/admin/products/" + string(ids["product"])),
+        "product row navigates to product editor"
+    );
+    let filtered_page = string(
+        call(
+            app,
+            "GET",
+            "/admin/products?q=" + url_encode("Admin Widget " + string(ids["tag"])),
+            null,
+            adm["cookie"]
+        )["body"]
+    );
+    assert(
+        filtered_page.contains("Admin Widget " + string(ids["tag"])),
+        "product list search matches name"
+    );
+    assert(
+        not filtered_page.contains("QA curl diagnosis"),
+        "product list search excludes unrelated products"
+    );
+    assert(
+        filtered_page.contains("name=\"q\" value=\"Admin Widget " + string(ids["tag"]) + "\""),
+        "product list preserves the search query"
+    );
     let page_two = call(app, "GET", "/admin/products?page=2", null, adm["cookie"]);
     assert(page_two["status"] == 200, "product list page parameter is handled");
-    assert(products_html.contains("href=\"/admin/products\" aria-current=\"page\""), "products navigation is active");
-    let inventory_html = string(call(app, "GET", "/admin/inventory", null, adm["cookie"])["body"]);
-    assert(inventory_html.contains("On Hand") and inventory_html.contains("Available"), "inventory distinguishes on-hand from available stock");
-    assert(inventory_html.contains("/admin/api/products/" + string(ids["product"]) + "/inventory/restock-form"), "inventory supports quick restock edits");
-    assert(inventory_html.contains("href=\"/admin/products/" + string(ids["product"]) + "\""), "inventory links to product editor");
-    assert(call(app, "GET", "/admin/dashboard", null, "")["status"] == 401, "anonymous admin blocked");
+    assert(
+        products_html.contains("href=\"/admin/products\" aria-current=\"page\""),
+        "products navigation is active"
+    );
+    let inventory_html = string(
+        call(app, "GET", "/admin/inventory", null, adm["cookie"])["body"]
+    );
+    assert(
+        inventory_html.contains("On Hand") and inventory_html.contains("Available"),
+        "inventory distinguishes on-hand from available stock"
+    );
+    assert(
+        inventory_html.contains(
+            "/admin/api/products/" + string(ids["product"]) + "/inventory/restock-form"
+        ),
+        "inventory supports quick restock edits"
+    );
+    assert(
+        inventory_html.contains("href=\"/admin/products/" + string(ids["product"]) + "\""),
+        "inventory links to product editor"
+    );
+    assert(
+        call(app, "GET", "/admin/dashboard", null, "")["status"] == 401,
+        "anonymous admin blocked"
+    );
     println("  [PASS] test_dashboard_pages");
 }
 
@@ -115,15 +228,40 @@ fn test_customer_management(app, ids, adm) {
     assert(string(list["body"]).contains(ids["customer_email"]), "customer listed");
 
     let path = "/admin/api/customers/" + string(ids["customer_id"]) + "/status";
-    let ok = call(app, "POST", path, map(
-        "status", "suspended", "format", "json", "_csrf", adm["csrf"]
-    ), adm["cookie"]);
+    let ok = call(
+        app,
+        "POST",
+        path,
+        map(
+            "status",
+            "suspended",
+            "format",
+            "json",
+            "_csrf",
+            adm["csrf"]
+        ),
+        adm["cookie"]
+    );
     assert(ok["status"] == 200, "customer suspended via API");
-    assert(DB.table("users").where("id", "=", ids["customer_id"]).first()["status"] == "suspended", "status persisted");
+    assert(
+        DB.table("users").where("id", "=", ids["customer_id"]).first()["status"] == "suspended",
+        "status persisted"
+    );
 
-    let bad = call(app, "POST", path, map(
-        "status", "bogus", "format", "json", "_csrf", adm["csrf"]
-    ), adm["cookie"]);
+    let bad = call(
+        app,
+        "POST",
+        path,
+        map(
+            "status",
+            "bogus",
+            "format",
+            "json",
+            "_csrf",
+            adm["csrf"]
+        ),
+        adm["cookie"]
+    );
     assert(bad["status"] == 422, "invalid status rejected");
 
     let audit = call(app, "GET", "/admin/api/audit", null, adm["cookie"]);
@@ -132,65 +270,184 @@ fn test_customer_management(app, ids, adm) {
 }
 
 fn test_staff_roles(app, ids, adm) {
-    let assign = call(app, "POST", "/admin/api/staff/role", map(
-        "user_id", ids["customer_id"], "role", "staff",
-        "format", "json", "_csrf", adm["csrf"]
-    ), adm["cookie"]);
-    assert(assign["status"] == 200 and body(assign)["data"]["assigned"] == true, "staff role assigned");
+    let assign = call(
+        app,
+        "POST",
+        "/admin/api/staff/role",
+        map(
+            "user_id",
+            ids["customer_id"],
+            "role",
+            "staff",
+            "format",
+            "json",
+            "_csrf",
+            adm["csrf"]
+        ),
+        adm["cookie"]
+    );
+    assert(
+        assign["status"] == 200 and body(assign)["data"]["assigned"] == true,
+        "staff role assigned"
+    );
     let staff = call(app, "GET", "/admin/api/staff", null, adm["cookie"]);
-    assert(string(staff["body"]).contains(ids["customer_email"]), "staff list includes promoted user");
+    assert(
+        string(staff["body"]).contains(ids["customer_email"]),
+        "staff list includes promoted user"
+    );
 
     let roles = body(call(app, "GET", "/admin/api/roles", null, adm["cookie"]))["data"];
     assert(roles["roles"].len() >= 3, "roles listed");
     assert(roles["permissions"].len() >= 6, "permissions listed");
     let customer_role = DB.table("roles").where("slug", "=", "customer").first();
     let toggle = "/admin/api/roles/" + string(customer_role["id"]) + "/permissions";
-    let on = call(app, "POST", toggle, map(
-        "permission", "reports.view", "enabled", 1,
-        "format", "json", "_csrf", adm["csrf"]
-    ), adm["cookie"]);
+    let on = call(
+        app,
+        "POST",
+        toggle,
+        map(
+            "permission",
+            "reports.view",
+            "enabled",
+            1,
+            "format",
+            "json",
+            "_csrf",
+            adm["csrf"]
+        ),
+        adm["cookie"]
+    );
     assert(on["status"] == 200, "permission toggled on");
-    let off = call(app, "POST", toggle, map(
-        "permission", "reports.view", "enabled", 0,
-        "format", "json", "_csrf", adm["csrf"]
-    ), adm["cookie"]);
+    let off = call(
+        app,
+        "POST",
+        toggle,
+        map(
+            "permission",
+            "reports.view",
+            "enabled",
+            0,
+            "format",
+            "json",
+            "_csrf",
+            adm["csrf"]
+        ),
+        adm["cookie"]
+    );
     assert(off["status"] == 200, "permission toggled off");
     println("  [PASS] test_staff_roles");
 }
 
 fn test_coupons_and_settings(app, adm, tag: string) {
     let code = "PANEL-" + tag;
-    let create = call(app, "POST", "/admin/api/coupons", map(
-        "code", code, "type", "fixed", "value_minor", 1000,
-        "min_order_minor", 0, "max_uses", 5,
-        "format", "json", "_csrf", adm["csrf"]
-    ), adm["cookie"]);
+    let create = call(
+        app,
+        "POST",
+        "/admin/api/coupons",
+        map(
+            "code",
+            code,
+            "type",
+            "fixed",
+            "value_minor",
+            1000,
+            "min_order_minor",
+            0,
+            "max_uses",
+            5,
+            "format",
+            "json",
+            "_csrf",
+            adm["csrf"]
+        ),
+        adm["cookie"]
+    );
     assert(create["status"] == 201, "coupon created");
     let coupon_id = body(create)["data"]["id"];
-    let dup = call(app, "POST", "/admin/api/coupons", map(
-        "code", code, "type", "fixed", "value_minor", 1000,
-        "min_order_minor", 0, "max_uses", 5,
-        "format", "json", "_csrf", adm["csrf"]
-    ), adm["cookie"]);
+    let dup = call(
+        app,
+        "POST",
+        "/admin/api/coupons",
+        map(
+            "code",
+            code,
+            "type",
+            "fixed",
+            "value_minor",
+            1000,
+            "min_order_minor",
+            0,
+            "max_uses",
+            5,
+            "format",
+            "json",
+            "_csrf",
+            adm["csrf"]
+        ),
+        adm["cookie"]
+    );
     assert(dup["status"] == 422, "duplicate coupon code rejected");
 
-    let update = call(app, "PUT", "/admin/api/coupons/" + string(coupon_id), map(
-        "code", code, "type", "percent", "value_minor", 500,
-        "min_order_minor", 0, "max_uses", 10,
-        "format", "json", "_csrf", adm["csrf"]
-    ), adm["cookie"]);
+    let update = call(
+        app,
+        "PUT",
+        "/admin/api/coupons/" + string(coupon_id),
+        map(
+            "code",
+            code,
+            "type",
+            "percent",
+            "value_minor",
+            500,
+            "min_order_minor",
+            0,
+            "max_uses",
+            10,
+            "format",
+            "json",
+            "_csrf",
+            adm["csrf"]
+        ),
+        adm["cookie"]
+    );
     assert(update["status"] == 200, "coupon updated");
 
-    let del = call(app, "DELETE", "/admin/api/coupons/" + string(coupon_id), map(
-        "format", "json", "_csrf", adm["csrf"]
-    ), adm["cookie"]);
+    let del = call(
+        app,
+        "DELETE",
+        "/admin/api/coupons/" + string(coupon_id),
+        map(
+            "format",
+            "json",
+            "_csrf",
+            adm["csrf"]
+        ),
+        adm["cookie"]
+    );
     assert(del["status"] == 200, "coupon deleted");
 
-    let setting = call(app, "PUT", "/admin/api/settings", map(
-        "setting_key", "panel.test." + tag, "value", "42", "group", "general",
-        "format", "json", "_csrf", adm["csrf"]
-    ), adm["cookie"]);
-    assert(setting["status"] == 200 and body(setting)["data"]["updated"] == true, "setting updated");
+    let setting = call(
+        app,
+        "PUT",
+        "/admin/api/settings",
+        map(
+            "setting_key",
+            "panel.test." + tag,
+            "value",
+            "42",
+            "group",
+            "general",
+            "format",
+            "json",
+            "_csrf",
+            adm["csrf"]
+        ),
+        adm["cookie"]
+    );
+    assert(
+        setting["status"] == 200 and body(setting)["data"]["updated"] == true,
+        "setting updated"
+    );
     let settings = call(app, "GET", "/admin/api/settings?group=general", null, adm["cookie"]);
     assert(string(settings["body"]).contains("panel.test." + tag), "setting listed");
     println("  [PASS] test_coupons_and_settings");
@@ -199,9 +456,18 @@ fn test_coupons_and_settings(app, adm, tag: string) {
 fn test_reports_export(app, ids, adm) {
     let csv = call(app, "GET", "/admin/reports/export?format=csv", null, adm["cookie"]);
     assert(csv["status"] == 200, "CSV export renders");
-    assert(string(csv["headers"]["content-type"]).contains("text/csv"), "CSV content-type");
-    assert(string(csv["body"]).contains("order_number,status,total_minor,placed_at"), "CSV header");
-    assert(string(csv["body"]).contains("ADM-ORDER-" + string(ids["tag"])), "CSV contains settled order");
+    assert(
+        string(csv["headers"]["content-type"]).contains("text/csv"),
+        "CSV content-type"
+    );
+    assert(
+        string(csv["body"]).contains("order_number,status,total_minor,placed_at"),
+        "CSV header"
+    );
+    assert(
+        string(csv["body"]).contains("ADM-ORDER-" + string(ids["tag"])),
+        "CSV contains settled order"
+    );
 
     let json_res = call(app, "GET", "/admin/reports/export?format=json", null, adm["cookie"]);
     assert(json_res["status"] == 200, "JSON export renders");
@@ -214,37 +480,72 @@ fn test_catalog_write_forms(app, ids, adm, tag: string) {
     let products_page = call(app, "GET", "/admin/products", null, adm["cookie"]);
     let html = string(products_page["body"]);
     assert(html.contains("Add a product"), "products page has an add form");
-    assert(html.contains("/admin/api/products/create"), "products page posts to the create endpoint");
-    assert(html.contains("/admin/api/products/" + string(ids["product"]) + "/update"), "products page has a per-row update form");
+    assert(
+        html.contains("/admin/api/products/create"),
+        "products page posts to the create endpoint"
+    );
+    assert(
+        html.contains("/admin/api/products/" + string(ids["product"]) + "/update"),
+        "products page has a per-row update form"
+    );
     // A published product shows an unpublish control; a draft shows publish.
     // Both URLs contain the "publish-form" substring, so this confirms the
     // page exposes publish/unpublish controls either way.
     assert(html.contains("publish-form"), "products page has publish controls");
 
-    let cats_page = string(call(app, "GET", "/admin/categories", null, adm["cookie"])["body"]);
+    let cats_page = string(
+        call(app, "GET", "/admin/categories", null, adm["cookie"])["body"]
+    );
     assert(cats_page.contains("Add a category"), "categories page has an add form");
-    let brands_page = string(call(app, "GET", "/admin/brands", null, adm["cookie"])["body"]);
+    let brands_page = string(
+        call(app, "GET", "/admin/brands", null, adm["cookie"])["body"]
+    );
     assert(brands_page.contains("Add a brand"), "brands page has an add form");
-    let inv_page = string(call(app, "GET", "/admin/inventory", null, adm["cookie"])["body"]);
+    let inv_page = string(
+        call(app, "GET", "/admin/inventory", null, adm["cookie"])["body"]
+    );
     assert(inv_page.contains("inventory/restock-form"), "inventory page has a restock form");
-    let cust_page = string(call(app, "GET", "/admin/customers", null, adm["cookie"])["body"]);
+    let cust_page = string(
+        call(app, "GET", "/admin/customers", null, adm["cookie"])["body"]
+    );
     assert(cust_page.contains("/admin/api/customers/"), "customers page has a status form");
-    let roles_page = string(call(app, "GET", "/admin/roles", null, adm["cookie"])["body"]);
+    let roles_page = string(
+        call(app, "GET", "/admin/roles", null, adm["cookie"])["body"]
+    );
     assert(roles_page.contains("/admin/api/roles/"), "roles page has a permission form");
-    let orders_page = string(call(app, "GET", "/admin/orders", null, adm["cookie"])["body"]);
-    assert(orders_page.contains("/admin/api/orders/" + string(ids["order"]) + "/status"), "orders page has a status form");
+    let orders_page = string(
+        call(app, "GET", "/admin/orders", null, adm["cookie"])["body"]
+    );
+    assert(
+        orders_page.contains("/admin/api/orders/" + string(ids["order"]) + "/status"),
+        "orders page has a status form"
+    );
 
     // Create a product through the browser-form endpoint (price in BDT).
-    let created = call(app, "POST", "/admin/api/products/create", map(
-        "name", "Panel Created " + tag,
-        "sku", "PC-" + tag,
-        "category_id", ids["cat"],
-        "price", "199.50",
-        "stock", 7,
-        "status", "published",
-        "_csrf", adm["csrf"],
-        "format", "json"
-    ), adm["cookie"]);
+    let created = call(
+        app,
+        "POST",
+        "/admin/api/products/create",
+        map(
+            "name",
+            "Panel Created " + tag,
+            "sku",
+            "PC-" + tag,
+            "category_id",
+            ids["cat"],
+            "price",
+            "199.50",
+            "stock",
+            7,
+            "status",
+            "published",
+            "_csrf",
+            adm["csrf"],
+            "format",
+            "json"
+        ),
+        adm["cookie"]
+    );
     assert(created["status"] == 201, "product created through the form endpoint");
     let new_id = int(body(created)["data"]["id"]);
     let row = DB.table("products").where("id", "=", new_id).first();
@@ -253,74 +554,190 @@ fn test_catalog_write_forms(app, ids, adm, tag: string) {
     assert(int(stock["quantity"]) == 7, "opening stock stored");
 
     // Edit it: new price + status.
-    let clear_brand_id = DB.table("brands").insert(map(
-        "name", "Form clear brand " + tag,
-        "slug", "form-clear-brand-" + tag
-    ));
-    let updated = call(app, "POST", "/admin/api/products/" + string(new_id) + "/update", map(
-        "name", "Panel Renamed " + tag,
-        "brand_id", string(clear_brand_id),
-        "price", "249.00",
-        "compare_at", "299.00",
-        "cost", "49.00",
-        "meta_title", "Temporary title",
-        "meta_description", "Temporary description",
-        "short_description", "Temporary short",
-        "description", "Temporary long",
-        "status", "draft",
-        "_csrf", adm["csrf"],
-        "format", "json"
-    ), adm["cookie"]);
+    let clear_brand_id = DB.table("brands").insert(
+        map(
+            "name",
+            "Form clear brand " + tag,
+            "slug",
+            "form-clear-brand-" + tag
+        )
+    );
+    let updated = call(
+        app,
+        "POST",
+        "/admin/api/products/" + string(new_id) + "/update",
+        map(
+            "name",
+            "Panel Renamed " + tag,
+            "brand_id",
+            string(clear_brand_id),
+            "price",
+            "249.00",
+            "compare_at",
+            "299.00",
+            "cost",
+            "49.00",
+            "meta_title",
+            "Temporary title",
+            "meta_description",
+            "Temporary description",
+            "short_description",
+            "Temporary short",
+            "description",
+            "Temporary long",
+            "status",
+            "draft",
+            "_csrf",
+            adm["csrf"],
+            "format",
+            "json"
+        ),
+        adm["cookie"]
+    );
     assert(updated["status"] == 200, "product updated through the form endpoint");
     let after = DB.table("products").where("id", "=", new_id).first();
     assert(int(after["price_minor"]) == 24900, "updated price stored in minor units");
     assert(string(after["status"]) == "draft", "updated status stored");
     assert(string(after["name"]) == "Panel Renamed " + tag, "updated name stored");
-    assert(int(after["brand_id"]) == int(clear_brand_id), "brand selection persists through the edit form");
-    let cleared = call(app, "POST", "/admin/api/products/" + string(new_id) + "/update", map(
-        "compare_at", "", "cost", "", "meta_title", "", "meta_description", "",
-        "short_description", "", "description", "", "brand_id", "",
-        "_csrf", adm["csrf"], "format", "json"
-    ), adm["cookie"]);
+    assert(
+        int(after["brand_id"]) == int(clear_brand_id),
+        "brand selection persists through the edit form"
+    );
+    let cleared = call(
+        app,
+        "POST",
+        "/admin/api/products/" + string(new_id) + "/update",
+        map(
+            "compare_at",
+            "",
+            "cost",
+            "",
+            "meta_title",
+            "",
+            "meta_description",
+            "",
+            "short_description",
+            "",
+            "description",
+            "",
+            "brand_id",
+            "",
+            "_csrf",
+            adm["csrf"],
+            "format",
+            "json"
+        ),
+        adm["cookie"]
+    );
     assert(cleared["status"] == 200, "optional product fields can be cleared");
     let cleared_row = DB.table("products").where("id", "=", new_id).first();
     assert(cleared_row["compare_at_minor"] == null, "empty compare-at removes sale reference");
     assert(int(cleared_row["cost_minor"]) == 0, "blank cost is normalized to zero");
-    assert(string(cleared_row["meta_title"]) == "" and string(cleared_row["meta_description"]) == "", "SEO fields can be cleared");
-    assert(string(cleared_row["short_description"]) == "" and string(cleared_row["description"]) == "", "descriptions can be cleared");
+    assert(
+        string(cleared_row["meta_title"]) == "" and string(cleared_row["meta_description"]) == "",
+        "SEO fields can be cleared"
+    );
+    assert(
+        string(cleared_row["short_description"]) == "" and string(cleared_row["description"]) == "",
+        "descriptions can be cleared"
+    );
     assert(cleared_row["brand_id"] == null, "empty brand selection clears the brand");
-    let draft_detail = string(call(app, "GET", "/admin/products/" + string(new_id), null, adm["cookie"])["body"]);
+    let draft_detail = string(
+        call(app, "GET", "/admin/products/" + string(new_id), null, adm["cookie"])["body"]
+    );
     assert(draft_detail.contains("/publish-form"), "draft detail page exposes publish action");
-    assert(not draft_detail.contains("/unpublish-form"), "draft detail page hides unpublish action");
-    call(app, "POST", "/admin/api/products/" + string(new_id) + "/publish-form", map("_csrf", adm["csrf"], "format", "json"), adm["cookie"]);
-    let published_detail = string(call(app, "GET", "/admin/products/" + string(new_id), null, adm["cookie"])["body"]);
-    assert(published_detail.contains("/unpublish-form"), "published detail page exposes unpublish action");
-    assert(not published_detail.contains("/publish-form"), "published detail page hides publish action");
+    assert(
+        not draft_detail.contains("/unpublish-form"),
+        "draft detail page hides unpublish action"
+    );
+    call(
+        app,
+        "POST",
+        "/admin/api/products/" + string(new_id) + "/publish-form",
+        map("_csrf", adm["csrf"], "format", "json"),
+        adm["cookie"]
+    );
+    let published_detail = string(
+        call(app, "GET", "/admin/products/" + string(new_id), null, adm["cookie"])["body"]
+    );
+    assert(
+        published_detail.contains("/unpublish-form"),
+        "published detail page exposes unpublish action"
+    );
+    assert(
+        not published_detail.contains("/publish-form"),
+        "published detail page hides publish action"
+    );
 
     // Restock through the form endpoint.
-    let restock = call(app, "POST", "/admin/api/products/" + string(new_id) + "/inventory/restock-form", map(
-        "quantity", 5, "_csrf", adm["csrf"], "format", "json"
-    ), adm["cookie"]);
+    let restock = call(
+        app,
+        "POST",
+        "/admin/api/products/" + string(new_id) + "/inventory/restock-form",
+        map(
+            "quantity",
+            5,
+            "_csrf",
+            adm["csrf"],
+            "format",
+            "json"
+        ),
+        adm["cookie"]
+    );
     assert(restock["status"] == 200, "restock through the form endpoint");
     let stock2 = DB.table("inventory").where("product_id", "=", new_id).first();
     assert(int(stock2["quantity"]) == 12, "restock added to the available quantity");
 
     // Category + brand creation through their form endpoints.
-    let cat = call(app, "POST", "/admin/api/categories/create", map(
-        "name", "Panel Category " + tag, "_csrf", adm["csrf"], "format", "json"
-    ), adm["cookie"]);
+    let cat = call(
+        app,
+        "POST",
+        "/admin/api/categories/create",
+        map(
+            "name",
+            "Panel Category " + tag,
+            "_csrf",
+            adm["csrf"],
+            "format",
+            "json"
+        ),
+        adm["cookie"]
+    );
     assert(cat["status"] == 201, "category created through the form endpoint");
-    let brand = call(app, "POST", "/admin/api/brands/create", map(
-        "name", "Panel Brand " + tag, "_csrf", adm["csrf"], "format", "json"
-    ), adm["cookie"]);
+    let brand = call(
+        app,
+        "POST",
+        "/admin/api/brands/create",
+        map(
+            "name",
+            "Panel Brand " + tag,
+            "_csrf",
+            adm["csrf"],
+            "format",
+            "json"
+        ),
+        adm["cookie"]
+    );
     assert(brand["status"] == 201, "brand created through the form endpoint");
 
     // Without format=json a browser gets a redirect back to the page.
-    let plain = call(app, "POST", "/admin/api/categories/create", map(
-        "name", "Panel Redirect " + tag, "_csrf", adm["csrf"]
-    ), adm["cookie"]);
+    let plain = call(
+        app,
+        "POST",
+        "/admin/api/categories/create",
+        map(
+            "name",
+            "Panel Redirect " + tag,
+            "_csrf",
+            adm["csrf"]
+        ),
+        adm["cookie"]
+    );
     assert(plain["status"] == 302, "browser form post redirects back to the admin page");
-    assert(string(plain["headers"]["location"]).contains("/admin/categories"), "redirect points at the categories page");
+    assert(
+        string(plain["headers"]["location"]).contains("/admin/categories"),
+        "redirect points at the categories page"
+    );
 
     // Clean up the rows this test created.
     DB.table("inventory").where("product_id", "=", new_id).delete();

@@ -16,13 +16,14 @@ public class CartService {
     public let products;
     public let inventory;
 
-    fn new() {
+    fn new () {
         self.carts = new CartRepository();
         self.products = new ProductRepository();
         self.inventory = new InventoryRepository();
     }
 
     fn setting(self, key: string, fallback: int) -> int {
+        let _ = self;
         let row = DB.table("settings").where("setting_key", "=", key).first();
         if row == null {
             return fallback;
@@ -38,7 +39,9 @@ public class CartService {
                 throw not_found("Variant not found for this product.");
             }
             if int(variant["is_active"]) != 1 {
-                throw validation_failed({"variant_id": "This variant is not available."});
+                throw validation_failed({
+                    "variant_id": "This variant is not available."
+                });
             }
             return int(variant["price_minor"]);
         }
@@ -47,17 +50,23 @@ public class CartService {
             throw not_found("Product not found.");
         }
         if product["status"] != "published" {
-            throw validation_failed({"product_id": "This product is not available."});
+            throw validation_failed({
+                "product_id": "This product is not available."
+            });
         }
         return int(product["price_minor"]);
     }
 
-    fn assert_available(self, product_id, variant_id, qty: int) {
+    fn assert_available(self, product_id, _variant_id, qty: int) {
         if qty <= 0 or qty > 99 {
-            throw validation_failed({"quantity": "Quantity must be between 1 and 99."});
+            throw validation_failed({
+                "quantity": "Quantity must be between 1 and 99."
+            });
         }
         if not self.inventory.available(product_id, null, qty) {
-            throw validation_failed({"quantity": "Not enough stock available."});
+            throw validation_failed({
+                "quantity": "Not enough stock available."
+            });
         }
     }
 
@@ -70,9 +79,9 @@ public class CartService {
         let price = self.unit_price(product_id, variant_id);
         let cart = self.cart(ident);
         let existing = DB.table("cart_items")
-            .where("cart_id", "=", cart["id"])
-            .where("product_id", "=", product_id)
-            .get();
+        .where("cart_id", "=", cart["id"])
+        .where("product_id", "=", product_id)
+        .get();
         let existing_qty = 0;
         let i = 0;
         while i < existing.len() {
@@ -88,9 +97,9 @@ public class CartService {
     public fn update(self, ident, item_id, qty: int) -> bool {
         let cart = self.cart(ident);
         let item = DB.table("cart_items")
-            .where("id", "=", item_id)
-            .where("cart_id", "=", cart["id"])
-            .first();
+        .where("id", "=", item_id)
+        .where("cart_id", "=", cart["id"])
+        .first();
         if item == null {
             throw not_found("Cart item not found.");
         }
@@ -101,9 +110,9 @@ public class CartService {
     public fn remove(self, ident, item_id) -> bool {
         let cart = self.cart(ident);
         let item = DB.table("cart_items")
-            .where("id", "=", item_id)
-            .where("cart_id", "=", cart["id"])
-            .first();
+        .where("id", "=", item_id)
+        .where("cart_id", "=", cart["id"])
+        .first();
         if item == null {
             throw not_found("Cart item not found.");
         }
@@ -111,8 +120,11 @@ public class CartService {
     }
 
     fn format_amount(self, minor: int, currency: string, fx) -> string {
+        let _ = self;
         let cur = string(currency).trim().upper();
-        if cur == "" { cur = "BDT"; }
+        if cur == "" {
+            cur = "BDT";
+        }
         if fx != null and fx.has("base") and cur != string(fx["base"]).trim().upper() {
             let converted = Fx.convert(minor, string(fx["base"]), cur, fx["rates"]);
             return Fx.format(converted, cur, fx["rates"]);
@@ -155,14 +167,18 @@ public class CartService {
                     }
                 }
                 let img = DB.table("product_images")
-                    .where("product_id", "=", row["product_id"])
-                    .orderBy("sort_order", "ASC")
-                    .first();
+                .where("product_id", "=", row["product_id"])
+                .orderBy("sort_order", "ASC")
+                .first();
                 if img != null {
                     image_url = Images.public_image_url(img["path"]);
                 }
                 ok = product["status"] == "published"
-                    and self.inventory.available(row["product_id"], null, int(row["quantity"]));
+                and self.inventory.available(
+                    row["product_id"],
+                    null,
+                    int(row["quantity"])
+                );
                 if not ok {
                     warnings.push(name + " is no longer available in the requested quantity.");
                 }
@@ -185,7 +201,11 @@ public class CartService {
                 "unit_price_minor": price,
                 "line_total_minor": price * int(row["quantity"]),
                 "price_display": self.format_amount(price, currency, fx),
-                "line_display": self.format_amount(price * int(row["quantity"]), currency, fx),
+                "line_display": self.format_amount(
+                    price * int(row["quantity"]),
+                    currency,
+                    fx
+                ),
                 "available": ok
             });
             i += 1;

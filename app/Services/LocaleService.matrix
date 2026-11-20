@@ -16,7 +16,7 @@ import "app/Support/CartIdentity" as CartIdentity;
 public class LocaleService {
     public let default_locale;
 
-    fn new(default_locale: string = "en") {
+    fn new (default_locale: string = "en") {
         let code = string(default_locale).trim().lower();
         if code == "" {
             code = "en";
@@ -90,6 +90,7 @@ public class LocaleService {
     }
 
     fn builtin_dictionary(self) {
+        let _ = self;
         return {
             "bn": {
                 "common": {
@@ -102,7 +103,8 @@ public class LocaleService {
                     "all_rights_reserved": "সর্বস্বত্ব সংরক্ষিত",
                     "home": "হোম",
                     "back": "ফিরে যান"
-                },
+                }
+                ,
                 "nav": {
                     "catalog": "ক্যাটালগ",
                     "cart": "কার্ট",
@@ -113,7 +115,8 @@ public class LocaleService {
                     "sign_in": "সাইন ইন",
                     "sign_out": "সাইন আউট",
                     "register": "রেজিস্টার"
-                },
+                }
+                ,
                 "actions": {
                     "add_to_cart": "কার্টে যোগ করুন",
                     "buy_now": "এখনই কিনুন",
@@ -123,7 +126,8 @@ public class LocaleService {
                     "place_order": "অর্ডার সম্পন্ন করুন",
                     "remove": "মুছুন",
                     "apply_coupon": "কুপন প্রয়োগ করুন"
-                },
+                }
+                ,
                 "product": {
                     "in_stock": "স্টকে আছে",
                     "out_of_stock": "স্টক শেষ",
@@ -136,7 +140,8 @@ public class LocaleService {
                     "related_products": "সম্পর্কিত পণ্য",
                     "featured": "বিশেষ পণ্য",
                     "quantity": "পরিমাণ"
-                },
+                }
+                ,
                 "cart": {
                     "title": "আপনার শপিং কার্ট",
                     "empty": "আপনার কার্ট খালি",
@@ -146,7 +151,8 @@ public class LocaleService {
                     "tax": "ভ্যাট/ট্যাক্স",
                     "total": "সর্বমোট",
                     "free_shipping": "ফ্রি শিপিং"
-                },
+                }
+                ,
                 "checkout": {
                     "title": "চেকআউট",
                     "order_summary": "অর্ডার সারাংশ",
@@ -155,7 +161,8 @@ public class LocaleService {
                     "cod": "ক্যাশ অন ডেলিভারি",
                     "billed_in_notice": "অর্ডারটি প্রক্রিয়াজাত হবে"
                 }
-            },
+            }
+            ,
             "en": {
                 "common": {
                     "search": "Search",
@@ -167,7 +174,8 @@ public class LocaleService {
                     "all_rights_reserved": "All rights reserved",
                     "home": "Home",
                     "back": "Back"
-                },
+                }
+                ,
                 "nav": {
                     "catalog": "Catalog",
                     "cart": "Cart",
@@ -178,7 +186,8 @@ public class LocaleService {
                     "sign_in": "Sign in",
                     "sign_out": "Sign out",
                     "register": "Register"
-                },
+                }
+                ,
                 "actions": {
                     "add_to_cart": "Add to Cart",
                     "buy_now": "Buy Now",
@@ -188,7 +197,8 @@ public class LocaleService {
                     "place_order": "Place Order",
                     "remove": "Remove",
                     "apply_coupon": "Apply Coupon"
-                },
+                }
+                ,
                 "product": {
                     "in_stock": "In Stock",
                     "out_of_stock": "Out of Stock",
@@ -201,7 +211,8 @@ public class LocaleService {
                     "related_products": "Related Products",
                     "featured": "Featured",
                     "quantity": "Quantity"
-                },
+                }
+                ,
                 "cart": {
                     "title": "Your Shopping Cart",
                     "empty": "Your cart is empty",
@@ -211,7 +222,8 @@ public class LocaleService {
                     "tax": "Tax",
                     "total": "Total",
                     "free_shipping": "Free Shipping"
-                },
+                }
+                ,
                 "checkout": {
                     "title": "Checkout",
                     "order_summary": "Order Summary",
@@ -225,6 +237,7 @@ public class LocaleService {
     }
 
     fn locale_label(self, code: string) -> string {
+        let _ = self;
         if code == "bn" {
             return "বাংলা (Bangla)";
         }
@@ -258,13 +271,17 @@ public class LocaleService {
     // Whole-locale bundle: namespace -> key -> value.
     public fn bundle(self, locale: string) {
         let loc = string(locale).trim().lower();
-        if loc == "" { loc = self.default_locale; }
+        if loc == "" {
+            loc = self.default_locale;
+        }
         let dict = self.builtin_dictionary();
-        let out = {};
+        let out = {
+        };
         if dict.has(loc) {
             let base_ns = dict[loc];
             for b_ns in base_ns.keys() {
-                let sub = {};
+                let sub = {
+                };
                 for b_k in base_ns[b_ns].keys() {
                     sub[b_k] = base_ns[b_ns][b_k];
                 }
@@ -276,7 +293,8 @@ public class LocaleService {
         while i < rows.len() {
             let ns = string(rows[i]["namespace"]);
             let key = string(rows[i]["translation_key"]);
-            let ns_map = {};
+            let ns_map = {
+            };
             if out.has(ns) {
                 ns_map = out[ns];
             }
@@ -288,12 +306,18 @@ public class LocaleService {
     }
 
     // Single translation with graceful fallback.
-    public fn translate(self, locale: string, namespace: string, key: string, fallback: string = "") -> string {
+    public fn translate(
+        self,
+        locale: string,
+        namespace: string,
+        key: string,
+        fallback: string = ""
+    ) -> string {
         let row = DB.table("translations")
-            .where("locale", "=", locale)
-            .where("namespace", "=", namespace)
-            .where("translation_key", "=", key)
-            .first();
+        .where("locale", "=", locale)
+        .where("namespace", "=", namespace)
+        .where("translation_key", "=", key)
+        .first();
         if row != null and string(row["value"]) != "" {
             return string(row["value"]);
         }
@@ -306,10 +330,10 @@ public class LocaleService {
         }
         if locale != self.default_locale {
             let fallback_row = DB.table("translations")
-                .where("locale", "=", self.default_locale)
-                .where("namespace", "=", namespace)
-                .where("translation_key", "=", key)
-                .first();
+            .where("locale", "=", self.default_locale)
+            .where("namespace", "=", namespace)
+            .where("translation_key", "=", key)
+            .first();
             if fallback_row != null and string(fallback_row["value"]) != "" {
                 return string(fallback_row["value"]);
             }
@@ -328,19 +352,24 @@ public class LocaleService {
 
     // Upsert a translation (admin action).
     public fn set(self, locale: string, namespace: string, key: string, value: string) -> bool {
+        let _ = self;
         let loc = string(locale).trim().lower();
         let ns = string(namespace).trim();
         let k = string(key).trim();
         if loc == "" or ns == "" or k == "" {
-            throw validation_failed({"key": "Locale, namespace and key are required."});
+            throw validation_failed({
+                "key": "Locale, namespace and key are required."
+            });
         }
         let existing = DB.table("translations")
-            .where("locale", "=", loc)
-            .where("namespace", "=", ns)
-            .where("translation_key", "=", k)
-            .first();
+        .where("locale", "=", loc)
+        .where("namespace", "=", ns)
+        .where("translation_key", "=", k)
+        .first();
         if existing != null {
-            return DB.table("translations").where("id", "=", existing["id"]).update({"value": value}) > 0;
+            return DB.table("translations").where("id", "=", existing["id"]).update({
+                "value": value
+            }) > 0;
         }
         DB.table("translations").insert({
             "locale": loc, "namespace": ns, "translation_key": k, "value": value
@@ -350,10 +379,11 @@ public class LocaleService {
 
     // Remove a translation (admin action).
     public fn remove(self, locale: string, namespace: string, key: string) -> bool {
+        let _ = self;
         return DB.table("translations")
-            .where("locale", "=", string(locale).trim().lower())
-            .where("namespace", "=", string(namespace).trim())
-            .where("translation_key", "=", string(key).trim())
-            .delete() > 0;
+        .where("locale", "=", string(locale).trim().lower())
+        .where("namespace", "=", string(namespace).trim())
+        .where("translation_key", "=", string(key).trim())
+        .delete() > 0;
     }
 }

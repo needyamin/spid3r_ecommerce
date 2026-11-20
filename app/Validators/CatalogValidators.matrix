@@ -19,7 +19,9 @@ public fn category_rules() {
 }
 
 public fn brand_rules() {
-    return {"name": "required|min:2|max:128"};
+    return {
+        "name": "required|min:2|max:128"
+    };
 }
 
 public fn variant_rules() {
@@ -31,9 +33,13 @@ public fn variant_rules() {
 }
 
 public fn image_rules() {
-    return {"image": "required|min:16"};
+    return {
+        "image": "required|min:16"
+    };
 }
 
 public fn restock_rules() {
-    return {"quantity": "required|integer|min_value:1|max_value:100000"};
+    return {
+        "quantity": "required|integer|min_value:1|max_value:100000"
+    };
 }

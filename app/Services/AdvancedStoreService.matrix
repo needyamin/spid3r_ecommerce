@@ -15,13 +15,17 @@ import "framework/Queue/Queue";
 import "app/Support/Money" as Money;
 
 public class AdvancedStoreService {
-    fn new() {}
+    fn new () {
+        let _ = self;
+    }
 
     // ---- shared helpers ----
 
     // Batch product fetch: one query for many ids (never N+1).
     fn products_map(self, ids) {
-        let out = {};
+        let _ = self;
+        let out = {
+        };
         if ids.len() == 0 {
             return out;
         }
@@ -62,6 +66,7 @@ public class AdvancedStoreService {
     }
 
     public fn wishlist_add(self, user_id, product_id) -> bool {
+        let _ = self;
         let product = DB.table("products").where("id", "=", product_id).first();
         if product == null or product["status"] != "published" {
             throw not_found("Product not found.");
@@ -69,16 +74,20 @@ public class AdvancedStoreService {
         if DB.table("wishlists").where("user_id", "=", user_id).where("product_id", "=", product_id).count() > 0 {
             return false;
         }
-        DB.table("wishlists").insert({"user_id": user_id, "product_id": product_id});
+        DB.table("wishlists").insert({
+            "user_id": user_id, "product_id": product_id
+        });
         return true;
     }
 
     public fn wishlist_remove(self, user_id, product_id) -> bool {
+        let _ = self;
         return DB.table("wishlists").where("user_id", "=", user_id).where("product_id", "=", product_id).delete() > 0;
     }
 
     // Header wishlist bubble + AJAX responses.
     public fn wishlist_count(self, user_id) -> int {
+        let _ = self;
         if user_id == null {
             return 0;
         }
@@ -86,6 +95,7 @@ public class AdvancedStoreService {
     }
 
     public fn in_wishlist(self, user_id, product_id) -> bool {
+        let _ = self;
         if user_id == null {
             return false;
         }
@@ -94,8 +104,11 @@ public class AdvancedStoreService {
 
     // ---- product reviews ----
     public fn review(self, user_id, product_id, rating: int, title: string, content: string) {
+        let _ = self;
         if rating < 1 or rating > 5 {
-            throw validation_failed({"rating": "Rating must be between 1 and 5."});
+            throw validation_failed({
+                "rating": "Rating must be between 1 and 5."
+            });
         }
         let product = DB.table("products").where("id", "=", product_id).first();
         if product == null or product["status"] != "published" {
@@ -109,9 +122,9 @@ public class AdvancedStoreService {
         let i = 0;
         while i < lines.len() {
             let order = DB.table("orders")
-                .where("id", "=", lines[i]["order_id"])
-                .where("user_id", "=", user_id)
-                .first();
+            .where("id", "=", lines[i]["order_id"])
+            .where("user_id", "=", user_id)
+            .first();
             if order != null and (order["status"] == "delivered" or order["status"] == "paid") {
                 purchased = true;
                 order_id = order["id"];
@@ -124,7 +137,9 @@ public class AdvancedStoreService {
         }
         let existing = DB.table("reviews").where("product_id", "=", product_id).where("user_id", "=", user_id).first();
         if existing != null {
-            throw validation_failed({"review": "You have already reviewed this product."});
+            throw validation_failed({
+                "review": "You have already reviewed this product."
+            });
         }
         let id = DB.table("reviews").insert({
             "product_id": product_id,
@@ -139,22 +154,29 @@ public class AdvancedStoreService {
     }
 
     public fn moderate_review(self, review_id, status: string) -> bool {
+        let _ = self;
         if status != "approved" and status != "rejected" {
-            throw validation_failed({"status": "Review must be approved or rejected."});
+            throw validation_failed({
+                "status": "Review must be approved or rejected."
+            });
         }
-        return DB.table("reviews").where("id", "=", review_id).update({"status": status}) > 0;
+        return DB.table("reviews").where("id", "=", review_id).update({
+            "status": status
+        }) > 0;
     }
 
     public fn approved_reviews(self, product_id) {
+        let _ = self;
         return DB.table("reviews")
-            .where("product_id", "=", product_id)
-            .where("status", "=", "approved")
-            .orderBy("id", "DESC")
-            .limit(50)
-            .get();
+        .where("product_id", "=", product_id)
+        .where("status", "=", "approved")
+        .orderBy("id", "DESC")
+        .limit(50)
+        .get();
     }
 
     public fn pending_reviews(self) {
+        let _ = self;
         return DB.table("reviews").where("status", "=", "pending").orderBy("id", "DESC").limit(100).get();
     }
 
@@ -162,10 +184,11 @@ public class AdvancedStoreService {
     // The average is integer-scaled (rating x 10) so no float ever appears
     // in the application layer.
     public fn rating_summary(self, product_id) {
+        let _ = self;
         let rows = DB.table("reviews")
-            .where("product_id", "=", product_id)
-            .where("status", "=", "approved")
-            .get();
+        .where("product_id", "=", product_id)
+        .where("status", "=", "approved")
+        .get();
         let total = 0;
         let i = 0;
         while i < rows.len() {
@@ -177,7 +200,9 @@ public class AdvancedStoreService {
             average_tenths = (total * 10 + rows.len() / 2) / rows.len();
         }
         let average_display = string(average_tenths / 10) + "." + string(average_tenths % 10);
-        let breakdown = {"1": 0, "2": 0, "3": 0, "4": 0, "5": 0};
+        let breakdown = {
+            "1": 0, "2": 0, "3": 0, "4": 0, "5": 0
+        };
         i = 0;
         while i < rows.len() {
             let star = string(int(rows[i]["rating"]));
@@ -196,6 +221,7 @@ public class AdvancedStoreService {
 
     // ---- recently viewed (per anonymous session key, max 20) ----
     public fn track_view(self, session_key: string, product_id) {
+        let _ = self;
         let key = string(session_key).trim();
         if key == "" {
             return false;
@@ -250,21 +276,23 @@ public class AdvancedStoreService {
 
     // ---- product recommendations (same category, excluding the current one) ----
     public fn recommendations(self, product_id, limit_count: int = 4) {
+        let _ = self;
         let current = DB.table("products").where("id", "=", product_id).first();
         if current == null {
             return [];
         }
         return DB.table("products")
-            .where("status", "=", "published")
-            .where("category_id", "=", current["category_id"])
-            .where("id", "!=", product_id)
-            .orderBy("id", "DESC")
-            .limit(limit_count)
-            .get();
+        .where("status", "=", "published")
+        .where("category_id", "=", current["category_id"])
+        .where("id", "!=", product_id)
+        .orderBy("id", "DESC")
+        .limit(limit_count)
+        .get();
     }
 
     // ---- loyalty points (1 point per 100 minor units of settled value) ----
     public fn award_loyalty(self, order_id) -> int {
+        let _ = self;
         let order = DB.table("orders").where("id", "=", order_id).first();
         if order == null or order["user_id"] == null {
             return 0;
@@ -292,13 +320,18 @@ public class AdvancedStoreService {
     }
 
     public fn redeem_loyalty(self, user_id, points: int, order_id) -> bool {
+        let _ = self;
         if points <= 0 {
-            throw validation_failed({"points": "Points must be positive."});
+            throw validation_failed({
+                "points": "Points must be positive."
+            });
         }
         return DB.transaction(fn() {
             let user = DB.table("users").where("id", "=", user_id).first();
             if user == null or int(user["loyalty_points"]) < points {
-                throw validation_failed({"points": "Not enough loyalty points."});
+                throw validation_failed({
+                    "points": "Not enough loyalty points."
+                });
             }
             DB.table("loyalty_ledger").insert({
                 "user_id": user_id, "order_id": order_id,
@@ -310,6 +343,7 @@ public class AdvancedStoreService {
     }
 
     public fn loyalty_balance(self, user_id) -> int {
+        let _ = self;
         let user = DB.table("users").where("id", "=", user_id).first();
         if user == null {
             return 0;
@@ -318,30 +352,39 @@ public class AdvancedStoreService {
     }
 
     public fn loyalty_history(self, user_id) {
+        let _ = self;
         return DB.table("loyalty_ledger").where("user_id", "=", user_id).orderBy("id", "DESC").limit(50).get();
     }
 
     // ---- referrals: one code per user; both sides rewarded after settlement ----
     public fn ensure_referral_code(self, user_id) -> string {
+        let _ = self;
         let row = DB.table("referrals").where("referrer_id", "=", user_id).first();
         if row != null {
             return string(row["code"]);
         }
         let code = "REF-" + hex_encode(random_bytes(6).unwrap()).upper();
-        DB.table("referrals").insert({"referrer_id": user_id, "code": code, "status": "active"});
+        DB.table("referrals").insert({
+            "referrer_id": user_id, "code": code, "status": "active"
+        });
         return code;
     }
 
     public fn apply_referral(self, user_id, code: string) -> bool {
+        let _ = self;
         let referral = DB.table("referrals")
-            .where("code", "=", string(code).trim().upper())
-            .where("status", "=", "active")
-            .first();
+        .where("code", "=", string(code).trim().upper())
+        .where("status", "=", "active")
+        .first();
         if referral == null or int(referral["referrer_id"]) == int(user_id) {
-            throw validation_failed({"referral": "Invalid referral code."});
+            throw validation_failed({
+                "referral": "Invalid referral code."
+            });
         }
         if DB.table("referrals").where("referred_user_id", "=", user_id).count() > 0 {
-            throw validation_failed({"referral": "A referral code was already used."});
+            throw validation_failed({
+                "referral": "A referral code was already used."
+            });
         }
         DB.table("referrals").where("id", "=", referral["id"]).update({
             "referred_user_id": user_id, "status": "pending"
@@ -352,22 +395,25 @@ public class AdvancedStoreService {
     // Both the referrer and the new customer earn points once the referred
     // customer's order settles.
     public fn reward_referral(self, order_id) -> bool {
+        let _ = self;
         let order = DB.table("orders").where("id", "=", order_id).first();
         if order == null or order["user_id"] == null {
             return false;
         }
         let referral_row = DB.table("referrals")
-            .where("referred_user_id", "=", order["user_id"])
-            .where("status", "=", "pending")
-            .first();
+        .where("referred_user_id", "=", order["user_id"])
+        .where("status", "=", "pending")
+        .first();
         if referral_row == null {
             return false;
         }
-        let reward = 500;   // loyalty points for each side
+        let reward = 500;  // loyalty points for each side
         return DB.transaction(fn() {
             DB.table("users").where("id", "=", referral_row["referrer_id"]).increment("loyalty_points", reward);
             DB.table("users").where("id", "=", order["user_id"]).increment("loyalty_points", reward);
-            DB.table("referrals").where("id", "=", referral_row["id"]).update({"status": "rewarded"});
+            DB.table("referrals").where("id", "=", referral_row["id"]).update({
+                "status": "rewarded"
+            });
             return true;
         });
     }
@@ -375,7 +421,13 @@ public class AdvancedStoreService {
     // ---- order tracking ----
     // Lookup by order number. Proof is required for guest orders: either the
     // account email or the phone captured on the shipping address.
-    public fn track_order(self, order_number: string, proof_email: string, proof_phone: string, user_id) {
+    public fn track_order(
+        self,
+        order_number: string,
+        proof_email: string,
+        proof_phone: string,
+        user_id
+    ) {
         // Order numbers are case-SENSITIVE (they embed lowercase hex), so
         // the lookup key is only trimmed — never case-folded.
         let number = string(order_number).trim();
@@ -411,6 +463,7 @@ public class AdvancedStoreService {
 
     // Public-safe order status timeline.
     fn tracking_view(self, order) {
+        let _ = self;
         let shipments = DB.table("shipments").where("order_id", "=", order["id"]).orderBy("id", "ASC").get();
         let items = DB.table("order_items").where("order_id", "=", order["id"]).get();
         let curr = string(order["currency"]);
@@ -460,20 +513,32 @@ public class AdvancedStoreService {
     }
 
     // ---- customer support ----
-    public fn create_support_ticket(self, user_id, email: string, subject: string, message: string) {
+    public fn create_support_ticket(
+        self,
+        user_id,
+        email: string,
+        subject: string,
+        message: string
+    ) {
+        let _ = self;
         if string(subject).trim() == "" or len(string(message).trim()) < 10 {
-            throw validation_failed({"message": "Add a subject and at least 10 characters."});
+            throw validation_failed({
+                "message": "Add a subject and at least 10 characters."
+            });
         }
         let id = DB.table("support_tickets").insert({
             "user_id": user_id, "email": email,
             "subject": subject, "message": message,
             "status": "open"
         });
-        Queue.push("store.support_ticket", {"ticket_id": id, "email": email, "subject": subject});
+        Queue.push("store.support_ticket", {
+            "ticket_id": id, "email": email, "subject": subject
+        });
         return id;
     }
 
     public fn support_tickets(self, user_id) {
+        let _ = self;
         if user_id == null {
             return [];
         }
@@ -481,13 +546,19 @@ public class AdvancedStoreService {
     }
 
     public fn all_support_tickets(self) {
+        let _ = self;
         return DB.table("support_tickets").orderBy("id", "DESC").limit(100).get();
     }
 
     public fn resolve_support_ticket(self, ticket_id, status: string) -> bool {
+        let _ = self;
         if status != "open" and status != "resolved" and status != "closed" {
-            throw validation_failed({"status": "Unknown ticket status."});
+            throw validation_failed({
+                "status": "Unknown ticket status."
+            });
         }
-        return DB.table("support_tickets").where("id", "=", ticket_id).update({"status": status}) > 0;
+        return DB.table("support_tickets").where("id", "=", ticket_id).update({
+            "status": status
+        }) > 0;
     }
 }

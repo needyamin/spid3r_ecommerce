@@ -11,11 +11,13 @@ import "framework/Database/Migration";
 import "framework/Database/DB";
 
 public class PerformanceIndexes extends Migration {
-    fn new(name: string = "020_performance_indexes") {
+    fn new (name: string = "020_performance_indexes") {
+        let _ = self;
         super(name);
     }
 
     public fn up(self) {
+        let _ = self;
         // Reviews: verified-purchase check scans order_lines by product.
         DB.statement("CREATE INDEX idx_order_items_product ON order_items (product_id)", []);
 
@@ -36,15 +38,16 @@ public class PerformanceIndexes extends Migration {
     }
 
     public fn down(self) {
+        let _ = self;
         // DROP INDEX has no portable form: MySQL needs "ON <table>",
         // SQLite/PostgreSQL do not. Resolve by driver.
         let drops = [
-            ["idx_order_items_product", "order_items"],
-            ["idx_loyalty_order", "loyalty_ledger"],
-            ["idx_coupon_usages_coupon", "coupon_usages"],
-            ["idx_sessions_activity", "sessions"],
-            ["idx_jobs_poll", "jobs"],
-            ["idx_products_listing", "products"]
+        ["idx_order_items_product", "order_items"],
+        ["idx_loyalty_order", "loyalty_ledger"],
+        ["idx_coupon_usages_coupon", "coupon_usages"],
+        ["idx_sessions_activity", "sessions"],
+        ["idx_jobs_poll", "jobs"],
+        ["idx_products_listing", "products"]
         ];
         let manager = DB;
         let driver = manager.driver_name();

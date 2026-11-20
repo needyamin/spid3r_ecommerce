@@ -31,7 +31,7 @@ public class AdvancedController {
     public let locales;
     public let settings;
 
-    fn new() {
+    fn new () {
         self.advanced = new AdvancedStoreService();
         self.gift_cards = new GiftCardService();
         self.campaigns = new CampaignService();
@@ -70,6 +70,7 @@ public class AdvancedController {
 
     // JSON when the client asks for it, otherwise redirect back.
     fn respond(self, req, payload, fallback_path: string) {
+        let _ = self;
         if req.input("format", "") == "json" {
             return json(payload);
         }
@@ -78,6 +79,7 @@ public class AdvancedController {
 
     // The signed-in customer id, or 401 when there is no session.
     fn user_id(self, req) {
+        let _ = self;
         if req.auth == null or not req.auth.check() {
             throw unauthorized("Please sign in to continue.");
         }
@@ -86,6 +88,7 @@ public class AdvancedController {
 
     // Read a value from the body first, then from the route parameters.
     fn param_or_input(self, req, name: string) {
+        let _ = self;
         let value = req.input(name, null);
         if value == null {
             value = req.param(name, null);
@@ -95,6 +98,7 @@ public class AdvancedController {
 
     // Only same-site relative paths are accepted as a redirect target.
     fn safe_return(self, req) -> string {
+        let _ = self;
         let target = string(req.input("return_to", "/")).trim();
         if target == "" or not target.starts_with("/") or target.starts_with("//") {
             return "/";
@@ -107,7 +111,11 @@ public class AdvancedController {
     public fn wishlist_page(self, req) {
         let uid = self.user_id(req);
         let code = self.currencies.selected(req);
-        let items = self.storefront.decorate(self.advanced.wishlist(uid), code, self.currencies.context());
+        let items = self.storefront.decorate(
+            self.advanced.wishlist(uid),
+            code,
+            self.currencies.context()
+        );
         let ctx = self.ctx(req, "Your wishlist", {
             "items": items,
             "has_items": items.len() > 0
@@ -119,7 +127,9 @@ public class AdvancedController {
         let uid = self.user_id(req);
         let product_id = int(self.param_or_input(req, "product_id"));
         if product_id <= 0 {
-            throw validation_failed({"product_id": "Choose a product."});
+            throw validation_failed({
+                "product_id": "Choose a product."
+            });
         }
         let added = self.advanced.wishlist_add(uid, product_id);
         return self.respond(req, {
@@ -133,7 +143,9 @@ public class AdvancedController {
         let uid = self.user_id(req);
         let product_id = int(self.param_or_input(req, "product_id"));
         if product_id <= 0 {
-            throw validation_failed({"product_id": "Choose a product."});
+            throw validation_failed({
+                "product_id": "Choose a product."
+            });
         }
         let removed = self.advanced.wishlist_remove(uid, product_id);
         return self.respond(req, {
@@ -155,7 +167,9 @@ public class AdvancedController {
             string(req.input("title", "")),
             string(req.input("body", ""))
         );
-        return self.respond(req, {"ok": true, "review": review}, "/account");
+        return self.respond(req, {
+            "ok": true, "review": review
+        }, "/account");
     }
 
     // Approved reviews + rating summary for a product (public).
@@ -163,7 +177,11 @@ public class AdvancedController {
         let product_id = int(req.params["product_id"]);
         let reviews = self.advanced.approved_reviews(product_id);
         let summary = self.advanced.rating_summary(product_id);
-        return json({"data": {"reviews": reviews, "rating": summary}});
+        return json({
+            "data": {
+                "reviews": reviews, "rating": summary
+            }
+        });
     }
 
     // SEO-friendly slugs: /product/{slug}/reviews and
@@ -171,9 +189,10 @@ public class AdvancedController {
     // id, then reuse the numeric handlers. The legacy /reviews/:id and
     // /recommendations/:id routes keep working for existing clients.
     fn product_id_from_slug(self, req) -> int {
+        let _ = self;
         let product = DB.table("products")
-            .where("slug", "=", string(req.params["slug"]))
-            .first();
+        .where("slug", "=", string(req.params["slug"]))
+        .first();
         if product == null {
             throw not_found("Product not found.");
         }
@@ -195,7 +214,9 @@ public class AdvancedController {
     public fn recommendations(self, req) {
         let product_id = int(req.params["product_id"]);
         let items = self.advanced.recommendations(product_id, 4);
-        return json({"data": items});
+        return json({
+            "data": items
+        });
     }
 
     // ---- recently viewed ----
@@ -203,7 +224,9 @@ public class AdvancedController {
     public fn recently_viewed(self, req) {
         let key = CartIdentity.cookie_value(req, "rv");
         let items = self.advanced.recently_viewed(key);
-        return json({"data": items});
+        return json({
+            "data": items
+        });
     }
 
     // ---- loyalty & referrals ----
@@ -224,14 +247,18 @@ public class AdvancedController {
         req.validate_or_fail(AdvancedValidators.loyalty_rules());
         let uid = self.user_id(req);
         self.advanced.redeem_loyalty(uid, int(req.input("points", 0)), null);
-        return self.respond(req, {"ok": true}, "/account/rewards");
+        return self.respond(req, {
+            "ok": true
+        }, "/account/rewards");
     }
 
     public fn apply_referral(self, req) {
         req.validate_or_fail(AdvancedValidators.referral_rules());
         let uid = self.user_id(req);
         self.advanced.apply_referral(uid, string(req.input("code", "")));
-        return self.respond(req, {"ok": true}, "/account/rewards");
+        return self.respond(req, {
+            "ok": true
+        }, "/account/rewards");
     }
 
     // ---- gift cards ----
@@ -241,7 +268,11 @@ public class AdvancedController {
         req.validate_or_fail(AdvancedValidators.gift_card_rules());
         let code = string(req.input("code", ""));
         let balance = self.gift_cards.balance(code);
-        return json({"data": {"balance_minor": balance, "valid": balance > 0}});
+        return json({
+            "data": {
+                "balance_minor": balance, "valid": balance > 0
+            }
+        });
     }
 
     // ---- customer support ----
@@ -276,7 +307,9 @@ public class AdvancedController {
             string(req.input("subject", "")),
             string(req.input("message", ""))
         );
-        return self.respond(req, {"ok": true, "ticket_id": id}, "/support");
+        return self.respond(req, {
+            "ok": true, "ticket_id": id
+        }, "/support");
     }
 
     // ---- order tracking ----
@@ -303,14 +336,18 @@ public class AdvancedController {
             uid
         );
         if result == null {
-            throw not_found("We could not find that order. Check the order number and the contact details you entered.");
+            throw not_found(
+                "We could not find that order. Check the order number and the contact details you entered."
+            );
         }
         let st = string(result["status"]);
         result["is_awaiting_payment"] = st == "awaiting_payment";
         result["is_pending_cod"] = st == "pending";
         result["is_paid"] = st == "paid";
         if req.input("format", "") == "json" {
-            return json({"data": result});
+            return json({
+                "data": result
+            });
         }
         let ctx = self.ctx(req, "Track your order", {
             "result": result,
@@ -328,7 +365,9 @@ public class AdvancedController {
         if currency != "" {
             let rates = self.currencies.rates();
             if not rates.has(currency) {
-                throw validation_failed({"currency": "That currency is not available."});
+                throw validation_failed({
+                    "currency": "That currency is not available."
+                });
             }
         }
         let locale = string(req.input("locale", "")).trim().lower();
@@ -344,7 +383,9 @@ public class AdvancedController {
                 i += 1;
             }
             if not found {
-                throw validation_failed({"locale": "That language is not available."});
+                throw validation_failed({
+                    "locale": "That language is not available."
+                });
             }
         }
         let target = self.safe_return(req);
@@ -373,11 +414,15 @@ public class AdvancedController {
     public fn admin_review_update(self, req) {
         let status = string(req.input("status", "")).trim().lower();
         self.advanced.moderate_review(req.params["id"], status);
-        return self.respond(req, {"ok": true}, "/admin/reviews");
+        return self.respond(req, {
+            "ok": true
+        }, "/admin/reviews");
     }
 
-    public fn admin_campaigns(self, req) {
-        return json({"data": self.campaigns.list()});
+    public fn admin_campaigns(self, _req) {
+        return json({
+            "data": self.campaigns.list()
+        });
     }
 
     public fn admin_campaign_store(self, req) {
@@ -390,14 +435,21 @@ public class AdvancedController {
             int(req.input("min_order_minor", 0)),
             int(req.input("is_active", 0))
         );
-        return json({"data": {"id": id, "saved": true}}, 201);
+        return json({
+            "data": {
+                "id": id, "saved": true
+            }
+        }, 201);
     }
 
     public fn admin_currencies(self, req) {
-        return json({"data": self.currencies.catalog(self.currencies.selected(req))});
+        return json({
+            "data": self.currencies.catalog(self.currencies.selected(req))
+        });
     }
 
     public fn admin_currency_store(self, req) {
+        let _ = self;
         req.validate_or_fail(AdvancedValidators.currency_rules());
         let code = string(req.input("code", "")).trim().upper();
         let digits = int(req.input("minor_digits", 2));
@@ -416,12 +468,18 @@ public class AdvancedController {
             DB.table("currencies").insert(data);
         }
         CatalogCache.bump_catalog_version();
-        return json({"data": {"code": code, "saved": true}}, 201);
+        return json({
+            "data": {
+                "code": code, "saved": true
+            }
+        }, 201);
     }
 
     public fn admin_translations(self, req) {
         let locale = string(req.query("locale", self.locales.default_locale)).trim().lower();
-        return json({"data": self.locales.bundle(locale)});
+        return json({
+            "data": self.locales.bundle(locale)
+        });
     }
 
     public fn admin_translation_store(self, req) {
@@ -432,28 +490,48 @@ public class AdvancedController {
             string(req.input("key", "")),
             string(req.input("value", ""))
         );
-        return json({"data": {"saved": true}});
+        return json({
+            "data": {
+                "saved": true
+            }
+        });
     }
 
-    public fn admin_gift_cards(self, req) {
-        return json({"data": self.gift_cards.list()});
+    public fn admin_gift_cards(self, _req) {
+        return json({
+            "data": self.gift_cards.list()
+        });
     }
 
     public fn admin_gift_card_issue(self, req) {
         req.validate_or_fail(AdvancedValidators.gift_card_issue_rules());
         let amount = int(req.input("amount_minor", 0));
-        let code = self.gift_cards.issue(amount, string(self.settings["currency"]), string(req.input("recipient_email", "")));
+        let code = self.gift_cards.issue(
+            amount,
+            string(self.settings["currency"]),
+            string(req.input("recipient_email", ""))
+        );
         // The raw code is returned ONCE — only its hash is stored.
-        return json({"data": {"code": code, "amount_minor": amount}}, 201);
+        return json({
+            "data": {
+                "code": code, "amount_minor": amount
+            }
+        }, 201);
     }
 
-    public fn admin_support_tickets(self, req) {
-        return json({"data": self.advanced.all_support_tickets()});
+    public fn admin_support_tickets(self, _req) {
+        return json({
+            "data": self.advanced.all_support_tickets()
+        });
     }
 
     public fn admin_support_ticket_update(self, req) {
         let status = string(req.input("status", "")).trim().lower();
         self.advanced.resolve_support_ticket(req.params["id"], status);
-        return json({"data": {"ok": true}});
+        return json({
+            "data": {
+                "ok": true
+            }
+        });
     }
 }

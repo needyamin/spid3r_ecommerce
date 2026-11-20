@@ -34,7 +34,10 @@ fn test_money_to_minor() {
     assert(Money.to_minor("1e9") == 0, "exponent notation -> 0");
 
     // Round-trip with to_major.
-    assert(Money.to_minor(Money.to_major(123456)) == 123456, "to_major -> to_minor round-trips");
+    assert(
+        Money.to_minor(Money.to_major(123456)) == 123456,
+        "to_major -> to_minor round-trips"
+    );
     println("  [PASS] test_money_to_minor");
 }
 
@@ -48,34 +51,57 @@ fn test_money_format() {
 
 fn test_fx() {
     let rates = map(
-        "BDT", map("digits", 2, "rate_bps", 10000, "symbol", "৳", "name", "Bangladeshi Taka"),
-        "USD", map("digits", 2, "rate_bps", 12100, "symbol", "$", "name", "US Dollar"),
-        "JPY", map("digits", 0, "rate_bps", 82, "symbol", "¥", "name", "Japanese Yen")
+        "BDT",
+        map("digits", 2, "rate_bps", 10000, "symbol", "৳", "name", "Bangladeshi Taka"),
+        "USD",
+        map("digits", 2, "rate_bps", 12100, "symbol", "$", "name", "US Dollar"),
+        "JPY",
+        map("digits", 0, "rate_bps", 82, "symbol", "¥", "name", "Japanese Yen")
     );
 
     // Same currency is an identity, whatever the rate says.
-    assert(Fx.convert(123456, "BDT", "BDT", rates) == 123456, "same-currency conversion is identity");
+    assert(
+        Fx.convert(123456, "BDT", "BDT", rates) == 123456,
+        "same-currency conversion is identity"
+    );
 
     // 1000.00 BDT at 1 USD = 1.21 BDT -> 826.45 USD.
-    assert(Fx.convert(100000, "BDT", "USD", rates) == 82645, "BDT -> USD converts in minor units");
+    assert(
+        Fx.convert(100000, "BDT", "USD", rates) == 82645,
+        "BDT -> USD converts in minor units"
+    );
     assert(Fx.convert(82645, "USD", "BDT", rates) == 100000, "USD -> BDT round-trips");
 
     // A zero-minor-digit currency: 1000.00 BDT at 82 bps -> 121,951 yen.
-    assert(Fx.convert(100000, "BDT", "JPY", rates) == 121951, "zero-minor-digit currencies convert");
-    assert(Fx.format(121951, "JPY", rates) == "¥121,951", "zero-decimal formatting has no fraction");
+    assert(
+        Fx.convert(100000, "BDT", "JPY", rates) == 121951,
+        "zero-minor-digit currencies convert"
+    );
+    assert(
+        Fx.format(121951, "JPY", rates) == "¥121,951",
+        "zero-decimal formatting has no fraction"
+    );
 
     // Unknown codes fall back to the 2-decimal 1:1 meta.
-    assert(Fx.convert(1000, "BDT", "XXX", rates) == 1000, "an unknown target falls back 1:1");
+    assert(
+        Fx.convert(1000, "BDT", "XXX", rates) == 1000,
+        "an unknown target falls back 1:1"
+    );
     assert(Fx.format(1000, "XXX", rates) == "10.00", "unknown-code formatting has no symbol");
 
     // Formatting.
-    assert(Fx.format(82645, "USD", rates) == "$826.45", "converted amounts carry the display symbol");
+    assert(
+        Fx.format(82645, "USD", rates) == "$826.45",
+        "converted amounts carry the display symbol"
+    );
     println("  [PASS] test_fx");
 }
 
 fn test_slug() {
-    assert(Slug.make("Store Widget — Limited Edition") == "store-widget-limited-edition",
-        "slugify lowercases, strips punctuation and hyphenates");
+    assert(
+        Slug.make("Store Widget — Limited Edition") == "store-widget-limited-edition",
+        "slugify lowercases, strips punctuation and hyphenates"
+    );
     assert(Slug.make("  Already A Slug  ") == "already-a-slug", "slugs are trimmed");
     let taken = fn(candidate) {
         return candidate == "widget";
@@ -89,7 +115,10 @@ fn test_catalog_generations() {
     let before = CatalogCache.catalog_version();
     let after = CatalogCache.bump_catalog_version();
     assert(after == before + 1, "bumping the catalog cache advances the generation");
-    assert(CatalogCache.catalog_version() == after, "the generation is stable until the next bump");
+    assert(
+        CatalogCache.catalog_version() == after,
+        "the generation is stable until the next bump"
+    );
     println("  [PASS] test_catalog_generations");
 }
 

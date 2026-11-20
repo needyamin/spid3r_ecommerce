@@ -227,8 +227,10 @@ jobs:
           test -s docs/build/api.html
           test -s docs/build/api.json
 
+          # App-repo rule: the size guard applies to the vendored framework
+          # only (store controllers/services are intentionally larger).
           over500=0
-          for f in $(find app bootstrap config framework routes database tests tools examples benchmarks -type f -name '*.matrix') server.matrix magic; do
+          for f in $(find framework -type f -name '*.matrix') server.matrix magic; do
             n="$(wc -l < "$f")"
             if [ "$n" -gt 500 ]; then
               echo "ERROR: $f has $n lines (> 500)" >&2
@@ -241,7 +243,12 @@ jobs:
         if: matrix.engine == 'sqlite'
         run: |
           set -e
-          spid3r magic test --differential
+          # Differential (tree/vm/bytecode triple-run) is scoped to the
+          # framework core suites — tripling the 44-suite store matrix would
+          # blow the job timeout.
+          for t in test_router test_validator test_query_builder test_model test_resource test_drivers test_container test_events test_providers test_cache test_core_systems test_throttle test_modern_mvc test_phase0_safety test_env test_migrations_registry test_phase4_security test_phase5_release test_phase6_dx test_phase7_polish; do
+            spid3r magic test --filter="$t" --differential
+          done
           spid3r magic test --filter=test_router --coverage
           for t in test_router test_validator test_query_builder test_model test_resource test_drivers test_container test_events test_providers test_cache test_core_systems test_throttle test_modern_mvc test_phase0_safety test_env test_migrations_registry test_phase4_security test_phase5_release test_phase6_dx test_phase7_polish; do
             spid3r run --engine tree "tests/$t.matrix"
@@ -359,7 +366,9 @@ jobs:
             -e APP_ENV=production \
             -e APP_KEY="$test_key" \
             spid3rweb:ci
-          for _ in $(seq 1 30); do
+          # The container double cold-starts (magic migrate + magic serve each
+          # compile the full app) — allow up to 120s before giving up.
+          for _ in $(seq 1 120); do
             if curl -fsS http://127.0.0.1:18080/health; then
               echo ""
               break

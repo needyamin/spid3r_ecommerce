@@ -32,10 +32,18 @@ fn call(app, method: string, path: string, data, cookie: string) {
             payload[k] = data[k];
         }
     }
-    return app.handle_request(map(
-        "method", method, "path", path,
-        "headers", headers, "data", payload
-    ));
+    return app.handle_request(
+        map(
+            "method",
+            method,
+            "path",
+            path,
+            "headers",
+            headers,
+            "data",
+            payload
+        )
+    );
 }
 
 fn get(app, path: string, cookie: string = "") {
@@ -69,8 +77,10 @@ fn session_pair(email: string, password: string) {
     let token = svc.login(email, password);
     let rows = DB.select("SELECT payload FROM sessions WHERE token = ?", [token]);
     return map(
-        "cookie", "spid3r_session=" + token,
-        "csrf", string(rows[0]["payload"])
+        "cookie",
+        "spid3r_session=" + token,
+        "csrf",
+        string(rows[0]["payload"])
     );
 }
 
@@ -163,39 +173,109 @@ fn main() {
     purge(tag);
 
     // ---- the merchant sets up the catalog ----
-    let cat = DB.table("categories").insert(map(
-        "name", "Journey Category " + tag, "slug", "journey-cat-" + tag
-    ));
-    let widget = DB.table("products").insert(map(
-        "category_id", cat, "name", "Journey Widget " + tag,
-        "slug", "journey-widget-" + tag, "sku", "JW-" + tag,
-        "short_description", "The journey probe product",
-        "price_minor", 50000, "status", "published", "currency", "BDT"
-    ));
-    let gadget = DB.table("products").insert(map(
-        "category_id", cat, "name", "Journey Gadget " + tag,
-        "slug", "journey-gadget-" + tag, "sku", "JG-" + tag,
-        "short_description", "The second journey product",
-        "price_minor", 20000, "status", "published", "currency", "BDT"
-    ));
-    DB.table("inventory").insert(map(
-        "product_id", widget, "variant_id", null,
-        "quantity", 20, "reserved", 0, "low_stock_threshold", 2
-    ));
-    DB.table("inventory").insert(map(
-        "product_id", gadget, "variant_id", null,
-        "quantity", 20, "reserved", 0, "low_stock_threshold", 2
-    ));
-    DB.table("coupons").insert(map(
-        "code", "JOURNEY-" + tag, "type", "fixed", "value_minor", 5000,
-        "min_order_minor", 0, "max_uses", 10, "uses", 0, "is_active", 1
-    ));
+    let cat = DB.table("categories").insert(
+        map(
+            "name",
+            "Journey Category " + tag,
+            "slug",
+            "journey-cat-" + tag
+        )
+    );
+    let widget = DB.table("products").insert(
+        map(
+            "category_id",
+            cat,
+            "name",
+            "Journey Widget " + tag,
+            "slug",
+            "journey-widget-" + tag,
+            "sku",
+            "JW-" + tag,
+            "short_description",
+            "The journey probe product",
+            "price_minor",
+            50000,
+            "status",
+            "published",
+            "currency",
+            "BDT"
+        )
+    );
+    let gadget = DB.table("products").insert(
+        map(
+            "category_id",
+            cat,
+            "name",
+            "Journey Gadget " + tag,
+            "slug",
+            "journey-gadget-" + tag,
+            "sku",
+            "JG-" + tag,
+            "short_description",
+            "The second journey product",
+            "price_minor",
+            20000,
+            "status",
+            "published",
+            "currency",
+            "BDT"
+        )
+    );
+    DB.table("inventory").insert(
+        map(
+            "product_id",
+            widget,
+            "variant_id",
+            null,
+            "quantity",
+            20,
+            "reserved",
+            0,
+            "low_stock_threshold",
+            2
+        )
+    );
+    DB.table("inventory").insert(
+        map(
+            "product_id",
+            gadget,
+            "variant_id",
+            null,
+            "quantity",
+            20,
+            "reserved",
+            0,
+            "low_stock_threshold",
+            2
+        )
+    );
+    DB.table("coupons").insert(
+        map(
+            "code",
+            "JOURNEY-" + tag,
+            "type",
+            "fixed",
+            "value_minor",
+            5000,
+            "min_order_minor",
+            0,
+            "max_uses",
+            10,
+            "uses",
+            0,
+            "is_active",
+            1
+        )
+    );
 
     // ---- 1. a guest discovers the store ----
     let home = get(app, "/");
     assert(home["status"] == 200, "1. the storefront renders for a guest");
     let listing = get(app, "/catalog");
-    assert(string(listing["body"]).contains("Journey Widget"), "2. the catalog lists the product");
+    assert(
+        string(listing["body"]).contains("Journey Widget"),
+        "2. the catalog lists the product"
+    );
     let detail = get(app, "/product/journey-widget-" + tag);
     assert(detail["status"] == 200, "3. the product page renders");
     assert(string(detail["body"]).contains("৳500.00"), "4. the price is displayed");
@@ -203,13 +283,33 @@ fn main() {
     // ---- 2. the guest fills a cart ----
     let cart_page = get(app, "/cart");
     let cart_cookie = "cart=" + cookie_of(cart_page, "cart");
-    let add1 = post(app, "/cart/items", map(
-        "product_id", widget, "quantity", 1, "format", "json"
-    ), cart_cookie);
+    let add1 = post(
+        app,
+        "/cart/items",
+        map(
+            "product_id",
+            widget,
+            "quantity",
+            1,
+            "format",
+            "json"
+        ),
+        cart_cookie
+    );
     assert(add1["status"] == 200, "5. the widget goes into the guest cart");
-    let add2 = post(app, "/cart/items", map(
-        "product_id", gadget, "quantity", 2, "format", "json"
-    ), cart_cookie);
+    let add2 = post(
+        app,
+        "/cart/items",
+        map(
+            "product_id",
+            gadget,
+            "quantity",
+            2,
+            "format",
+            "json"
+        ),
+        cart_cookie
+    );
     assert(add2["status"] == 200, "6. the gadget goes into the guest cart");
 
     // ---- 3. registration keeps the guest cart ----
@@ -218,52 +318,106 @@ fn main() {
     let auth = new AuthService();
     let email = "journey-" + tag + "@example.test";
     let user = auth.register("Journey Customer", email, "journey-pass");
-    let login_res = post(app, "/login", map(
-        "email", email, "password", "journey-pass"
-    ), cart_cookie);
+    let login_res = post(
+        app,
+        "/login",
+        map(
+            "email",
+            email,
+            "password",
+            "journey-pass"
+        ),
+        cart_cookie
+    );
     assert(login_res["status"] == 302, "6b. the customer signs in");
     let session_token = cookie_of(login_res, "spid3r_session");
     let cookie = "spid3r_session=" + session_token;
     let token_rows = DB.select("SELECT payload FROM sessions WHERE token = ?", [session_token]);
     let csrf = string(token_rows[0]["payload"]);
     let merged = get(app, "/cart", cookie + "; " + cart_cookie);
-    assert(string(merged["body"]).contains("Journey Widget"), "7. the guest cart survives registration");
+    assert(
+        string(merged["body"]).contains("Journey Widget"),
+        "7. the guest cart survives registration"
+    );
 
     // ---- 4. checkout with a coupon ----
-    let quoted = body(get(app, "/checkout/quote?shipping_method=standard&coupon_code=JOURNEY-" + tag,
-        cookie + "; " + cart_cookie));
-    assert(int(quoted["data"]["subtotal_minor"]) == 90000, "8. the quote totals both lines");
-    assert(int(quoted["data"]["coupon_discount_minor"]) == 5000, "9. the coupon discount applies");
-    let placed = post(app, "/checkout", map(
-        "shipping_method", "standard",
-        "coupon_code", "JOURNEY-" + tag,
-        "full_name", "Journey Buyer",
-        "phone", "01700000000",
-        "line1", "77 Journey Road",
-        "city", "Dhaka",
-        "district", "Dhaka",
-        "country", "Bangladesh",
-        "format", "json",
-        "_csrf", csrf
-    ), cookie + "; " + cart_cookie);
+    let quoted = body(
+        get(
+            app,
+            "/checkout/quote?shipping_method=standard&coupon_code=JOURNEY-" + tag,
+            cookie + "; " + cart_cookie
+        )
+    );
+    assert(
+        int(quoted["data"]["subtotal_minor"]) == 90000,
+        "8. the quote totals both lines"
+    );
+    assert(
+        int(quoted["data"]["coupon_discount_minor"]) == 5000,
+        "9. the coupon discount applies"
+    );
+    let placed = post(
+        app,
+        "/checkout",
+        map(
+            "shipping_method",
+            "standard",
+            "coupon_code",
+            "JOURNEY-" + tag,
+            "full_name",
+            "Journey Buyer",
+            "phone",
+            "01700000000",
+            "line1",
+            "77 Journey Road",
+            "city",
+            "Dhaka",
+            "district",
+            "Dhaka",
+            "country",
+            "Bangladesh",
+            "format",
+            "json",
+            "_csrf",
+            csrf
+        ),
+        cookie + "; " + cart_cookie
+    );
     assert(placed["status"] == 201, "10. the order is placed");
     let number = string(body(placed)["data"]["order_number"]);
     let order = DB.table("orders").where("order_number", "=", number).first();
-    assert(string(order["status"]) == "awaiting_payment", "11. the order awaits COD confirmation");
+    assert(
+        string(order["status"]) == "awaiting_payment",
+        "11. the order awaits COD confirmation"
+    );
     assert(int(order["discount_minor"]) == 5000, "12. the discount is persisted");
-    assert(DB.table("cart_items").where("cart_id", "=", DB.table("carts").where("user_id", "=", user["id"]).first()["id"]).count() == 0,
-        "13. the cart is emptied by placement");
+    assert(
+        DB.table("cart_items").where(
+            "cart_id",
+            "=",
+            DB.table("carts").where("user_id", "=", user["id"]).first()["id"]
+        ).count() == 0,
+        "13. the cart is emptied by placement"
+    );
 
     let history = get(app, "/orders", cookie);
-    assert(string(history["body"]).contains(number), "14. the order appears in the customer's history");
+    assert(
+        string(history["body"]).contains(number),
+        "14. the order appears in the customer's history"
+    );
     let confirmation = get(app, "/checkout/confirmation/" + number);
-    assert(string(confirmation["body"]).contains(number), "15. the confirmation page renders");
+    assert(
+        string(confirmation["body"]).contains(number),
+        "15. the confirmation page renders"
+    );
 
     // ---- 5. the merchant confirms COD collection ----
     let admin_email = "jadmin-" + tag + "@example.test";
     let admin_user = auth.register("Journey Admin", admin_email, "jadmin-pass");
     let role = DB.table("roles").where("slug", "=", "admin").first();
-    DB.table("user_roles").insert(map("user_id", admin_user["id"], "role_id", role["id"]));
+    DB.table("user_roles").insert(
+        map("user_id", admin_user["id"], "role_id", role["id"])
+    );
     let admin_session = session_pair(admin_email, "jadmin-pass");
     let admin_cookie = string(admin_session["cookie"]);
     let admin_csrf = string(admin_session["csrf"]);
@@ -271,69 +425,171 @@ fn main() {
     // The customer chooses how to pay: COD initiation creates the payment.
     let payment_page = get(app, "/payment/" + number, cookie);
     assert(payment_page["status"] == 200, "15b. the payment method page renders");
-    let initiated = post(app, "/payment/initiate", map(
-        "order_number", number, "provider", "cod", "_csrf", csrf
-    ), cookie);
-    assert(initiated["status"] == 200 or initiated["status"] == 302, "15c. COD initiation is accepted");
+    let initiated = post(
+        app,
+        "/payment/initiate",
+        map(
+            "order_number",
+            number,
+            "provider",
+            "cod",
+            "_csrf",
+            csrf
+        ),
+        cookie
+    );
+    assert(
+        initiated["status"] == 200 or initiated["status"] == 302,
+        "15c. COD initiation is accepted"
+    );
     let payments = DB.table("payments").where("order_id", "=", order["id"]).get();
     assert(payments.len() >= 1, "16. a COD payment row exists");
-    let verified = post(app, "/admin/api/payments/" + string(payments[0]["id"]) + "/verify", map(
-        "format", "json", "_csrf", admin_csrf
-    ), admin_cookie);
+    let verified = post(
+        app,
+        "/admin/api/payments/" + string(payments[0]["id"]) + "/verify",
+        map(
+            "format",
+            "json",
+            "_csrf",
+            admin_csrf
+        ),
+        admin_cookie
+    );
     assert(verified["status"] == 200, "17. staff verify the cash collection");
     let paid = DB.table("orders").where("id", "=", order["id"]).first();
     assert(string(paid["status"]) == "paid", "18. the order is paid");
 
     // ---- 6. loyalty points are awarded once ----
-    let points_after = int(DB.table("users").where("id", "=", user["id"]).first()["loyalty_points"]);
+    let points_after = int(
+        DB.table("users").where("id", "=", user["id"]).first()["loyalty_points"]
+    );
     assert(points_after > 0, "19. loyalty points are awarded for the paid order");
     let ledger_rows = DB.table("loyalty_ledger").where("order_id", "=", order["id"]).get();
     assert(ledger_rows.len() == 1, "20. exactly one ledger entry exists");
 
     // ---- 7. fulfilment: shipment -> delivered ----
-    let shipment_created = post(app, "/admin/api/orders/" + string(order["id"]) + "/shipments", map(
-        "carrier", "Journey Express",
-        "tracking_number", "JTRK-" + tag,
-        "method", "standard",
-        "format", "json",
-        "_csrf", admin_csrf
-    ), admin_cookie);
+    let shipment_created = post(
+        app,
+        "/admin/api/orders/" + string(order["id"]) + "/shipments",
+        map(
+            "carrier",
+            "Journey Express",
+            "tracking_number",
+            "JTRK-" + tag,
+            "method",
+            "standard",
+            "format",
+            "json",
+            "_csrf",
+            admin_csrf
+        ),
+        admin_cookie
+    );
     assert(shipment_created["status"] == 201, "21. a shipment is created");
     let shipment_id = body(shipment_created)["data"]["id"];
-    post(app, "/admin/api/shipments/" + string(shipment_id) + "/status", map(
-        "status", "shipped", "format", "json", "_csrf", admin_csrf
-    ), admin_cookie);
-    let delivered = post(app, "/admin/api/shipments/" + string(shipment_id) + "/deliver", map(
-        "format", "json", "_csrf", admin_csrf
-    ), admin_cookie);
+    post(
+        app,
+        "/admin/api/shipments/" + string(shipment_id) + "/status",
+        map(
+            "status",
+            "shipped",
+            "format",
+            "json",
+            "_csrf",
+            admin_csrf
+        ),
+        admin_cookie
+    );
+    let delivered = post(
+        app,
+        "/admin/api/shipments/" + string(shipment_id) + "/deliver",
+        map(
+            "format",
+            "json",
+            "_csrf",
+            admin_csrf
+        ),
+        admin_cookie
+    );
     assert(delivered["status"] == 200, "22. delivery is confirmed");
-    assert(string(DB.table("orders").where("id", "=", order["id"]).first()["status"]) == "delivered",
-        "23. the order settles as delivered");
+    assert(
+        string(
+            DB.table("orders").where("id", "=", order["id"]).first()["status"]
+        ) == "delivered",
+        "23. the order settles as delivered"
+    );
 
     // ---- 8. public tracking with proof of identity ----
-    let tracked = body(post(app, "/track", map(
-        "order_number", number, "email", email, "format", "json"
-    ), ""));
-    assert(string(tracked["data"]["status"]) == "delivered", "24. tracking shows the delivered status");
+    let tracked = body(
+        post(
+            app,
+            "/track",
+            map(
+                "order_number",
+                number,
+                "email",
+                email,
+                "format",
+                "json"
+            ),
+            ""
+        )
+    );
+    assert(
+        string(tracked["data"]["status"]) == "delivered",
+        "24. tracking shows the delivered status"
+    );
     assert(tracked["data"]["shipments"].len() == 1, "25. tracking lists the parcel");
-    assert(string(tracked["data"]["shipments"][0]["tracking_number"]) == "JTRK-" + tag,
-        "26. tracking exposes the courier reference");
+    assert(
+        string(tracked["data"]["shipments"][0]["tracking_number"]) == "JTRK-" + tag,
+        "26. tracking exposes the courier reference"
+    );
 
     // ---- 9. a verified-purchase review is published ----
     let items = DB.table("order_items").where("order_id", "=", order["id"]).get();
-    let reviewed = post(app, "/reviews", map(
-        "product_id", widget, "rating", 5, "title", "Journey verified",
-        "body", "Bought, delivered and reviewed in one journey.",
-        "_csrf", csrf, "format", "json"
-    ), cookie);
+    let reviewed = post(
+        app,
+        "/reviews",
+        map(
+            "product_id",
+            widget,
+            "rating",
+            5,
+            "title",
+            "Journey verified",
+            "body",
+            "Bought, delivered and reviewed in one journey.",
+            "_csrf",
+            csrf,
+            "format",
+            "json"
+        ),
+        cookie
+    );
     assert(reviewed["status"] == 200, "27. the verified buyer can review");
     let review_id = DB.table("reviews").where("product_id", "=", widget).first()["id"];
-    post(app, "/admin/reviews/" + string(review_id), map(
-        "status", "approved", "_csrf", admin_csrf, "format", "json"
-    ), admin_cookie);
+    post(
+        app,
+        "/admin/reviews/" + string(review_id),
+        map(
+            "status",
+            "approved",
+            "_csrf",
+            admin_csrf,
+            "format",
+            "json"
+        ),
+        admin_cookie
+    );
     let detail_after = get(app, "/product/journey-widget-" + tag);
-    assert(string(detail_after["body"]).contains("Journey verified"), "28. the approved review is on the product page");
-    assert(string(detail_after["body"]).contains("5.0"), "29. the rating summary is rendered");
+    assert(
+        string(detail_after["body"]).contains("Journey verified"),
+        "28. the approved review is on the product page"
+    );
+    assert(
+        string(detail_after["body"]).contains("5.0"),
+        "29. the rating summary is rendered"
+    );
 
     // ---- 10. the customer returns the gadget ----
     let gadget_item = null;
@@ -344,29 +600,74 @@ fn main() {
         }
         i += 1;
     }
-    let stock_before = int(DB.table("inventory").where("product_id", "=", gadget).first()["quantity"]);
-    let requested = post(app, "/orders/" + number + "/return", map(
-        "order_item_id", gadget_item, "quantity", 1, "kind", "return",
-        "reason", "The gadget stopped working within a week.",
-        "_csrf", csrf, "format", "json"
-    ), cookie);
+    let stock_before = int(
+        DB.table("inventory").where("product_id", "=", gadget).first()["quantity"]
+    );
+    let requested = post(
+        app,
+        "/orders/" + number + "/return",
+        map(
+            "order_item_id",
+            gadget_item,
+            "quantity",
+            1,
+            "kind",
+            "return",
+            "reason",
+            "The gadget stopped working within a week.",
+            "_csrf",
+            csrf,
+            "format",
+            "json"
+        ),
+        cookie
+    );
     assert(requested["status"] == 201, "30. the return request is accepted");
     let return_id = body(requested)["data"]["id"];
-    post(app, "/admin/api/returns/" + string(return_id), map("status", "approved", "format", "json", "_csrf", admin_csrf), admin_cookie);
-    post(app, "/admin/api/returns/" + string(return_id), map("status", "received", "format", "json", "_csrf", admin_csrf), admin_cookie);
-    let refunded = post(app, "/admin/api/returns/" + string(return_id), map(
-        "status", "refunded", "format", "json", "_csrf", admin_csrf
-    ), admin_cookie);
+    post(
+        app,
+        "/admin/api/returns/" + string(return_id),
+        map("status", "approved", "format", "json", "_csrf", admin_csrf),
+        admin_cookie
+    );
+    post(
+        app,
+        "/admin/api/returns/" + string(return_id),
+        map("status", "received", "format", "json", "_csrf", admin_csrf),
+        admin_cookie
+    );
+    let refunded = post(
+        app,
+        "/admin/api/returns/" + string(return_id),
+        map(
+            "status",
+            "refunded",
+            "format",
+            "json",
+            "_csrf",
+            admin_csrf
+        ),
+        admin_cookie
+    );
     assert(refunded["status"] == 200, "31. the return is refunded");
-    let stock_after = int(DB.table("inventory").where("product_id", "=", gadget).first()["quantity"]);
+    let stock_after = int(
+        DB.table("inventory").where("product_id", "=", gadget).first()["quantity"]
+    );
     assert(stock_after == stock_before + 1, "32. the returned item is restocked exactly once");
-    assert(int(DB.table("returns").where("id", "=", return_id).first()["refund_minor"]) == 20000,
-        "33. the refund equals the historical line value");
+    assert(
+        int(
+            DB.table("returns").where("id", "=", return_id).first()["refund_minor"]
+        ) == 20000,
+        "33. the refund equals the historical line value"
+    );
 
     // ---- 11. wishlist and invoice round the journey off ----
     post(app, "/wishlist/add", map("product_id", widget, "_csrf", csrf), cookie);
     let wishlist = get(app, "/wishlist", cookie);
-    assert(string(wishlist["body"]).contains("Journey Widget"), "34. the wishlist shows the saved product");
+    assert(
+        string(wishlist["body"]).contains("Journey Widget"),
+        "34. the wishlist shows the saved product"
+    );
     let invoice = get(app, "/orders/" + number + "/invoice", cookie);
     assert(string(invoice["body"]).contains("Invoice"), "35. the invoice renders");
 

@@ -30,7 +30,7 @@ public class CheckoutService {
     public let campaigns;
     public let shipping;
 
-    fn new() {
+    fn new () {
         self.cart = new CartService();
         self.coupons = new CouponService();
         self.orders = new OrderRepository();
@@ -43,6 +43,7 @@ public class CheckoutService {
     }
 
     fn setting(self, key: string, fallback: int) -> int {
+        let _ = self;
         let row = DB.table("settings").where("setting_key", "=", key).first();
         if row == null {
             return fallback;
@@ -58,8 +59,11 @@ public class CheckoutService {
     }
 
     fn format_amount(self, minor: int, currency: string, fx) -> string {
+        let _ = self;
         let cur = string(currency).trim().upper();
-        if cur == "" { cur = "BDT"; }
+        if cur == "" {
+            cur = "BDT";
+        }
         if fx != null and fx.has("base") and cur != string(fx["base"]).trim().upper() {
             let converted = Fx.convert(minor, string(fx["base"]), cur, fx["rates"]);
             return Fx.format(converted, cur, fx["rates"]);
@@ -204,8 +208,16 @@ public class CheckoutService {
             "shipping_display": self.format_amount(shipping, currency, fx),
             "tax_display": self.format_amount(tax, currency, fx),
             "total_display": self.format_amount(total, currency, fx),
-            "express_fee_display": self.format_amount(self.setting("shipping.express_minor", 12000), currency, fx),
-            "standard_fee_display": self.format_amount(self.setting("shipping.flat_minor", 6000), currency, fx),
+            "express_fee_display": self.format_amount(
+                self.setting("shipping.express_minor", 12000),
+                currency,
+                fx
+            ),
+            "standard_fee_display": self.format_amount(
+                self.setting("shipping.flat_minor", 6000),
+                currency,
+                fx
+            ),
             "free_threshold_display": self.format_amount(free_threshold, currency, fx)
         };
     }
@@ -214,7 +226,9 @@ public class CheckoutService {
         // Saved address (authenticated customers only).
         if data.has("address_id") and data["address_id"] != null and string(data["address_id"]) != "" {
             if ident["user_id"] == null {
-                throw validation_failed({"address_id": "Sign in to use a saved address."});
+                throw validation_failed({
+                    "address_id": "Sign in to use a saved address."
+                });
             }
             if not self.addresses.belongs_to(data["address_id"], ident["user_id"]) {
                 throw not_found("Address not found.");
@@ -232,18 +246,25 @@ public class CheckoutService {
         let i = 0;
         while i < required.len() {
             if not data.has(required[i]) or string(data[required[i]]).trim() == "" {
-                let err = {};
+                let err = {
+                };
                 err[required[i]] = "This address field is required.";
                 throw validation_failed(err);
             }
             i += 1;
         }
         let line2 = "";
-        if data.has("line2") { line2 = string(data["line2"]); }
+        if data.has("line2") {
+            line2 = string(data["line2"]);
+        }
         let district = "";
-        if data.has("district") { district = string(data["district"]); }
+        if data.has("district") {
+            district = string(data["district"]);
+        }
         let postal_code = "";
-        if data.has("postal_code") { postal_code = string(data["postal_code"]); }
+        if data.has("postal_code") {
+            postal_code = string(data["postal_code"]);
+        }
         let country = "Bangladesh";
         if data.has("country") and string(data["country"]).trim() != "" {
             country = string(data["country"]);
@@ -261,13 +282,16 @@ public class CheckoutService {
         return DB.transaction(fn() {
             let quote = self.quote(ident, data);
             if not quote["has_items"] {
-                throw validation_failed({"cart": "Your cart is empty."});
+                throw validation_failed({
+                    "cart": "Your cart is empty."
+                });
             }
             if quote["has_warnings"] {
-                throw validation_failed({"cart": "Some items are no longer available."});
+                throw validation_failed({
+                    "cart": "Some items are no longer available."
+                });
             }
             let address_json = self.resolve_address(ident, data);
-
             // Build immutable line snapshots and deduct stock atomically.
             let items = [];
             let rows = quote["items"];
@@ -278,11 +302,15 @@ public class CheckoutService {
                 let vid = line["variant_id"];
                 let product_row = DB.table("products").where("id", "=", pid).first();
                 if product_row == null {
-                    throw validation_failed({"cart": "A product is no longer available."});
+                    throw validation_failed({
+                        "cart": "A product is no longer available."
+                    });
                 }
                 let qty = int(line["quantity"]);
                 if not self.inventory.reserve(pid, null, qty, "sale", "checkout", "pending") {
-                    throw validation_failed({"cart": "Not enough stock for " + string(product_row["name"]) + "."});
+                    throw validation_failed({
+                        "cart": "Not enough stock for " + string(product_row["name"]) + "."
+                    });
                 }
                 let snap_name = string(product_row["name"]);
                 let snap_sku = string(product_row["sku"]);
@@ -308,7 +336,6 @@ public class CheckoutService {
                 });
                 i += 1;
             }
-
             let order_data = {
                 "user_id": ident["user_id"],
                 "status": "awaiting_payment",
@@ -322,30 +349,37 @@ public class CheckoutService {
                 "order_tax_minor": quote["tax_minor"]
             };
             let order = self.orders.create(order_data, items);
-
             if quote["coupon_id"] != null {
                 let coupon_repo = new CouponRepository();
-                coupon_repo.record_usage(quote["coupon_id"], order["id"], ident["user_id"], quote["coupon_discount_minor"]);
+                coupon_repo.record_usage(
+                    quote["coupon_id"],
+                    order["id"],
+                    ident["user_id"],
+                    quote["coupon_discount_minor"]
+                );
                 coupon_repo.increment_uses(quote["coupon_id"]);
             }
-
             // One use of the promotional campaign is recorded per order.
             if quote["campaign_id"] != null {
                 self.campaigns.consume(quote["campaign_id"]);
             }
-
             // Gift card redemption happens INSIDE the order transaction: if
             // the balance can no longer cover the quoted discount the whole
             // order is rolled back, so the customer is never charged more
             // than the quote they accepted.
             let gift_code = string(quote["gift_card_code"]).trim();
             if gift_code != "" {
-                let applied = self.gift_cards.redeem(gift_code, int(quote["gift_card_discount_minor"]), order["id"]);
+                let applied = self.gift_cards.redeem(
+                    gift_code,
+                    int(quote["gift_card_discount_minor"]),
+                    order["id"]
+                );
                 if applied != int(quote["gift_card_discount_minor"]) {
-                    throw validation_failed({"gift_card": "The gift card balance changed. Please review your cart and try again."});
+                    throw validation_failed({
+                        "gift_card": "The gift card balance changed. Please review your cart and try again."
+                    });
                 }
             }
-
             // Empty the cart so a repeated submit cannot double-charge.
             let cart_row = self.cart.cart(ident);
             DB.table("cart_items").where("cart_id", "=", cart_row["id"]).delete();

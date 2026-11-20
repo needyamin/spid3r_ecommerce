@@ -14,10 +14,13 @@ import "framework/Database/DB";
 import "framework/Http/HttpException";
 
 public class GiftCardService {
-    fn new() {}
+    fn new () {
+        let _ = self;
+    }
 
     // Normalised hash for a customer-entered code.
     fn hash_of(self, code: string) -> string {
+        let _ = self;
         return sha256(string(code).trim().upper());
     }
 
@@ -30,9 +33,16 @@ public class GiftCardService {
     }
 
     // Issue a new card. Returns the RAW code — show it once, never store it.
-    public fn issue(self, initial_minor: int, currency: string = "BDT", recipient_email: string = "") -> string {
+    public fn issue(
+        self,
+        initial_minor: int,
+        currency: string = "BDT",
+        recipient_email: string = ""
+    ) -> string {
         if initial_minor <= 0 {
-            throw validation_failed({"amount": "Gift card amount must be positive."});
+            throw validation_failed({
+                "amount": "Gift card amount must be positive."
+            });
         }
         let raw = hex_encode(random_bytes(16).unwrap()).upper();
         let id = DB.table("gift_cards").insert({
@@ -80,11 +90,15 @@ public class GiftCardService {
     // `order_id` may be null for a standalone redemption.
     public fn redeem(self, code: string, amount_minor: int, order_id = null) -> int {
         if amount_minor <= 0 {
-            throw validation_failed({"amount": "Charge amount must be positive."});
+            throw validation_failed({
+                "amount": "Charge amount must be positive."
+            });
         }
         let card = self.card_by_code(code);
         if card == null or string(card["status"]) != "active" {
-            throw validation_failed({"gift_card": "Gift card is invalid or inactive."});
+            throw validation_failed({
+                "gift_card": "Gift card is invalid or inactive."
+            });
         }
         let balance = int(card["balance_minor"]);
         let applied = amount_minor;
@@ -92,19 +106,23 @@ public class GiftCardService {
             applied = balance;
         }
         if applied <= 0 {
-            throw validation_failed({"gift_card": "Gift card has no balance."});
+            throw validation_failed({
+                "gift_card": "Gift card has no balance."
+            });
         }
         // ATOMIC conditional decrement: if another transaction already spent
         // the balance, this changes 0 rows and nothing is applied.
         let changes = DB.table("gift_cards")
-            .where("id", "=", card["id"])
-            .where("balance_minor", ">=", applied)
-            .decrement("balance_minor", applied);
+        .where("id", "=", card["id"])
+        .where("balance_minor", ">=", applied)
+        .decrement("balance_minor", applied);
         if changes == 0 {
             return 0;
         }
         if balance - applied <= 0 {
-            DB.table("gift_cards").where("id", "=", card["id"]).update({"status": "redeemed"});
+            DB.table("gift_cards").where("id", "=", card["id"]).update({
+                "status": "redeemed"
+            });
         }
         DB.table("gift_card_transactions").insert({
             "gift_card_id": card["id"], "order_id": order_id,
@@ -114,10 +132,12 @@ public class GiftCardService {
     }
 
     public fn transactions(self, card_id) {
+        let _ = self;
         return DB.table("gift_card_transactions").where("gift_card_id", "=", card_id).orderBy("id", "DESC").get();
     }
 
     public fn list(self) {
+        let _ = self;
         return DB.table("gift_cards").orderBy("id", "DESC").limit(100).get();
     }
 }

@@ -19,7 +19,7 @@ public class StorefrontService {
     public let categories;
     public let brands;
 
-    fn new() {
+    fn new () {
         self.products = new ProductRepository();
         self.categories = new CategoryRepository();
         self.brands = new BrandRepository();
@@ -27,11 +27,13 @@ public class StorefrontService {
 
     // Phase 13 — catalog cache TTLs (seconds), configured in the provider.
     fn home_ttl(self) -> int {
+        let _ = self;
         let cfg = Container.make("store.cache");
         return int(cfg["home_ttl"]);
     }
 
     fn product_ttl(self) -> int {
+        let _ = self;
         let cfg = Container.make("store.cache");
         return int(cfg["product_ttl"]);
     }
@@ -40,6 +42,7 @@ public class StorefrontService {
     // conversion. A currency write bumps the catalog version, so entries
     // never outlive their configuration.
     fn fx_marker(self, fx) -> string {
+        let _ = self;
         if fx == null {
             return "base";
         }
@@ -47,6 +50,7 @@ public class StorefrontService {
     }
 
     fn base_url(self) -> string {
+        let _ = self;
         let u = env("STORE_URL");
         if u.is_some() {
             let s = string(u.unwrap()).trim();
@@ -59,6 +63,7 @@ public class StorefrontService {
 
     // One query for all listing images (never N+1).
     fn attach_images(self, rows) {
+        let _ = self;
         let ids = [];
         let i = 0;
         while i < rows.len() {
@@ -68,9 +73,9 @@ public class StorefrontService {
         let images = [];
         if ids.len() > 0 {
             images = DB.table("product_images")
-                .whereIn("product_id", ids)
-                .orderBy("sort_order", "ASC")
-                .get();
+            .whereIn("product_id", ids)
+            .orderBy("sort_order", "ASC")
+            .get();
         }
         let i2 = 0;
         while i2 < rows.len() {
@@ -94,6 +99,7 @@ public class StorefrontService {
     // `fx` is null when the store runs in a single currency, in which case
     // the legacy formatting path is used unchanged.
     fn money(self, minor: int, currency: string, fx) -> string {
+        let _ = self;
         if fx == null {
             return Money.format(minor, currency);
         }
@@ -104,6 +110,7 @@ public class StorefrontService {
     // Convert an amount expressed in the DISPLAY currency into the base
     // currency the prices are actually stored in (price filters).
     fn to_base(self, minor: int, currency: string, fx) -> int {
+        let _ = self;
         if fx == null {
             return minor;
         }
@@ -118,7 +125,11 @@ public class StorefrontService {
             row["price_display"] = self.money(int(row["price_minor"]), currency, fx);
             row["compare_display"] = "";
             if row["compare_at_minor"] != null and int(row["compare_at_minor"]) > 0 {
-                row["compare_display"] = self.money(int(row["compare_at_minor"]), currency, fx);
+                row["compare_display"] = self.money(
+                    int(row["compare_at_minor"]),
+                    currency,
+                    fx
+                );
             }
             row["url"] = "/product/" + string(row["slug"]);
             row["has_image"] = false;
@@ -136,6 +147,7 @@ public class StorefrontService {
 
     // Build a query string from a params map, optionally overriding page.
     fn query_string(self, params, override_page) -> string {
+        let _ = self;
         let parts = [];
         for k in params.keys() {
             if k != "page" {
@@ -162,10 +174,10 @@ public class StorefrontService {
         // (sort x page) is bounded, so it cannot be poisoned into an
         // unbounded key explosion. Filtered searches always hit the DB.
         let cacheable = not (params.has("q") and string(params["q"]).trim() != "")
-            and not (params.has("min_price") and string(params["min_price"]).trim() != "")
-            and not (params.has("max_price") and string(params["max_price"]).trim() != "")
-            and not (params.has("category") and string(params["category"]).trim() != "")
-            and not (params.has("brand") and string(params["brand"]).trim() != "");
+        and not (params.has("min_price") and string(params["min_price"]).trim() != "")
+        and not (params.has("max_price") and string(params["max_price"]).trim() != "")
+        and not (params.has("category") and string(params["category"]).trim() != "")
+        and not (params.has("brand") and string(params["brand"]).trim() != "");
         if not cacheable {
             return self.build_catalog_context(params, path, currency, fx);
         }
@@ -181,14 +193,15 @@ public class StorefrontService {
             }
         }
         let key = "store:catalog:v" + string(CatalogCache.catalog_version())
-            + ":list:" + currency + ":" + self.fx_marker(fx) + ":" + sort + ":p" + string(page);
+        + ":list:" + currency + ":" + self.fx_marker(fx) + ":" + sort + ":p" + string(page);
         return Cache.remember(key, self.product_ttl(), fn() {
             return self.build_catalog_context(params, path, currency, fx);
         });
     }
 
     fn build_catalog_context(self, params, path: string, currency: string, fx = null) {
-        let filters = {};
+        let filters = {
+        };
         if params.has("q") and string(params["q"]).trim() != "" {
             filters["q"] = string(params["q"]).trim();
         }
@@ -200,17 +213,29 @@ public class StorefrontService {
             filters["category_id"] = cat["id"];
         }
         if params.has("brand") and string(params["brand"]).trim() != "" {
-            let brand = DB.table("brands").where("slug", "=", string(params["brand"]).trim()).first();
+            let brand = DB.table("brands").where(
+                "slug",
+                "=",
+                string(params["brand"]).trim()
+            ).first();
             if brand == null {
                 throw not_found("Brand not found.");
             }
             filters["brand_id"] = brand["id"];
         }
         if params.has("min_price") and string(params["min_price"]).trim() != "" {
-            filters["min_price_minor"] = self.to_base(Money.to_minor(params["min_price"]), currency, fx);
+            filters["min_price_minor"] = self.to_base(
+                Money.to_minor(params["min_price"]),
+                currency,
+                fx
+            );
         }
         if params.has("max_price") and string(params["max_price"]).trim() != "" {
-            filters["max_price_minor"] = self.to_base(Money.to_minor(params["max_price"]), currency, fx);
+            filters["max_price_minor"] = self.to_base(
+                Money.to_minor(params["max_price"]),
+                currency,
+                fx
+            );
         }
         let sort = "newest";
         if params.has("sort") and string(params["sort"]).trim() != "" {
@@ -221,15 +246,28 @@ public class StorefrontService {
         }
         filters["sort"] = sort;
         let sort_options = [
-            {"value": "newest", "label": "Newest", "selected": sort == "newest"},
-            {"value": "price_asc", "label": "Price: low to high", "selected": sort == "price_asc"},
-            {"value": "price_desc", "label": "Price: high to low", "selected": sort == "price_desc"},
-            {"value": "name", "label": "Name", "selected": sort == "name"}
+        {
+            "value": "newest", "label": "Newest", "selected": sort == "newest"
+        }
+        ,
+        {
+            "value": "price_asc", "label": "Price: low to high", "selected": sort == "price_asc"
+        }
+        ,
+        {
+            "value": "price_desc", "label": "Price: high to low", "selected": sort == "price_desc"
+        }
+        ,
+        {
+            "value": "name", "label": "Name", "selected": sort == "name"
+        }
         ];
         let page = 1;
         if params.has("page") {
             page = int(string(params["page"]));
-            if page < 1 { page = 1; }
+            if page < 1 {
+                page = 1;
+            }
         }
         filters["page"] = page;
         filters["per_page"] = 12;
@@ -294,13 +332,13 @@ public class StorefrontService {
 
     public fn featured(self, currency: string, limit_count: int, fx = null) {
         let key = "store:catalog:v" + string(CatalogCache.catalog_version())
-            + ":featured:" + string(limit_count) + ":" + currency + ":" + self.fx_marker(fx);
+        + ":featured:" + string(limit_count) + ":" + currency + ":" + self.fx_marker(fx);
         return Cache.remember(key, self.home_ttl(), fn() {
             let rows = DB.table("products")
-                .where("status", "=", "published")
-                .orderBy("id", "DESC")
-                .limit(limit_count)
-                .get();
+            .where("status", "=", "published")
+            .orderBy("id", "DESC")
+            .limit(limit_count)
+            .get();
             let decorated = self.decorate(rows, currency, fx);
             let i = 0;
             while i < decorated.len() {
@@ -313,7 +351,7 @@ public class StorefrontService {
 
     public fn product_context(self, slug: string, currency: string, fx = null) {
         let key = "store:catalog:v" + string(CatalogCache.catalog_version())
-            + ":product:" + slug + ":" + currency + ":" + self.fx_marker(fx);
+        + ":product:" + slug + ":" + currency + ":" + self.fx_marker(fx);
         return Cache.remember(key, self.product_ttl(), fn() {
             return self.build_product_context(slug, currency, fx);
         });
@@ -326,9 +364,9 @@ public class StorefrontService {
         }
         let decorated = self.decorate([product], currency, fx);
         let gallery_rows = DB.table("product_images")
-            .where("product_id", "=", product["id"])
-            .orderBy("sort_order", "ASC")
-            .get();
+        .where("product_id", "=", product["id"])
+        .orderBy("sort_order", "ASC")
+        .get();
         let gallery = [];
         let i = 0;
         while i < gallery_rows.len() {
@@ -364,9 +402,9 @@ public class StorefrontService {
         }
         let related = self.decorate(self.products.related(product, 4), currency, fx);
         let inv = DB.table("inventory")
-            .where("product_id", "=", product["id"])
-            .whereNull("variant_id")
-            .first();
+        .where("product_id", "=", product["id"])
+        .whereNull("variant_id")
+        .first();
         let qty = 0;
         let reserved = 0;
         if inv != null {

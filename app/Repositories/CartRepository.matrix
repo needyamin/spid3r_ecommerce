@@ -6,9 +6,12 @@
 import "framework/Database/DB";
 
 public class CartRepository {
-    fn new() {}
+    fn new () {
+        let _ = self;
+    }
 
     public fn cart_for(self, user_id, session_key: string) {
+        let _ = self;
         let q = DB.table("carts").where("status", "=", "active");
         if user_id == null {
             // A guest cart must never resolve to a user's cart that
@@ -31,20 +34,22 @@ public class CartRepository {
     }
 
     public fn items(self, cart_id) {
+        let _ = self;
         return DB.table("cart_items")
-            .where("cart_id", "=", cart_id)
-            .orderBy("id", "ASC")
-            .get();
+        .where("cart_id", "=", cart_id)
+        .orderBy("id", "ASC")
+        .get();
     }
 
     // Upsert an item (same product+variant increases quantity).
     public fn add_item(self, cart_id, product_id, variant_id, qty, unit_price_minor) -> bool {
+        let _ = self;
         if qty <= 0 {
             return false;
         }
         let q = DB.table("cart_items")
-            .where("cart_id", "=", cart_id)
-            .where("product_id", "=", product_id);
+        .where("cart_id", "=", cart_id)
+        .where("product_id", "=", product_id);
         if variant_id == null {
             q.whereNull("variant_id");
         } else {
@@ -53,8 +58,8 @@ public class CartRepository {
         let existing = q.first();
         if existing != null {
             let changes = DB.table("cart_items")
-                .where("id", "=", existing["id"])
-                .increment("quantity", qty);
+            .where("id", "=", existing["id"])
+            .increment("quantity", qty);
             return changes > 0;
         }
         let id = DB.table("cart_items").insert({
@@ -71,10 +76,13 @@ public class CartRepository {
         if qty <= 0 {
             return self.remove_item(item_id);
         }
-        return DB.table("cart_items").where("id", "=", item_id).update({"quantity": qty}) > 0;
+        return DB.table("cart_items").where("id", "=", item_id).update({
+            "quantity": qty
+        }) > 0;
     }
 
     public fn remove_item(self, item_id) -> bool {
+        let _ = self;
         return DB.table("cart_items").where("id", "=", item_id).delete() > 0;
     }
 
@@ -83,10 +91,10 @@ public class CartRepository {
     public fn merge_guest_into_user(self, session_key: string, user_id) -> bool {
         return DB.transaction(fn() {
             let guest = DB.table("carts")
-                .where("session_key", "=", session_key)
-                .where("status", "=", "active")
-                .whereNull("user_id")
-                .first();
+            .where("session_key", "=", session_key)
+            .where("status", "=", "active")
+            .whereNull("user_id")
+            .first();
             if guest == null {
                 return false;
             }

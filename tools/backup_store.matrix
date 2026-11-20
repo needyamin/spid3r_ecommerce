@@ -14,15 +14,22 @@ import "framework/Database/DB";
 import "framework/Filesystem/Storage";
 
 let store_tables = [
-    "users", "roles", "permissions", "user_roles", "role_permissions",
-    "addresses", "categories", "brands", "products", "product_variants",
-    "product_images", "inventory", "stock_movements", "carts", "cart_items",
-    "wishlists", "orders", "order_items", "payments", "refunds", "shipments",
-    "coupons", "coupon_usages", "reviews", "audit_logs", "settings"
+"users", "roles", "permissions", "user_roles", "role_permissions",
+"addresses", "categories", "brands", "products", "product_variants",
+"product_images", "inventory", "stock_movements", "carts", "cart_items",
+"wishlists", "orders", "order_items", "payments", "refunds", "shipments",
+"coupons", "coupon_usages", "reviews", "audit_logs", "settings"
 ];
 
 public fn dump_tables() {
-    let dump = map("format", "spid3r-store-backup-v1", "created_at", string(unix_time()), "tables", map());
+    let dump = map(
+        "format",
+        "spid3r-store-backup-v1",
+        "created_at",
+        string(unix_time()),
+        "tables",
+        map()
+    );
     let i = 0;
     while i < store_tables.len() {
         let name = store_tables[i];

@@ -5,12 +5,15 @@
 import "framework/Database/DB";
 
 public class OrderRepository {
-    fn new() {}
+    fn new () {
+        let _ = self;
+    }
 
     // items: list of maps with product_id, variant_id, name_snapshot,
     // sku_snapshot, unit_price_minor, quantity, discount_minor, tax_minor,
     // line_total_minor. All prices are integer minor units.
     public fn create(self, order_data, items) {
+        let _ = self;
         return DB.transaction(fn() {
             let order_number = "SP-" + string(unix_time()) + "-" + hex_encode(random_bytes(4).unwrap());
             let payload = {
@@ -35,7 +38,6 @@ public class OrderRepository {
             if int(order_id) == 0 {
                 throw "order insert failed";
             }
-
             let shipping = 0;
             if payload.has("shipping_minor") {
                 shipping = int(payload["shipping_minor"]);
@@ -85,31 +87,39 @@ public class OrderRepository {
     }
 
     public fn find_by_number(self, order_number: string) {
+        let _ = self;
         return DB.table("orders").where("order_number", "=", order_number).first();
     }
 
     public fn items_for(self, order_id) {
+        let _ = self;
         return DB.table("order_items").where("order_id", "=", order_id).get();
     }
 
     public fn for_user(self, user_id, page: int = 1, per_page: int = 15) {
+        let _ = self;
         return DB.table("orders")
-            .where("user_id", "=", user_id)
-            .orderBy("id", "DESC")
-            .paginate(page, per_page);
+        .where("user_id", "=", user_id)
+        .orderBy("id", "DESC")
+        .paginate(page, per_page);
     }
 
     public fn find(self, id) {
+        let _ = self;
         return DB.table("orders").where("id", "=", id).first();
     }
 
     public fn admin_list(self, page: int = 1, per_page: int = 20) {
+        let _ = self;
         return DB.table("orders")
-            .orderBy("id", "DESC")
-            .paginate(page, per_page);
+        .orderBy("id", "DESC")
+        .paginate(page, per_page);
     }
 
     public fn set_status(self, order_id, status: string) -> bool {
-        return DB.table("orders").where("id", "=", order_id).update({"status": status}) > 0;
+        let _ = self;
+        return DB.table("orders").where("id", "=", order_id).update({
+            "status": status
+        }) > 0;
     }
 }

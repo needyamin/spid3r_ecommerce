@@ -4,12 +4,15 @@
 import "framework/Database/DB";
 
 public class ProductRepository {
-    fn new() {}
+    fn new () {
+        let _ = self;
+    }
 
     // Search/filter/sort/paginate published products.
     // filters: q, category_id, brand_id, min_price_minor, max_price_minor,
     //          sort (newest|price_asc|price_desc|name), page, per_page
     public fn published(self, filters) {
+        let _ = self;
         let q = DB.table("products").where("status", "=", "published");
 
         if filters.has("q") and string(filters["q"]).trim() != "" {
@@ -44,39 +47,48 @@ public class ProductRepository {
 
         let page = 1;
         let per_page = 15;
-        if filters.has("page") { page = int(filters["page"]); }
-        if filters.has("per_page") { per_page = int(filters["per_page"]); }
+        if filters.has("page") {
+            page = int(filters["page"]);
+        }
+        if filters.has("per_page") {
+            per_page = int(filters["per_page"]);
+        }
         return q.paginate(page, per_page);
     }
 
     public fn find_by_slug(self, slug: string) {
+        let _ = self;
         return DB.table("products").where("slug", "=", slug).first();
     }
 
     public fn find(self, id) {
+        let _ = self;
         return DB.table("products").where("id", "=", id).first();
     }
 
     public fn images_for(self, product_id) {
+        let _ = self;
         return DB.table("product_images")
-            .where("product_id", "=", product_id)
-            .orderBy("sort_order", "ASC")
-            .get();
+        .where("product_id", "=", product_id)
+        .orderBy("sort_order", "ASC")
+        .get();
     }
 
     public fn variants_for(self, product_id) {
+        let _ = self;
         return DB.table("product_variants")
-            .where("product_id", "=", product_id)
-            .where("is_active", "=", 1)
-            .get();
+        .where("product_id", "=", product_id)
+        .where("is_active", "=", 1)
+        .get();
     }
 
     public fn related(self, product, limit_count: int = 4) {
+        let _ = self;
         return DB.table("products")
-            .where("status", "=", "published")
-            .where("category_id", "=", product["category_id"])
-            .where("id", "!=", product["id"])
-            .limit(limit_count)
-            .get();
+        .where("status", "=", "published")
+        .where("category_id", "=", product["category_id"])
+        .where("id", "!=", product["id"])
+        .limit(limit_count)
+        .get();
     }
 }

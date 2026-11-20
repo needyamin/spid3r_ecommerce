@@ -23,7 +23,7 @@ public class ShippingController {
     public let returns;
     public let settings;
 
-    fn new() {
+    fn new () {
         self.shipping = new ShippingService();
         self.fulfillment = new FulfillmentService();
         self.returns = new ReturnService();
@@ -44,20 +44,61 @@ public class ShippingController {
             "csrf": req.auth.csrf()
         };
         base["admin_navigation"] = [
-            {"label": "Overview", "url": "/admin/dashboard", "active": page == "dashboard", "icon": "dashboard"},
-            {"label": "Orders", "url": "/admin/orders", "active": page == "orders", "icon": "orders"},
-            {"label": "Products", "url": "/admin/products", "active": page == "products", "icon": "products"},
-            {"label": "Categories", "url": "/admin/categories", "active": page == "categories", "icon": "categories"},
-            {"label": "Brands", "url": "/admin/brands", "active": page == "brands", "icon": "brands"},
-            {"label": "Inventory", "url": "/admin/inventory", "active": page == "inventory", "icon": "inventory"},
-            {"label": "Customers", "url": "/admin/customers", "active": page == "customers", "icon": "customers"},
-            {"label": "Staff", "url": "/admin/staff", "active": page == "staff", "icon": "staff"},
-            {"label": "Roles", "url": "/admin/roles", "active": page == "roles", "icon": "roles"},
-            {"label": "Coupons", "url": "/admin/coupons", "active": page == "coupons", "icon": "coupons"},
-            {"label": "Payments", "url": "/admin/payments", "active": page == "payments", "icon": "payments"},
-            {"label": "Shipping", "url": "/admin/shipping", "active": true, "icon": "shipping"},
-            {"label": "Reports", "url": "/admin/reports", "active": page == "reports", "icon": "reports"},
-            {"label": "Settings", "url": "/admin/settings", "active": page == "settings", "icon": "settings"}
+        {
+            "label": "Overview", "url": "/admin/dashboard", "active": page == "dashboard", "icon": "dashboard"
+        }
+        ,
+        {
+            "label": "Orders", "url": "/admin/orders", "active": page == "orders", "icon": "orders"
+        }
+        ,
+        {
+            "label": "Products", "url": "/admin/products", "active": page == "products", "icon": "products"
+        }
+        ,
+        {
+            "label": "Categories", "url": "/admin/categories", "active": page == "categories", "icon": "categories"
+        }
+        ,
+        {
+            "label": "Brands", "url": "/admin/brands", "active": page == "brands", "icon": "brands"
+        }
+        ,
+        {
+            "label": "Inventory", "url": "/admin/inventory", "active": page == "inventory", "icon": "inventory"
+        }
+        ,
+        {
+            "label": "Customers", "url": "/admin/customers", "active": page == "customers", "icon": "customers"
+        }
+        ,
+        {
+            "label": "Staff", "url": "/admin/staff", "active": page == "staff", "icon": "staff"
+        }
+        ,
+        {
+            "label": "Roles", "url": "/admin/roles", "active": page == "roles", "icon": "roles"
+        }
+        ,
+        {
+            "label": "Coupons", "url": "/admin/coupons", "active": page == "coupons", "icon": "coupons"
+        }
+        ,
+        {
+            "label": "Payments", "url": "/admin/payments", "active": page == "payments", "icon": "payments"
+        }
+        ,
+        {
+            "label": "Shipping", "url": "/admin/shipping", "active": true, "icon": "shipping"
+        }
+        ,
+        {
+            "label": "Reports", "url": "/admin/reports", "active": page == "reports", "icon": "reports"
+        }
+        ,
+        {
+            "label": "Settings", "url": "/admin/settings", "active": page == "settings", "icon": "settings"
+        }
         ];
         let chrome = StoreChrome.build(req, self.settings);
         for k in chrome.keys() {
@@ -72,7 +113,10 @@ public class ShippingController {
     }
 
     fn admin_nav(self) {
-        return {"page": "shipping"};
+        let _ = self;
+        return {
+            "page": "shipping"
+        };
     }
 
     // ---- administration: zones + rates ----
@@ -81,10 +125,13 @@ public class ShippingController {
     // the view never loops over the full rate table per zone).
     fn zone_rows(self) {
         let cur = string(self.settings["currency"]);
-        if cur == "" { cur = "BDT"; }
+        if cur == "" {
+            cur = "BDT";
+        }
         let zones = self.shipping.all_zones();
         let rates = self.shipping.all_rates();
-        let grouped = {};
+        let grouped = {
+        };
         let i = 0;
         while i < rates.len() {
             let r = rates[i];
@@ -147,7 +194,9 @@ public class ShippingController {
                 let pi = 0;
                 while pi < parts.len() {
                     let p = string(parts[pi]).trim();
-                    if p != "" { dist_list.push(p); }
+                    if p != "" {
+                        dist_list.push(p);
+                    }
                     pi += 1;
                 }
             }
@@ -161,25 +210,43 @@ public class ShippingController {
 
     public fn admin_page(self, req) {
         let cur = string(self.settings["currency"]);
-        if cur == "" { cur = "BDT"; }
+        if cur == "" {
+            cur = "BDT";
+        }
         let zones = self.zone_rows();
         let flat_std_m = self.shipping.flat_fee("standard", 0);
         let flat_exp_m = self.shipping.flat_fee("express", 0);
         let free_thresh_m = 0;
-        let free_row = DB.table("settings").where("setting_key", "=", "shipping.free_threshold_minor").first();
-        if free_row != null { free_thresh_m = int(free_row["value"]); }
+        let free_row = DB.table("settings").where(
+            "setting_key",
+            "=",
+            "shipping.free_threshold_minor"
+        ).first();
+        if free_row != null {
+            free_thresh_m = int(free_row["value"]);
+        }
         let std_lead = "2 - 4 business days";
-        let lead_row = DB.table("settings").where("setting_key", "=", "shipping.standard_lead_days").first();
-        if lead_row != null { std_lead = string(lead_row["value"]); }
+        let lead_row = DB.table("settings").where(
+            "setting_key",
+            "=",
+            "shipping.standard_lead_days"
+        ).first();
+        if lead_row != null {
+            std_lead = string(lead_row["value"]);
+        }
         let exp_lead = "Within 24 hours";
         let exp_row = DB.table("settings").where("setting_key", "=", "shipping.express_lead_days").first();
-        if exp_row != null { exp_lead = string(exp_row["value"]); }
+        if exp_row != null {
+            exp_lead = string(exp_row["value"]);
+        }
 
         let active_zones = 0;
         let total_rates = 0;
         let zi = 0;
         while zi < zones.len() {
-            if int(zones[zi]["is_active"]) == 1 { active_zones += 1; }
+            if int(zones[zi]["is_active"]) == 1 {
+                active_zones += 1;
+            }
             total_rates += int(zones[zi]["rate_count"]);
             zi += 1;
         }
@@ -212,8 +279,10 @@ public class ShippingController {
         return view("admin/shipping", self.ctx(req, "Shipping & delivery", view_ctx));
     }
 
-    public fn api_zones(self, req) {
-        return json({"data": self.zone_rows()});
+    public fn api_zones(self, _req) {
+        return json({
+            "data": self.zone_rows()
+        });
     }
 
     public fn api_zone_save(self, req) {
@@ -231,10 +300,18 @@ public class ShippingController {
                 "districts": districts,
                 "is_active": is_active
             });
-            return json({"data": {"id": zid, "saved": true, "updated": true}});
+            return json({
+                "data": {
+                    "id": zid, "saved": true, "updated": true
+                }
+            });
         }
         let id = self.shipping.save_zone(name, country, districts, is_active);
-        return json({"data": {"id": id, "saved": true, "created": true}}, 201);
+        return json({
+            "data": {
+                "id": id, "saved": true, "created": true
+            }
+        }, 201);
     }
 
     public fn api_zone_delete(self, req) {
@@ -242,7 +319,11 @@ public class ShippingController {
         if not deactivated {
             throw not_found("Shipping zone not found.");
         }
-        return json({"data": {"deactivated": true}});
+        return json({
+            "data": {
+                "deactivated": true
+            }
+        });
     }
 
     public fn api_zone_toggle(self, req) {
@@ -255,12 +336,20 @@ public class ShippingController {
         if int(zone["is_active"]) != 1 {
             new_state = 1;
         }
-        DB.table("shipping_zones").where("id", "=", zid).update({"is_active": new_state});
-        return json({"data": {"id": zid, "is_active": new_state}});
+        DB.table("shipping_zones").where("id", "=", zid).update({
+            "is_active": new_state
+        });
+        return json({
+            "data": {
+                "id": zid, "is_active": new_state
+            }
+        });
     }
 
-    public fn api_rates(self, req) {
-        return json({"data": self.shipping.all_rates()});
+    public fn api_rates(self, _req) {
+        return json({
+            "data": self.shipping.all_rates()
+        });
     }
 
     public fn api_rate_save(self, req) {
@@ -280,7 +369,11 @@ public class ShippingController {
             int(req.input("estimated_days_max", 7)),
             int(req.input("is_active", 1))
         );
-        return json({"data": {"id": id, "created": true}}, 201);
+        return json({
+            "data": {
+                "id": id, "created": true
+            }
+        }, 201);
     }
 
     public fn api_rate_delete(self, req) {
@@ -288,7 +381,11 @@ public class ShippingController {
         if not deactivated {
             throw not_found("Shipping rate not found.");
         }
-        return json({"data": {"deactivated": true}});
+        return json({
+            "data": {
+                "deactivated": true
+            }
+        });
     }
 
     public fn api_rate_toggle(self, req) {
@@ -301,8 +398,14 @@ public class ShippingController {
         if int(rate["is_active"]) != 1 {
             new_state = 1;
         }
-        DB.table("shipping_rates").where("id", "=", rid).update({"is_active": new_state});
-        return json({"data": {"id": rid, "is_active": new_state}});
+        DB.table("shipping_rates").where("id", "=", rid).update({
+            "is_active": new_state
+        });
+        return json({
+            "data": {
+                "id": rid, "is_active": new_state
+            }
+        });
     }
 
     public fn api_flat_rates(self, req) {
@@ -315,18 +418,31 @@ public class ShippingController {
         self.upsert_setting("shipping.flat_minor", string(std_minor), "shipping");
         self.upsert_setting("shipping.express_minor", string(exp_minor), "shipping");
         self.upsert_setting("shipping.free_threshold_minor", string(free_minor), "shipping");
-        if std_lead != "" { self.upsert_setting("shipping.standard_lead_days", std_lead, "shipping"); }
-        if exp_lead != "" { self.upsert_setting("shipping.express_lead_days", exp_lead, "shipping"); }
+        if std_lead != "" {
+            self.upsert_setting("shipping.standard_lead_days", std_lead, "shipping");
+        }
+        if exp_lead != "" {
+            self.upsert_setting("shipping.express_lead_days", exp_lead, "shipping");
+        }
 
-        return json({"data": {"saved": true, "message": "Shipping flat rate settings updated."}});
+        return json({
+            "data": {
+                "saved": true, "message": "Shipping flat rate settings updated."
+            }
+        });
     }
 
     fn upsert_setting(self, key: string, val: string, grp: string) {
+        let _ = self;
         let existing = DB.table("settings").where("setting_key", "=", key).first();
         if existing != null {
-            DB.table("settings").where("setting_key", "=", key).update({"value": val, "setting_group": grp});
+            DB.table("settings").where("setting_key", "=", key).update({
+                "value": val, "setting_group": grp
+            });
         } else {
-            DB.table("settings").insert({"setting_key": key, "value": val, "setting_group": grp});
+            DB.table("settings").insert({
+                "setting_key": key, "value": val, "setting_group": grp
+            });
         }
     }
 
@@ -334,7 +450,9 @@ public class ShippingController {
 
     public fn api_shipments(self, req) {
         let rows = self.fulfillment.shipments_for(req.params["order_id"]);
-        return json({"data": rows});
+        return json({
+            "data": rows
+        });
     }
 
     public fn api_shipment_create(self, req) {
@@ -353,18 +471,29 @@ public class ShippingController {
             string(req.input("estimated_at", "")),
             string(req.input("notes", ""))
         );
-        return json({"data": {"id": id, "created": true}}, 201);
+        return json({
+            "data": {
+                "id": id, "created": true
+            }
+        }, 201);
     }
 
     public fn api_shipment_status(self, req) {
         req.validate_or_fail(ShippingValidators.shipment_status_rules());
-        let updated = self.fulfillment.set_status(req.params["id"], string(req.input("status", "")));
-        return json({"data": updated});
+        let updated = self.fulfillment.set_status(
+            req.params["id"],
+            string(req.input("status", ""))
+        );
+        return json({
+            "data": updated
+        });
     }
 
     public fn api_shipment_deliver(self, req) {
         let updated = self.fulfillment.confirm_delivery(req.params["id"]);
-        return json({"data": updated});
+        return json({
+            "data": updated
+        });
     }
 
     // ---- administration: returns ----
@@ -380,8 +509,10 @@ public class ShippingController {
         return view("admin/returns", self.ctx(req, "Returns & exchanges", view_ctx));
     }
 
-    public fn api_returns(self, req) {
-        return json({"data": self.returns.all()});
+    public fn api_returns(self, _req) {
+        return json({
+            "data": self.returns.all()
+        });
     }
 
     public fn api_return_resolve(self, req) {
@@ -391,7 +522,9 @@ public class ShippingController {
             string(req.input("status", "")),
             int(req.input("refund_minor", 0))
         );
-        return json({"data": updated});
+        return json({
+            "data": updated
+        });
     }
 
     // ---- customer ----
@@ -414,7 +547,12 @@ public class ShippingController {
 
     // The order must belong to the signed-in customer.
     fn returns_orders_for(self, req, user_id) {
-        let order = DB.table("orders").where("order_number", "=", string(req.params["number"])).first();
+        let _ = self;
+        let order = DB.table("orders").where(
+            "order_number",
+            "=",
+            string(req.params["number"])
+        ).first();
         if order == null or order["user_id"] == null or int(order["user_id"]) != int(user_id) {
             throw not_found("Order not found.");
         }
@@ -439,7 +577,11 @@ public class ShippingController {
             string(req.input("kind", "return"))
         );
         if req.input("format", "") == "json" {
-            return json({"data": {"id": id, "requested": true}}, 201);
+            return json({
+                "data": {
+                    "id": id, "requested": true
+                }
+            }, 201);
         }
         return redirect("/orders/" + string(order["order_number"]) + "/return");
     }
@@ -461,7 +603,8 @@ public class ShippingController {
     public fn estimate(self, req) {
         let method = string(req.input("method", "standard"));
         let subtotal = int(req.input("order_value_minor", 0));
-        let address = {};
+        let address = {
+        };
         let keys = ["country", "district", "city"];
         let i = 0;
         while i < keys.len() {
@@ -471,6 +614,8 @@ public class ShippingController {
             i += 1;
         }
         let quote = self.shipping.quote(address, method, subtotal);
-        return json({"data": quote});
+        return json({
+            "data": quote
+        });
     }
 }

@@ -62,7 +62,9 @@ let status_options_for = fn(current: string, allowed) {
     let i = 0;
     while i < allowed.len() {
         let v = string(allowed[i]);
-        out.push({"value": v, "label": v, "selected": v == string(current)});
+        out.push({
+            "value": v, "label": v, "selected": v == string(current)
+        });
         i += 1;
     }
     return out;
@@ -76,7 +78,7 @@ public class AdminController {
     public let settings;
     public let order_statuses;
 
-    fn new() {
+    fn new () {
         self.admin = new AdminService();
         self.orders = new OrderRepository();
         self.categories = new CategoryRepository();
@@ -113,20 +115,61 @@ public class AdminController {
             "csrf": req.auth.csrf()
         };
         base["admin_navigation"] = [
-            {"label": "Overview", "url": "/admin/dashboard", "active": page == "dashboard", "icon": "dashboard"},
-            {"label": "Orders", "url": "/admin/orders", "active": page == "orders", "icon": "orders"},
-            {"label": "Products", "url": "/admin/products", "active": page == "products", "icon": "products"},
-            {"label": "Categories", "url": "/admin/categories", "active": page == "categories", "icon": "categories"},
-            {"label": "Brands", "url": "/admin/brands", "active": page == "brands", "icon": "brands"},
-            {"label": "Inventory", "url": "/admin/inventory", "active": page == "inventory", "icon": "inventory"},
-            {"label": "Customers", "url": "/admin/customers", "active": page == "customers", "icon": "customers"},
-            {"label": "Staff", "url": "/admin/staff", "active": page == "staff", "icon": "staff"},
-            {"label": "Roles", "url": "/admin/roles", "active": page == "roles", "icon": "roles"},
-            {"label": "Coupons", "url": "/admin/coupons", "active": page == "coupons", "icon": "coupons"},
-            {"label": "Payments", "url": "/admin/payments", "active": page == "payments", "icon": "payments"},
-            {"label": "Shipping", "url": "/admin/shipping", "active": page == "shipping", "icon": "shipping"},
-            {"label": "Reports", "url": "/admin/reports", "active": page == "reports", "icon": "reports"},
-            {"label": "Settings", "url": "/admin/settings", "active": page == "settings", "icon": "settings"}
+        {
+            "label": "Overview", "url": "/admin/dashboard", "active": page == "dashboard", "icon": "dashboard"
+        }
+        ,
+        {
+            "label": "Orders", "url": "/admin/orders", "active": page == "orders", "icon": "orders"
+        }
+        ,
+        {
+            "label": "Products", "url": "/admin/products", "active": page == "products", "icon": "products"
+        }
+        ,
+        {
+            "label": "Categories", "url": "/admin/categories", "active": page == "categories", "icon": "categories"
+        }
+        ,
+        {
+            "label": "Brands", "url": "/admin/brands", "active": page == "brands", "icon": "brands"
+        }
+        ,
+        {
+            "label": "Inventory", "url": "/admin/inventory", "active": page == "inventory", "icon": "inventory"
+        }
+        ,
+        {
+            "label": "Customers", "url": "/admin/customers", "active": page == "customers", "icon": "customers"
+        }
+        ,
+        {
+            "label": "Staff", "url": "/admin/staff", "active": page == "staff", "icon": "staff"
+        }
+        ,
+        {
+            "label": "Roles", "url": "/admin/roles", "active": page == "roles", "icon": "roles"
+        }
+        ,
+        {
+            "label": "Coupons", "url": "/admin/coupons", "active": page == "coupons", "icon": "coupons"
+        }
+        ,
+        {
+            "label": "Payments", "url": "/admin/payments", "active": page == "payments", "icon": "payments"
+        }
+        ,
+        {
+            "label": "Shipping", "url": "/admin/shipping", "active": page == "shipping", "icon": "shipping"
+        }
+        ,
+        {
+            "label": "Reports", "url": "/admin/reports", "active": page == "reports", "icon": "reports"
+        }
+        ,
+        {
+            "label": "Settings", "url": "/admin/settings", "active": page == "settings", "icon": "settings"
+        }
         ];
         let chrome = StoreChrome.build(req, self.settings);
         for ck in chrome.keys() {
@@ -148,8 +191,13 @@ public class AdminController {
             let data = DB.table("products").orderBy("id", "DESC").limit(50).get();
             let i = 0;
             while i < data.len() {
-                rows.push([data[i]["id"], data[i]["name"], data[i]["sku"],
-                           Money.format(int(data[i]["price_minor"]), self.store_currency()), data[i]["status"]]);
+                rows.push(
+                    [data[i]["id"],
+                    data[i]["name"],
+                    data[i]["sku"],
+                    Money.format(int(data[i]["price_minor"]), self.store_currency()),
+                    data[i]["status"]]
+                );
                 i += 1;
             }
         } elif page == "categories" {
@@ -157,7 +205,12 @@ public class AdminController {
             let data = self.categories.all();
             let i = 0;
             while i < data.len() {
-                rows.push([data[i]["id"], data[i]["name"], data[i]["slug"], data[i]["parent_id"]]);
+                rows.push(
+                    [data[i]["id"],
+                    data[i]["name"],
+                    data[i]["slug"],
+                    data[i]["parent_id"]]
+                );
                 i += 1;
             }
         } elif page == "brands" {
@@ -173,7 +226,12 @@ public class AdminController {
             let data = DB.table("inventory").orderBy("product_id", "ASC").get();
             let i = 0;
             while i < data.len() {
-                rows.push([data[i]["product_id"], data[i]["quantity"], data[i]["reserved"], data[i]["low_stock_threshold"]]);
+                rows.push(
+                    [data[i]["product_id"],
+                    data[i]["quantity"],
+                    data[i]["reserved"],
+                    data[i]["low_stock_threshold"]]
+                );
                 i += 1;
             }
         } elif page == "orders" {
@@ -181,8 +239,15 @@ public class AdminController {
             let data = self.orders.admin_list(1, 50)["data"];
             let i = 0;
             while i < data.len() {
-                rows.push([data[i]["order_number"], data[i]["status"],
-                           Money.format(int(data[i]["total_minor"]), self.order_currency(data[i])), data[i]["placed_at"]]);
+                rows.push(
+                    [data[i]["order_number"],
+                    data[i]["status"],
+                    Money.format(
+                        int(data[i]["total_minor"]),
+                        self.order_currency(data[i])
+                    ),
+                    data[i]["placed_at"]]
+                );
                 i += 1;
             }
         } elif page == "customers" {
@@ -190,7 +255,12 @@ public class AdminController {
             let data = self.admin.customers();
             let i = 0;
             while i < data.len() {
-                rows.push([data[i]["id"], data[i]["name"], data[i]["email"], data[i]["status"]]);
+                rows.push(
+                    [data[i]["id"],
+                    data[i]["name"],
+                    data[i]["email"],
+                    data[i]["status"]]
+                );
                 i += 1;
             }
         } elif page == "staff" {
@@ -206,7 +276,12 @@ public class AdminController {
             let data = self.admin.roles();
             let i = 0;
             while i < data.len() {
-                rows.push([data[i]["id"], data[i]["name"], data[i]["slug"], data[i]["permission_count"]]);
+                rows.push(
+                    [data[i]["id"],
+                    data[i]["name"],
+                    data[i]["slug"],
+                    data[i]["permission_count"]]
+                );
                 i += 1;
             }
         } elif page == "coupons" {
@@ -214,7 +289,13 @@ public class AdminController {
             let data = self.admin.coupons();
             let i = 0;
             while i < data.len() {
-                rows.push([data[i]["id"], data[i]["code"], data[i]["type"], data[i]["value_minor"], data[i]["uses"]]);
+                rows.push(
+                    [data[i]["id"],
+                    data[i]["code"],
+                    data[i]["type"],
+                    data[i]["value_minor"],
+                    data[i]["uses"]]
+                );
                 i += 1;
             }
         } elif page == "audit" {
@@ -222,22 +303,37 @@ public class AdminController {
             let data = self.admin.audit(50);
             let i = 0;
             while i < data.len() {
-                rows.push([data[i]["action"], data[i]["entity_type"], data[i]["entity_id"], data[i]["created_at"]]);
+                rows.push(
+                    [data[i]["action"],
+                    data[i]["entity_type"],
+                    data[i]["entity_id"],
+                    data[i]["created_at"]]
+                );
                 i += 1;
             }
         } else {
             headers = ["Key", "Value", "Group"];
             let group = "";
-            if page == "shipping" { group = "shipping"; }
-            if page == "payments" { group = "payments"; }
+            if page == "shipping" {
+                group = "shipping";
+            }
+            if page == "payments" {
+                group = "payments";
+            }
             let data = self.admin.settings(group);
             let i = 0;
             while i < data.len() {
-                rows.push([data[i]["setting_key"], data[i]["value"], data[i]["setting_group"]]);
+                rows.push(
+                    [data[i]["setting_key"],
+                    data[i]["value"],
+                    data[i]["setting_group"]]
+                );
                 i += 1;
             }
         }
-        return {"headers": headers, "rows": rows, "has_rows": rows.len() > 0};
+        return {
+            "headers": headers, "rows": rows, "has_rows": rows.len() > 0
+        };
     }
 
     fn audit(self, req, action: string, entity: string, entity_id, payload) {
@@ -251,7 +347,8 @@ public class AdminController {
         let i = 0;
         while i < stats["recent_orders"].len() {
             let o = stats["recent_orders"][i];
-            let row = {};
+            let row = {
+            };
             for k in o.keys() {
                 row[k] = o[k];
             }
@@ -265,13 +362,19 @@ public class AdminController {
             row["customer_name"] = customer_name;
             row["item_count"] = DB.table("order_items").where("order_id", "=", o["id"]).count();
             row["status_label"] = string(o["status"]).replace("_", " ");
-            row["total_display"] = Money.format(int(o["total_minor"]), self.order_currency(o));
+            row["total_display"] = Money.format(
+                int(o["total_minor"]),
+                self.order_currency(o)
+            );
             formatted_recent.push(row);
             i += 1;
         }
         stats["recent_orders"] = formatted_recent;
         let ctx = self.ctx(req, "Dashboard", "dashboard", {
-            "revenue_display": Money.format(int(stats["revenue_minor"]), self.store_currency()),
+            "revenue_display": Money.format(
+                int(stats["revenue_minor"]),
+                self.store_currency()
+            ),
             "csrf": req.auth.csrf()
         });
         for k in stats.keys() {
@@ -284,21 +387,26 @@ public class AdminController {
     // the option lists the forms need (categories, brands, roles,
     // permissions, order statuses).
     fn page_extras(self, name: string, req = null) {
-        let extra = {};
+        let extra = {
+        };
 
         if name == "products" {
             let cats = self.categories.all();
             let cat_opts = [];
             let ci = 0;
             while ci < cats.len() {
-                cat_opts.push({"value": cats[ci]["id"], "label": cats[ci]["name"]});
+                cat_opts.push({
+                    "value": cats[ci]["id"], "label": cats[ci]["name"]
+                });
                 ci += 1;
             }
             let brands = self.brands.all();
             let brand_opts = [];
             let bi = 0;
             while bi < brands.len() {
-                brand_opts.push({"value": brands[bi]["id"], "label": brands[bi]["name"]});
+                brand_opts.push({
+                    "value": brands[bi]["id"], "label": brands[bi]["name"]
+                });
                 bi += 1;
             }
             let product_q = "";
@@ -336,9 +444,9 @@ public class AdminController {
                 });
             }
             let rows = rows_query.orderBy("id", "DESC")
-                .limit(page_size)
-                .offset((page_number - 1) * page_size)
-                .get();
+            .limit(page_size)
+            .offset((page_number - 1) * page_size)
+            .get();
             // One query for all gallery thumbnails on the current page (never N+1).
             let ids = [];
             let ri = 0;
@@ -346,12 +454,13 @@ public class AdminController {
                 ids.push(rows[ri]["id"]);
                 ri += 1;
             }
-            let thumbs = {};
+            let thumbs = {
+            };
             if ids.len() > 0 {
                 let imgs = DB.table("product_images")
-                    .whereIn("product_id", ids)
-                    .orderBy("sort_order", "ASC")
-                    .get();
+                .whereIn("product_id", ids)
+                .orderBy("sort_order", "ASC")
+                .get();
                 let ii = 0;
                 while ii < imgs.len() {
                     let pid = string(imgs[ii]["product_id"]);
@@ -366,9 +475,9 @@ public class AdminController {
             while i < rows.len() {
                 let pid = string(rows[i]["id"]);
                 let stock = DB.table("inventory")
-                    .where("product_id", "=", rows[i]["id"])
-                    .whereNull("variant_id")
-                    .first();
+                .where("product_id", "=", rows[i]["id"])
+                .whereNull("variant_id")
+                .first();
                 let qty = 0;
                 let reserved = 0;
                 let threshold = 0;
@@ -390,9 +499,17 @@ public class AdminController {
                     "name": rows[i]["name"],
                     "sku": rows[i]["sku"],
                     "price": Money.to_major(rows[i]["price_minor"]),
-                    "price_display": Money.format(int(rows[i]["price_minor"]), self.store_currency()),
+                    "price_display": Money.format(
+                        int(rows[i]["price_minor"]),
+                        self.store_currency()
+                    ),
                     "status": rows[i]["status"],
-                    "status_options": status_options_for(string(rows[i]["status"]), ["draft", "published", "archived"]),
+                    "status_options": status_options_for(
+                        string(rows[i]["status"]),
+                        ["draft",
+                        "published",
+                        "archived"]
+                    ),
                     "is_published": string(rows[i]["status"]) == "published",
                     "is_featured": int(rows[i]["is_featured"]) == 1,
                     "stock": qty,
@@ -449,7 +566,9 @@ public class AdminController {
                     "slug": rows[i]["slug"],
                     "description": rows[i]["description"]
                 });
-                opts.push({"value": rows[i]["id"], "label": rows[i]["name"]});
+                opts.push({
+                    "value": rows[i]["id"], "label": rows[i]["name"]
+                });
                 i += 1;
             }
             extra["category_rows"] = list;
@@ -500,9 +619,9 @@ public class AdminController {
                 let threshold = int(rows[i]["low_stock_threshold"]);
                 let thumb = "";
                 let primary = DB.table("product_images")
-                    .where("product_id", "=", rows[i]["product_id"])
-                    .orderBy("sort_order", "ASC")
-                    .first();
+                .where("product_id", "=", rows[i]["product_id"])
+                .orderBy("sort_order", "ASC")
+                .first();
                 if primary != null {
                     thumb = Images.public_image_url(primary["path"]);
                 }
@@ -558,7 +677,11 @@ public class AdminController {
                     "name": rows[i]["name"],
                     "email": rows[i]["email"],
                     "status": rows[i]["status"],
-                    "status_options": status_options_for(string(rows[i]["status"]), ["active", "suspended"])
+                    "status_options": status_options_for(
+                        string(rows[i]["status"]),
+                        ["active",
+                        "suspended"]
+                    )
                 });
                 i += 1;
             }
@@ -580,7 +703,9 @@ public class AdminController {
             let role_opts = [];
             let ri = 0;
             while ri < roles.len() {
-                role_opts.push({"value": roles[ri]["slug"], "label": roles[ri]["name"]});
+                role_opts.push({
+                    "value": roles[ri]["slug"], "label": roles[ri]["name"]
+                });
                 ri += 1;
             }
             extra["staff_rows"] = list;
@@ -604,7 +729,9 @@ public class AdminController {
             let perm_opts = [];
             let pi = 0;
             while pi < perms.len() {
-                perm_opts.push({"value": perms[pi]["slug"], "label": perms[pi]["name"]});
+                perm_opts.push({
+                    "value": perms[pi]["slug"], "label": perms[pi]["name"]
+                });
                 pi += 1;
             }
             extra["role_rows"] = list;
@@ -620,8 +747,14 @@ public class AdminController {
                     "id": rows[i]["id"],
                     "order_number": rows[i]["order_number"],
                     "status": rows[i]["status"],
-                    "status_options": status_options_for(string(rows[i]["status"]), self.order_statuses),
-                    "total_display": Money.format(int(rows[i]["total_minor"]), self.order_currency(rows[i])),
+                    "status_options": status_options_for(
+                        string(rows[i]["status"]),
+                        self.order_statuses
+                    ),
+                    "total_display": Money.format(
+                        int(rows[i]["total_minor"]),
+                        self.order_currency(rows[i])
+                    ),
                     "placed_at": rows[i]["placed_at"]
                 });
                 i += 1;
@@ -661,8 +794,8 @@ public class AdminController {
         let flag_roles = name == "roles";
         let flag_orders = name == "orders";
         let has_own_ui = flag_products or flag_categories or flag_brands
-            or flag_inventory or flag_customers or flag_staff
-            or flag_roles or flag_orders;
+        or flag_inventory or flag_customers or flag_staff
+        or flag_roles or flag_orders;
         let ctx = self.ctx(req, title, name, {
             "headers": data["headers"],
             "rows": data["rows"],
@@ -765,7 +898,10 @@ public class AdminController {
                 "sku": v["sku"],
                 "name": v["name"],
                 "price": Money.to_major(v["price_minor"]),
-                "price_display": Money.format(int(v["price_minor"]), self.store_currency()),
+                "price_display": Money.format(
+                    int(v["price_minor"]),
+                    self.store_currency()
+                ),
                 "attributes": v["attributes_json"],
                 "is_active": int(v["is_active"]) == 1,
                 "is_inactive": int(v["is_active"]) != 1
@@ -788,10 +924,18 @@ public class AdminController {
             "csrf": req.auth.csrf(),
             "product": product,
             "product_price": Money.to_major(minor_or_zero(product["price_minor"])),
-            "product_price_display": Money.format(minor_or_zero(product["price_minor"]), self.store_currency()),
+            "product_price_display": Money.format(
+                minor_or_zero(product["price_minor"]),
+                self.store_currency()
+            ),
             "product_cost": Money.to_major(minor_or_zero(product["cost_minor"])),
             "product_compare_at": Money.to_major(minor_or_zero(product["compare_at_minor"])),
-            "product_status_options": status_options_for(string(product["status"]), ["draft", "published", "archived"]),
+            "product_status_options": status_options_for(
+                string(product["status"]),
+                ["draft",
+                "published",
+                "archived"]
+            ),
             "product_is_published": string(product["status"]) == "published",
             "product_featured": int(product["is_featured"]) == 1,
             "product_not_featured": int(product["is_featured"]) != 1,
@@ -812,7 +956,6 @@ public class AdminController {
         });
         return view("admin/product", ctx);
     }
-
 
     public fn order_view(self, req) {
         let id = int(req.params["id"]);
@@ -842,21 +985,30 @@ public class AdminController {
         }
         let addr = json_parse(string(order["shipping_address_json"]));
         if type_of(addr) != "map" {
-            addr = {};
+            addr = {
+            };
         }
         let status_opts = [];
         let si = 0;
         while si < self.order_statuses.len() {
             let s = self.order_statuses[si];
-            status_opts.push({"value": s, "label": s.replace("_", " "), "selected": s == string(order["status"])});
+            status_opts.push({
+                "value": s, "label": s.replace("_", " "), "selected": s == string(order["status"])
+            });
             si += 1;
         }
         let addr_name = "";
-        if addr["name"] != null { addr_name = string(addr["name"]); }
+        if addr["name"] != null {
+            addr_name = string(addr["name"]);
+        }
         let addr_line = "";
-        if addr["address_line1"] != null { addr_line = string(addr["address_line1"]); }
+        if addr["address_line1"] != null {
+            addr_line = string(addr["address_line1"]);
+        }
         let addr_city = "";
-        if addr["city"] != null { addr_city = string(addr["city"]); }
+        if addr["city"] != null {
+            addr_city = string(addr["city"]);
+        }
 
         let ctx = self.ctx(req, "Order " + string(order["order_number"]), "orders", {
             "order": order,
@@ -946,7 +1098,10 @@ public class AdminController {
                 "status": row["status"],
                 "status_label": string(row["status"]).replace("_", " "),
                 "items_count": item_cnt,
-                "total_display": Money.format(int(row["total_minor"]), self.order_currency(row)),
+                "total_display": Money.format(
+                    int(row["total_minor"]),
+                    self.order_currency(row)
+                ),
                 "date_display": date_str
             });
             ri += 1;
@@ -955,7 +1110,8 @@ public class AdminController {
         // 3. Top products by sales
         let top_products = [];
         let item_rows = DB.table("order_items").get();
-        let grouped_items = {};
+        let grouped_items = {
+        };
         let ii = 0;
         while ii < item_rows.len() {
             let item = item_rows[ii];
@@ -994,14 +1150,19 @@ public class AdminController {
         // 4. Payment method counts
         let payment_rows = DB.table("payments").get();
         let payment_summary = [];
-        let p_methods = {};
+        let p_methods = {
+        };
         let pi = 0;
         while pi < payment_rows.len() {
             let p = payment_rows[pi];
             let prov = string(p["provider"]);
-            if prov == "" { prov = "other"; }
+            if prov == "" {
+                prov = "other";
+            }
             if not p_methods.has(prov) {
-                p_methods[prov] = {"provider": prov, "count": 0, "amount_minor": 0};
+                p_methods[prov] = {
+                    "provider": prov, "count": 0, "amount_minor": 0
+                };
             }
             let cur_p = p_methods[prov];
             cur_p["count"] = cur_p["count"] + 1;
@@ -1058,7 +1219,9 @@ public class AdminController {
     public fn export(self, req) {
         let format = string(req.query("format", "csv"));
         if format == "json" {
-            return json({"data": self.admin.report_rows()});
+            return json({
+                "data": self.admin.report_rows()
+            });
         }
         let res = response(self.admin.csv_export(), 200);
         res.header("content-type", "text/csv; charset=utf-8");
@@ -1068,18 +1231,34 @@ public class AdminController {
 
     // ---- management APIs ----
     public fn api_customers(self, req) {
-        return json(resource_collection(self.admin.customers(string(req.input("q", ""))), identity));
+        return json(
+            resource_collection(
+                self.admin.customers(string(req.input("q", ""))),
+                identity
+            )
+        );
     }
 
     public fn api_customer_status(self, req) {
         let status = string(req.input("status", ""));
         let ok = self.admin.set_customer_status(req.params["id"], status);
-        self.audit(req, "customer.status", "users", req.params["id"], {"status": status});
-        return json({"data": {"updated": ok, "status": status}});
+        self.audit(req, "customer.status", "users", req.params["id"], {
+            "status": status
+        });
+        return json({
+            "data": {
+                "updated": ok, "status": status
+            }
+        });
     }
 
     public fn api_staff(self, req) {
-        return json(resource_collection(self.admin.staff(string(req.input("q", ""))), identity));
+        return json(
+            resource_collection(
+                self.admin.staff(string(req.input("q", ""))),
+                identity
+            )
+        );
     }
 
     // Assign a staff role. Accepts `user_id` (numeric) or `email` so the
@@ -1090,7 +1269,9 @@ public class AdminController {
         if user_id == null or string(user_id) == "" {
             let email = string(req.input("email", "")).trim().lower();
             if email == "" {
-                throw validation_failed({"email": "Provide a user ID or an email address."});
+                throw validation_failed({
+                    "email": "Provide a user ID or an email address."
+                });
             }
             let user = DB.table("users").where("email", "=", email).first();
             if user == null {
@@ -1099,19 +1280,35 @@ public class AdminController {
             user_id = user["id"];
         }
         let ok = self.admin.assign_role(user_id, slug);
-        self.audit(req, "staff.role", "users", user_id, {"role": slug});
-        return json({"data": {"assigned": ok, "user_id": user_id, "role": slug}});
+        self.audit(req, "staff.role", "users", user_id, {
+            "role": slug
+        });
+        return json({
+            "data": {
+                "assigned": ok, "user_id": user_id, "role": slug
+            }
+        });
     }
 
     public fn api_remove_role(self, req) {
         let slug = string(req.input("role", ""));
         let ok = self.admin.remove_role(req.input("user_id", null), slug);
-        self.audit(req, "staff.role.remove", "users", req.input("user_id", ""), {"role": slug});
-        return json({"data": {"removed": ok}});
+        self.audit(req, "staff.role.remove", "users", req.input("user_id", ""), {
+            "role": slug
+        });
+        return json({
+            "data": {
+                "removed": ok
+            }
+        });
     }
 
-    public fn api_roles(self, req) {
-        return json({"data": {"roles": self.admin.roles(), "permissions": self.admin.permissions()}});
+    public fn api_roles(self, _req) {
+        return json({
+            "data": {
+                "roles": self.admin.roles(), "permissions": self.admin.permissions()
+            }
+        });
     }
 
     public fn api_toggle_permission(self, req) {
@@ -1119,18 +1316,35 @@ public class AdminController {
         // flag from its string form so granting actually works.
         let raw = string(req.input("enabled", "0")).trim().lower();
         let enabled = raw == "1" or raw == "true";
-        let ok = self.admin.toggle_permission(req.params["id"], string(req.input("permission", "")), enabled);
-        self.audit(req, "role.permission", "roles", req.params["id"], {"permission": req.input("permission", ""), "enabled": enabled});
-        return json({"data": {"updated": ok}});
+        let ok = self.admin.toggle_permission(
+            req.params["id"],
+            string(req.input("permission", "")),
+            enabled
+        );
+        self.audit(req, "role.permission", "roles", req.params["id"], {
+            "permission": req.input("permission", ""), "enabled": enabled
+        });
+        return json({
+            "data": {
+                "updated": ok
+            }
+        });
     }
 
     public fn api_coupons(self, req) {
-        return json(resource_collection(self.admin.coupons(string(req.input("q", ""))), identity));
+        return json(
+            resource_collection(
+                self.admin.coupons(string(req.input("q", ""))),
+                identity
+            )
+        );
     }
 
     public fn api_coupon_save(self, req) {
         let row = self.admin.save_coupon(req.data, null);
-        self.audit(req, "coupon.create", "coupons", row["id"], {"code": row["code"]});
+        self.audit(req, "coupon.create", "coupons", row["id"], {
+            "code": row["code"]
+        });
         if req.input("format", "") != "json" {
             return redirect("/admin/coupons");
         }
@@ -1139,14 +1353,21 @@ public class AdminController {
 
     public fn api_coupon_update(self, req) {
         let row = self.admin.save_coupon(req.data, req.params["id"]);
-        self.audit(req, "coupon.update", "coupons", row["id"], {"code": row["code"]});
+        self.audit(req, "coupon.update", "coupons", row["id"], {
+            "code": row["code"]
+        });
         return json(resource_item(row, identity));
     }
 
     public fn api_coupon_delete(self, req) {
         self.admin.delete_coupon(req.params["id"]);
-        self.audit(req, "coupon.delete", "coupons", req.params["id"], {});
-        return json({"data": {"deleted": true}});
+        self.audit(req, "coupon.delete", "coupons", req.params["id"], {
+        });
+        return json({
+            "data": {
+                "deleted": true
+            }
+        });
     }
 
     // Activate / deactivate toggle for the admin SPA. Deactivation is the
@@ -1157,12 +1378,23 @@ public class AdminController {
         let raw = string(req.input("active", "0")).trim().lower();
         let active = raw == "1" or raw == "true";
         let ok = self.admin.set_coupon_active(req.params["id"], active);
-        self.audit(req, "coupon.toggle", "coupons", req.params["id"], {"active": active});
-        return json({"data": {"updated": ok, "is_active": active}});
+        self.audit(req, "coupon.toggle", "coupons", req.params["id"], {
+            "active": active
+        });
+        return json({
+            "data": {
+                "updated": ok, "is_active": active
+            }
+        });
     }
 
     public fn api_settings(self, req) {
-        return json(resource_collection(self.admin.settings(string(req.input("group", ""))), identity));
+        return json(
+            resource_collection(
+                self.admin.settings(string(req.input("group", ""))),
+                identity
+            )
+        );
     }
 
     public fn api_setting_update(self, req) {
@@ -1179,16 +1411,23 @@ public class AdminController {
         if key == "store.locale" and value != "" {
             self.settings["locale"] = value.trim();
         }
-        self.audit(req, "settings.update", "settings", key, {"value": value});
+        self.audit(req, "settings.update", "settings", key, {
+            "value": value
+        });
         if req.input("format", "") != "json" {
             return redirect("/admin/settings");
         }
-        return json({"data": {"updated": ok, "setting_key": key}});
+        return json({
+            "data": {
+                "updated": ok, "setting_key": key
+            }
+        });
     }
 
     public fn admin_payments_page(self, req) {
         let rows = self.admin.settings("payments");
-        let pmap = {};
+        let pmap = {
+        };
         let i = 0;
         while i < rows.len() {
             pmap[rows[i]["setting_key"]] = rows[i]["value"];
@@ -1366,11 +1605,21 @@ public class AdminController {
         }
 
         let active_count = 0;
-        if cod_enabled == "1" { active_count += 1; }
-        if bkash_enabled == "1" { active_count += 1; }
-        if nagad_enabled == "1" { active_count += 1; }
-        if sslcommerz_enabled == "1" { active_count += 1; }
-        if stripe_enabled == "1" { active_count += 1; }
+        if cod_enabled == "1" {
+            active_count += 1;
+        }
+        if bkash_enabled == "1" {
+            active_count += 1;
+        }
+        if nagad_enabled == "1" {
+            active_count += 1;
+        }
+        if sslcommerz_enabled == "1" {
+            active_count += 1;
+        }
+        if stripe_enabled == "1" {
+            active_count += 1;
+        }
 
         let ctx = self.ctx(req, "Payment Gateways & Security", "payments", {
             "mode": mode,
@@ -1432,25 +1681,67 @@ public class AdminController {
             self.admin.update_setting("payments.mode", "sandbox", "payments");
             self.admin.update_setting("payments.cod_enabled", "1", "payments");
             self.admin.update_setting("payments.cod_max_limit_minor", "5000000", "payments");
-            self.admin.update_setting("payments.cod_instructions", "Pay with cash when your parcel is delivered.", "payments");
+            self.admin.update_setting(
+                "payments.cod_instructions",
+                "Pay with cash when your parcel is delivered.",
+                "payments"
+            );
             self.admin.update_setting("payments.bkash_enabled", "1", "payments");
             self.admin.update_setting("payments.bkash_merchant_number", "01770618575", "payments");
-            self.admin.update_setting("payments.bkash_app_key", "4f6o0cjiki2rfm34kfdadl1eqq", "payments");
-            self.admin.update_setting("payments.bkash_app_secret", "2is7hdktrekvrbljjh44ll3d9l1dtjo4pasmjvs5vl5qr3fug4b", "payments");
-            self.admin.update_setting("payments.bkash_username", "sandboxTokenizedUser02", "payments");
-            self.admin.update_setting("payments.bkash_password", "sandboxTokenizedUser02@12345", "payments");
+            self.admin.update_setting(
+                "payments.bkash_app_key",
+                "4f6o0cjiki2rfm34kfdadl1eqq",
+                "payments"
+            );
+            self.admin.update_setting(
+                "payments.bkash_app_secret",
+                "2is7hdktrekvrbljjh44ll3d9l1dtjo4pasmjvs5vl5qr3fug4b",
+                "payments"
+            );
+            self.admin.update_setting(
+                "payments.bkash_username",
+                "sandboxTokenizedUser02",
+                "payments"
+            );
+            self.admin.update_setting(
+                "payments.bkash_password",
+                "sandboxTokenizedUser02@12345",
+                "payments"
+            );
             self.admin.update_setting("payments.nagad_enabled", "1", "payments");
             self.admin.update_setting("payments.nagad_merchant_id", "683281234812348", "payments");
-            self.admin.update_setting("payments.nagad_public_key", "nagad_sandbox_public_key_demo", "payments");
-            self.admin.update_setting("payments.nagad_init_url", "https://sandbox.mynagad.com/remote-payment-gateway-1.0/api/dfs/check-out/initialize/", "payments");
+            self.admin.update_setting(
+                "payments.nagad_public_key",
+                "nagad_sandbox_public_key_demo",
+                "payments"
+            );
+            self.admin.update_setting(
+                "payments.nagad_init_url",
+                "https://sandbox.mynagad.com/remote-payment-gateway-1.0/api/dfs/check-out/initialize/",
+                "payments"
+            );
             self.admin.update_setting("payments.sslcommerz_enabled", "1", "payments");
             self.admin.update_setting("payments.sslcommerz_store_id", "testbox", "payments");
             self.admin.update_setting("payments.sslcommerz_store_passwd", "qwerty", "payments");
             self.admin.update_setting("payments.stripe_enabled", "1", "payments");
-            self.admin.update_setting("payments.stripe_publishable_key", "pk_test_51DemoStripePublishableKey", "payments");
-            self.admin.update_setting("payments.stripe_secret_key", "sk_test_51DemoStripeSecretKey", "payments");
-            self.admin.update_setting("payments.webhook_secret", "dev-webhook-secret-change-me", "payments");
-            self.audit(req, "payments.reset", "settings", "payments", {"action": "reset_sandbox"});
+            self.admin.update_setting(
+                "payments.stripe_publishable_key",
+                "pk_test_51DemoStripePublishableKey",
+                "payments"
+            );
+            self.admin.update_setting(
+                "payments.stripe_secret_key",
+                "sk_test_51DemoStripeSecretKey",
+                "payments"
+            );
+            self.admin.update_setting(
+                "payments.webhook_secret",
+                "dev-webhook-secret-change-me",
+                "payments"
+            );
+            self.audit(req, "payments.reset", "settings", "payments", {
+                "action": "reset_sandbox"
+            });
             return redirect("/admin/payments?reset=1");
         }
 
@@ -1458,9 +1749,15 @@ public class AdminController {
         if single_key != "" {
             let single_val = string(req.input("value", ""));
             self.admin.update_setting(single_key, single_val, "payments");
-            self.audit(req, "payments.update", "settings", single_key, {"value": single_val});
+            self.audit(req, "payments.update", "settings", single_key, {
+                "value": single_val
+            });
             if req.input("format", "") == "json" {
-                return json({"data": {"updated": true, "key": single_key, "value": single_val}});
+                return json({
+                    "data": {
+                        "updated": true, "key": single_key, "value": single_val
+                    }
+                });
             }
             return redirect("/admin/payments?saved=1");
         }
@@ -1470,62 +1767,202 @@ public class AdminController {
         if switch_mode == "sandbox" or switch_mode == "live" {
             mode = switch_mode;
         }
-        if mode != "live" { mode = "sandbox"; }
+        if mode != "live" {
+            mode = "sandbox";
+        }
         self.admin.update_setting("payments.mode", mode, "payments");
 
         let cod_en = "0";
-        if string(req.input("cod_enabled", "")) == "1" or string(req.input("cod_enabled", "")) == "on" { cod_en = "1"; }
+        if string(req.input("cod_enabled", "")) == "1" or string(req.input("cod_enabled", "")) == "on" {
+            cod_en = "1";
+        }
         self.admin.update_setting("payments.cod_enabled", cod_en, "payments");
 
         let cod_limit_bdt = int(req.input("cod_max_limit_bdt", 50000));
-        if cod_limit_bdt < 0 { cod_limit_bdt = 0; }
-        self.admin.update_setting("payments.cod_max_limit_minor", string(cod_limit_bdt * 100), "payments");
-        self.admin.update_setting("payments.cod_instructions", string(req.input("cod_instructions", "")), "payments");
+        if cod_limit_bdt < 0 {
+            cod_limit_bdt = 0;
+        }
+        self.admin.update_setting(
+            "payments.cod_max_limit_minor",
+            string(cod_limit_bdt * 100),
+            "payments"
+        );
+        self.admin.update_setting(
+            "payments.cod_instructions",
+            string(req.input("cod_instructions", "")),
+            "payments"
+        );
 
         let bkash_en = "0";
-        if string(req.input("bkash_enabled", "")) == "1" or string(req.input("bkash_enabled", "")) == "on" { bkash_en = "1"; }
+        if string(req.input("bkash_enabled", "")) == "1" or string(req.input("bkash_enabled", "")) == "on" {
+            bkash_en = "1";
+        }
         self.admin.update_setting("payments.bkash_enabled", bkash_en, "payments");
-        self.admin.update_setting("payments.bkash_merchant_number", string(req.input("bkash_merchant_number", "")), "payments");
-        self.admin.update_setting("payments.bkash_app_key", string(req.input("bkash_app_key", "")), "payments");
-        self.admin.update_setting("payments.bkash_app_secret", string(req.input("bkash_app_secret", "")), "payments");
-        self.admin.update_setting("payments.bkash_username", string(req.input("bkash_username", "")), "payments");
-        self.admin.update_setting("payments.bkash_password", string(req.input("bkash_password", "")), "payments");
+        self.admin.update_setting(
+            "payments.bkash_merchant_number",
+            string(req.input("bkash_merchant_number", "")),
+            "payments"
+        );
+        self.admin.update_setting(
+            "payments.bkash_app_key",
+            string(req.input("bkash_app_key", "")),
+            "payments"
+        );
+        self.admin.update_setting(
+            "payments.bkash_app_secret",
+            string(req.input("bkash_app_secret", "")),
+            "payments"
+        );
+        self.admin.update_setting(
+            "payments.bkash_username",
+            string(req.input("bkash_username", "")),
+            "payments"
+        );
+        self.admin.update_setting(
+            "payments.bkash_password",
+            string(req.input("bkash_password", "")),
+            "payments"
+        );
 
         let nagad_en = "0";
-        if string(req.input("nagad_enabled", "")) == "1" or string(req.input("nagad_enabled", "")) == "on" { nagad_en = "1"; }
+        if string(req.input("nagad_enabled", "")) == "1" or string(req.input("nagad_enabled", "")) == "on" {
+            nagad_en = "1";
+        }
         self.admin.update_setting("payments.nagad_enabled", nagad_en, "payments");
-        self.admin.update_setting("payments.nagad_merchant_id", string(req.input("nagad_merchant_id", "")), "payments");
-        self.admin.update_setting("payments.nagad_public_key", string(req.input("nagad_public_key", "")), "payments");
-        self.admin.update_setting("payments.nagad_private_key", string(req.input("nagad_private_key", "")), "payments");
-        self.admin.update_setting("payments.nagad_init_url", string(req.input("nagad_init_url", "https://sandbox.mynagad.com/remote-payment-gateway-1.0/api/dfs/check-out/initialize/")), "payments");
+        self.admin.update_setting(
+            "payments.nagad_merchant_id",
+            string(req.input("nagad_merchant_id", "")),
+            "payments"
+        );
+        self.admin.update_setting(
+            "payments.nagad_public_key",
+            string(req.input("nagad_public_key", "")),
+            "payments"
+        );
+        self.admin.update_setting(
+            "payments.nagad_private_key",
+            string(req.input("nagad_private_key", "")),
+            "payments"
+        );
+        self.admin.update_setting(
+            "payments.nagad_init_url",
+            string(
+                req.input(
+                    "nagad_init_url",
+                    "https://sandbox.mynagad.com/remote-payment-gateway-1.0/api/dfs/check-out/initialize/"
+                )
+            ),
+            "payments"
+        );
 
         let ssl_en = "0";
-        if string(req.input("sslcommerz_enabled", "")) == "1" or string(req.input("sslcommerz_enabled", "")) == "on" { ssl_en = "1"; }
+        if string(req.input("sslcommerz_enabled", "")) == "1" or string(req.input("sslcommerz_enabled", "")) == "on" {
+            ssl_en = "1";
+        }
         self.admin.update_setting("payments.sslcommerz_enabled", ssl_en, "payments");
-        self.admin.update_setting("payments.sslcommerz_store_id", string(req.input("sslcommerz_store_id", "")), "payments");
-        self.admin.update_setting("payments.sslcommerz_store_passwd", string(req.input("sslcommerz_store_passwd", "")), "payments");
+        self.admin.update_setting(
+            "payments.sslcommerz_store_id",
+            string(req.input("sslcommerz_store_id", "")),
+            "payments"
+        );
+        self.admin.update_setting(
+            "payments.sslcommerz_store_passwd",
+            string(req.input("sslcommerz_store_passwd", "")),
+            "payments"
+        );
 
         let stripe_en = "0";
-        if string(req.input("stripe_enabled", "")) == "1" or string(req.input("stripe_enabled", "")) == "on" { stripe_en = "1"; }
+        if string(req.input("stripe_enabled", "")) == "1" or string(req.input("stripe_enabled", "")) == "on" {
+            stripe_en = "1";
+        }
         self.admin.update_setting("payments.stripe_enabled", stripe_en, "payments");
-        self.admin.update_setting("payments.stripe_publishable_key", string(req.input("stripe_publishable_key", "")), "payments");
-        self.admin.update_setting("payments.stripe_secret_key", string(req.input("stripe_secret_key", "")), "payments");
+        self.admin.update_setting(
+            "payments.stripe_publishable_key",
+            string(req.input("stripe_publishable_key", "")),
+            "payments"
+        );
+        self.admin.update_setting(
+            "payments.stripe_secret_key",
+            string(req.input("stripe_secret_key", "")),
+            "payments"
+        );
 
         // Live credentials
-        self.admin.update_setting("payments.live_bkash_merchant_number", string(req.input("live_bkash_merchant_number", "")), "payments");
-        self.admin.update_setting("payments.live_bkash_app_key", string(req.input("live_bkash_app_key", "")), "payments");
-        self.admin.update_setting("payments.live_bkash_app_secret", string(req.input("live_bkash_app_secret", "")), "payments");
-        self.admin.update_setting("payments.live_bkash_username", string(req.input("live_bkash_username", "")), "payments");
-        self.admin.update_setting("payments.live_bkash_password", string(req.input("live_bkash_password", "")), "payments");
-        self.admin.update_setting("payments.live_nagad_merchant_id", string(req.input("live_nagad_merchant_id", "")), "payments");
-        self.admin.update_setting("payments.live_nagad_public_key", string(req.input("live_nagad_public_key", "")), "payments");
-        self.admin.update_setting("payments.live_nagad_private_key", string(req.input("live_nagad_private_key", "")), "payments");
-        self.admin.update_setting("payments.live_nagad_init_url", string(req.input("live_nagad_init_url", "https://api.mynagad.com/remote-payment-gateway-1.0/api/dfs/check-out/initialize/")), "payments");
-        self.admin.update_setting("payments.live_sslcommerz_store_id", string(req.input("live_sslcommerz_store_id", "")), "payments");
-        self.admin.update_setting("payments.live_sslcommerz_store_passwd", string(req.input("live_sslcommerz_store_passwd", "")), "payments");
-        self.admin.update_setting("payments.live_stripe_publishable_key", string(req.input("live_stripe_publishable_key", "")), "payments");
-        self.admin.update_setting("payments.live_stripe_secret_key", string(req.input("live_stripe_secret_key", "")), "payments");
-        self.admin.update_setting("payments.live_webhook_secret", string(req.input("live_webhook_secret", "")), "payments");
+        self.admin.update_setting(
+            "payments.live_bkash_merchant_number",
+            string(req.input("live_bkash_merchant_number", "")),
+            "payments"
+        );
+        self.admin.update_setting(
+            "payments.live_bkash_app_key",
+            string(req.input("live_bkash_app_key", "")),
+            "payments"
+        );
+        self.admin.update_setting(
+            "payments.live_bkash_app_secret",
+            string(req.input("live_bkash_app_secret", "")),
+            "payments"
+        );
+        self.admin.update_setting(
+            "payments.live_bkash_username",
+            string(req.input("live_bkash_username", "")),
+            "payments"
+        );
+        self.admin.update_setting(
+            "payments.live_bkash_password",
+            string(req.input("live_bkash_password", "")),
+            "payments"
+        );
+        self.admin.update_setting(
+            "payments.live_nagad_merchant_id",
+            string(req.input("live_nagad_merchant_id", "")),
+            "payments"
+        );
+        self.admin.update_setting(
+            "payments.live_nagad_public_key",
+            string(req.input("live_nagad_public_key", "")),
+            "payments"
+        );
+        self.admin.update_setting(
+            "payments.live_nagad_private_key",
+            string(req.input("live_nagad_private_key", "")),
+            "payments"
+        );
+        self.admin.update_setting(
+            "payments.live_nagad_init_url",
+            string(
+                req.input(
+                    "live_nagad_init_url",
+                    "https://api.mynagad.com/remote-payment-gateway-1.0/api/dfs/check-out/initialize/"
+                )
+            ),
+            "payments"
+        );
+        self.admin.update_setting(
+            "payments.live_sslcommerz_store_id",
+            string(req.input("live_sslcommerz_store_id", "")),
+            "payments"
+        );
+        self.admin.update_setting(
+            "payments.live_sslcommerz_store_passwd",
+            string(req.input("live_sslcommerz_store_passwd", "")),
+            "payments"
+        );
+        self.admin.update_setting(
+            "payments.live_stripe_publishable_key",
+            string(req.input("live_stripe_publishable_key", "")),
+            "payments"
+        );
+        self.admin.update_setting(
+            "payments.live_stripe_secret_key",
+            string(req.input("live_stripe_secret_key", "")),
+            "payments"
+        );
+        self.admin.update_setting(
+            "payments.live_webhook_secret",
+            string(req.input("live_webhook_secret", "")),
+            "payments"
+        );
 
         // Webhook settings
         let webhook_base = string(req.input("webhook_base_url", "http://localhost:8090")).trim();
@@ -1536,16 +1973,23 @@ public class AdminController {
             self.admin.update_setting("payments.webhook_secret", webhook_sec, "payments");
         }
 
-        self.audit(req, "payments.update", "settings", "payments", {"mode": mode});
+        self.audit(req, "payments.update", "settings", "payments", {
+            "mode": mode
+        });
 
         if req.input("format", "") == "json" {
-            return json({"data": {"saved": true, "mode": mode}});
+            return json({
+                "data": {
+                    "saved": true, "mode": mode
+                }
+            });
         }
         return redirect("/admin/payments?saved=1");
     }
 
-    public fn api_payments_webhook_test(self, req) {
-        let pmap = {};
+    public fn api_payments_webhook_test(self, _req) {
+        let pmap = {
+        };
         let rows = self.admin.settings("payments");
         let i = 0;
         while i < rows.len() {
@@ -1571,7 +2015,8 @@ public class AdminController {
     public fn api_payments_test_gateway(self, req) {
         let provider = string(req.input("provider", "bkash")).trim().lower();
         let mode = string(req.input("mode", "sandbox")).trim().lower();
-        let pmap = {};
+        let pmap = {
+        };
         let rows = self.admin.settings("payments");
         let i = 0;
         while i < rows.len() {
@@ -1587,7 +2032,8 @@ public class AdminController {
             "timestamp": unix_time(),
             "status": "passed",
             "message": "",
-            "details": {}
+            "details": {
+            }
         };
 
         if provider == "cod" {
@@ -1772,6 +2218,7 @@ public class AdminController {
     }
 
     public fn api_payments_create_test_order(self, req) {
+        let _ = self;
         let provider = string(req.input("provider", "bkash")).trim().lower();
         let num = "TEST-" + string(unix_time()) + "-" + hex_encode(random_bytes(3).unwrap());
         let total_minor = 10000;
@@ -1808,7 +2255,7 @@ public class AdminController {
         });
     }
 
-    public fn api_audit(self, req) {
+    public fn api_audit(self, _req) {
         return json(resource_collection(self.admin.audit(100), identity));
     }
 
@@ -1823,7 +2270,10 @@ public class AdminController {
         out["cost_major"] = Money.to_major(minor_or_zero(row["cost_minor"]));
         out["tax_percent"] = scaled_display(minor_or_zero(row["tax_rate_bps"]), 2);
         out["weight_kg"] = scaled_display(minor_or_zero(row["weight_grams"]), 3);
-        out["price_display"] = Money.format(int(row["price_minor"]), self.store_currency());
+        out["price_display"] = Money.format(
+            int(row["price_minor"]),
+            self.store_currency()
+        );
         out["is_featured"] = int(row["is_featured"]) == 1;
         out["category_name"] = "";
         out["brand_name"] = "";
@@ -1895,7 +2345,7 @@ public class AdminController {
         };
     }
 
-    public fn api_overview(self, req) {
+    public fn api_overview(self, _req) {
         let stats = self.admin.dashboard();
         let recent = [];
         let i = 0;
@@ -1916,60 +2366,74 @@ public class AdminController {
                 "item_count": item_count,
                 "status": o["status"],
                 "status_label": string(o["status"]).replace("_", " "),
-                "total_display": Money.format(int(o["total_minor"]), self.order_currency(o)),
+                "total_display": Money.format(
+                    int(o["total_minor"]),
+                    self.order_currency(o)
+                ),
                 "placed_at": o["placed_at"]
             });
             i += 1;
         }
-        return json({"data": {
-            "orders": stats["orders"],
-            "pending_orders": stats["pending_orders"],
-            "pipeline_pending": stats["pipeline_pending"],
-            "pipeline_processing": stats["pipeline_processing"],
-            "pipeline_shipped": stats["pipeline_shipped"],
-            "pipeline_delivered": stats["pipeline_delivered"],
-            "pipeline_cancelled": stats["pipeline_cancelled"],
-            "pct_pending": stats["pct_pending"],
-            "pct_processing": stats["pct_processing"],
-            "pct_shipped": stats["pct_shipped"],
-            "pct_delivered": stats["pct_delivered"],
-            "revenue_minor": stats["revenue_minor"],
-            "revenue_display": Money.format(int(stats["revenue_minor"]), self.store_currency()),
-            "customers": stats["customers"],
-            "products": stats["products"],
-            "published_products": stats["published_products"],
-            "categories": stats["categories"],
-            "brands": stats["brands"],
-            "low_stock": stats["low_stock"],
-            "low_stock_items": stats["low_stock_items"],
-            "has_low_stock_items": stats["has_low_stock_items"],
-            "coupons": stats["coupons"],
-            "recent_orders": recent,
-            "has_recent": stats["has_recent"]
-        }});
+        return json({
+            "data": {
+                "orders": stats["orders"],
+                "pending_orders": stats["pending_orders"],
+                "pipeline_pending": stats["pipeline_pending"],
+                "pipeline_processing": stats["pipeline_processing"],
+                "pipeline_shipped": stats["pipeline_shipped"],
+                "pipeline_delivered": stats["pipeline_delivered"],
+                "pipeline_cancelled": stats["pipeline_cancelled"],
+                "pct_pending": stats["pct_pending"],
+                "pct_processing": stats["pct_processing"],
+                "pct_shipped": stats["pct_shipped"],
+                "pct_delivered": stats["pct_delivered"],
+                "revenue_minor": stats["revenue_minor"],
+                "revenue_display": Money.format(
+                    int(stats["revenue_minor"]),
+                    self.store_currency()
+                ),
+                "customers": stats["customers"],
+                "products": stats["products"],
+                "published_products": stats["published_products"],
+                "categories": stats["categories"],
+                "brands": stats["brands"],
+                "low_stock": stats["low_stock"],
+                "low_stock_items": stats["low_stock_items"],
+                "has_low_stock_items": stats["has_low_stock_items"],
+                "coupons": stats["coupons"],
+                "recent_orders": recent,
+                "has_recent": stats["has_recent"]
+            }
+        });
     }
 
-    public fn api_options(self, req) {
+    public fn api_options(self, _req) {
         let cats = DB.table("categories").orderBy("name", "ASC").get();
         let cat_opts = [];
         let i = 0;
         while i < cats.len() {
-            cat_opts.push({"id": cats[i]["id"], "name": cats[i]["name"]});
+            cat_opts.push({
+                "id": cats[i]["id"], "name": cats[i]["name"]
+            });
             i += 1;
         }
         let brands = DB.table("brands").orderBy("name", "ASC").get();
         let brand_opts = [];
         let j = 0;
         while j < brands.len() {
-            brand_opts.push({"id": brands[j]["id"], "name": brands[j]["name"]});
+            brand_opts.push({
+                "id": brands[j]["id"], "name": brands[j]["name"]
+            });
             j += 1;
         }
-        return json({"data": {
-            "categories": cat_opts,
-            "brands": brand_opts,
-            "order_statuses": self.order_statuses,
-            "product_statuses": ["draft", "published", "archived"]
-        }});
+        return json({
+            "data": {
+                "categories": cat_opts,
+                "brands": brand_opts,
+                "order_statuses": self.order_statuses,
+                "product_statuses": ["draft", "published", "archived"]
+            }
+        });
     }
 
     public fn api_products_list(self, req) {
@@ -2047,29 +2511,35 @@ public class AdminController {
         let cat_list = [];
         let ci = 0;
         while ci < cats.len() {
-            cat_list.push({"id": cats[ci]["id"], "name": cats[ci]["name"]});
+            cat_list.push({
+                "id": cats[ci]["id"], "name": cats[ci]["name"]
+            });
             ci += 1;
         }
 
-        return json({"data": data, "meta": {
-            "count": data.len(),
-            "total": int(page_result["total"]),
-            "page": int(page_result["page"]),
-            "per_page": int(page_result["per_page"]),
-            "last_page": int(page_result["last_page"]),
-            "has_more": page_result["has_more"],
-            "stats": {
-                "total": DB.table("products").count(),
-                "published": DB.table("products").where("status", "=", "published").count(),
-                "draft": DB.table("products").where("status", "=", "draft").count(),
-                "low_stock": low_count,
-                "out_of_stock": out_count
-            },
-            "categories": cat_list
-        }});
+        return json({
+            "data": data, "meta": {
+                "count": data.len(),
+                "total": int(page_result["total"]),
+                "page": int(page_result["page"]),
+                "per_page": int(page_result["per_page"]),
+                "last_page": int(page_result["last_page"]),
+                "has_more": page_result["has_more"],
+                "stats": {
+                    "total": DB.table("products").count(),
+                    "published": DB.table("products").where("status", "=", "published").count(),
+                    "draft": DB.table("products").where("status", "=", "draft").count(),
+                    "low_stock": low_count,
+                    "out_of_stock": out_count
+                }
+                ,
+                "categories": cat_list
+            }
+        });
     }
 
     public fn api_categories_list(self, req) {
+        let _ = self;
         let page = int(req.input("page", 1));
         if page < 1 {
             page = 1;
@@ -2098,17 +2568,20 @@ public class AdminController {
             });
             i += 1;
         }
-        return json({"data": data, "meta": {
-            "count": data.len(),
-            "total": int(page_result["total"]),
-            "page": int(page_result["page"]),
-            "per_page": int(page_result["per_page"]),
-            "last_page": int(page_result["last_page"]),
-            "has_more": page_result["has_more"]
-        }});
+        return json({
+            "data": data, "meta": {
+                "count": data.len(),
+                "total": int(page_result["total"]),
+                "page": int(page_result["page"]),
+                "per_page": int(page_result["per_page"]),
+                "last_page": int(page_result["last_page"]),
+                "has_more": page_result["has_more"]
+            }
+        });
     }
 
     public fn api_brands_list(self, req) {
+        let _ = self;
         let page = int(req.input("page", 1));
         if page < 1 {
             page = 1;
@@ -2139,14 +2612,16 @@ public class AdminController {
             });
             i += 1;
         }
-        return json({"data": data, "meta": {
-            "count": data.len(),
-            "total": int(page_result["total"]),
-            "page": int(page_result["page"]),
-            "per_page": int(page_result["per_page"]),
-            "last_page": int(page_result["last_page"]),
-            "has_more": page_result["has_more"]
-        }});
+        return json({
+            "data": data, "meta": {
+                "count": data.len(),
+                "total": int(page_result["total"]),
+                "page": int(page_result["page"]),
+                "per_page": int(page_result["per_page"]),
+                "last_page": int(page_result["last_page"]),
+                "has_more": page_result["has_more"]
+            }
+        });
     }
 
     public fn api_inventory_list(self, req) {
@@ -2154,7 +2629,8 @@ public class AdminController {
         let low = string(req.input("low", "")).trim();
         let stock_status = string(req.input("stock_status", "")).trim();
         let sort = string(req.input("sort", "default")).trim();
-        let pid_map = {};
+        let pid_map = {
+        };
         if q != "" {
             let matched = DB.table("products").where("name", "LIKE", "%" + q + "%").orWhere("sku", "LIKE", "%" + q + "%").get();
             let mi = 0;
@@ -2185,7 +2661,10 @@ public class AdminController {
                 psku = string(product["sku"]);
                 pslug = string(product["slug"]);
                 pstatus = string(product["status"]);
-                price_display = Money.format(int(product["price_minor"]), self.store_currency());
+                price_display = Money.format(
+                    int(product["price_minor"]),
+                    self.store_currency()
+                );
             }
             let qty = int(inv["quantity"]);
             let reserved = int(inv["reserved"]);
@@ -2297,22 +2776,24 @@ public class AdminController {
         if total > 0 {
             last_page = (total + per_page - 1) / per_page;
         }
-        return json({"data": sliced, "meta": {
-            "count": sliced.len(),
-            "total": total,
-            "page": page,
-            "per_page": per_page,
-            "last_page": last_page,
-            "has_more": page < last_page,
-            "stats": {
-                "total_products": rows.len(),
-                "total_on_hand": total_on_hand,
-                "total_reserved": total_reserved,
-                "in_stock": count_in,
-                "low_stock": count_low,
-                "out_of_stock": count_out
+        return json({
+            "data": sliced, "meta": {
+                "count": sliced.len(),
+                "total": total,
+                "page": page,
+                "per_page": per_page,
+                "last_page": last_page,
+                "has_more": page < last_page,
+                "stats": {
+                    "total_products": rows.len(),
+                    "total_on_hand": total_on_hand,
+                    "total_reserved": total_reserved,
+                    "in_stock": count_in,
+                    "low_stock": count_low,
+                    "out_of_stock": count_out
+                }
             }
-        }});
+        });
     }
 
     public fn api_orders_list(self, req) {
@@ -2350,7 +2831,10 @@ public class AdminController {
                 "status": o["status"],
                 "status_label": string(o["status"]).replace("_", " "),
                 "total_minor": int(o["total_minor"]),
-                "total_display": Money.format(int(o["total_minor"]), self.order_currency(o)),
+                "total_display": Money.format(
+                    int(o["total_minor"]),
+                    self.order_currency(o)
+                ),
                 "currency": o["currency"],
                 "placed_at": o["placed_at"],
                 "customer_name": customer_name,
@@ -2358,14 +2842,16 @@ public class AdminController {
             });
             i += 1;
         }
-        return json({"data": data, "meta": {
-            "count": data.len(),
-            "total": int(page_result["total"]),
-            "page": int(page_result["page"]),
-            "per_page": int(page_result["per_page"]),
-            "last_page": int(page_result["last_page"]),
-            "has_more": page_result["has_more"]
-        }});
+        return json({
+            "data": data, "meta": {
+                "count": data.len(),
+                "total": int(page_result["total"]),
+                "page": int(page_result["page"]),
+                "per_page": int(page_result["per_page"]),
+                "last_page": int(page_result["last_page"]),
+                "has_more": page_result["has_more"]
+            }
+        });
     }
 
     public fn api_order_show(self, req) {
@@ -2397,22 +2883,25 @@ public class AdminController {
         }
         let addr = json_parse(string(order["shipping_address_json"]));
         if type_of(addr) != "map" {
-            addr = {};
+            addr = {
+            };
         }
-        return json({"data": {
-            "order": order,
-            "items": decorated,
-            "customer": customer,
-            "address": addr,
-            "currency": ord_cur,
-            "subtotal_display": Money.format(int(order["subtotal_minor"]), ord_cur),
-            "discount_display": Money.format(int(order["discount_minor"]), ord_cur),
-            "shipping_display": Money.format(int(order["shipping_minor"]), ord_cur),
-            "tax_display": Money.format(int(order["tax_minor"]), ord_cur),
-            "total_display": Money.format(int(order["total_minor"]), ord_cur),
-            "status_label": string(order["status"]).replace("_", " "),
-            "statuses": self.order_statuses
-        }});
+        return json({
+            "data": {
+                "order": order,
+                "items": decorated,
+                "customer": customer,
+                "address": addr,
+                "currency": ord_cur,
+                "subtotal_display": Money.format(int(order["subtotal_minor"]), ord_cur),
+                "discount_display": Money.format(int(order["discount_minor"]), ord_cur),
+                "shipping_display": Money.format(int(order["shipping_minor"]), ord_cur),
+                "tax_display": Money.format(int(order["tax_minor"]), ord_cur),
+                "total_display": Money.format(int(order["total_minor"]), ord_cur),
+                "status_label": string(order["status"]).replace("_", " "),
+                "statuses": self.order_statuses
+            }
+        });
     }
 
     public fn api_order_status(self, req) {
@@ -2428,18 +2917,24 @@ public class AdminController {
             i += 1;
         }
         if not valid {
-            throw validation_failed({"status": "Invalid order status."});
+            throw validation_failed({
+                "status": "Invalid order status."
+            });
         }
         let order = DB.table("orders").where("id", "=", id).first();
         if order == null {
             throw not_found("Order not found.");
         }
-        let ok = DB.table("orders").where("id", "=", id).update({"status": status}) > 0;
-        return json({"data": {
-            "updated": ok,
-            "status": status,
-            "status_label": status.replace("_", " ")
-        }});
+        let ok = DB.table("orders").where("id", "=", id).update({
+            "status": status
+        }) > 0;
+        return json({
+            "data": {
+                "updated": ok,
+                "status": status,
+                "status_label": status.replace("_", " ")
+            }
+        });
     }
 
     public fn api_product_full(self, req) {
@@ -2451,7 +2946,9 @@ public class AdminController {
         let inv_row = DB.table("inventory").where("product_id", "=", pid).whereNull("variant_id").first();
         let inv;
         if inv_row == null {
-            inv = {"quantity": 0, "reserved": 0, "low_stock_threshold": 0, "low_stock": false};
+            inv = {
+                "quantity": 0, "reserved": 0, "low_stock_threshold": 0, "low_stock": false
+            };
         } else {
             inv = {
                 "quantity": int(inv_row["quantity"]),
@@ -2483,7 +2980,10 @@ public class AdminController {
                 "sku": v["sku"],
                 "name": v["name"],
                 "price_minor": int(v["price_minor"]),
-                "price_display": Money.format(int(v["price_minor"]), self.store_currency()),
+                "price_display": Money.format(
+                    int(v["price_minor"]),
+                    self.store_currency()
+                ),
                 "is_active": int(v["is_active"]) == 1
             });
             vi += 1;
@@ -2492,25 +2992,31 @@ public class AdminController {
         let cat_opts = [];
         let ci = 0;
         while ci < cats.len() {
-            cat_opts.push({"id": cats[ci]["id"], "name": cats[ci]["name"]});
+            cat_opts.push({
+                "id": cats[ci]["id"], "name": cats[ci]["name"]
+            });
             ci += 1;
         }
         let brands = DB.table("brands").orderBy("name", "ASC").get();
         let brand_opts = [];
         let bi = 0;
         while bi < brands.len() {
-            brand_opts.push({"id": brands[bi]["id"], "name": brands[bi]["name"]});
+            brand_opts.push({
+                "id": brands[bi]["id"], "name": brands[bi]["name"]
+            });
             bi += 1;
         }
         let decorated = self.decorate_product(product);
-        return json({"data": {
-            "product": decorated,
-            "inventory": inv,
-            "images": gallery,
-            "variants": variant_rows,
-            "categories": cat_opts,
-            "brands": brand_opts
-        }});
+        return json({
+            "data": {
+                "product": decorated,
+                "inventory": inv,
+                "images": gallery,
+                "variants": variant_rows,
+                "categories": cat_opts,
+                "brands": brand_opts
+            }
+        });
     }
 
     public fn category_delete_form(self, req) {
@@ -2524,33 +3030,51 @@ public class AdminController {
         if reassign_to != null and string(reassign_to).trim() != "" {
             let target_id = int(reassign_to);
             if target_id == id {
-                throw validation_failed({"category": "Cannot reassign products to the category being deleted."});
+                throw validation_failed({
+                    "category": "Cannot reassign products to the category being deleted."
+                });
             }
             let target = DB.table("categories").where("id", "=", target_id).first();
             if target == null {
-                throw validation_failed({"category": "Target category does not exist."});
+                throw validation_failed({
+                    "category": "Target category does not exist."
+                });
             }
-            DB.table("products").where("category_id", "=", id).update({"category_id": target_id});
-            DB.table("categories").where("parent_id", "=", id).update({"parent_id": target_id});
+            DB.table("products").where("category_id", "=", id).update({
+                "category_id": target_id
+            });
+            DB.table("categories").where("parent_id", "=", id).update({
+                "parent_id": target_id
+            });
         }
 
         let prod_count = DB.table("products").where("category_id", "=", id).count();
         if prod_count > 0 {
-            throw validation_failed({"category": "Category has " + string(prod_count) + " product(s) assigned. Reassign them to another category before deleting."});
+            throw validation_failed({
+                "category": "Category has " + string(prod_count) + " product(s) assigned. Reassign them to another category before deleting."
+            });
         }
 
         let child_count = DB.table("categories").where("parent_id", "=", id).count();
         if child_count > 0 {
-            DB.table("categories").where("parent_id", "=", id).update({"parent_id": cat["parent_id"]});
+            DB.table("categories").where("parent_id", "=", id).update({
+                "parent_id": cat["parent_id"]
+            });
         }
 
         self.categories.delete(id);
         CatalogCache.bump_catalog_version();
-        self.audit(req, "category.delete", "categories", id, {"name": cat["name"]});
+        self.audit(req, "category.delete", "categories", id, {
+            "name": cat["name"]
+        });
         if req.input("format", "") != "json" {
             return redirect("/admin/categories");
         }
-        return json({"data": {"deleted": true, "id": id}});
+        return json({
+            "data": {
+                "deleted": true, "id": id
+            }
+        });
     }
 
     public fn brand_delete_form(self, req) {
@@ -2561,14 +3085,21 @@ public class AdminController {
         }
         self.brands.delete(id);
         CatalogCache.bump_catalog_version();
-        self.audit(req, "brand.delete", "brands", id, {"name": br["name"]});
+        self.audit(req, "brand.delete", "brands", id, {
+            "name": br["name"]
+        });
         if req.input("format", "") != "json" {
             return redirect("/admin/brands");
         }
-        return json({"data": {"deleted": true, "id": id}});
+        return json({
+            "data": {
+                "deleted": true, "id": id
+            }
+        });
     }
 
     public fn api_customers_list(self, req) {
+        let _ = self;
         let page = int(req.input("page", 1));
         if page < 1 {
             page = 1;
@@ -2596,13 +3127,15 @@ public class AdminController {
             });
             i += 1;
         }
-        return json({"data": data, "meta": {
-            "count": data.len(),
-            "total": int(page_result["total"]),
-            "page": int(page_result["page"]),
-            "per_page": int(page_result["per_page"]),
-            "last_page": int(page_result["last_page"]),
-            "has_more": page_result["has_more"]
-        }});
+        return json({
+            "data": data, "meta": {
+                "count": data.len(),
+                "total": int(page_result["total"]),
+                "page": int(page_result["page"]),
+                "per_page": int(page_result["per_page"]),
+                "last_page": int(page_result["last_page"]),
+                "has_more": page_result["has_more"]
+            }
+        });
     }
 }

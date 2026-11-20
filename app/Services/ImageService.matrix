@@ -19,11 +19,12 @@ import "app/Support/Images" as Images;
 public class ImageService {
     public let images;
 
-    fn new() {
+    fn new () {
         self.images = new ImageRepository();
     }
 
     fn detect_type(self, b) -> string {
+        let _ = self;
         let n = len(b);
         if n >= 8 and b[0] == 137 and b[1] == 80 and b[2] == 78 and b[3] == 71 {
             return "png";
@@ -35,7 +36,7 @@ public class ImageService {
             return "gif";
         }
         if n >= 12 and b[0] == 82 and b[1] == 73 and b[2] == 70 and b[3] == 70
-            and b[8] == 87 and b[9] == 69 and b[10] == 66 and b[11] == 80 {
+        and b[8] == 87 and b[9] == 69 and b[10] == 66 and b[11] == 80 {
             return "webp";
         }
         return "";
@@ -53,19 +54,25 @@ public class ImageService {
             b64 = b64.slice(comma + 1, len(b64));
         }
         if len(b64) > 2800000 {
-            throw validation_failed({"image": "Image exceeds the 2 MiB limit."});
+            throw validation_failed({
+                "image": "Image exceeds the 2 MiB limit."
+            });
         }
         let bytes = base64_decode(b64);
         if len(bytes) < 8 or len(bytes) > 2097152 {
-            throw validation_failed({"image": "Image exceeds the 2 MiB limit or is empty."});
+            throw validation_failed({
+                "image": "Image exceeds the 2 MiB limit or is empty."
+            });
         }
         let ext = self.detect_type(bytes);
         if ext == "" {
-            throw validation_failed({"image": "Only PNG, JPEG, GIF and WEBP images are allowed."});
+            throw validation_failed({
+                "image": "Only PNG, JPEG, GIF and WEBP images are allowed."
+            });
         }
 
         let rel = "products/" + string(product_id) + "/"
-            + hex_encode(random_bytes(8).unwrap()) + "." + ext;
+        + hex_encode(random_bytes(8).unwrap()) + "." + ext;
         let disk = Storage.disk("public");
         // put() creates parent dirs; write_bytes then replaces the empty
         // placeholder with the exact binary payload.
@@ -119,9 +126,13 @@ public class ImageService {
         let other = siblings[target];
         // Swap the two sort orders.
         DB.table("product_images").where("id", "=", image_id)
-            .update({"sort_order": int(other["sort_order"])});
+        .update({
+            "sort_order": int(other["sort_order"])
+        });
         DB.table("product_images").where("id", "=", other["id"])
-            .update({"sort_order": int(row["sort_order"])});
+        .update({
+            "sort_order": int(row["sort_order"])
+        });
         // The storefront chooses the lowest sort_order; keep its chosen
         // image and the admin cover badge in sync after every reorder.
         let reordered = self.images.for_product(row["product_id"]);
@@ -164,19 +175,23 @@ public class ImageService {
         }
         self.images.clear_primary(row["product_id"]);
         let ok = DB.table("product_images")
-            .where("id", "=", image_id)
-            .update({"is_primary": 1, "sort_order": 0}) > 0;
+        .where("id", "=", image_id)
+        .update({
+            "is_primary": 1, "sort_order": 0
+        }) > 0;
         // Keep the remaining gallery images in a stable order behind it.
         let others = DB.table("product_images")
-            .where("product_id", "=", row["product_id"])
-            .where("id", "!=", image_id)
-            .orderBy("sort_order", "ASC")
-            .get();
+        .where("product_id", "=", row["product_id"])
+        .where("id", "!=", image_id)
+        .orderBy("sort_order", "ASC")
+        .get();
         let i = 0;
         while i < others.len() {
             DB.table("product_images")
-                .where("id", "=", others[i]["id"])
-                .update({"sort_order": i + 1});
+            .where("id", "=", others[i]["id"])
+            .update({
+                "sort_order": i + 1
+            });
             i += 1;
         }
         CatalogCache.bump_catalog_version();
@@ -190,8 +205,10 @@ public class ImageService {
             throw not_found("Image not found.");
         }
         let ok = DB.table("product_images")
-            .where("id", "=", image_id)
-            .update({"alt_text": alt_text}) > 0;
+        .where("id", "=", image_id)
+        .update({
+            "alt_text": alt_text
+        }) > 0;
         CatalogCache.bump_catalog_version();
         return ok;
     }

@@ -6,6 +6,8 @@ import "framework/Log/Log";
 import "framework/Http/HttpException";
 
 public fn sanitize(label: string, error) {
-    Log.error("db failure: " + label, {"error": string(error)});
+    Log.error("db failure: " + label, {
+        "error": string(error)
+    });
     return make_http_exception(500, "A database operation failed. Please try again.");
 }

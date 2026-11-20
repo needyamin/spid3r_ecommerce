@@ -9,11 +9,13 @@ import "framework/Database/Migration";
 import "framework/Database/DB";
 
 public class AuthTokenTables extends Migration {
-    fn new(name: string = "017_auth_tokens") {
+    fn new (name: string = "017_auth_tokens") {
+        let _ = self;
         super(name);
     }
 
     public fn up(self) {
+        let _ = self;
         Schema.create("password_resets", table => {
             table.id();
             table.integer("user_id");
@@ -38,6 +40,7 @@ public class AuthTokenTables extends Migration {
     }
 
     public fn down(self) {
+        let _ = self;
         Schema.dropIfExists("email_verifications");
         Schema.dropIfExists("password_resets");
     }

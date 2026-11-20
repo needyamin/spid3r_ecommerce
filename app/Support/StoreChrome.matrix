@@ -55,7 +55,9 @@ fn wishlist_badge_count(req) -> int {
     if req.auth == null or not req.auth.check() {
         return 0;
     }
-    return int(DB.table("wishlists").where("user_id", "=", req.auth.id()).count());
+    return int(
+        DB.table("wishlists").where("user_id", "=", req.auth.id()).count()
+    );
 }
 
 // Canonical URL for SEO: absolute only when STORE_URL is configured,
@@ -159,7 +161,12 @@ public fn build(req, settings) {
         "active_locale": locale,
         "t": locales.bundle(locale),
         "lbl_search": locales.translate(locale, "common", "search", "Search"),
-        "lbl_search_placeholder": locales.translate(locale, "common", "search_placeholder", "Search in " + string(settings["name"])),
+        "lbl_search_placeholder": locales.translate(
+            locale,
+            "common",
+            "search_placeholder",
+            "Search in " + string(settings["name"])
+        ),
         "lbl_currency": locales.translate(locale, "common", "currency", "Currency"),
         "lbl_language": locales.translate(locale, "common", "language", "Language"),
         "lbl_apply": locales.translate(locale, "common", "apply", "Apply"),

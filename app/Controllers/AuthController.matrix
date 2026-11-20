@@ -21,7 +21,7 @@ public class AuthController {
     public let auth;
     public let settings;
 
-    fn new() {
+    fn new () {
         self.auth = new AuthService();
         self.settings = Container.make("store.settings");
     }
@@ -68,11 +68,13 @@ public class AuthController {
     }
 
     fn cookie_name(self) -> string {
+        let _ = self;
         return string(Config.get("session.cookie", "spid3r_session"));
     }
 
     // Phase 6 — merge the guest cart after a successful login.
     fn merge_guest_cart(self, req, email: string) -> bool {
+        let _ = self;
         let key = CartIdentity.cookie_value(req, "cart");
         if key == "" {
             return false;
@@ -86,7 +88,9 @@ public class AuthController {
     }
 
     public fn show_login(self, req) {
-        return self.render(req, "auth/login", "Sign in", {"error": "", "csrf": req.auth.csrf()});
+        return self.render(req, "auth/login", "Sign in", {
+            "error": "", "csrf": req.auth.csrf()
+        });
     }
 
     public fn login(self, req) {
@@ -108,7 +112,9 @@ public class AuthController {
     }
 
     public fn show_register(self, req) {
-        return self.render(req, "auth/register", "Create account", {"error": "", "csrf": req.auth.csrf()});
+        return self.render(req, "auth/register", "Create account", {
+            "error": "", "csrf": req.auth.csrf()
+        });
     }
 
     public fn register(self, req) {
@@ -119,14 +125,19 @@ public class AuthController {
             req.input("password", "")
         );
         if user == null {
-            throw validation_failed({"email": "That email is already registered."});
+            throw validation_failed({
+                "email": "That email is already registered."
+            });
         }
         // Never auto-login: email verification is required first.
         return redirect("/login?registered=1");
     }
 
     public fn update_profile(self, req) {
-        req.validate_or_fail({"name": "required|min:2|max:128"});
+        let _ = self;
+        req.validate_or_fail({
+            "name": "required|min:2|max:128"
+        });
         DB.table("users").where("id", "=", req.auth.id()).update({
             "name": req.input("name", ""),
             "updated_at": string(unix_time())
@@ -153,7 +164,8 @@ public class AuthController {
         try {
             let adv = new AdvancedStoreService();
             referral_code = adv.ensure_referral_code(uid);
-        } catch (e) {}
+        } catch (_e) {
+        }
         let points = 0;
         if user != null and user["loyalty_points"] != null {
             points = int(user["loyalty_points"]);
@@ -202,7 +214,9 @@ public class AuthController {
     }
 
     public fn show_forgot(self, req) {
-        return self.render(req, "auth/forgot", "Reset password", {"csrf": req.auth.csrf()});
+        return self.render(req, "auth/forgot", "Reset password", {
+            "csrf": req.auth.csrf()
+        });
     }
 
     public fn forgot(self, req) {
@@ -226,7 +240,10 @@ public class AuthController {
 
     public fn reset(self, req) {
         req.validate_or_fail(AuthValidators.reset_rules());
-        if not self.auth.reset_password(req.input("token", ""), req.input("password", "")) {
+        if not self.auth.reset_password(
+            req.input("token", ""),
+            req.input("password", "")
+        ) {
             throw bad_request("This reset link is invalid or has expired.");
         }
         return redirect("/login?reset=1");

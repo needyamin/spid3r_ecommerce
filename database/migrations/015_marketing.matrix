@@ -6,18 +6,20 @@ import "framework/Database/Migration";
 import "framework/Database/DB";
 
 public class MarketingTables extends Migration {
-    fn new(name: string = "015_marketing") {
+    fn new (name: string = "015_marketing") {
+        let _ = self;
         super(name);
     }
 
     public fn up(self) {
+        let _ = self;
         Schema.create("coupons", table => {
             table.id();
             table.string("code", 48).unique();
-            table.string("type", 24).default("fixed");   // fixed | percent
-            table.bigint("value_minor").default(0);      // fixed amount, or bps for percent
+            table.string("type", 24).default("fixed");  // fixed | percent
+            table.bigint("value_minor").default(0);  // fixed amount, or bps for percent
             table.bigint("min_order_minor").default(0);
-            table.integer("max_uses").default(0);         // 0 = unlimited
+            table.integer("max_uses").default(0);  // 0 = unlimited
             table.integer("uses").default(0);
             table.string("starts_at", 32).nullable();
             table.string("ends_at", 32).nullable();
@@ -43,7 +45,7 @@ public class MarketingTables extends Migration {
             table.integer("product_id");
             table.integer("user_id");
             table.integer("order_id").nullable();
-            table.integer("rating");                  // 1..5, validated in service
+            table.integer("rating");  // 1..5, validated in service
             table.string("title", 255).nullable();
             table.text("body").nullable();
             table.string("status", 24).default("pending");
@@ -56,6 +58,7 @@ public class MarketingTables extends Migration {
     }
 
     public fn down(self) {
+        let _ = self;
         Schema.dropIfExists("reviews");
         Schema.dropIfExists("coupon_usages");
         Schema.dropIfExists("coupons");

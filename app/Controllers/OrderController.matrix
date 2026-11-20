@@ -27,7 +27,7 @@ public class OrderController {
     public let orders;
     public let settings;
 
-    fn new() {
+    fn new () {
         self.service = new OrderService();
         self.orders = new OrderRepository();
         self.settings = Container.make("store.settings");
@@ -85,8 +85,15 @@ public class OrderController {
     }
 
     public fn show(self, req) {
-        let order = self.service.for_customer(string(req.params["number"]), req.auth.id());
-        let ctx = self.ctx(req, "Order " + string(order["order_number"]), self.service.decorate(order));
+        let order = self.service.for_customer(
+            string(req.params["number"]),
+            req.auth.id()
+        );
+        let ctx = self.ctx(
+            req,
+            "Order " + string(order["order_number"]),
+            self.service.decorate(order)
+        );
         let st = string(order["status"]);
         ctx["csrf"] = req.auth.csrf();
         ctx["status"] = st;
@@ -98,8 +105,18 @@ public class OrderController {
     }
 
     public fn invoice(self, req) {
-        let order = self.service.for_customer(string(req.params["number"]), req.auth.id());
-        return view("orders/invoice", self.ctx(req, "Invoice " + string(order["order_number"]), self.service.decorate(order)));
+        let order = self.service.for_customer(
+            string(req.params["number"]),
+            req.auth.id()
+        );
+        return view(
+            "orders/invoice",
+            self.ctx(
+                req,
+                "Invoice " + string(order["order_number"]),
+                self.service.decorate(order)
+            )
+        );
     }
 
     public fn cancel(self, req) {
@@ -116,7 +133,9 @@ public class OrderController {
     public fn admin_status(self, req) {
         let status = string(req.input("status", "")).trim();
         if status == "" {
-            throw validation_failed({"status": "A status is required."});
+            throw validation_failed({
+                "status": "A status is required."
+            });
         }
         let order = self.service.set_status(req.params["id"], status);
         return json(resource_item(order, identity));
@@ -127,7 +146,9 @@ public class OrderController {
     public fn admin_status_form(self, req) {
         let status = string(req.input("status", "")).trim();
         if status == "" {
-            throw validation_failed({"status": "A status is required."});
+            throw validation_failed({
+                "status": "A status is required."
+            });
         }
         let order = self.service.set_status(req.params["id"], status);
         if req.input("format", "") != "json" {
@@ -142,7 +163,9 @@ public class OrderController {
         let all = self.service.statuses();
         let i = 0;
         while i < all.len() {
-            out.push({"value": all[i], "label": all[i]});
+            out.push({
+                "value": all[i], "label": all[i]
+            });
             i += 1;
         }
         return out;

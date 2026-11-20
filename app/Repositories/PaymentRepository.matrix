@@ -6,12 +6,15 @@
 import "framework/Database/DB";
 
 public class PaymentRepository {
-    fn new() {}
+    fn new () {
+        let _ = self;
+    }
 
     public fn initiate(self, order_id, provider: string, amount_minor, idempotency_key: string) {
+        let _ = self;
         let existing = DB.table("payments")
-            .where("idempotency_key", "=", idempotency_key)
-            .first();
+        .where("idempotency_key", "=", idempotency_key)
+        .first();
         if existing != null {
             return existing;
         }
@@ -29,32 +32,39 @@ public class PaymentRepository {
 
     // Server-to-server verification result; only "initiated"/"pending"
     // payments transition, so replayed callbacks are no-ops.
-    public fn mark_verified(self, payment_id, gateway_transaction_id: string, payload_json: string) -> bool {
+    public fn mark_verified(
+        self,
+        payment_id,
+        gateway_transaction_id: string,
+        payload_json: string
+    ) -> bool {
+        let _ = self;
         return DB.transaction(fn() {
             let payment = DB.table("payments").where("id", "=", payment_id).first();
             if payment == null {
                 return false;
             }
             if payment["status"] == "paid" {
-                return false;   // duplicate callback — already settled
+                return false;  // duplicate callback — already settled
             }
             let changes = DB.table("payments")
-                .where("id", "=", payment_id)
-                .where("status", "!=", "paid")
-                .update({
-                    "status": "paid",
-                    "gateway_transaction_id": gateway_transaction_id,
-                    "payload_json": payload_json,
-                    "verified_at": string(unix_time())
-                });
+            .where("id", "=", payment_id)
+            .where("status", "!=", "paid")
+            .update({
+                "status": "paid",
+                "gateway_transaction_id": gateway_transaction_id,
+                "payload_json": payload_json,
+                "verified_at": string(unix_time())
+            });
             return changes > 0;
         });
     }
 
     public fn for_order(self, order_id) {
+        let _ = self;
         return DB.table("payments")
-            .where("order_id", "=", order_id)
-            .orderBy("id", "ASC")
-            .get();
+        .where("order_id", "=", order_id)
+        .orderBy("id", "ASC")
+        .get();
     }
 }
