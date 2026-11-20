@@ -6,7 +6,7 @@
 // rolls the whole thing back (no half-orders, no lost stock).
 
 import "framework/Database/DB";
-import "framework/HttpException";
+import "framework/Http/HttpException";
 import "app/Services/CartService";
 import "app/Services/CouponService";
 import "app/Services/CampaignService";

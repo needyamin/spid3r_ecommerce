@@ -1,0 +1,44 @@
+// bootstrap/paths.matrix
+// Canonical project directory helpers for Spid3rWeb applications.
+
+fn join_rel(base: string, rel: string) -> string {
+    let clean = string(rel).replace("\\", "/").trim();
+    if clean == "" {
+        return base;
+    }
+    if clean.starts_with("/") {
+        clean = clean.slice(1, clean.len());
+    }
+    if base == "." or base == "" {
+        return clean;
+    }
+    return "{base}/{clean}";
+}
+
+public fn base_path(rel: string = "") -> string {
+    return join_rel(".", rel);
+}
+
+public fn app_path(rel: string = "") -> string {
+    return join_rel("app", rel);
+}
+
+public fn config_path(rel: string = "") -> string {
+    return join_rel("config", rel);
+}
+
+public fn database_path(rel: string = "") -> string {
+    return join_rel("database", rel);
+}
+
+public fn public_path(rel: string = "") -> string {
+    return join_rel("public", rel);
+}
+
+public fn resources_path(rel: string = "") -> string {
+    return join_rel("resources", rel);
+}
+
+public fn storage_path(rel: string = "") -> string {
+    return join_rel("storage", rel);
+}

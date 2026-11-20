@@ -10,7 +10,7 @@
 // code is shown to the purchaser exactly once.
 
 import "framework/Database/DB";
-import "framework/HttpException";
+import "framework/Http/HttpException";
 import "framework/Queue/Queue";
 import "app/Support/Money" as Money;
 

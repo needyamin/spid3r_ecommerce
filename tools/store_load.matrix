@@ -12,8 +12,8 @@
 // Iterations default to 150 per endpoint. Latencies are wall-clock
 // milliseconds around each in-process request.
 
-import "framework/Application";
-import "framework/Router";
+import "framework/Foundation/Application";
+import "framework/Http/Router";
 import "framework/Database/DB";
 import "routes/web";
 import "routes/queue";

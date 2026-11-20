@@ -16,7 +16,7 @@
 
 import "http";
 import "framework/Database/DB";
-import "framework/HttpException";
+import "framework/Http/HttpException";
 import "app/Support/Money" as Money;
 
 fn env_value(key: string, fallback: string) -> string {

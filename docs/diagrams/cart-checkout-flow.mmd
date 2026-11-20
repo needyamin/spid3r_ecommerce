@@ -1,0 +1,22 @@
+%% Spid3r Store — cart → checkout → order journey
+flowchart TD
+    G["Guest visitor<br/>cart identity cookie (CartIdentity)"]
+    CART["CartController<br/>POST /cart/items"]
+    LOGIN["Sign in / Register<br/>AuthService"]
+    MERGE["Cart merge on login<br/>guest cart survives registration"]
+    CHK["CheckoutController<br/>address → shipping zone fee → review"]
+    PAY["PaymentService<br/>initiate gateway payment"]
+    ORD["OrderService<br/>orders + order_items + inventory reservation"]
+    STOCK["InventoryService<br/>reserve stock, low-stock alerts"]
+    QUEUE["Queue (sync driver)<br/>store.order_confirmation email job"]
+    DONE["Confirmation page<br/>+ order tracking /track"]
+
+    G --> CART
+    CART --> LOGIN
+    LOGIN --> MERGE
+    MERGE --> CHK
+    CHK --> PAY
+    PAY --> ORD
+    ORD --> STOCK
+    ORD --> QUEUE
+    PAY --> DONE

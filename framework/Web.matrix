@@ -8,24 +8,25 @@
 //   app.get("/api/posts", req => Post.paginate(req.page(), req.per_page()));
 //   app.listen(8000);
 
-import "framework/Application";
-import "framework/Router";
-import "framework/Request";
-import "framework/Response";
-import "framework/Controller";
-import "framework/Middleware";
-import "framework/Validator";
-import "framework/Resource";
-import "framework/HttpException";
+import "framework/Foundation/Application";
+import "framework/Http/Router";
+import "framework/Http/Request";
+import "framework/Http/Response";
+import "framework/Http/Controller";
+import "framework/Http/Middleware";
+import "framework/Http/Validator";
+import "framework/Http/Resource";
+import "framework/Http/HttpException";
 import "framework/Database/DB";
 import "framework/Database/Schema";
 import "framework/Database/Model";
+import "framework/Database/ModelRepository";
 import "framework/View/BD";
 import "framework/Auth/Auth";
 import "framework/Auth/Hash";
 import "framework/Auth/Jwt";
 import "framework/Cache/Cache";
-import "framework/Config/Config";
+import "framework/Foundation/Config";
 import "framework/Events/Event";
 import "framework/Log/Log";
 import "framework/Mail/Mail";
@@ -37,44 +38,34 @@ import "framework/Testing/TestClient";
 // Application, Router, Model & TestClient Factories
 // ----------------------------------------------------------------------------
 
-public fn web(base_path: string = ".") {
+/// Create a new Spid3rWeb Application kernel rooted at `base_path`.
+public fn web(base_path: string = ".") -> Application {
     return new Application(base_path);
 }
 
-public fn router() {
+/// Create an isolated sub-Router suitable for mounting on an Application.
+public fn router() -> Router {
     return new Router();
 }
 
-public fn route(name: string, params = null) -> string {
+/// Generate a URL for a named route with optional parameter substitution.
+public fn route(name: string, params: any = null) -> string {
     return Route.url(name, params);
 }
 
-public fn model(table_name: string, opts = {}) {
+/// Create a zero-boilerplate ModelRepository for `table_name`.
+public fn model(table_name: string, opts: map = {
+}) -> ModelRepository {
     return new ModelRepository(table_name, opts);
 }
 
-public fn abort(status: int, message: string = "", errors = null) {
+/// Abort the active request with a typed HTTP status code and optional errors.
+public fn abort(status: int, message: string = "", errors: any = null) {
     abort_http(status, message, errors);
 }
 
-public fn abort_if(condition: bool, status: int, message: string = "", errors = null) {
-    if condition {
-        abort_http(status, message, errors);
-    }
-}
-
-public fn validate(data, rules) {
-    let v = Validator.make(data, rules);
-    if v.fails() {
-        throw validation_failed(v.error_messages(), v.first());
-    }
-    return v.validated();
-}
-
-public fn test_client(app = null) {
-    if app == null {
-        app = new Application();
-    }
+/// Create a fluent in-memory TestClient bound to `app`.
+public fn test_client(app: any) -> TestClient {
     return new TestClient(app);
 }
 
@@ -82,39 +73,47 @@ public fn test_client(app = null) {
 // Response & View Helpers
 // ----------------------------------------------------------------------------
 
-public fn send_json(data, status: int = 200) {
+/// Build a JSON Response with the given payload and HTTP status code.
+public fn send_json(data: any, status: int = 200) -> Response {
     return json(data, status);
 }
 
-public fn json_out(data, status: int = 200) {
-    return json(data, status);
-}
-
-public fn send_html(content: string, status: int = 200) {
+/// Build an HTML Response with security headers applied.
+public fn send_html(content: string, status: int = 200) -> Response {
     return html(content, status);
 }
 
-public fn html_out(content: string, status: int = 200) {
-    return html(content, status);
-}
-
-public fn send_text(content: string, status: int = 200) {
+/// Build a plain-text Response with UTF-8 content type.
+public fn send_text(content: string, status: int = 200) -> Response {
     return text(content, status);
 }
 
-public fn text_out(content: string, status: int = 200) {
-    return text(content, status);
-}
-
-public fn redirect_to(url: string, status: int = 302) {
+/// Build an HTTP redirect Response to `url` with default status 302.
+public fn redirect_to(url: string, status: int = 302) -> Response {
     return redirect(url, status);
 }
 
-public fn render_view(view_name: string, data = null) {
+/// Build a chunked streaming HTTP Response backed by a callback or list.
+public fn send_stream(
+    source: any,
+    content_type: string = "application/octet-stream",
+    status: int = 200
+) -> Response {
+    return stream(source, content_type, status);
+}
+
+/// Build a Server-Sent Events (text/event-stream) Response.
+public fn send_sse(source: any, status: int = 200) -> Response {
+    return sse(source, status);
+}
+
+/// Render a SpiderBD v2 template by dot-notation view name.
+public fn render_view(view_name: string, data: any = null) -> Response {
     return view(view_name, data);
 }
 
-public fn views() {
+/// Return the global SpiderBD v2 view engine instance.
+public fn views() -> BD {
     return global_bd;
 }
 
@@ -122,57 +121,69 @@ public fn views() {
 // Subsystem Accessors
 // ----------------------------------------------------------------------------
 
-public fn db(table: string = "") {
+/// Return the DB facade, or a QueryBuilder scoped to `table` if non-empty.
+public fn db(table: string = "") -> any {
     if table != "" {
         return DB.table(table);
     }
     return DB;
 }
 
-public fn schema() {
+/// Return the Schema DDL builder facade.
+public fn schema() -> SchemaBuilder {
     return Schema;
 }
 
-public fn cache() {
+/// Return the Cache manager facade.
+public fn cache() -> CacheManager {
     return Cache;
 }
 
-public fn auth() {
+/// Return the global Auth manager facade.
+public fn auth() -> AuthManager {
     return Auth;
 }
 
-public fn jwt() {
+/// Return the HS256 Jwt token engine.
+public fn jwt() -> JwtEngine {
     return Jwt;
 }
 
-public fn hash() {
+/// Return the Argon2id/Bcrypt password Hash manager.
+public fn hash() -> HashManager {
     return Hash;
 }
 
-public fn log() {
+/// Return the thread-safe Log manager facade.
+public fn log() -> LogManager {
     return Log;
 }
 
-public fn queue() {
+/// Return the background Queue manager facade.
+public fn queue() -> QueueManager {
     return Queue;
 }
 
-public fn mail() {
+/// Return the Mail delivery facade.
+public fn mail() -> Mailer {
     return Mail;
 }
 
-public fn storage(disk_name: string = "") {
+/// Return the Storage manager, or a configured disk when `disk_name` is non-empty.
+public fn storage(disk_name: string = "") -> any {
     if disk_name != "" {
         return Storage.disk(disk_name);
     }
     return Storage;
 }
 
-public fn events() {
+/// Return the global synchronous Event dispatcher.
+public fn events() -> EventDispatcher {
     return Event;
 }
 
-public fn config(key: string = "", default_val = null) {
+/// Return the Config repository, or resolve a dot-notation key when `key` is non-empty.
+public fn config(key: string = "", default_val: any = null) -> any {
     if key != "" {
         return Config.get(key, default_val);
     }

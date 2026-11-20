@@ -1,25 +1,20 @@
 #!/usr/bin/env sh
 # =====================================================================
-# Spid3rWeb — one-click installer
+# Spid3rWeb — installer & project bootstrap
 # =====================================================================
 # Auto-detects the OS and installs, in order:
-#   1. The Spid3r language toolchain (skipped if already on PATH)
-#   2. This framework project: .env, database migrations, optional seeding
+#   1. The pinned Spid3r language toolchain (verified with SHA-256)
+#   2. This framework project: .env (0600), APP_KEY, storage/ perms, migrations
 #
-# Supported:
-#   - Linux (x86_64 / arm64)      -> official release tarball via install.sh
-#   - macOS (Intel / Apple Silicon) -> official release tarball via install.sh
-#   - Windows (Git Bash / MSYS2)  -> Spid3r-Setup-<version>.exe from releases
+# Never invokes sudo or system package managers automatically — if a
+# prerequisite downloader is missing, exact manual commands are printed.
 #
 # Usage:
 #   sh install.sh            # install language (if needed) + set up project
 #   sh install.sh --serve    # ...then start the dev server on :8000
 #   SPID3R_PORT=3000 sh install.sh --serve
-#
-# On Windows, run this script from Git Bash (it handles the .exe installer).
-# SQLite is the default database — no database server required.
 # =====================================================================
-set -e
+set -eu
 
 # ---------- pretty output ----------
 if [ -t 1 ]; then
@@ -31,13 +26,13 @@ say()  { printf "%b\n" "${GREEN}==>${OFF} ${BOLD}$*${OFF}"; }
 warn() { printf "%b\n" "${YELLOW}warning:${OFF} $*"; }
 die()  { printf "%b\n" "${RED}error:${OFF} $*" >&2; exit 1; }
 
-# ---------- repo constants ----------
+# ---------- pinned release constants ----------
 SPID3R_REPO="needyamin/spid3r"
-SPID3R_INSTALL_SH="https://raw.githubusercontent.com/$SPID3R_REPO/main/install.sh"
-SPID3R_SETUP_FALLBACK="https://github.com/$SPID3R_REPO/releases/download/v1.0.0/Spid3r-Setup-1.0.0.exe"
+SPID3R_VERSION="${SPID3R_VERSION:-1.1.1}"
+SPID3R_SHA256="${SPID3R_SHA256:-}"
+RELEASE_BASE="https://github.com/$SPID3R_REPO/releases/download/v${SPID3R_VERSION}"
 APP_PORT="${SPID3R_PORT:-8000}"
 
-# ---------- locate the project root (this script's directory) ----------
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 
 # =====================================================================
@@ -52,70 +47,74 @@ detect_os() {
     *)                    PLATFORM="unix" ;;
   esac
   case "$(uname -m)" in
-    arm64|aarch64) ARCH="arm64" ;;
+    arm64|aarch64) ARCH="aarch64" ;;
     *)             ARCH="x86_64" ;;
   esac
 }
 
+release_target() {
+  case "${PLATFORM}:${ARCH}" in
+    linux:x86_64)   printf '%s' "x86_64-unknown-linux-gnu" ;;
+    linux:aarch64)  printf '%s' "aarch64-unknown-linux-gnu" ;;
+    macos:x86_64)   printf '%s' "x86_64-apple-darwin" ;;
+    macos:aarch64)  printf '%s' "aarch64-apple-darwin" ;;
+    *)              return 1 ;;
+  esac
+}
+
 # =====================================================================
-# Download helpers (curl, wget, or PowerShell fallback on Windows)
+# Download & checksum helpers (never auto-sudo)
 # =====================================================================
 have_downloader() {
   command -v curl >/dev/null 2>&1 || command -v wget >/dev/null 2>&1 || [ "$PLATFORM" = "windows" ]
 }
 
-fetch() { # fetch <url> <outfile>
-  _url="$1"; _out="$2"
+fetch() {
+  _url="$1"
+  _out="$2"
   if command -v curl >/dev/null 2>&1; then
     curl -fsSL "$_url" -o "$_out"
   elif command -v wget >/dev/null 2>&1; then
     wget -qO "$_out" "$_url"
   elif [ "$PLATFORM" = "windows" ]; then
-    # last resort on a bare Windows box: PowerShell
-    _winurl=$(printf '%s' "$_url" | sed 's|/|\\\\|g')
-    powershell.exe -NoProfile -Command "\$c=New-Object Net.WebClient; \$c.DownloadFile('$_url', '$_out')"
+    powershell.exe -NoProfile -Command "Invoke-WebRequest -UseBasicParsing -Uri '$_url' -OutFile '$_out'"
   else
     return 1
   fi
 }
 
-# Auto-install curl via the system package manager when neither
-# curl nor wget exists (Linux mainly; macOS/Windows always have one).
-ensure_downloader() {
-  if have_downloader; then return 0; fi
-
-  say "Neither curl nor wget found — installing curl ..."
-  SUDO=""
-  if [ "$(id -u 2>/dev/null || echo 1)" != "0" ] && command -v sudo >/dev/null 2>&1; then
-    SUDO="sudo"
-  fi
-  if command -v apt-get >/dev/null 2>&1; then
-    $SUDO apt-get update -y && $SUDO apt-get install -y curl
-  elif command -v dnf >/dev/null 2>&1; then
-    $SUDO dnf install -y curl
-  elif command -v yum >/dev/null 2>&1; then
-    $SUDO yum install -y curl
-  elif command -v apk >/dev/null 2>&1; then
-    $SUDO apk add --no-cache curl
-  elif command -v pacman >/dev/null 2>&1; then
-    $SUDO pacman -Sy --noconfirm curl
-  elif command -v zypper >/dev/null 2>&1; then
-    $SUDO zypper install -y curl
-  elif command -v brew >/dev/null 2>&1; then
-    brew install curl
+verify_sha256() {
+  _file="$1"
+  _expected="$2"
+  if command -v sha256sum >/dev/null 2>&1; then
+    printf '%s  %s\n' "$_expected" "$_file" | sha256sum -c - >/dev/null
+  elif command -v shasum >/dev/null 2>&1; then
+    printf '%s  %s\n' "$_expected" "$_file" | shasum -a 256 -c - >/dev/null
   else
-    die "no supported package manager found — install curl or wget manually, then re-run"
+    die "neither sha256sum nor shasum found — cannot verify release integrity"
   fi
-  command -v curl >/dev/null 2>&1 || command -v wget >/dev/null 2>&1 \
-    || die "downloader still missing after installation"
+}
+
+ensure_downloader() {
+  if have_downloader; then
+    return 0
+  fi
+  warn "Neither 'curl' nor 'wget' was found."
+  printf "Install one manually, then re-run this script:\n"
+  printf "  Debian/Ubuntu : sudo apt-get update && sudo apt-get install -y curl ca-certificates\n"
+  printf "  Fedora/RHEL   : sudo dnf install -y curl\n"
+  printf "  Alpine        : sudo apk add curl\n"
+  printf "  Arch          : sudo pacman -S curl\n"
+  printf "  macOS         : brew install curl\n"
+  die "missing required downloader (curl or wget)"
 }
 
 # =====================================================================
-# PATH helpers — make `spid3r` visible in THIS shell after install
+# PATH helpers
 # =====================================================================
 path_has() { case ":$PATH:" in *":$1:"*) return 0 ;; *) return 1 ;; esac; }
 
-add_path_dir() { # add_path_dir <dir> — silently extend session PATH
+add_path_dir() {
   [ -d "$1" ] || return 0
   path_has "$1" && return 0
   PATH="$PATH:$1"
@@ -123,23 +122,19 @@ add_path_dir() { # add_path_dir <dir> — silently extend session PATH
 }
 
 fix_session_path() {
-  # Where installers are known to drop the binary
-  add_path_dir "$HOME/.spid3r/bin"                       # Linux/macOS official installer
-  add_path_dir "$HOME/.local/bin"                        # cargo / manual installs
+  add_path_dir "$HOME/.spid3r/bin"
+  add_path_dir "$HOME/.local/bin"
   add_path_dir "/usr/local/bin"
   if [ -n "${LOCALAPPDATA:-}" ]; then
-    add_path_dir "$LOCALAPPDATA/Programs/Spid3r"         # Windows NSIS installer
+    add_path_dir "$LOCALAPPDATA/Programs/Spid3r"
   fi
 }
 
 path_hint() {
   printf "\n"
-  warn "spid3r was installed but is not on this shell's PATH yet."
-  warn "Open a NEW terminal, or run one of these now:"
-  warn "  export PATH=\"\$PATH:\$HOME/.spid3r/bin\"        # Linux/macOS default"
-  if [ -n "${LOCALAPPDATA:-}" ]; then
-    warn "  export PATH=\"\$PATH:$LOCALAPPDATA/Programs/Spid3r\"  # Windows"
-  fi
+  warn "spid3r was installed into $HOME/.spid3r/bin, which is not on PATH yet."
+  warn "Open a new terminal or run:"
+  warn "  export PATH=\"\$PATH:\$HOME/.spid3r/bin\""
 }
 
 spid3r_ok() {
@@ -147,54 +142,67 @@ spid3r_ok() {
 }
 
 # =====================================================================
-# Step 1 — Spid3r language
+# Step 1 — Pinned Spid3r language runtime (SHA-256 verified)
 # =====================================================================
 install_language() {
   fix_session_path
   if spid3r_ok; then
-    say "Spid3r is already installed: $(spid3r --version 2>&1 | head -n 1)"
+    say "Spid3r is already installed: $(spid3r --version 2>&1 | grep -i Version | head -n 1 || echo ok)"
     return 0
   fi
 
-  say "Spid3r language not found — installing for $PLATFORM ($ARCH) ..."
+  say "Spid3r runtime not found — installing pinned v${SPID3R_VERSION} for ${PLATFORM} (${ARCH})..."
   ensure_downloader
 
+  TMP=$(mktemp -d)
   if [ "$PLATFORM" = "windows" ]; then
-    # ------------------------------------------------ Windows ----------
-    TMP=$(mktemp -d)
-    say "Fetching latest Windows installer from GitHub releases..."
-    SETUP_URL=""
-    if fetch "https://api.github.com/repos/$SPID3R_REPO/releases/latest" "$TMP/rel.json" 2>/dev/null; then
-      SETUP_URL=$(grep -o 'https://[^"]*Spid3r-Setup-[0-9.]*\.exe' "$TMP/rel.json" | head -n 1 || true)
+    ASSET="Spid3r-Setup-${SPID3R_VERSION}.exe"
+    say "Downloading ${ASSET} ..."
+    fetch "${RELEASE_BASE}/${ASSET}" "${TMP}/${ASSET}" || die "could not download ${RELEASE_BASE}/${ASSET}"
+    if [ -n "$SPID3R_SHA256" ]; then
+      verify_sha256 "${TMP}/${ASSET}" "$SPID3R_SHA256"
+    elif fetch "${RELEASE_BASE}/sha256sums.txt" "${TMP}/sha256sums.txt" 2>/dev/null; then
+      EXPECTED=$(awk -v a="${ASSET}" '$2 == a || $2 == "*" a {print $1; exit}' "${TMP}/sha256sums.txt")
+      [ -n "$EXPECTED" ] && verify_sha256 "${TMP}/${ASSET}" "$EXPECTED"
     fi
-    [ -z "$SETUP_URL" ] && SETUP_URL="$SPID3R_SETUP_FALLBACK"
-    say "Downloading $(basename "$SETUP_URL") ..."
-    fetch "$SETUP_URL" "$TMP/spid3r-setup.exe" || die "could not download $SETUP_URL"
-
-    say "Running installer (silent mode) ..."
-    # /S = silent install for NSIS installers; if it fails, run interactively
-    if ! (cd "$TMP" && ./spid3r-setup.exe /S); then
-      warn "silent install failed — launching the graphical installer instead."
-      warn "click through the installer window, then re-run this script."
-      (cd "$TMP" && ./spid3r-setup.exe) || true
+    say "Running installer (silent mode)..."
+    if ! (cd "$TMP" && "./${ASSET}" /S); then
+      warn "silent install failed — launching interactive installer."
+      (cd "$TMP" && "./${ASSET}") || true
     fi
-    rm -rf "$TMP"
   else
-    # ---------------------------------------- Linux / macOS / other ----
-    say "Running the official Spid3r installer ..."
-    if command -v curl >/dev/null 2>&1; then
-      sh -c "$(curl -fsSL "$SPID3R_INSTALL_SH")" || die "official installer failed"
+    TARGET=$(release_target) || die "unsupported platform ${PLATFORM}/${ARCH} for prebuilt tarball"
+    ASSET="spid3r-${TARGET}.tar.gz"
+    say "Downloading ${ASSET} ..."
+    fetch "${RELEASE_BASE}/${ASSET}" "${TMP}/${ASSET}" || die "could not download ${RELEASE_BASE}/${ASSET}"
+    if [ -n "$SPID3R_SHA256" ]; then
+      EXPECTED="$SPID3R_SHA256"
     else
-      sh -c "$(wget -qO- "$SPID3R_INSTALL_SH")" || die "official installer failed"
+      fetch "${RELEASE_BASE}/sha256sums.txt" "${TMP}/sha256sums.txt" || die "could not download ${RELEASE_BASE}/sha256sums.txt"
+      EXPECTED=$(awk -v a="${ASSET}" '$2 == a || $2 == "*" a {print $1; exit}' "${TMP}/sha256sums.txt")
+    fi
+    [ -n "$EXPECTED" ] || die "empty SHA-256 checksum for ${ASSET}"
+    say "Verifying SHA-256 checksum..."
+    verify_sha256 "${TMP}/${ASSET}" "$EXPECTED"
+
+    tar -xzf "${TMP}/${ASSET}" -C "$TMP"
+    mkdir -p "$HOME/.spid3r/bin"
+    BIN_SRC=$(find "$TMP" -type f -name spid3r | head -n 1 || true)
+    [ -n "$BIN_SRC" ] || die "archive did not contain a 'spid3r' binary"
+    cp "$BIN_SRC" "$HOME/.spid3r/bin/spid3r"
+    chmod 0755 "$HOME/.spid3r/bin/spid3r"
+    SELF_SRC=$(find "$TMP" -type f -name spid3r-self | head -n 1 || true)
+    if [ -n "$SELF_SRC" ] && [ -f "$SELF_SRC" ]; then
+      cp "$SELF_SRC" "$HOME/.spid3r/bin/spid3r-self"
+      chmod 0755 "$HOME/.spid3r/bin/spid3r-self"
     fi
   fi
+  rm -rf "$TMP"
 
-  # Re-scan PATH and verify
   fix_session_path
   if spid3r_ok; then
-    say "Spid3r installed: $(spid3r --version 2>&1 | head -n 1)"
-  elif [ -x "$HOME/.spid3r/bin/spid3r" ] || [ -x "$HOME/.spid3r/bin/spid3r.exe" ] \
-    || { [ -n "${LOCALAPPDATA:-}" ] && [ -x "$LOCALAPPDATA/Programs/Spid3r/spid3r.exe" ]; }; then
+    say "Spid3r installed cleanly."
+  elif [ -x "$HOME/.spid3r/bin/spid3r" ]; then
     path_hint
     die "spid3r not reachable in this shell"
   else
@@ -203,7 +211,7 @@ install_language() {
 }
 
 # =====================================================================
-# Step 2 — Spid3rWeb framework (this project)
+# Step 2 — Spid3rWeb project setup (.env 0600, APP_KEY, dirs, migrate)
 # =====================================================================
 setup_framework() {
   say "Setting up Spid3rWeb in $SCRIPT_DIR ..."
@@ -213,20 +221,30 @@ setup_framework() {
   [ -f ".env.example" ]        || die ".env.example not found — run this script from the project root"
   [ -d "database/migrations" ] || die "database/migrations not found — incomplete project?"
 
-  # .env (never overwrite an existing one)
   if [ -f ".env" ]; then
-    say ".env already exists — keeping your configuration"
+    say ".env already exists — keeping existing configuration"
   else
     cp .env.example .env
-    say "created .env from .env.example (SQLite, dev mode, demo logins on)"
+    chmod 0600 .env
+    say "Created .env (mode 0600) from .env.example"
   fi
 
-  # Database schema
+  if [ -f ".env" ]; then
+    chmod 0600 .env
+    if ! grep -qE '^APP_KEY=.{16,}' .env; then
+      say "Generating 256-bit APP_KEY..."
+      spid3r magic key:generate
+      chmod 0600 .env
+    fi
+  fi
+
+  mkdir -p storage/logs storage/framework/cache storage/app storage/backups storage/database database
+  chmod 0700 storage storage/logs storage/framework storage/framework/cache storage/app storage/backups storage/database database
+
   say "Running database migrations ..."
   spid3r magic migrate
 
-  # Optional seed step (a no-op until you register seed data)
-  say "Running seeder (no-op until you add seed data) ..."
+  say "Running seeder ..."
   spid3r magic db:seed
 }
 
@@ -241,22 +259,21 @@ printf " \\___ \\| |/ _\` |/ _ \\ '__|  \n"
 printf "  ___) | | (_| |  __/ |      \n"
 printf " |____/|_|\\__,_|\\___|_|  web\n"
 printf '%b' "$OFF"
-printf "one-click installer — %s (%s) detected\n\n" "$PLATFORM" "$ARCH"
+printf "installer — %s (%s) detected\n\n" "$PLATFORM" "$ARCH"
 
 install_language
 setup_framework
 
 printf "\n"
 say "Spid3rWeb is ready!"
-printf "  Welcome page : %bhttp://127.0.0.1:%s%b  (resources/views/welcome.bd.html)\n" "$BOLD" "$APP_PORT" "$OFF"
-printf "  First steps  : edit routes/web.matrix, then spid3r magic make:model / make:controller\n\n"
+printf "  Health check : %bhttp://127.0.0.1:%s/health%b\n" "$BOLD" "$APP_PORT" "$OFF"
+printf "  Diagnostics  : %bspid3r magic doctor%b\n\n" "$BOLD" "$OFF"
 
 if [ "${1:-}" = "--serve" ]; then
   say "Starting dev server on http://127.0.0.1:$APP_PORT ..."
-  printf "  press Ctrl+C to stop\n\n"
   exec spid3r magic serve --port "$APP_PORT"
 fi
 
 printf "Start the app:\n"
 printf "  %bspid3r magic serve --port %s%b   then open http://127.0.0.1:%s\n" "$BOLD" "$APP_PORT" "$OFF" "$APP_PORT"
-printf "  (or run %bsh install.sh --serve%b to do it automatically)\n" "$BOLD" "$OFF"
+printf "  (or run %bsh install.sh --serve%b to start it automatically)\n" "$BOLD" "$OFF"

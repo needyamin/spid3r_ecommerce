@@ -1,0 +1,170 @@
+// tests/test_migrations_registry.matrix
+// Regression suite for Phase 3 (Structure):
+//   - Auto-generated storage-backed migration registry (sorted, stem-named, incremental, pruning)
+//   - Route.resource RESTful controller registration
+//   - bootstrap/app.matrix create_application() + HomeController wiring
+
+import "framework/Console/Commands/MigrationRegistry";
+import "framework/Database/DB";
+import "framework/Http/Router";
+import "framework/Foundation/Application";
+import "framework/Http/Controller";
+import "bootstrap/app";
+
+class WidgetController extends Controller {
+    fn new () {
+        let _ = self;
+    }
+
+    public fn index(self, _req) {
+        return self.ok({
+            "action": "index"
+        });
+    }
+
+    public fn show(self, req) {
+        return self.ok({
+            "action": "show", "id": req.param("id")
+        });
+    }
+
+    public fn store(self, _req) {
+        return self.created({
+            "action": "store"
+        });
+    }
+
+    public fn update(self, req) {
+        return self.ok({
+            "action": "update", "id": req.param("id")
+        });
+    }
+
+    public fn destroy(self, req) {
+        return self.ok({
+            "action": "destroy", "id": req.param("id")
+        });
+    }
+}
+
+fn cleanup_temp_dir(dir: string) {
+    if not file_exists(dir) {
+        return;
+    }
+    let ls = list_dir(dir);
+    if ls.is_ok() {
+        for name in ls.unwrap() {
+            let n = string(name);
+            if n != "." and n != ".." {
+                let p = "{dir}/{n}";
+                if list_dir(p).is_ok() {
+                    cleanup_temp_dir(p);
+                } else {
+                    file_delete(p);
+                }
+            }
+        }
+    }
+    let _ = dir_remove(dir);
+}
+
+fn sample_migration_source(cls: string, stem: string) -> string {
+    return "import \"framework/Database/Migration\";\npublic class {cls} extends Migration {\n    fn new(name: string = \"{stem}\") { self.name = name; self.checksum = \"\"; }\n    public fn up(self) { let _ = self; }\n    public fn down(self) { let _ = self; }\n}\n";
+}
+
+fn test_registry_sync_sorted_incremental_and_prune() {
+    let base = "storage/framework/test_mig_tmp";
+    let mdir = "{base}/migrations";
+    let reg = "{base}/migrations.matrix";
+    cleanup_temp_dir(base);
+    ensure_parent_dirs("{mdir}/dummy.txt");
+    dir_create(mdir);
+
+    try {
+        let f1 = "001_init_alpha";
+        let f2 = "2026_11_20_063000_add_beta";
+        assert(
+            write_file("{mdir}/{f1}.matrix", sample_migration_source("InitAlpha", f1)).is_ok(),
+            "wrote migration 1"
+        );
+        assert(
+            write_file("{mdir}/{f2}.matrix", sample_migration_source("MigrationAddBeta", f2)).is_ok(),
+            "wrote migration 2"
+        );
+
+        let n1 = sync_registry(mdir, reg, false, false);
+        assert(n1 == 2, "initial sync detects 2 migrations");
+        assert(file_exists(reg), "generated registry file exists");
+
+        let body1 = string(read_file(reg).unwrap());
+        let pos1 = body1.index_of("001_init_alpha");
+        let pos2 = body1.index_of("2026_11_20_063000_add_beta");
+        assert(pos1 >= 0 and pos2 > pos1, "imports sorted ascending by filename");
+        assert(
+            body1.contains("new InitAlpha(\"001_init_alpha\")"),
+            "filename stem passed to constructor"
+        );
+        assert(
+            body1.contains("new MigrationAddBeta(\"2026_11_20_063000_add_beta\")"),
+            "timestamp stem passed to constructor"
+        );
+        assert(body1.contains("fn main()"), "generated registry includes runner entrypoint");
+
+        // No-op re-sync
+        assert(sync_registry(mdir, reg, false, false) == 0, "idempotent sync returns 0");
+
+        // Incremental addition picked up automatically
+        let f3 = "2026_11_20_063005_add_gamma";
+        write_file("{mdir}/{f3}.matrix", sample_migration_source("MigrationAddGamma", f3));
+        assert(
+            sync_registry(mdir, reg, false, false) == 1,
+            "incremental sync detects 1 new file"
+        );
+        let body2 = string(read_file(reg).unwrap());
+        assert(body2.contains("2026_11_20_063005_add_gamma"), "new file added to registry");
+
+        // Stale entry pruned on file delete
+        file_delete("{mdir}/{f3}.matrix");
+        let _ = sync_registry(mdir, reg, false, false);
+        let body3 = string(read_file(reg).unwrap());
+        assert(
+            not body3.contains("2026_11_20_063005_add_gamma"),
+            "deleted file pruned from registry"
+        );
+    } finally {
+        cleanup_temp_dir(base);
+    }
+    println("  [PASS] test_registry_sync_sorted_incremental_and_prune");
+}
+
+fn test_route_resource_and_bootstrap_app() {
+    Route.clear();
+    let app = create_application();
+    let client = app.test_client();
+
+    client.get("/").assert_ok();
+    client.get("/health").assert_ok().assert_json_path("status", "ok");
+    client.get("/info").assert_ok();
+
+    app.resource("/api/widgets", new WidgetController());
+    client.get("/api/widgets").assert_ok().assert_json_path("action", "index");
+    client.post("/api/widgets").assert_created().assert_json_path("action", "store");
+    client.get("/api/widgets/42").assert_ok().assert_json_path("id", "42");
+    client.put_json("/api/widgets/42", {
+    }).assert_ok().assert_json_path("action", "update");
+    client.patch_json("/api/widgets/42", {
+    }).assert_ok().assert_json_path("id", "42");
+    client.delete("/api/widgets/42").assert_ok().assert_json_path("action", "destroy");
+
+    Route.clear();
+    println("  [PASS] test_route_resource_and_bootstrap_app");
+}
+
+fn main() {
+    println("\n=== Running Phase 3 Structure & Registry Suite ===");
+    test_registry_sync_sorted_incremental_and_prune();
+    test_route_resource_and_bootstrap_app();
+    DB.close();
+    println("=== All Phase 3 Structure Tests Passed! ===\n");
+    return 0;
+}

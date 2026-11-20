@@ -1,0 +1,165 @@
+// framework/Console/Commands/ServeCommand.matrix
+// Development / TLS HTTP server CLI command with optional --watch reload loop.
+
+import "framework/Foundation/Application";
+import "framework/Database/DB";
+import "framework/Console/TestRunner";
+import "WatchHelper";
+
+public class ServeCommand {
+    public let name;
+    public let usage;
+    public let description;
+    private let kernel;
+
+    fn new (kernel) {
+        self.name = "serve";
+        self.usage = "serve [--host H] [--port N] [--watch] [--tls]";
+        self.description = "Start HTTP/HTTPS server";
+        self.kernel = kernel;
+    }
+
+    public fn handle(self, cli_args: list) -> int {
+        let port = "8000";
+        let host = "";
+        let dry_run = false;
+        let use_tls = false;
+        let use_watch = false;
+        let cert_path = "";
+        let key_path = "";
+        let child_extra = [];
+        let i = 1;
+        while i < cli_args.len() {
+            let p_arg = string(cli_args[i]);
+            if p_arg == "--watch" {
+                use_watch = true;
+            } elif p_arg.starts_with("--port=") {
+                port = p_arg.replace("--port=", "");
+                child_extra.push(p_arg);
+            } elif p_arg == "--port" and i + 1 < cli_args.len() {
+                i = i + 1;
+                port = string(cli_args[i]);
+                child_extra.push(p_arg);
+                child_extra.push(port);
+            } elif p_arg.starts_with("--host=") {
+                host = p_arg.replace("--host=", "");
+                child_extra.push(p_arg);
+            } elif p_arg == "--host" and i + 1 < cli_args.len() {
+                i = i + 1;
+                host = string(cli_args[i]);
+                child_extra.push(p_arg);
+                child_extra.push(host);
+            } elif p_arg == "--tls" {
+                use_tls = true;
+                child_extra.push(p_arg);
+            } elif p_arg.starts_with("--cert=") {
+                cert_path = p_arg.replace("--cert=", "");
+                use_tls = true;
+                child_extra.push(p_arg);
+            } elif p_arg == "--cert" and i + 1 < cli_args.len() {
+                i = i + 1;
+                cert_path = string(cli_args[i]);
+                use_tls = true;
+                child_extra.push(p_arg);
+                child_extra.push(cert_path);
+            } elif p_arg.starts_with("--key=") {
+                key_path = p_arg.replace("--key=", "");
+                use_tls = true;
+                child_extra.push(p_arg);
+            } elif p_arg == "--key" and i + 1 < cli_args.len() {
+                i = i + 1;
+                key_path = string(cli_args[i]);
+                use_tls = true;
+                child_extra.push(p_arg);
+                child_extra.push(key_path);
+            } elif p_arg == "--dry-run" or p_arg == "--check" {
+                dry_run = true;
+                child_extra.push(p_arg);
+            } else {
+                port = p_arg;
+                child_extra.push(p_arg);
+            }
+            i = i + 1;
+        }
+
+        let scheme = "http";
+        if use_tls {
+            scheme = "https";
+            if cert_path == "" or key_path == "" {
+                println("Error: --tls requires both --cert <path> and --key <path>.");
+                DB.close();
+                return 1;
+            }
+        }
+        let app = self.kernel.get_app() ?? new Application();
+        try {
+            app.check_production_ready();
+        } catch (e) {
+            let err = string(e);
+            println("[Magic Error] {err}");
+            DB.close();
+            return 1;
+        }
+
+        let is_watch_child = env("SPID3R_WATCH_CHILD").unwrap_or("").trim() == "1";
+        if use_watch and not is_watch_child and not dry_run {
+            DB.close();
+            let bin = find_spid3r_binary();
+            let magic_entry = self.kernel.resolve_root() + "magic";
+            let spawn_args = [magic_entry, "serve"];
+            for ca in child_extra {
+                spawn_args.push(ca);
+            }
+            println(
+                "[Watch] Watching app/, bootstrap/, config/, framework/, routes/, resources/views/..."
+            );
+            while true {
+                let sp = spawn_process(bin, spawn_args, {
+                    "env": {
+                        "SPID3R_WATCH_CHILD": "1"
+                    }
+                });
+                if sp.is_err() {
+                    let serr = string(sp.unwrap_err());
+                    println("[Watch Error] {serr}");
+                    return 1;
+                }
+                let exit_code = int(sp.unwrap());
+                if exit_code != 42 {
+                    return exit_code;
+                }
+            }
+        }
+
+        let watch_state = {
+            "changed": false
+        };
+        if is_watch_child and not dry_run {
+            start_watch_reload_thread(self.kernel.resolve_root(), 750, watch_state);
+        }
+
+        let app_env = app.env;
+        let pnum = int(port);
+        let disp_host = if host != "" {
+            host
+        } else {
+            "127.0.0.1"
+        };
+        println("Starting Spid3rWeb ({app_env}) server: {scheme}://{disp_host}:{pnum}");
+        println("Press Ctrl+C to stop the server.");
+        if dry_run {
+            DB.close();
+            return 0;
+        }
+        if use_tls {
+            app.listen_tls(pnum, cert_path, key_path, host);
+        } else {
+            app.listen(pnum, host);
+        }
+        DB.close();
+        if watch_state["changed"] == true {
+            return 42;
+        }
+        return 0;
+    }
+}

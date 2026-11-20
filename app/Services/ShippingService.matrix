@@ -8,7 +8,7 @@
 // MONEY RULE: every fee is an INTEGER MINOR UNIT.
 
 import "framework/Database/DB";
-import "framework/HttpException";
+import "framework/Http/HttpException";
 
 public class ShippingService {
     public let methods;

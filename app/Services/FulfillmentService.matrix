@@ -6,7 +6,7 @@
 // last outstanding delivery moves the order itself to `delivered`.
 
 import "framework/Database/DB";
-import "framework/HttpException";
+import "framework/Http/HttpException";
 import "app/Repositories/OrderRepository";
 import "app/Services/ShippingService";
 

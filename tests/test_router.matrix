@@ -1,13 +1,17 @@
 // tests/test_router.matrix
 // Unit tests for Spid3rWeb Router
 
-import "framework/Router";
-import "framework/Response";
+import "framework/Http/Router";
+import "framework/Http/Response";
 
 fn test_route_registration_and_match() {
     let router = new Router();
-    router.get("/hello", fn(_req) { return response("Hello World", 200); });
-    router.post("/items", fn(_req) { return response("Created", 201); });
+    router.get("/hello", fn(_req) {
+        return response("Hello World", 200);
+    });
+    router.post("/items", fn(_req) {
+        return response("Created", 201);
+    });
 
     let matched = router.match_route("GET", "/hello");
     assert(matched != null, "GET /hello should match");
@@ -23,8 +27,12 @@ fn test_route_registration_and_match() {
 
 fn test_route_parameters() {
     let router = new Router();
-    router.get("/products/:id", fn(req) { return response("Product " + req.param("id"), 200); });
-    router.get("/users/:uid/comments/:cid", fn(_req) { return response("ok", 200); });
+    router.get("/products/:id", fn(req) {
+        return response("Product " + req.param("id"), 200);
+    });
+    router.get("/users/:uid/comments/:cid", fn(_req) {
+        return response("ok", 200);
+    });
 
     let match1 = router.match_route("GET", "/products/42");
     assert(match1 != null, "Route with param should match");
@@ -40,9 +48,15 @@ fn test_route_parameters() {
 
 fn test_route_groups() {
     let router = new Router();
-    router.group(map("prefix", "/api/v1"), fn() {
-        router.get("/users", fn(_req) { return response("users", 200); });
-        router.get("/products", fn(_req) { return response("products", 200); });
+    router.group({
+        "prefix": "/api/v1"
+    }, fn() {
+        router.get("/users", fn(_req) {
+            return response("users", 200);
+        });
+        router.get("/products", fn(_req) {
+            return response("products", 200);
+        });
     });
 
     let m1 = router.match_route("GET", "/api/v1/users");

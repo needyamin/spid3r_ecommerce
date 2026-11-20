@@ -2,9 +2,9 @@
 // Phase 4 — HTTP layer for product management. Thin: validation here,
 // all business rules in services, all queries repositories.
 
-import "framework/Response";
-import "framework/Resource";
-import "framework/HttpException";
+import "framework/Http/Response";
+import "framework/Http/Resource";
+import "framework/Http/HttpException";
 import "framework/Database/DB";
 import "app/Services/ProductService";
 import "app/Services/CategoryService";

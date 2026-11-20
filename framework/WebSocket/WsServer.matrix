@@ -52,6 +52,7 @@
 //   like the HTTP server. The client registry is mutex-guarded and only
 //   tracks liveness — broadcast() is safe from any task.
 
+/// Concurrent RFC 6455 WebSocket server with client caps, Origin allowlists, frame bounds, and broadcast.
 public class WsServer {
     // opts.timeout_ms     — per-connection socket timeout in ms (idle cap
     //                       for unauthenticated or dead connections)
@@ -61,25 +62,78 @@ public class WsServer {
     public let opts;
     private let handler;
     private let listener;
-    private let clients;   // mutex(map: handle-id -> handle)
+    private let clients;  // mutex(map: handle-id -> handle)
 
-    fn new() {
-        self.opts = map("timeout_ms", 300000, "watch_signals", true);
+    fn new () {
+        self.opts = {
+            "timeout_ms": 300_000,
+            "watch_signals": true,
+            "max_clients": 1_000,
+            "max_message_bytes": 65_536,
+            "allowed_origins": []
+        };
         self.handler = null;
         self.listener = -1;
-        self.clients = mutex(map());
+        self.clients = mutex({
+        });
+    }
+
+    public fn is_origin_allowed(self, origin: string) -> bool {
+        let allowed = null;
+        if self.opts.has("allowed_origins") {
+            allowed = self.opts["allowed_origins"];
+        }
+        if allowed == null or type_of(allowed) != "list" or allowed.len() == 0 {
+            return true;
+        }
+        let target = string(origin).trim().lower();
+        if target == "" {
+            return false;
+        }
+        for entry in allowed {
+            let pat = string(entry).trim().lower();
+            if pat == "*" or pat == target {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public fn require_origin(self, h: any, origin: string) -> bool {
+        if self.is_origin_allowed(origin) {
+            return true;
+        }
+        ws_close(h);
+        return false;
+    }
+
+    public fn recv(self, h: any) -> any {
+        let r = ws_recv(h);
+        if r.is_err() {
+            return r;
+        }
+        let msg = r.unwrap();
+        let max_bytes = 65_536;
+        if self.opts.has("max_message_bytes") and self.opts["max_message_bytes"] != null {
+            max_bytes = int(self.opts["max_message_bytes"]);
+        }
+        if msg != null and max_bytes > 0 and len(msg) > max_bytes {
+            ws_close(h);
+            return err("websocket: message exceeds max_message_bytes ({max_bytes})");
+        }
+        return r;
     }
 
     // Register the per-connection handler: fn(handle). The handler owns the
     // connection loop; when it returns, the framework closes the socket.
-    public fn on_connection(self, handler) {
+    public fn on_connection(self, handler: any) -> WsServer {
         self.handler = handler;
         return self;
     }
 
     // Bind without serving. Returns the real address — matters when `addr`
     // uses port 0 ("127.0.0.1:0" picks a free port; tests rely on this).
-    public fn bind(self, addr) {
+    public fn bind(self, addr: string) -> string {
         let r = tcp_listen(addr);
         if r.is_err() {
             throw r.unwrap_err();
@@ -90,7 +144,7 @@ public class WsServer {
 
     // Accept loop. `max_connections < 0` serves forever; otherwise returns
     // after accepting that many connections (tests use this).
-    public fn serve(self, max_connections) {
+    public fn serve(self, max_connections: int) -> int {
         if self.handler == null {
             throw "WsServer: register a handler with on_connection() first";
         }
@@ -133,18 +187,42 @@ public class WsServer {
 
     // Handshake + handler lifecycle for one connection.
     fn handle_conn(self, conn, timeout_ms) {
+        let max_clients = 0;
+        if self.opts.has("max_clients") and self.opts["max_clients"] != null {
+            max_clients = int(self.opts["max_clients"]);
+        }
+        let pending_key = "pending:" + string(conn);
+        let m_pre = self.clients.lock();
+        if max_clients > 0 and m_pre.len() >= max_clients {
+            self.clients.unlock();
+            tcp_close(conn);
+            return false;
+        }
+        m_pre[pending_key] = null;
+        self.clients.unlock();
+
         // The socket timeout bounds the handshake AND any silent idle
         // period: a client that connects and never speaks is reaped here.
         tcp_set_timeout(conn, timeout_ms);
         let up = ws_accept(conn);
         if up.is_err() {
+            let m_err = self.clients.lock();
+            if m_err.has(pending_key) {
+                m_err.remove(pending_key);
+            }
+            self.clients.unlock();
             // Not a WebSocket handshake (plain HTTP, garbage, probe) —
             // drop the connection without invoking the handler.
             tcp_close(conn);
             return false;
         }
         let h = up.unwrap();
-        self.track(h, true);
+        let m_up = self.clients.lock();
+        if m_up.has(pending_key) {
+            m_up.remove(pending_key);
+        }
+        m_up[string(h)] = h;
+        self.clients.unlock();
         try {
             let f = self.handler;
             f(h);
@@ -169,7 +247,12 @@ public class WsServer {
     // handler still running). Liveness bookkeeping only.
     public fn client_count(self) -> int {
         let m = self.clients.lock();
-        let n = m.keys().len();
+        let n = 0;
+        for (k, _v) in m {
+            if not string(k).starts_with("pending:") {
+                n = n + 1;
+            }
+        }
         self.clients.unlock();
         return n;
     }
@@ -180,9 +263,12 @@ public class WsServer {
     // clients received the frame; dead sockets are pruned on failure.
     public fn broadcast(self, text: string) -> int {
         let m = self.clients.lock();
-        let ids = list();
-        for k in m.keys() {
-            ids.push(k);
+        let ids = [];
+        for (k, _v) in m {
+            let sk = string(k);
+            if not sk.starts_with("pending:") {
+                ids.push(sk);
+            }
         }
         self.clients.unlock();
 
@@ -210,13 +296,13 @@ public class WsServer {
 
     // Bind + serve forever (blocking — run it in a spawned task next to a
     // running HTTP app).
-    public fn listen(self, addr) {
+    public fn listen(self, addr: string) -> int {
         let real = self.bind(addr);
         println("[Spid3rWeb WS] WebSocket server listening on ws://" + real);
         return self.serve(-1);
     }
 
-    public fn close(self) {
+    public fn close(self) -> bool {
         if self.listener >= 0 {
             tcp_close(self.listener);
         }

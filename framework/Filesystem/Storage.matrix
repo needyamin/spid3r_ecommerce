@@ -13,26 +13,34 @@
 // paths, ".." traversal and Windows drive/UNC prefixes are rejected with a
 // thrown error before any file operation touches the disk.
 
-import "framework/Config/Config";
+import "framework/Foundation/Config";
+import "framework/Http/StaticFiles";
 
+/// Path-guarded local filesystem disk with atomic writes, streaming, quotas, and extension filtering.
 public class LocalDisk {
     public let name;
     public let root;
     public let visibility;
     public let url_prefix;
+    public let max_bytes;
+    public let blocked_extensions;
 
-    fn new(name: string, root: string, visibility: string, url_prefix: string) {
+    fn new (
+        name: string,
+        root: string,
+        visibility: string,
+        url_prefix: string,
+        max_bytes: int = 0,
+        blocked_extensions = null
+    ) {
         self.name = name;
         self.root = root;
         self.visibility = visibility;
         self.url_prefix = url_prefix;
+        self.max_bytes = max_bytes;
+        self.blocked_extensions = blocked_extensions ?? [];
     }
 
-    // ------------------------------------------------------------------
-    // Path safety
-    // ------------------------------------------------------------------
-    // Normalize a user-supplied relative path and throw on anything that
-    // could escape the disk root.
     fn guard(self, rel: string) -> string {
         let p = string(rel).replace("\\", "/").trim();
         if p == "" {
@@ -42,7 +50,6 @@ public class LocalDisk {
             throw "storage: absolute paths are not allowed: " + p;
         }
         if p.contains(":") {
-            // Windows drive letters (C:/) — ":" never appears in sane names
             throw "storage: path contains ':' (drive/UNC prefix?): " + p;
         }
         let parts = p.split("/");
@@ -60,16 +67,26 @@ public class LocalDisk {
         if clean.len() == 0 {
             throw "storage: empty normalized path on disk '" + self.name + "'";
         }
-        let out = "";
-        let i = 0;
-        while i < clean.len() {
-            if i > 0 {
-                out = out + "/";
-            }
-            out = out + clean[i];
-            i = i + 1;
+        return clean.join("/");
+    }
+
+    fn check_extension_allowed(self, rel: string) {
+        if self.blocked_extensions == null or self.blocked_extensions.len() == 0 {
+            return;
         }
-        return out;
+        let clean = string(rel).replace("\\", "/").trim();
+        let segs = clean.split("/");
+        let base = segs[segs.len() - 1];
+        let dots = base.split(".");
+        if dots.len() < 2 {
+            return;
+        }
+        let ext = dots[dots.len() - 1].trim().lower();
+        for blocked in self.blocked_extensions {
+            if string(blocked).trim().lower() == ext {
+                throw "storage: extension '.{ext}' is blocked on disk '{self.name}'";
+            }
+        }
     }
 
     fn full(self, rel: string) -> string {
@@ -80,6 +97,9 @@ public class LocalDisk {
         if not file_exists(self.root) {
             let parts = self.root.split("/");
             let dir = parts[0];
+            if dir != "" and not file_exists(dir) {
+                dir_create(dir);
+            }
             let i = 1;
             while i < parts.len() {
                 dir = dir + "/" + parts[i];
@@ -91,9 +111,8 @@ public class LocalDisk {
         }
     }
 
-    // Create every directory level leading up to a file path
-    // ("storage/app/a/b.txt" -> ensure storage/, storage/app/, storage/app/a/).
     fn ensure_parent(self, file_path: string) -> string {
+        let _ = self;
         let parts = string(file_path).split("/");
         if parts.len() < 2 {
             return file_path;
@@ -113,40 +132,134 @@ public class LocalDisk {
         return file_path;
     }
 
-    // ------------------------------------------------------------------
-    // Operations
-    // ------------------------------------------------------------------
     public fn exists(self, rel: string) -> bool {
         return file_exists(self.full(rel));
     }
 
-    // Write (overwrite). Creates parent directories as needed.
-    public fn put(self, rel: string, contents: string) -> bool {
+    public fn put(self, rel: string, contents: string, atomic: bool = true) -> bool {
         let path = self.full(rel);
+        self.check_extension_allowed(rel);
+        let text = string(contents);
+        if self.max_bytes > 0 and len(text) > self.max_bytes {
+            let limit = self.max_bytes;
+            throw "storage: payload exceeds disk quota ({limit} bytes) on disk '{self.name}'";
+        }
         self.ensure_root();
         self.ensure_parent(path);
-        let res = write_file(path, string(contents));
+        let res = if atomic {
+            write_file_atomic(path, text)
+        } else {
+            write_file(path, text)
+        };
         return res.is_ok();
     }
 
-    // Append; creates the file (and its parents) when missing.
-    public fn append(self, rel: string, contents: string) -> bool {
+    public fn put_stream(self, rel: string, source: any) -> bool {
         let path = self.full(rel);
+        self.check_extension_allowed(rel);
         self.ensure_root();
         self.ensure_parent(path);
-        let existing = "";
-        if file_exists(path) {
-            let res = read_file(path);
-            if res.is_ok() {
-                existing = res.unwrap();
+        let rnd = hex_encode(random_bytes(8).unwrap());
+        let tmp_path = "{path}.tmp.{rnd}";
+        let fh_res = file_open(tmp_path, "wb");
+        if fh_res.is_err() {
+            return false;
+        }
+        let fh = fh_res.unwrap();
+        let written = 0;
+        let ok = false;
+        try {
+            let st = type_of(source);
+            if st == "function" {
+                while true {
+                    let chunk = source();
+                    if chunk == null or len(chunk) == 0 {
+                        break;
+                    }
+                    written = written + len(chunk);
+                    if self.max_bytes > 0 and written > self.max_bytes {
+                        let limit = self.max_bytes;
+                        throw "storage: streamed payload exceeds disk quota ({limit} bytes)";
+                    }
+                    let w = file_write(fh, chunk);
+                    if w.is_err() {
+                        throw string(w.unwrap_err());
+                    }
+                }
+            } elif st == "list" {
+                for chunk in source {
+                    if chunk == null or len(chunk) == 0 {
+                        continue;
+                    }
+                    written = written + len(chunk);
+                    if self.max_bytes > 0 and written > self.max_bytes {
+                        let limit = self.max_bytes;
+                        throw "storage: streamed payload exceeds disk quota ({limit} bytes)";
+                    }
+                    let w = file_write(fh, chunk);
+                    if w.is_err() {
+                        throw string(w.unwrap_err());
+                    }
+                }
+            } elif source != null and len(source) > 0 {
+                written = len(source);
+                if self.max_bytes > 0 and written > self.max_bytes {
+                    let limit = self.max_bytes;
+                    throw "storage: streamed payload exceeds disk quota ({limit} bytes)";
+                }
+                let w = file_write(fh, source);
+                if w.is_err() {
+                    throw string(w.unwrap_err());
+                }
+            }
+            file_flush(fh);
+            ok = true;
+        } finally {
+            file_close(fh);
+            if not ok and file_exists(tmp_path) {
+                file_delete(tmp_path);
             }
         }
-        let res2 = write_file(path, existing + string(contents));
-        return res2.is_ok();
+        let mv = rename(tmp_path, path);
+        if mv.is_err() {
+            if file_exists(tmp_path) {
+                file_delete(tmp_path);
+            }
+            return false;
+        }
+        return true;
     }
 
-    // Read; returns null when missing/unreadable.
-    public fn get(self, rel: string) {
+    public fn get_stream(self, rel: string, chunk_size: int = 65_536) -> any {
+        let path = self.full(rel);
+        if not file_exists(path) or not is_file(path) {
+            return null;
+        }
+        return make_file_stream(path, chunk_size);
+    }
+
+    public fn append(self, rel: string, contents: string) -> bool {
+        let path = self.full(rel);
+        self.check_extension_allowed(rel);
+        self.ensure_root();
+        self.ensure_parent(path);
+        let open_res = file_open(path, "a");
+        if open_res.is_err() {
+            return false;
+        }
+        let fh = open_res.unwrap();
+        let ok = false;
+        try {
+            let w = file_write(fh, string(contents));
+            file_flush(fh);
+            ok = w.is_ok();
+        } finally {
+            file_close(fh);
+        }
+        return ok;
+    }
+
+    public fn get(self, rel: string) -> any {
         let path = self.full(rel);
         if not file_exists(path) {
             return null;
@@ -163,15 +276,13 @@ public class LocalDisk {
         if not file_exists(path) {
             return false;
         }
-        return file_delete(path);
+        return file_delete(path).is_ok();
     }
 
-    // Public path (guarded) — for streaming responses or tooling.
     public fn path(self, rel: string) -> string {
         return self.full(rel);
     }
 
-    // Web URL for files on the disk ("" prefix = not web-servable).
     public fn url(self, rel: string) -> string {
         if self.url_prefix == "" {
             return "";
@@ -180,9 +291,10 @@ public class LocalDisk {
     }
 }
 
+/// Filesystem storage manager resolving configured disks (`local`, `public`) and temp uploads.
 public class StorageManager {
-    // Storage.disk() / Storage.disk("public")
-    public fn disk(self, name: string = "") {
+    public fn disk(self, name: string = "") -> LocalDisk {
+        let _ = self;
         let disk_name = string(name);
         if disk_name == "" {
             disk_name = string(Config.get("filesystems.default", "local"));
@@ -198,19 +310,66 @@ public class StorageManager {
         if driver != "local" {
             throw "storage: driver '" + driver + "' is not supported in this build (local only)";
         }
-        let root = "storage/app";
-        if cfg.has("root") {
-            root = string(cfg["root"]);
+        let root = if cfg.has("root") and cfg["root"] != null {
+            string(cfg["root"])
+        } else {
+            "storage/app"
+        };
+        let vis = if cfg.has("visibility") and cfg["visibility"] != null {
+            string(cfg["visibility"])
+        } else {
+            "private"
+        };
+        let url = if cfg.has("url") and cfg["url"] != null {
+            string(cfg["url"])
+        } else {
+            ""
+        };
+        let max_bytes = if cfg.has("max_bytes") and cfg["max_bytes"] != null {
+            int(cfg["max_bytes"])
+        } else {
+            0
+        };
+        let blocked = if cfg.has("blocked_extensions") and cfg["blocked_extensions"] != null {
+            cfg["blocked_extensions"]
+        } else {
+            []
+        };
+        return new LocalDisk(disk_name, root, vis, url, max_bytes, blocked);
+    }
+
+    public fn temp_path(self, prefix: string = "tmp_") -> string {
+        let _ = self;
+        let ts = int(unix_time());
+        let rnd = hex_encode(random_bytes(8).unwrap());
+        return "_tmp/{prefix}{ts}_{rnd}.tmp";
+    }
+
+    public fn prune_temp(self, max_age_seconds: int = 3_600) -> int {
+        let d = self.disk("local");
+        let dir_path = d.root + "/_tmp";
+        if not file_exists(dir_path) {
+            return 0;
         }
-        let vis = "private";
-        if cfg.has("visibility") {
-            vis = string(cfg["visibility"]);
+        let listing = list_dir(dir_path);
+        if listing.is_err() {
+            return 0;
         }
-        let url = "";
-        if cfg.has("url") {
-            url = string(cfg["url"]);
+        let cutoff = int(unix_time()) - max_age_seconds;
+        let removed = 0;
+        for name in listing.unwrap() {
+            let p = dir_path + "/" + string(name);
+            if not is_file(p) {
+                continue;
+            }
+            let mt = file_mtime(p);
+            if mt.is_ok() and int(mt.unwrap()) <= cutoff {
+                if file_delete(p).is_ok() {
+                    removed = removed + 1;
+                }
+            }
         }
-        return new LocalDisk(disk_name, root, vis, url);
+        return removed;
     }
 }
 

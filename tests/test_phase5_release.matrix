@@ -1,0 +1,200 @@
+// tests/test_phase5_release.matrix
+// Phase 5 Release Regression Suite:
+//   - RuntimeVersion semver parsing, minimum 1.1.1 check, boot guard
+//   - spider.toml version metadata & manifest schema compatibility
+//   - ConsoleKernel DevTools commands (`lint`, `fmt`, `docs`), BuildCommand `--bytecode-only`
+//   - Security / Drivers / Deploy / Architecture docs, installer no-auto-sudo, release.yml, .gitignore
+
+import "framework/Foundation/RuntimeVersion";
+import "framework/Foundation/Config";
+import "framework/Foundation/Application";
+import "framework/Console/ConsoleKernel";
+
+fn assert_eq(actual, expected, label: string) {
+    let a = string(actual);
+    let e = string(expected);
+    if a != e {
+        throw "FAIL [{label}]: expected '{e}', got '{a}'";
+    }
+}
+
+fn assert_true(cond: bool, label: string) {
+    if not cond {
+        throw "FAIL [{label}]: expected true, got false";
+    }
+}
+
+fn rm_tree(path: string) {
+    if not file_exists(path) {
+        return;
+    }
+    if not is_dir(path) {
+        let _f = file_delete(path);
+        return;
+    }
+    let ls = list_dir(path);
+    if ls.is_ok() {
+        for name in ls.unwrap() {
+            let n = string(name);
+            if n == "." or n == ".." {
+                continue;
+            }
+            rm_tree("{path}/{n}");
+        }
+    }
+    let _d = dir_remove(path);
+}
+
+fn test_runtime_version_and_manifest() {
+    assert_eq(SPID3RWEB_VERSION, "1.1.1", "SPID3RWEB_VERSION");
+    assert_eq(MIN_SPID3R_VERSION, "1.1.1", "MIN_SPID3R_VERSION");
+    assert_eq(Config.get("app.version", ""), "1.1.1", "config app.version");
+    assert_eq(Config.get("app.min_spid3r", ""), "1.1.1", "config app.min_spid3r");
+
+    let p1 = parse_semver("Version       1.1.1\nLanguage 1.1.1");
+    assert_eq(p1.len(), 3, "parse_semver parses banner text");
+    assert_true(version_at_least(p1, 1, 1, 1), "1.1.1 >= 1.1.1");
+    assert_true(not version_at_least(parse_semver("v1.1.0"), 1, 1, 1), "1.1.0 < 1.1.1");
+    assert_true(version_at_least(parse_semver("1.2.0-rc1"), 1, 1, 1), "1.2.0-rc1 >= 1.1.1");
+
+    let rt = check_min_runtime_version();
+    assert_true(rt["ok"] == true, "active runtime meets MIN_SPID3R_VERSION");
+    assert_min_runtime_version();
+
+    let app = new Application();
+    let app_check_ok = true;
+    try {
+        if app.env != "production" or configured_app_key() != "" {
+            app.check_production_ready();
+        }
+    } catch (_e) {
+        app_check_ok = false;
+    }
+    assert_true(app_check_ok, "Application.check_production_ready passes on valid runtime");
+
+    let toml = string(read_file("spider.toml").unwrap());
+    assert_true(toml.contains("version = \"1.1.1\""), "spider.toml bumped to 1.1.1");
+    assert_true(not toml.contains("\nmin_spid3r ="), "spider.toml omits invalid bare TOML key");
+
+    println("  [PASS] test_runtime_version_and_manifest");
+}
+
+fn test_devtools_docs_and_bytecode_build() {
+    let tmp_dir = "storage/framework/test_phase5_tmp";
+    rm_tree(tmp_dir);
+    let _mk = dir_create(tmp_dir);
+    let html_out = "{tmp_dir}/web_api.html";
+    let json_out = "{tmp_dir}/web_api.json";
+    let bc_out = "{tmp_dir}/srv_test.matrixc";
+
+    try {
+        let kernel = new ConsoleKernel();
+
+        let fmt_code = kernel.handle(["fmt", "--check", "tests/test_router.matrix"]);
+        assert_eq(fmt_code, 0, "magic fmt --check single file");
+
+        let lint_code = kernel.handle(["lint", "tests/test_router.matrix"]);
+        assert_eq(lint_code, 0, "magic lint single file");
+
+        let doc_html_code = kernel.handle(["docs", "-o", html_out, "framework/Web.matrix"]);
+        assert_eq(doc_html_code, 0, "magic docs HTML exits 0");
+        assert_true(file_exists(html_out), "HTML doc output created");
+        let html_body = string(read_file(html_out).unwrap());
+        assert_true(html_body.contains("Spid3r API Documentation"), "HTML doc header present");
+        assert_true(
+            html_body.contains("Create a new Spid3rWeb Application"),
+            "HTML includes /// doc"
+        );
+
+        let doc_json_code = kernel.handle(
+            ["docs",
+            "--json",
+            "-o",
+            json_out,
+            "framework/Web.matrix"]
+        );
+        assert_eq(doc_json_code, 0, "magic docs --json exits 0");
+        let json_body = string(read_file(json_out).unwrap());
+        assert_true(json_body.contains("\"symbols\""), "JSON doc includes symbols array");
+
+        let bc_code = kernel.handle(
+            ["build",
+            "--bytecode-only",
+            "-o",
+            bc_out,
+            "server.matrix"]
+        );
+        assert_eq(bc_code, 0, "magic build --bytecode-only exits 0");
+        assert_true(
+            file_exists(bc_out) and int(file_size(bc_out).unwrap()) > 1024,
+            "bytecode output valid"
+        );
+    } finally {
+        rm_tree(tmp_dir);
+    }
+
+    println("  [PASS] test_devtools_docs_and_bytecode_build");
+}
+
+fn test_docs_installer_workflows_and_gitignore() {
+    assert_true(file_exists("docs/DRIVERS.md"), "docs/DRIVERS.md exists");
+    assert_true(file_exists("docs/SECURITY.md"), "docs/SECURITY.md exists");
+    assert_true(file_exists("docs/DEPLOY.md"), "docs/DEPLOY.md exists");
+    assert_true(file_exists("docs/ARCHITECTURE.md"), "docs/ARCHITECTURE.md exists");
+    assert_true(
+        file_exists("docs/developer-docs.html"),
+        "docs/developer-docs.html is the main developer doc"
+    );
+    assert_true(
+        not file_exists("docs/history/developer-docs.html"),
+        "no stale developer-docs.html copy in docs/history/"
+    );
+
+    let drivers = string(read_file("docs/DRIVERS.md").unwrap());
+    assert_true(
+        drivers.contains("SCRAM-SHA-256") and drivers.contains("mysql_native_password"),
+        "DRIVERS covers auth matrix"
+    );
+
+    let sec = string(read_file("docs/SECURITY.md").unwrap());
+    assert_true(
+        sec.contains("2-Layer CSRF") and sec.contains("SPID3R_CACHE_DRIVER=database"),
+        "SECURITY clarifies CSRF & throttle matrix"
+    );
+
+    let dep = string(read_file("docs/DEPLOY.md").unwrap());
+    assert_true(
+        dep.contains("--bundle-runtime") and dep.contains("/health"),
+        "DEPLOY covers release & health"
+    );
+
+    let inst = string(read_file("install.sh").unwrap());
+    assert_true(not inst.contains("$SUDO apt-get"), "install.sh does not auto-sudo apt-get");
+    assert_true(not inst.contains("$SUDO dnf"), "install.sh does not auto-sudo dnf");
+    assert_true(inst.contains("chmod 0600 .env"), "install.sh enforces 0600 on .env");
+    assert_true(inst.contains("SPID3R_VERSION"), "install.sh pins Spid3r version");
+
+    let gi = string(read_file(".gitignore").unwrap());
+    assert_true(gi.contains("docs/build/"), ".gitignore ignores docs/build/");
+    assert_true(gi.contains("!vendor/**/*.dll"), ".gitignore preserves vendored plugins");
+    assert_true(not gi.contains("\n*.dll\n"), ".gitignore removes blanket *.dll ignore");
+
+    assert_true(file_exists(".github/workflows/release.yml"), "release.yml exists");
+    let ci = string(read_file(".github/workflows/ci.yml").unwrap());
+    assert_true(
+        ci.contains("aot-smoke") and ci.contains("docker-smoke"),
+        "ci.yml includes AOT & Docker smoke jobs"
+    );
+    assert_true(not ci.contains("@v4)"), "ci.yml fixed stale @v4 checkout comment");
+
+    println("  [PASS] test_docs_installer_workflows_and_gitignore");
+}
+
+fn main() {
+    println("\n=== Running Phase 5 Release Test Suite ===");
+    test_runtime_version_and_manifest();
+    test_devtools_docs_and_bytecode_build();
+    test_docs_installer_workflows_and_gitignore();
+    println("=== All Phase 5 Release Tests Passed! ===\n");
+    return 0;
+}

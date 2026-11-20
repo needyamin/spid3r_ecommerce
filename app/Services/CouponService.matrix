@@ -2,7 +2,7 @@
 // Phase 7 — coupon validation. Never trusts a client-supplied discount:
 // the code is looked up server-side and every rule is re-checked here.
 
-import "framework/HttpException";
+import "framework/Http/HttpException";
 import "app/Repositories/CheckoutRepository";
 
 public class CouponService {

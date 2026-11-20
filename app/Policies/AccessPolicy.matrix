@@ -1,7 +1,7 @@
 // app/Policies/AccessPolicy.matrix
 // Phase 3 — authorization rules. Consulted by middleware & controllers.
 
-import "framework/HttpException";
+import "framework/Http/HttpException";
 import "app/Repositories/UserRepository";
 
 public class AccessPolicy {

@@ -2,10 +2,10 @@
 // Phase 6 — cart HTTP layer. Extracts guest/auth identity from cookies,
 // delegates all logic to CartService, and returns HTML or JSON.
 
-import "framework/Response";
+import "framework/Http/Response";
 import "framework/View/BD";
-import "framework/Container/Container";
-import "framework/HttpException";
+import "framework/Foundation/Container";
+import "framework/Http/HttpException";
 import "app/Services/CartService";
 import "app/Support/CartIdentity" as CartIdentity;
 import "app/Support/StoreChrome" as StoreChrome;

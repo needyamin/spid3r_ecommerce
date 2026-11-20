@@ -1,0 +1,249 @@
+// framework/Console/Commands/MaintenanceCommands.matrix
+// Storage, Cache & Database Housekeeping Commands:
+//   storage:prune, cache:gc, db:backup, db:vacuum
+
+import "framework/Foundation/Config";
+import "framework/Foundation/ConfigValidator";
+import "framework/Cache/Cache";
+import "framework/Log/Log";
+import "framework/Filesystem/Storage";
+import "framework/Database/DB";
+
+public class StoragePruneCommand {
+    public let name;
+    public let usage;
+    public let description;
+    private let kernel;
+
+    fn new (kernel) {
+        self.name = "storage:prune";
+        self.usage = "storage:prune [--days=N] [--temp-age=S]";
+        self.description = "Prune expired log files and stale temporary uploads";
+        self.kernel = kernel;
+    }
+
+    public fn handle(self, cli_args: list) -> int {
+        let days = -1;
+        let temp_age = 3_600;
+        for a in cli_args {
+            let s = string(a);
+            if s.starts_with("--days=") {
+                days = int(s.slice(7, s.len()));
+            } elif s.starts_with("--temp-age=") {
+                temp_age = int(s.slice(11, s.len()));
+            }
+        }
+        let root = self.kernel.resolve_root();
+        let logs_pruned = Log.prune(days, "{root}storage/logs");
+        let tmp_pruned = Storage.prune_temp(temp_age);
+        println("[Storage] Pruned {logs_pruned} log file(s) and {tmp_pruned} temp file(s).");
+        return 0;
+    }
+}
+
+public class CacheGcCommand {
+    public let name;
+    public let usage;
+    public let description;
+
+    fn new () {
+        self.name = "cache:gc";
+        self.usage = "cache:gc [store]";
+        self.description = "Garbage-collect expired entries from cache stores";
+    }
+
+    public fn handle(self, cli_args: list) -> int {
+        let _ = self;
+        if cli_args.len() > 1 {
+            let store_name = string(cli_args[1]).trim().lower();
+            let n = Cache.gc(store_name);
+            println("[Cache] Garbage-collected {n} expired entry/entries from '{store_name}'.");
+            if store_name == "database" or store_name == "db" {
+                DB.close();
+            }
+            return 0;
+        }
+        let mem_n = Cache.gc("memory");
+        let file_n = Cache.gc("file");
+        let db_n = 0;
+        try {
+            db_n = Cache.gc("database");
+        } catch (_e) {
+            db_n = 0;
+        }
+        DB.close();
+        println("[Cache] Garbage-collected expired entries (memory={mem_n}, file={file_n}, database={db_n}).");
+        return 0;
+    }
+}
+
+public class DbBackupCommand {
+    public let name;
+    public let usage;
+    public let description;
+    private let kernel;
+
+    fn new (kernel) {
+        self.name = "db:backup";
+        self.usage = "db:backup [dest]";
+        self.description = "Create an online SQLite database backup in storage/backups";
+        self.kernel = kernel;
+    }
+
+    public fn handle(self, cli_args: list) -> int {
+        let drv = DB.driver_name();
+        if drv != "sqlite" {
+            println("[DB Backup] Online backup helper supports SQLite; use pg_dump/mysqldump for '{drv}'.");
+            return 0;
+        }
+        let root = self.kernel.resolve_root();
+        let ts = int(unix_time());
+        let dest = if cli_args.len() > 1 {
+            string(cli_args[1]).trim()
+        } else {
+            "{root}storage/backups/db-{ts}.sqlite"
+        };
+        if dest == "" or dest.contains("'") or dest.contains("\r") or dest.contains("\n") {
+            println("[Magic Error] Invalid backup destination path '{dest}'.");
+            return 1;
+        }
+        let parts = dest.replace("\\", "/").split("/");
+        if parts.len() > 1 {
+            parts.pop();
+            let parent = parts.join("/");
+            if parent != "" and not file_exists(parent) {
+                dir_create(parent);
+            }
+        }
+        if file_exists(dest) {
+            let _ = file_delete(dest);
+        }
+        let used_vacuum = false;
+        try {
+            DB.statement("VACUUM INTO '{dest}';");
+            used_vacuum = true;
+        } catch (_e) {
+            used_vacuum = false;
+        }
+        if not used_vacuum {
+            DB.checkpoint();
+            let cp = copy_file(DB.db_path, dest);
+            if cp.is_err() {
+                let err = string(cp.unwrap_err());
+                println("[Magic Error] Backup failed: {err}");
+                DB.close();
+                return 1;
+            }
+        }
+        DB.close();
+        println("[DB Backup] Snapshot saved to {dest}");
+        return 0;
+    }
+}
+
+public class DbVacuumCommand {
+    public let name;
+    public let usage;
+    public let description;
+
+    fn new () {
+        self.name = "db:vacuum";
+        self.usage = "db:vacuum";
+        self.description = "Checkpoint WAL and compact the database file";
+    }
+
+    public fn handle(self, _cli_args: list) -> int {
+        let _ = self;
+        let drv = DB.driver_name();
+        if drv == "sqlite" {
+            DB.checkpoint();
+            DB.statement("VACUUM;");
+            DB.close();
+            println("[DB] SQLite WAL checkpointed and database vacuumed.");
+            return 0;
+        }
+        if drv == "postgres" {
+            DB.statement("VACUUM;");
+            DB.close();
+            println("[DB] PostgreSQL VACUUM complete.");
+            return 0;
+        }
+        println("[DB] Automatic VACUUM is not needed for '{drv}' (use OPTIMIZE TABLE manually).");
+        DB.close();
+        return 0;
+    }
+}
+
+public class ConfigCheckCommand {
+    public let name;
+    public let usage;
+    public let description;
+
+    fn new () {
+        self.name = "config:check";
+        self.usage = "config:check";
+        self.description = "Validate all framework config namespaces and value bounds";
+    }
+
+    public fn handle(self, _cli_args: list) -> int {
+        let _ = self;
+        let res = validate_all_config();
+        let checked = res["checked"];
+        if res["ok"] == true {
+            println("[Config] Validated {checked} namespace(s) — ok.");
+            return 0;
+        }
+        for err in res["errors"] {
+            let e = string(err);
+            println("[Config FAIL] {e}");
+        }
+        return 1;
+    }
+}
+
+public class StorageLinkCommand {
+    public let name;
+    public let usage;
+    public let description;
+    private let kernel;
+
+    fn new (kernel) {
+        self.name = "storage:link";
+        self.usage = "storage:link";
+        self.description = "Create public/storage link to storage/app/public";
+        self.kernel = kernel;
+    }
+
+    public fn handle(self, _cli_args: list) -> int {
+        let root = self.kernel.resolve_root();
+        let src = "{root}storage/app/public";
+        let dst = "{root}public/storage";
+        if not is_dir(src) {
+            let mk = dir_create(src);
+            if mk.is_err() {
+                let err = string(mk.unwrap_err());
+                println("[Storage Error] Failed creating '{src}': {err}");
+                return 1;
+            }
+        }
+        if file_exists(dst) {
+            println("[Storage] The '{dst}' link already exists.");
+            return 0;
+        }
+        let is_win = env("OS").unwrap_or("").lower().contains("windows")
+        or (env("USERPROFILE").is_some() and env("SystemRoot").is_some());
+        let res = if is_win {
+            let win_dst = dst.replace("/", "\\");
+            let win_src = src.replace("/", "\\");
+            exec_capture("cmd", ["/c", "mklink", "/J", win_dst, win_src], null)
+        } else {
+            exec_capture("ln", ["-s", "../storage/app/public", dst], null)
+        };
+        if res.is_err() or int(res.unwrap()["code"]) != 0 {
+            println("[Storage Error] Could not link '{dst}' -> '{src}'.");
+            return 1;
+        }
+        println("[Storage] Linked '{dst}' -> '{src}'.");
+        return 0;
+    }
+}

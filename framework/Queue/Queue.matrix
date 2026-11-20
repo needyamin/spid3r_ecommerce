@@ -11,60 +11,65 @@
 //   Queue.job("mail.send", fn(data) { return Mail.send(data); });
 //
 // Drivers (config/queue.matrix):
-//   database — rows in the `jobs` table; drained by `spid3r magic queue:work`
-//   sync     — handlers execute immediately inside push()
+//   database â€” rows in the `jobs` table; drained by `spid3r magic queue:work`
+//   sync     â€” handlers execute immediately inside push()
 //
 // Failure policy: a handler exception releases the job for retry after
 // retry_after seconds; after max_attempts failures the job is deleted and
 // the error is written to the "queue" log channel.
 
-import "framework/Config/Config";
+import "framework/Foundation/Config";
 import "framework/Database/DB";
 import "framework/Log/Log";
-import "framework/Env";
 
+/// Background job queue dispatcher supporting atomic DB lease claiming (`retry_after` CAS) and sync mode.
 public class QueueManager {
-    public let handlers;
+    private let handlers;
 
-    fn new() {
-        self.handlers = map();
+    fn new () {
+        self.handlers = {
+        };
     }
 
     // ------------------------------------------------------------------
     // Handler registration (routes/queue.matrix)
     // ------------------------------------------------------------------
-    public fn job(self, name: string, handler) -> bool {
+    public fn job(self, name: string, handler: any) -> bool {
         self.handlers[name] = handler;
         return true;
     }
 
-    public fn registered(self) {
+    public fn registered(self) -> list {
         return self.handlers.keys();
     }
 
     // ------------------------------------------------------------------
     // Configuration helpers
     // ------------------------------------------------------------------
-    fn conn(self, override: string = "") {
+    fn conn(self, override: string = "") -> map {
+        let _ = self;
         // Precedence: explicit argument > SPID3R_QUEUE_CONNECTION > config default
         let active = string(Config.get("queue.default", "database"));
-        if env("SPID3R_QUEUE_CONNECTION").is_some() and string(env("SPID3R_QUEUE_CONNECTION").unwrap()) != "" {
-            active = string(env("SPID3R_QUEUE_CONNECTION").unwrap());
+        let env_conn = env("SPID3R_QUEUE_CONNECTION").unwrap_or("");
+        if env_conn != "" {
+            active = env_conn;
         }
         if string(override) != "" {
             active = string(override);
         }
-        let cfg = Config.get("queue.connections." + active, null);
+        let cfg = Config.get("queue.connections.{active}", null);
         if cfg == null or type_of(cfg) != "map" {
-            throw "queue: unknown connection '" + active + "' (check config/queue.matrix)";
+            throw "queue: unknown connection '{active}' (check config/queue.matrix)";
         }
         return cfg;
     }
 
     fn active_queue(self) -> string {
+        let _ = self;
         let q_env = string(Config.get("queue.queue_env", "SPID3R_QUEUE"));
-        if env(q_env).is_some() and string(env(q_env).unwrap()) != "" {
-            return string(env(q_env).unwrap());
+        let q_val = env(q_env).unwrap_or("");
+        if q_val != "" {
+            return q_val;
         }
         return "default";
     }
@@ -103,10 +108,16 @@ public class QueueManager {
     // ------------------------------------------------------------------
     // Push
     // ------------------------------------------------------------------
-    // Queue.push("handler.name", data, "queue", "connection") — queue and
+    // Queue.push("handler.name", data, "queue", "connection") â€” queue and
     // connection arguments optional. With the "sync" connection the handler
     // runs inline during push; with "database" a row is persisted.
-    public fn push(self, handler: string, data = null, queue: string = "", connection: string = "") -> bool {
+    public fn push(
+        self,
+        handler: string,
+        data: any = null,
+        queue: string = "",
+        connection: string = ""
+    ) -> bool {
         let cfg = self.conn(connection);
         let driver = "database";
         if cfg.has("driver") {
@@ -115,11 +126,11 @@ public class QueueManager {
 
         // The handler must be registered in THIS process only for the sync
         // driver, which runs it inline. With the database driver the worker
-        // process resolves the handler at run time — a standalone producer
+        // process resolves the handler at run time â€” a standalone producer
         // script must be able to push without importing the job registry.
         if driver == "sync" {
             if not self.handlers.has(handler) {
-                throw "queue: handler not registered: " + handler;
+                throw "queue: handler not registered: {handler}";
             }
             return self.dispatch(handler, data);
         }
@@ -135,60 +146,82 @@ public class QueueManager {
                 q = cfg_q;
             }
         }
-        DB.table(self.table_name()).insert(map(
-            "queue", q,
-            "payload", json_write(map("job", handler, "data", data)),
-            "attempts", 0,
-            "reserved_at", 0,
-            "available_at", int(unix_time()),
-            "created_at", int(unix_time())
-        ));
-        Log.write("info", "[queue] pushed job", map("job", handler, "queue", q), "queue");
+        let now = int(unix_time());
+        DB.table(self.table_name()).insert({
+            "queue": q,
+            "payload": json_write({
+                "job": handler, "data": data
+            }),
+            "attempts": 0,
+            "reserved_at": 0,
+            "available_at": now,
+            "created_at": now
+        });
+        Log.write("info", "[queue] pushed job", {
+            "job": handler, "queue": q
+        }, "queue");
         return true;
     }
 
     // ------------------------------------------------------------------
     // Worker
     // ------------------------------------------------------------------
-    // Pending (available) jobs on a queue.
+    // Pending (available) jobs on a queue (unreserved or stale reservation).
     public fn size(self, queue: string = "") -> int {
         let q = string(queue);
         if q == "" {
             q = self.active_queue();
         }
-        let rows = DB.select("SELECT COUNT(*) AS n FROM " + self.table_name() + " WHERE queue = ? AND available_at <= ? AND reserved_at = 0", list(q, int(unix_time())));
+        let now = int(unix_time());
+        let cutoff = now - self.int_cfg("retry_after", 90);
+        let tbl = self.table_name();
+        let rows = DB.select(
+            "SELECT COUNT(*) AS n FROM {tbl} WHERE queue = ? AND available_at <= ? AND (reserved_at = 0 OR reserved_at < ?)",
+            [q,
+            now,
+            cutoff]
+        );
         if rows.len() == 0 {
             return 0;
         }
         return int(rows[0]["n"]);
     }
 
-    // Reserve the next available job (optimistic; safe for one worker per
-    // queue — the common deployment). Returns the row map or null.
-    public fn pop(self, queue: string = "") {
+    // Reserve the next available job using optimistic compare-and-swap on
+    // `reserved_at` so both fresh (`reserved_at = 0`) and stale/crashed
+    // (`reserved_at < cutoff`) jobs are safely reclaimed without races.
+    public fn pop(self, queue: string = "") -> any {
         let q = string(queue);
         if q == "" {
             q = self.active_queue();
         }
+        let now = int(unix_time());
         let retry_after = self.int_cfg("retry_after", 90);
-        let cutoff = int(unix_time()) - retry_after;
+        let cutoff = now - retry_after;
+        let tbl = self.table_name();
         let rows = DB.select(
-            "SELECT * FROM " + self.table_name() + " WHERE queue = ? AND available_at <= ? AND (reserved_at = 0 OR reserved_at < ?) ORDER BY id ASC LIMIT 1",
-            list(q, int(unix_time()), cutoff)
+            "SELECT * FROM {tbl} WHERE queue = ? AND available_at <= ? AND (reserved_at = 0 OR reserved_at < ?) ORDER BY id ASC LIMIT 1",
+            [q,
+            now,
+            cutoff]
         );
         if rows.len() == 0 {
             return null;
         }
         let job = rows[0];
-        let changes = DB.table(self.table_name())
-            .where("id", job["id"])
-            .where("reserved_at", 0)
-            .update(map("reserved_at", int(unix_time()), "attempts", int(job["attempts"]) + 1));
+        let prev_reserved = int(job["reserved_at"]);
+        let next_attempts = int(job["attempts"]) + 1;
+        let changes = DB.table(tbl)
+        .where("id", job["id"])
+        .where("reserved_at", prev_reserved)
+        .update({
+            "reserved_at": now, "attempts": next_attempts
+        });
         if changes == 0 {
-            return null; // another worker won the race
+            return null;  // another worker won the race
         }
-        job["attempts"] = int(job["attempts"]) + 1;
-        job["reserved_at"] = int(unix_time());
+        job["attempts"] = next_attempts;
+        job["reserved_at"] = now;
         return job;
     }
 
@@ -198,18 +231,33 @@ public class QueueManager {
         if job == null {
             return false;
         }
+        let max_attempts = self.int_cfg("max_attempts", 3);
+        let job_id = job["id"];
+        let job_attempts = job["attempts"];
+        let tbl = self.table_name();
+        if int(job_attempts) > max_attempts {
+            DB.table(tbl).where("id", job_id).delete();
+            Log.write("error", "[queue] job exceeded max_attempts via stale reservations and was discarded", {
+                "id": job_id, "attempts": job_attempts
+            }, "queue");
+            return true;
+        }
         let parsed = null;
         try {
             parsed = json_parse(string(job["payload"]));
-        } catch (e) {
-            // Unparseable payload can never succeed — discard + log
-            DB.table(self.table_name()).where("id", job["id"]).delete();
-            Log.write("error", "[queue] discarded job with corrupt payload", map("id", job["id"]), "queue");
+        } catch (_e) {
+            // Unparseable payload can never succeed â€” discard + log
+            DB.table(tbl).where("id", job_id).delete();
+            Log.write("error", "[queue] discarded job with corrupt payload", {
+                "id": job_id
+            }, "queue");
             return true;
         }
         if not parsed.has("job") {
-            DB.table(self.table_name()).where("id", job["id"]).delete();
-            Log.write("error", "[queue] discarded job payload without a job name", map("id", job["id"]), "queue");
+            DB.table(tbl).where("id", job_id).delete();
+            Log.write("error", "[queue] discarded job payload without a job name", {
+                "id": job_id
+            }, "queue");
             return true;
         }
         let handler = string(parsed["job"]);
@@ -220,23 +268,33 @@ public class QueueManager {
 
         try {
             self.dispatch(handler, data);
-            DB.table(self.table_name()).where("id", job["id"]).delete();
-            Log.write("info", "[queue] job completed", map("job", handler, "id", job["id"]), "queue");
+            DB.table(tbl).where("id", job_id).delete();
+            Log.write("info", "[queue] job completed", {
+                "job": handler, "id": job_id
+            }, "queue");
             return true;
         } catch (e) {
             let max_attempts = self.int_cfg("max_attempts", 3);
-            if int(job["attempts"]) >= max_attempts {
-                DB.table(self.table_name()).where("id", job["id"]).delete();
-                Log.write("error", "[queue] job failed permanently",
-                    map("job", handler, "id", job["id"], "attempts", job["attempts"], "error", string(e)), "queue");
+            if int(job_attempts) >= max_attempts {
+                DB.table(tbl).where("id", job_id).delete();
+                Log.write("error", "[queue] job failed permanently", {
+                    "job": handler,
+                    "id": job_id,
+                    "attempts": job_attempts,
+                    "error": string(e)
+                }, "queue");
             } else {
                 let retry_after = self.int_cfg("retry_after", 90);
-                DB.table(self.table_name()).where("id", job["id"]).update(map(
-                    "reserved_at", 0,
-                    "available_at", int(unix_time()) + retry_after
-                ));
-                Log.write("warn", "[queue] job failed, released for retry",
-                    map("job", handler, "id", job["id"], "attempts", job["attempts"], "error", string(e)), "queue");
+                DB.table(tbl).where("id", job_id).update({
+                    "reserved_at": 0,
+                    "available_at": int(unix_time()) + retry_after
+                });
+                Log.write("warn", "[queue] job failed, released for retry", {
+                    "job": handler,
+                    "id": job_id,
+                    "attempts": job_attempts,
+                    "error": string(e)
+                }, "queue");
             }
             return true;
         }
@@ -252,6 +310,25 @@ public class QueueManager {
                 break;
             }
             done = done + 1;
+        }
+        return done;
+    }
+
+    // Long-running worker loop: drains jobs continuously and sleeps `poll_ms`
+    // while idle, exiting cleanly when SIGINT/SIGTERM triggers shutdown_requested().
+    public fn work_daemon(self, poll_ms: int = 500, queue: string = "") -> int {
+        let interval = poll_ms;
+        if interval < 10 {
+            interval = 10;
+        }
+        let done = 0;
+        while not shutdown_requested() {
+            let ran = self.run_next(queue);
+            if ran {
+                done = done + 1;
+            } else {
+                sleep_ms(interval);
+            }
         }
         return done;
     }

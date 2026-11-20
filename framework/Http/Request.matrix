@@ -1,0 +1,445 @@
+// framework/Http/Request.matrix
+// Spid3rWeb HTTP Request Representation (query/form/JSON/multipart parsing,
+// method spoofing, cookies, file uploads, session & auth accessors, and
+// one-line validation).
+
+import "http";
+import "framework/Http/Validator";
+import "framework/Http/RequestParser";
+import "framework/Http/HttpException";
+import "framework/Foundation/Config";
+import "framework/Session/Session";
+
+/// Parsed HTTP request context with query/form/JSON/multipart inputs, cookies, session, and auth state.
+public class Request {
+    public let method;
+    public let original_method;
+    public let path;
+    public let params;
+    public let bound_params;
+    public let query_params;
+    public let headers;
+    public let cookies;
+    public let files;
+    public let body;
+    public let data;
+    public let session_id;
+    public let auth;
+    public let user_data;
+    public let app;
+    public let res;
+    public let session_store;
+    public let session_source;
+    public let raw;
+
+    fn new (raw_req = null) {
+        self.params = {
+        };
+        self.bound_params = {
+        };
+        self.query_params = {
+        };
+        self.headers = {
+        };
+        self.cookies = {
+        };
+        self.files = {
+        };
+        self.data = {
+        };
+        self.body = "";
+        self.method = "GET";
+        self.original_method = "GET";
+        self.path = "/";
+        self.session_id = "";
+        self.session_source = "";
+        self.auth = null;
+        self.user_data = null;
+        self.app = null;
+        self.res = null;
+        self.session_store = null;
+        self.raw = null;
+
+        if raw_req != null {
+            self.init_from_raw(raw_req);
+        }
+    }
+
+    public fn init_from_raw(self, raw: map) {
+        self.raw = raw;
+        if raw.has("method") {
+            self.method = string(raw["method"]).upper();
+            self.original_method = self.method;
+        }
+        if raw.has("path") {
+            self.path = string(raw["path"]);
+        }
+        if raw.has("params") and raw["params"] != null {
+            self.params = raw["params"];
+        }
+        if raw.has("headers") and raw["headers"] != null {
+            for (k, v) in raw["headers"] {
+                self.headers[string(k).lower()] = string(v);
+            }
+        }
+
+        if self.headers.has("cookie") {
+            parse_cookies_into(string(self.headers["cookie"]), self.cookies);
+        }
+
+        if self.path.contains("?") {
+            let parts = self.path.split("?");
+            self.path = parts[0];
+            if parts.len() > 1 {
+                parse_query_into(parts[1], self.query_params, self.data);
+            }
+        }
+
+        if raw.has("data") and raw["data"] != null and type_of(raw["data"]) == "map" {
+            for (k, v) in raw["data"] {
+                self.data[string(k)] = v;
+            }
+        }
+
+        if raw.has("query") and raw["query"] != null and type_of(raw["query"]) == "map" {
+            for (k, v) in raw["query"] {
+                let sk = string(k);
+                let sv = string(v);
+                self.query_params[sk] = sv;
+                if not self.data.has(sk) {
+                    self.data[sk] = sv;
+                }
+            }
+        }
+
+        if raw.has("raw_query") and raw["raw_query"] != null {
+            let rq = string(raw["raw_query"]);
+            if rq != "" {
+                parse_query_into(rq, self.query_params, self.data);
+            }
+        }
+
+        let parsed_as_json = false;
+        let parsed_json = http_body_json(raw);
+        if parsed_json.is_ok() {
+            let val = parsed_json.unwrap();
+            if type_of(val) == "map" {
+                for (k, v) in val {
+                    self.data[string(k)] = v;
+                }
+                parsed_as_json = true;
+            }
+        }
+
+        if raw.has("body") and raw["body"] != null {
+            self.body = string(raw["body"]);
+            if not parsed_as_json and self.body != "" {
+                let ct = "";
+                if self.headers.has("content-type") {
+                    ct = string(self.headers["content-type"]).lower();
+                }
+                if ct.contains("application/x-www-form-urlencoded") or (ct == "" and self.body.contains("=")) {
+                    parse_form_into(self.body, self.data);
+                } elif ct.contains("multipart/form-data") {
+                    parse_multipart_into(
+                        self.body,
+                        string(self.headers["content-type"]),
+                        self.data,
+                        self.files
+                    );
+                }
+            }
+        }
+
+        if self.method == "POST" {
+            let spoof = "";
+            if self.headers.has("x-http-method-override") {
+                spoof = string(self.headers["x-http-method-override"]).trim().upper();
+            } elif self.data.has("_method") {
+                spoof = string(self.data["_method"]).trim().upper();
+            } elif self.query_params.has("_method") {
+                spoof = string(self.query_params["_method"]).trim().upper();
+            }
+            if spoof == "PUT" or spoof == "PATCH" or spoof == "DELETE" {
+                self.method = spoof;
+            }
+        }
+
+        self.session_id = self.extract_session_token();
+    }
+
+    fn extract_session_token(self) -> string {
+        if self.headers.has("authorization") {
+            let auth = self.headers["authorization"];
+            if auth.starts_with("Bearer ") {
+                self.session_source = "bearer";
+                return auth.replace("Bearer ", "").trim();
+            }
+        }
+        let cookie_name = Config.get("session.cookie", "spid3r_session");
+        if self.cookies.has(cookie_name) {
+            self.session_source = "cookie";
+            return string(self.cookies[cookie_name]);
+        }
+        return "";
+    }
+
+    public fn peer_ip(self) -> string {
+        let peer = resolve_peer_ip(self.raw);
+        if peer != "" {
+            return peer;
+        }
+        return "unknown";
+    }
+
+    public fn client_ip(self) -> string {
+        return resolve_client_ip(self.headers, self.raw);
+    }
+
+    public fn ip(self) -> string {
+        return self.client_ip();
+    }
+
+    public fn scheme(self) -> string {
+        return resolve_request_scheme(self.headers, self.raw);
+    }
+
+    public fn is_secure(self) -> bool {
+        return self.scheme() == "https";
+    }
+
+    public fn host(self) -> string {
+        return resolve_request_host(self.headers, self.raw);
+    }
+
+    public fn bearer(self) -> string {
+        if self.headers.has("authorization") {
+            let auth = string(self.headers["authorization"]);
+            if auth.starts_with("Bearer ") {
+                return auth.slice(7, auth.len()).trim();
+            }
+        }
+        return "";
+    }
+
+    public fn user(self) -> any {
+        return self.user_data ?? self.auth ?. current_user;
+    }
+
+    public fn session(self) -> SessionStore {
+        if self.session_store == null {
+            let sid = self.cookie("spid3r_sid", "");
+            self.session_store = new SessionStore(string(sid));
+        }
+        return self.session_store;
+    }
+
+    public fn is_json(self) -> bool {
+        let ct = string(self.header("content-type", "")).lower();
+        return ct.contains("application/json");
+    }
+
+    public fn wants_json(self) -> bool {
+        let accept = string(self.header("accept", "")).lower();
+        return self.path.starts_with("/api/") or accept.contains("application/json") or self.is_json();
+    }
+
+    public fn cookie(self, name: string, default_val: any = null) -> any {
+        if self.cookies.has(name) {
+            return self.cookies[name];
+        }
+        return default_val;
+    }
+
+    public fn signed_cookie(self, name: string, default_val: any = null) -> any {
+        if not self.cookies.has(name) {
+            return default_val;
+        }
+        return verify_signed_cookie_value(string(self.cookies[name]), name, default_val);
+    }
+
+    public fn file(self, key: string) -> any {
+        if self.files.has(key) {
+            return self.files[key];
+        }
+        return null;
+    }
+
+    public fn has_file(self, key: string) -> bool {
+        return self.files.has(key) and self.files[key] != null;
+    }
+
+    public fn store_file(
+        self,
+        key: string,
+        directory: string = "uploads",
+        disk_name: string = "public"
+    ) -> string {
+        let f = self.file(key);
+        if f == null {
+            throw bad_request("No uploaded file found for field '{key}'.");
+        }
+        return store_uploaded_file(f, directory, disk_name);
+    }
+
+    public fn input(self, key: string, default_val: any = null) -> any {
+        if self.data.has(key) {
+            return self.data[key];
+        }
+        if self.query_params.has(key) {
+            return self.query_params[key];
+        }
+        if self.params.has(key) {
+            return self.params[key];
+        }
+        return default_val;
+    }
+
+    public fn string(self, key: string, default_val: string = "") -> string {
+        let v = self.input(key, null);
+        if v == null {
+            return default_val;
+        }
+        return string(v);
+    }
+
+    public fn int(self, key: string, default_val: int = 0) -> int {
+        let v = self.input(key, null);
+        if v == null {
+            return default_val;
+        }
+        try {
+            return int(v);
+        } catch (_e) {
+            return default_val;
+        }
+    }
+
+    public fn float(self, key: string, default_val: float = 0.0) -> float {
+        let v = self.input(key, null);
+        if v == null {
+            return default_val;
+        }
+        try {
+            return float(v);
+        } catch (_e) {
+            return default_val;
+        }
+    }
+
+    public fn bool(self, key: string, default_val: bool = false) -> bool {
+        let v = self.input(key, null);
+        if v == null {
+            return default_val;
+        }
+        if type_of(v) == "bool" {
+            return v;
+        }
+        let s = string(v).trim().lower();
+        if s == "true" or s == "1" or s == "yes" or s == "on" {
+            return true;
+        }
+        if s == "false" or s == "0" or s == "no" or s == "off" {
+            return false;
+        }
+        return default_val;
+    }
+
+    public fn only(self, keys: list) -> map {
+        let out = {
+        };
+        for k in keys {
+            let sk = string(k);
+            if self.has(sk) {
+                out[sk] = self.input(sk);
+            }
+        }
+        return out;
+    }
+
+    public fn except(self, keys: list) -> map {
+        let excluded = {
+        };
+        for k in keys {
+            excluded[string(k)] = true;
+        }
+        let out = {
+        };
+        for (k, v) in self.data {
+            if not excluded.has(k) {
+                out[k] = v;
+            }
+        }
+        return out;
+    }
+
+    public fn page(self, default_val: int = 1) -> int {
+        let p = self.int("page", default_val);
+        if p < 1 {
+            return 1;
+        }
+        return p;
+    }
+
+    public fn per_page(self, default_val: int = 15, max_val: int = 100) -> int {
+        let pp = self.int("per_page", default_val);
+        if pp < 1 {
+            return default_val;
+        }
+        if pp > max_val {
+            return max_val;
+        }
+        return pp;
+    }
+
+    public fn has(self, key: string) -> bool {
+        return self.data.has(key) or self.query_params.has(key) or self.params.has(key);
+    }
+
+    public fn all(self) -> map {
+        return self.data;
+    }
+
+    public fn param(self, key: string, default_val: any = null) -> any {
+        if self.params.has(key) {
+            return self.params[key];
+        }
+        return default_val;
+    }
+
+    /// Retrieve a route parameter hydrated through `Route.bind()` / `app.bind()`.
+    public fn bound(self, key: string, default_val: any = null) -> any {
+        if self.bound_params.has(key) {
+            return self.bound_params[key];
+        }
+        return default_val;
+    }
+
+    public fn query(self, key: string, default_val: any = null) -> any {
+        if self.query_params.has(key) {
+            return self.query_params[key];
+        }
+        return default_val;
+    }
+
+    public fn header(self, key: string, default_val: any = null) -> any {
+        let lkey = string(key).lower();
+        if self.headers.has(lkey) {
+            return self.headers[lkey];
+        }
+        return default_val;
+    }
+
+    public fn validate(self, rules: map) -> Validator {
+        let engine = new Validator();
+        return engine.check(self, rules);
+    }
+
+    public fn validate_or_fail(self, rules: map) -> map {
+        let v = self.validate(rules);
+        if v.fails() {
+            throw validation_failed(v.error_messages(), v.first());
+        }
+        return v.validated();
+    }
+}

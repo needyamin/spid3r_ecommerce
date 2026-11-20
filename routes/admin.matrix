@@ -2,7 +2,7 @@
 // Phase 9 — administration panel. All pages require role:admin; APIs are
 // additionally permission-gated. State-changing calls include _csrf.
 
-import "framework/Router";
+import "framework/Http/Router";
 import "app/Controllers/AdminController";
 
 public fn register_admin_routes() {

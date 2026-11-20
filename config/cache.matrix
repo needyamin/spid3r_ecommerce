@@ -4,7 +4,8 @@
 // The active driver is selected via the SPID3R_CACHE_DRIVER environment
 // variable (or a .env file) — see framework/Cache/Cache.matrix:
 //
-//   SPID3R_CACHE_DRIVER=memory | file | database     (default: memory)
+//   SPID3R_CACHE_DRIVER=memory | file | database
+//   (defaults to `file` when APP_ENV=production, `memory` otherwise)
 //
 //   memory    — per-process in-memory store, fastest, cleared on restart
 //   file      — storage/framework/cache/, survives restarts
@@ -13,19 +14,37 @@
 //
 // TTL convention: seconds > 0 expire after N seconds; 0/null = forever.
 
+import "framework/Foundation/Env";
+
+let _cache_env_loaded = load_env_file(".env");
+let _cache_env = env("APP_ENV").unwrap_or("production").trim().lower();
+let _cache_driver_env = env("SPID3R_CACHE_DRIVER").unwrap_or("").trim().lower();
+let _cache_default = if _cache_env == "production" {
+    "file"
+} else {
+    "memory"
+};
+if _cache_driver_env == "memory" or _cache_driver_env == "file" or _cache_driver_env == "database" {
+    _cache_default = _cache_driver_env;
+} elif _cache_driver_env == "db" {
+    _cache_default = "database";
+}
+
 public let config_cache = {
-    "default": "memory",
+    "default": _cache_default,
     "driver_env": "SPID3R_CACHE_DRIVER",
     "stores": {
         "memory": {
             "driver": "memory",
             "persistent": false
-        },
+        }
+        ,
         "file": {
             "driver": "file",
             "path": "storage/framework/cache",
             "persistent": true
-        },
+        }
+        ,
         "database": {
             "driver": "database",
             "table": "cache",

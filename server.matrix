@@ -1,43 +1,162 @@
 // server.matrix
-// Spid3rWeb Production & Development HTTP Application Server
+// Spid3rWeb Production & Development HTTP/HTTPS Application Server
+// Works both via `spid3r run` and as a compiled native AOT executable (`dist/server.exe`).
 
-import "framework/Web";
-import "routes/web";
-import "routes/api";
-import "routes/queue";
-import "app/Middleware/StoreMiddleware";
+import "bootstrap/app";
+
+fn server_dirname(path: string) -> string {
+    let parts = string(path).replace("\\", "/").split("/");
+    if parts.len() <= 1 {
+        return "";
+    }
+    parts.pop();
+    return parts.join("/");
+}
+
+fn has_project_markers(dir: string) -> bool {
+    let p = string(dir).replace("\\", "/");
+    if p == "" or p == "." {
+        return file_exists("resources/views") or file_exists("spider.toml");
+    }
+    return file_exists(p + "/resources/views") or file_exists(p + "/spider.toml");
+}
+
+fn resolve_and_enter_project_root(explicit_root: string) {
+    if explicit_root != "" {
+        let cr = chdir(explicit_root);
+        if cr.is_err() {
+            let err = string(cr.unwrap_err());
+            throw "server: cannot chdir to --root '{explicit_root}': {err}";
+        }
+        return;
+    }
+    // Already in project root (e.g. `.\dist\server.exe` from repo root)
+    if has_project_markers(".") {
+        return;
+    }
+    // Walk up from the executable's directory (e.g. double-clicking `dist/server.exe`
+    // or running `cd dist && .\server.exe`).
+    let exe_r = exe_path();
+    if exe_r.is_ok() {
+        let dir = server_dirname(string(exe_r.unwrap()));
+        let depth = 0;
+        while dir != "" and depth < 5 {
+            if has_project_markers(dir) {
+                let cr = chdir(dir);
+                if cr.is_ok() {
+                    return;
+                }
+            }
+            let parent = server_dirname(dir);
+            if parent == dir {
+                break;
+            }
+            dir = parent;
+            depth = depth + 1;
+        }
+    }
+}
+
+fn print_server_help() {
+    println("Spid3rWeb Application Server");
+    println("Usage: server [port] [options]");
+    println("  --port N          Port to listen on (default: 8000)");
+    println("  --host ADDR       Bind address (default: SPID3R_HOST or 127.0.0.1)");
+    println("  --tls             Enable native HTTPS (requires --cert and --key)");
+    println("  --cert PATH       TLS certificate path");
+    println("  --key PATH        TLS private key path");
+    println("  --root DIR        Explicit project root directory");
+    println("  --help, -h        Show this help message");
+}
 
 fn main() {
+    let port = 8000;
+    let host = "";
+    let use_tls = false;
+    let cert_path = "";
+    let key_path = "";
+    let explicit_root = "";
+
+    let cli_args = args();
+    let i = 0;
+    while i < cli_args.len() {
+        let a = string(cli_args[i]);
+        if a == "--help" or a == "-h" {
+            print_server_help();
+            return 0;
+        } elif a.starts_with("--port=") {
+            port = int(a.slice(7, a.len()));
+        } elif a == "--port" and i + 1 < cli_args.len() {
+            i = i + 1;
+            port = int(cli_args[i]);
+        } elif a.starts_with("--host=") {
+            host = a.slice(7, a.len());
+        } elif a == "--host" and i + 1 < cli_args.len() {
+            i = i + 1;
+            host = string(cli_args[i]);
+        } elif a == "--tls" {
+            use_tls = true;
+        } elif a.starts_with("--cert=") {
+            cert_path = a.slice(7, a.len());
+            use_tls = true;
+        } elif a == "--cert" and i + 1 < cli_args.len() {
+            i = i + 1;
+            cert_path = string(cli_args[i]);
+            use_tls = true;
+        } elif a.starts_with("--key=") {
+            key_path = a.slice(6, a.len());
+            use_tls = true;
+        } elif a == "--key" and i + 1 < cli_args.len() {
+            i = i + 1;
+            key_path = string(cli_args[i]);
+            use_tls = true;
+        } elif a.starts_with("--root=") {
+            explicit_root = a.slice(7, a.len());
+        } elif a == "--root" and i + 1 < cli_args.len() {
+            i = i + 1;
+            explicit_root = string(cli_args[i]);
+        } elif not a.starts_with("-") {
+            let parsed = 0;
+            try {
+                parsed = int(a);
+            } catch (_e) {
+                println("[Spid3rWeb] Invalid port argument '" + a + "', falling back to 8000");
+                parsed = 0;
+            }
+            if parsed > 0 {
+                port = parsed;
+            }
+        }
+        i = i + 1;
+    }
+
+    if use_tls and (cert_path == "" or key_path == "") {
+        println("[Spid3rWeb] Error: --tls requires both --cert <path> and --key <path>");
+        return 1;
+    }
+
+    // 1. Resolve project root so dist/server.exe works from any working directory
+    resolve_and_enter_project_root(explicit_root);
+
+    let root_dir = ".";
+    let cwd_r = cwd();
+    if cwd_r.is_ok() {
+        root_dir = string(cwd_r.unwrap());
+    }
+
     println("==================================================================");
     println("                  Spid3rWeb Application Server                   ");
     println("==================================================================");
+    println("[Spid3rWeb] Project root: " + root_dir);
 
-    // 1. Initialize Application Kernel + store middleware aliases
-    let app = web();
-    register_store_middleware(app);
+    // 2. Create application, register service providers, routes, and jobs
+    let app = create_application();
 
-    // 2. Register Web and API Routes (plus queue job handlers so
-    //    Queue.push with the sync driver resolves handlers in-process)
-    register_web_routes();
-    register_api_routes();
-    register_queue_jobs();
-
-    // 3. Port Configuration (default 8000)
-    let port = 8000;
-    let cli_args = args();
-    if cli_args.len() > 0 {
-        let parsed = 0;
-        try {
-            parsed = int(cli_args[0]);
-        } catch (_e) {
-            println("[Spid3rWeb] Invalid port argument '" + string(cli_args[0]) + "', falling back to 8000");
-            parsed = 0;
-        }
-        if parsed > 0 {
-            port = parsed;
-        }
+    // 4. Start HTTP or HTTPS Server
+    if use_tls {
+        app.listen_tls(port, cert_path, key_path, host);
+    } else {
+        app.listen(port, host);
     }
-
-    // 4. Start HTTP Server
-    app.listen(port);
+    return 0;
 }

@@ -1,0 +1,31 @@
+%% Spid3r Store — high-level architecture
+flowchart TB
+    subgraph CLIENT["Browser Client"]
+        SPA["Storefront SPA<br/>public/js/store.js"]
+        ADMIN["Admin SPA<br/>public/js/admin.js (pure AJAX)"]
+    end
+
+    subgraph SERVER["Spid3rWeb 1.1.1 Runtime (.matrix)"]
+        ENTRY["Entry Points<br/>server.matrix / magic / dist/server.exe"]
+        BOOT["bootstrap/app.matrix<br/>create_application()"]
+        ROUTES["Routes<br/>routes/web → store, api, queue"]
+        MW["Middleware Pipeline<br/>CORS · SecurityHeaders · Throttle · role/permission RBAC"]
+        CTRL["Controllers<br/>app/Controllers/*.matrix"]
+        SVC["Services<br/>app/Services/*.matrix"]
+        REPO["Repositories + Support<br/>app/Repositories · app/Support (Money, Slug, Fx…)"]
+        ORM["ORM Layer<br/>framework/Database (Model, QueryBuilder, Schema)"]
+        VIEW["View Engine<br/>framework/View (SpiderBD .bd.html)"]
+    end
+
+    DB[("MySQL 8 (Docker, prod)<br/>SQLite (dev / tests)<br/>44 tables")]
+
+    SPA -->|HTTP JSON/HTML| MW
+    ADMIN -->|/admin/api AJAX + _csrf| MW
+    MW --> ROUTES --> CTRL
+    CTRL --> SVC --> REPO
+    CTRL --> ORM
+    SVC --> ORM
+    ORM --> DB
+    CTRL --> VIEW
+    VIEW -->|rendered HTML| SPA
+    BOOT --> ENTRY

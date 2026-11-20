@@ -3,11 +3,13 @@ import "framework/Database/Schema";
 import "framework/Database/Migration";
 
 public class CreateUsersTable extends Migration {
-    fn new(name: string = "001_create_users_table") {
-        super(name);
+    fn new (name: string = "001_create_users_table") {
+        self.name = name;
+        self.checksum = "";
     }
 
     public fn up(self) {
+        let _ = self;
         Schema.create("users", table => {
             table.id();
             table.string("name");
@@ -18,6 +20,7 @@ public class CreateUsersTable extends Migration {
     }
 
     public fn down(self) {
+        let _ = self;
         Schema.dropIfExists("users");
     }
 }

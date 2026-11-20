@@ -1,0 +1,59 @@
+// framework/Http/Csrf.matrix
+// Same-Origin & per-session CSRF token validation helpers.
+
+// Compare an Origin header against the request Host, normalizing scheme
+// and default ports. Returns false for anything malformed or foreign.
+/// Layer 1 CSRF defense: verify an Origin header matches the request Host and scheme port.
+public fn is_same_origin(req: any, origin: string) -> bool {
+    let o = string(origin).trim().lower();
+    let default_port = "";
+    if o.starts_with("https://") {
+        default_port = ":443";
+        o = o.slice(8, o.len());
+    } elif o.starts_with("http://") {
+        default_port = ":80";
+        o = o.slice(7, o.len());
+    } else {
+        return false;
+    }
+    if o.contains("/") {
+        o = o.split("/")[0];
+    }
+    if default_port != "" and o.ends_with(default_port) {
+        o = o.slice(0, o.len() - default_port.len());
+    }
+    let host = string(req.host()).trim().lower();
+    if host == "" {
+        return false;
+    }
+    if default_port != "" and host.ends_with(default_port) {
+        host = host.slice(0, host.len() - default_port.len());
+    }
+    return host == o;
+}
+
+// Layer 2: cookie-authenticated form submissions without an Origin header must
+// present the per-session CSRF token issued at login. Bearer-token API calls,
+// logout, /api/* paths, and legacy sessions without tokens are exempt.
+/// Layer 2 CSRF defense: require per-session `_csrf` token on cookie-authenticated mutations.
+public fn csrf_valid(req: any) -> bool {
+    let m = req.method;
+    if m != "POST" and m != "PUT" and m != "PATCH" and m != "DELETE" {
+        return true;
+    }
+    if req.header("origin", "") != "" {
+        return true;
+    }
+    if req.session_source != "cookie" {
+        return true;
+    }
+    if req.path == "/logout" or req.path.starts_with("/api/") {
+        return true;
+    }
+    let expected = req.auth ?. csrf_token ?? "";
+    if expected == "" {
+        return true;
+    }
+    let provided = req.input("_csrf", "");
+    return string(provided) == expected;
+}

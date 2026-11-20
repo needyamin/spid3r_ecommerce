@@ -20,9 +20,10 @@ public let config_queue = {
             "driver": "database",
             "table": "jobs",
             "queue": "default",
-            "retry_after": 90,     // seconds before a reserved job is retried
-            "max_attempts": 3      // attempts before a job is discarded
-        },
+            "retry_after": 90,  // seconds before a reserved job is retried
+            "max_attempts": 3  // attempts before a job is discarded
+        }
+        ,
         "sync": {
             "driver": "sync"
         }

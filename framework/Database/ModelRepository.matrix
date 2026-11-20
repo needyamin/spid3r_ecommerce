@@ -1,0 +1,189 @@
+// framework/Database/ModelRepository.matrix
+// Zero-Boilerplate Declarative ModelRepository & `define_model()` Factory
+
+import "DB";
+import "Model";
+
+/// Zero-boilerplate table repository configured via options map (`fillable`, `hidden`, `casts`).
+public class ModelRepository {
+    public let table;
+    public let primary_key;
+    public let fillable;
+    public let hidden;
+    public let casts;
+    public let uses_timestamps;
+
+    fn new (table_name: string, opts = {
+    }) {
+        self.table = table_name;
+        self.primary_key = "id";
+        self.fillable = [];
+        self.hidden = [];
+        self.casts = {
+        };
+        self.uses_timestamps = true;
+
+        if opts != null and type_of(opts) == "map" {
+            if opts.has("primary_key") {
+                self.primary_key = string(opts["primary_key"]);
+            }
+            if opts.has("fillable") and type_of(opts["fillable"]) == "list" {
+                self.fillable = opts["fillable"];
+            }
+            if opts.has("hidden") and type_of(opts["hidden"]) == "list" {
+                self.hidden = opts["hidden"];
+            }
+            if opts.has("casts") and type_of(opts["casts"]) == "map" {
+                self.casts = opts["casts"];
+            }
+            if opts.has("timestamps") {
+                self.uses_timestamps = opts["timestamps"] == true;
+            }
+        }
+    }
+
+    public fn new_instance(self, attrs: any = {
+    }) -> Model {
+        let m = new Model(self.table, self.fillable, attrs);
+        m.primary_key = self.primary_key;
+        m.hidden = self.hidden;
+        m.casts = self.casts;
+        m.uses_timestamps = self.uses_timestamps;
+        return m;
+    }
+
+    public fn hydrate(self, row: any) -> any {
+        if row == null {
+            return null;
+        }
+        let m = self.new_instance(row);
+        m.exists = true;
+        m.sync_original();
+        return m;
+    }
+
+    public fn hydrate_many(self, rows: any) -> list {
+        let out = [];
+        if rows == null {
+            return out;
+        }
+        for r in rows {
+            out.push(self.hydrate(r));
+        }
+        return out;
+    }
+
+    public fn format_row(self, row: any) -> any {
+        if row == null {
+            return null;
+        }
+        return self.hydrate(row).to_map();
+    }
+
+    public fn format_rows(self, rows: any) -> list {
+        let out = [];
+        if rows == null {
+            return out;
+        }
+        for r in rows {
+            out.push(self.format_row(r));
+        }
+        return out;
+    }
+
+    public fn query(self) -> QueryBuilder {
+        return DB.table(self.table);
+    }
+
+    public fn all(self) -> list {
+        return self.hydrate_many(self.query().get());
+    }
+
+    public fn find(self, id: any) -> any {
+        return self.hydrate(self.query().where(self.primary_key, "=", id).first());
+    }
+
+    public fn find_or_fail(self, id: any, message: string = "") -> Model {
+        return self.hydrate(self.query().find_or_fail(id, message));
+    }
+
+    public fn first(self) -> any {
+        return self.hydrate(self.query().first());
+    }
+
+    public fn first_or_fail(self, message: string = "") -> Model {
+        return self.hydrate(self.query().first_or_fail(message));
+    }
+
+    public fn create(self, attrs: map) -> any {
+        return self.new_instance(attrs).save();
+    }
+
+    public fn update_or_create(self, search_attrs: map, update_attrs: map = {
+    }) -> any {
+        let q = self.query();
+        for (k, v) in search_attrs {
+            q.where(k, "=", v);
+        }
+        let existing_row = q.first();
+        if existing_row != null {
+            return self.hydrate(existing_row).update(update_attrs);
+        }
+        let merged = {
+        };
+        for (k, v) in search_attrs {
+            merged[k] = v;
+        }
+        for (k, v) in update_attrs {
+            merged[k] = v;
+        }
+        return self.create(merged);
+    }
+
+    public fn destroy(self, id: any) -> bool {
+        let m = self.find(id);
+        if m == null {
+            return false;
+        }
+        return m.delete();
+    }
+
+    public fn where(self, column: string, op: any, val: any = null) -> QueryBuilder {
+        return self.query().where(column, op, val);
+    }
+
+    public fn whereIn(self, column: string, values_list: any) -> QueryBuilder {
+        return self.query().whereIn(column, values_list);
+    }
+
+    public fn orderBy(self, column: string, dir: string = "ASC") -> QueryBuilder {
+        return self.query().orderBy(column, dir);
+    }
+
+    public fn latest(self, column: string = "id") -> QueryBuilder {
+        return self.query().latest(column);
+    }
+
+    public fn oldest(self, column: string = "id") -> QueryBuilder {
+        return self.query().oldest(column);
+    }
+
+    public fn paginate(self, page: int = 1, per_page: int = 15) -> map {
+        let res = self.query().paginate(page, per_page);
+        res["data"] = self.format_rows(res["data"]);
+        return res;
+    }
+
+    public fn count(self) -> int {
+        return self.query().count();
+    }
+
+    public fn exists(self) -> bool {
+        return self.query().exists();
+    }
+}
+
+public fn define_model(table_name: string, opts: map = {
+}) -> ModelRepository {
+    return new ModelRepository(table_name, opts);
+}

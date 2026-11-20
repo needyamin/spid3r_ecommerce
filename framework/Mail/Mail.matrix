@@ -6,10 +6,10 @@
 //   Mail.send(map("to","ada@example.com","subject","Hi","body","..."));
 //
 // Drivers (config/mail.matrix):
-//   log  — renders the full message into the "mail" log channel
+//   log  â€” renders the full message into the "mail" log channel
 //          (storage/logs/mail.log-YYYY-MM-DD.log). Always available and
 //          the default: perfect for development and staging.
-//   smtp — intentionally fails fast at send time: the Spid3r runtime has
+//   smtp â€” intentionally fails fast at send time: the Spid3r runtime has
 //          no outbound TCP API yet, so attempting SMTP would either hang
 //          or lie. The error explains how to stay on the log driver.
 //
@@ -17,22 +17,24 @@
 // are logged as data, never concatenated into an SMTP session, so header
 // injection via "\r\n" in addresses is inert with the log driver.
 
-import "framework/Config/Config";
+import "framework/Foundation/Config";
 import "framework/Log/Log";
+import "framework/Queue/Queue";
 
+/// Mail delivery facade supporting channel logging, synchronous SMTP error guidance, and `queue()`.
 public class Mailer {
     // Shorthand: Mail.to(to, subject, body)
     public fn to(self, address: string, subject: string, body: string) -> bool {
-        return self.send(map(
-            "to", address,
-            "subject", subject,
-            "body", body
-        ));
+        return self.send({
+            "to": address,
+            "subject": subject,
+            "body": body
+        });
     }
 
     // Full send: map("to", ..., "subject", ..., "body", ...)
     // Optional keys: "from_address", "from_name" override config defaults.
-    public fn send(self, message) -> bool {
+    public fn send(self, message: any) -> bool {
         if message == null or type_of(message) != "map" or not message.has("to") {
             throw "mail: message requires a 'to' address";
         }
@@ -86,23 +88,141 @@ public class Mailer {
             if cfg.has("channel") {
                 channel = string(cfg["channel"]);
             }
-            Log.write("info", "[mail] delivered message",
-                map(
-                    "mailer", "log",
-                    "from", from_address,
-                    "from_name", from_name,
-                    "to", string(message["to"]),
-                    "subject", subject,
-                    "body", body
-                ), channel);
+            Log.write("info", "[mail] delivered message", {
+                "mailer": "log",
+                "from": from_address,
+                "from_name": from_name,
+                "to": string(message["to"]),
+                "subject": subject,
+                "body": body
+            }, channel);
             return true;
         }
 
         if driver == "smtp" {
-            throw "mail: the smtp driver needs an outbound TCP API that the Spid3r runtime does not expose yet — set SPID3R_MAIL_MAILER=log (or remove the override) and read storage/logs/mail.log";
+            return self.send_smtp(
+                cfg,
+                from_address,
+                from_name,
+                string(message["to"]),
+                subject,
+                body
+            );
         }
 
-        throw "mail: unsupported mail driver '" + driver + "'";
+        throw "mail: unsupported mail driver '{driver}'";
+    }
+
+    fn smtp_expect(self, conn: any, expected_prefix: string, stage: string) -> string {
+        let _ = self;
+        let r = tcp_read(conn, 4096);
+        if r.is_err() {
+            let err = string(r.unwrap_err());
+            throw "mail(smtp): read failed during {stage}: {err}";
+        }
+        let reply = string(r.unwrap());
+        if not reply.starts_with(expected_prefix) {
+            let trimmed = reply.trim();
+            throw "mail(smtp): unexpected reply at {stage}: {trimmed}";
+        }
+        return reply;
+    }
+
+    fn smtp_cmd(self, conn, cmd: string, expected_prefix: string, stage: string) {
+        let w = tcp_write(conn, "{cmd}\r\n");
+        if w.is_err() {
+            let err = string(w.unwrap_err());
+            throw "mail(smtp): write failed during {stage}: {err}";
+        }
+        return self.smtp_expect(conn, expected_prefix, stage);
+    }
+
+    fn send_smtp(
+        self,
+        cfg,
+        from_address: string,
+        from_name: string,
+        to_address: string,
+        subject: string,
+        body: string
+    ) -> bool {
+        let encryption = "";
+        if cfg.has("encryption") and cfg["encryption"] != null {
+            encryption = string(cfg["encryption"]).trim().lower();
+        }
+        if encryption == "tls" or encryption == "ssl" or encryption == "starttls" {
+            throw "mail(smtp): outbound TLS/STARTTLS requires tls_connect (not yet exposed by Spid3r net stdlib) â€” use plain SMTP to a local relay/Mailpit or set SPID3R_MAIL_MAILER=log";
+        }
+        // Reject CRLF header injection in SMTP envelope/headers
+        if from_address.contains("\r") or from_address.contains("\n") or to_address.contains("\r") or to_address.contains("\n") or subject.contains("\r") or subject.contains("\n") {
+            throw "mail(smtp): illegal CR/LF in envelope or subject";
+        }
+        let host = "127.0.0.1";
+        if cfg.has("host") and string(cfg["host"]).trim() != "" {
+            host = string(cfg["host"]).trim();
+        }
+        let port = 1025;
+        if cfg.has("port") and int(cfg["port"]) > 0 {
+            port = int(cfg["port"]);
+        }
+        let timeout_ms = 10_000;
+        if cfg.has("timeout_ms") and int(cfg["timeout_ms"]) > 0 {
+            timeout_ms = int(cfg["timeout_ms"]);
+        }
+        let timeout_env = if cfg.has("timeout_env") and cfg["timeout_env"] != null {
+            string(cfg["timeout_env"])
+        } else {
+            "SPID3R_MAIL_TIMEOUT_MS"
+        };
+        let env_t = env(timeout_env);
+        if env_t.is_some() and string(env_t.unwrap()).trim() != "" {
+            try {
+                let parsed_t = int(string(env_t.unwrap()).trim());
+                if parsed_t > 0 {
+                    timeout_ms = parsed_t;
+                }
+            } catch (_e) {
+            }
+        }
+
+        let cr = tcp_connect("{host}:{port}");
+        if cr.is_err() {
+            let err = string(cr.unwrap_err());
+            throw "mail(smtp): failed to connect to {host}:{port}: {err}";
+        }
+        let conn = cr.unwrap();
+        try {
+            tcp_set_timeout(conn, timeout_ms);
+            self.smtp_expect(conn, "220", "greeting");
+            self.smtp_cmd(conn, "EHLO spid3rweb.local", "250", "EHLO");
+            self.smtp_cmd(conn, "MAIL FROM:<{from_address}>", "250", "MAIL FROM");
+            self.smtp_cmd(conn, "RCPT TO:<{to_address}>", "250", "RCPT TO");
+            self.smtp_cmd(conn, "DATA", "354", "DATA");
+            // Dot-stuff lines beginning with '.' per RFC 5321 Â§4.5.2
+            let safe_body = body.replace("\r\n", "\n").replace("\n.", "\n..").replace("\n", "\r\n");
+            let from_hdr = from_address;
+            if from_name != "" and not from_name.contains("\r") and not from_name.contains("\n") {
+                from_hdr = "{from_name} <{from_address}>";
+            }
+            let payload = "From: {from_hdr}\r\nTo: {to_address}\r\nSubject: {subject}\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n{safe_body}\r\n.";
+            self.smtp_cmd(conn, payload, "250", "DATA body");
+            tcp_write(conn, "QUIT\r\n");
+        } finally {
+            tcp_close(conn);
+        }
+        return true;
+    }
+
+    public fn queue(self, message: any, queue_name: string = "mail", _delay_seconds: int = 0) -> bool {
+        self.register_queue_handler("mail.send");
+        return Queue.push("mail.send", message, queue_name);
+    }
+
+    public fn register_queue_handler(self, job_name: string = "mail.send") {
+        let mailer = self;
+        Queue.register(job_name, fn(payload) {
+            return mailer.send(payload);
+        });
     }
 }
 

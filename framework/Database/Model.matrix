@@ -1,80 +1,11 @@
 // framework/Database/Model.matrix
-// Spid3rWeb Active Record Model Base Class & Zero-Boilerplate ModelRepository
-//
-// Model lifecycle events (via the global Event facade):
-//   model.<table>.creating / .created    around insert
-//   model.<table>.updating / .updated    around update
-//   model.<table>.deleting / .deleted    around delete
-// Handlers receive the model instance (they may mutate it via .set()).
-// A handler returning exactly `false` cancels the operation.
-//
-// Zero-boilerplate model definition:
-//   public let Post = model("posts", {
-//       "fillable": ["title", "body", "is_published", "meta"],
-//       "hidden": ["internal_notes"],
-//       "casts": {"is_published": "bool", "meta": "json"}
-//   });
+// Spid3rWeb Active Record Model Base Class & Eager Loading Facade
 
 import "DB";
+import "ModelHelpers";
 import "framework/Events/Event";
-import "framework/HttpException";
 
-fn cast_attribute_value(cast_type: string, raw_val) {
-    if raw_val == null {
-        return null;
-    }
-    let ct = cast_type.lower();
-    if ct == "int" or ct == "integer" {
-        try { return int(raw_val); } catch (_e) { return 0; }
-    }
-    if ct == "float" or ct == "numeric" or ct == "double" {
-        try { return float(raw_val); } catch (_e) { return 0.0; }
-    }
-    if ct == "bool" or ct == "boolean" {
-        if type_of(raw_val) == "bool" { return raw_val; }
-        let s = string(raw_val).trim().lower();
-        return s == "1" or s == "true" or s == "yes";
-    }
-    if ct == "string" {
-        return string(raw_val);
-    }
-    if ct == "json" or ct == "array" or ct == "map" {
-        let t = type_of(raw_val);
-        if t == "map" or t == "list" {
-            return raw_val;
-        }
-        let parsed = json_parse(string(raw_val));
-        if type_of(parsed) == "result" {
-            if parsed.is_ok() {
-                return parsed.unwrap();
-            }
-            return raw_val;
-        }
-        return parsed;
-    }
-    return raw_val;
-}
-
-fn serialize_attribute_for_db(cast_type: string, val) {
-    if val == null {
-        return null;
-    }
-    let ct = cast_type.lower();
-    if ct == "json" or ct == "array" or ct == "map" {
-        let t = type_of(val);
-        if t == "map" or t == "list" {
-            return json_write(val);
-        }
-    }
-    if ct == "bool" or ct == "boolean" {
-        if val == true or string(val) == "true" or string(val) == "1" {
-            return 1;
-        }
-        return 0;
-    }
-    return val;
-}
-
+/// Active Record base class providing attributes, casts, hidden columns, dirty tracking, and persistence.
 public class Model {
     public let table;
     public let primary_key;
@@ -86,7 +17,8 @@ public class Model {
     public let exists;
     public let uses_timestamps;
 
-    fn new(table_name: string = "models", fillable_list = [], attrs = {}) {
+    fn new (table_name: string = "models", fillable_list = [], attrs = {
+    }) {
         self.table = table_name;
         self.primary_key = "id";
         self.fillable = fillable_list;
@@ -94,15 +26,18 @@ public class Model {
             self.fillable = [];
         }
         self.hidden = [];
-        self.casts = {};
-        self.attributes = {};
-        self.original = {};
+        self.casts = {
+        };
+        self.attributes = {
+        };
+        self.original = {
+        };
         self.exists = false;
         self.uses_timestamps = true;
 
         if attrs != null and type_of(attrs) == "map" {
-            for k in attrs.keys() {
-                self.attributes[k] = attrs[k];
+            for (k, v) in attrs {
+                self.attributes[k] = v;
             }
             if self.attributes.has(self.primary_key) and self.attributes[self.primary_key] != null {
                 self.exists = true;
@@ -111,10 +46,11 @@ public class Model {
         }
     }
 
-    public fn sync_original(self) {
-        self.original = {};
-        for k in self.attributes.keys() {
-            self.original[k] = self.attributes[k];
+    public fn sync_original(self) -> Model {
+        self.original = {
+        };
+        for (k, v) in self.attributes {
+            self.original[k] = v;
         }
         return self;
     }
@@ -122,33 +58,27 @@ public class Model {
     public fn is_dirty(self, key: string = "") -> bool {
         if key != "" {
             let cur = null;
-            if self.attributes.has(key) { cur = self.attributes[key]; }
+            if self.attributes.has(key) {
+                cur = self.attributes[key];
+            }
             let orig = null;
-            if self.original.has(key) { orig = self.original[key]; }
+            if self.original.has(key) {
+                orig = self.original[key];
+            }
             return string(cur) != string(orig);
         }
-        for k in self.attributes.keys() {
+        for (k, v) in self.attributes {
             if not self.original.has(k) {
                 return true;
             }
-            if string(self.attributes[k]) != string(self.original[k]) {
+            if string(v) != string(self.original[k]) {
                 return true;
             }
         }
         return false;
     }
 
-    public fn get_dirty(self) {
-        let dirty = {};
-        for k in self.attributes.keys() {
-            if not self.original.has(k) or string(self.attributes[k]) != string(self.original[k]) {
-                dirty[k] = self.attributes[k];
-            }
-        }
-        return dirty;
-    }
-
-    public fn get(self, key: string, default_val = null) {
+    public fn get(self, key: string, default_val: any = null) -> any {
         if self.attributes.has(key) {
             let raw = self.attributes[key];
             if self.casts != null and self.casts.has(key) {
@@ -159,24 +89,22 @@ public class Model {
         return default_val;
     }
 
-    public fn set(self, key: string, value) {
+    public fn set(self, key: string, value: any) -> Model {
         self.attributes[key] = value;
         return self;
     }
 
-    public fn query(self) {
+    public fn query(self) -> QueryBuilder {
         return DB.table(self.table);
     }
 
-    // ------------------------------------------------------------------------
-    // Model Lifecycle Events
-    // ------------------------------------------------------------------------
-
-    fn fire(self, phase: string) {
-        return Event.dispatch("model." + self.table + "." + phase, self);
+    private fn fire(self, phase: string) -> list {
+        let tbl = self.table;
+        return Event.dispatch("model.{tbl}.{phase}", self);
     }
 
-    fn cancelled(self, results) -> bool {
+    private fn cancelled(self, results: list) -> bool {
+        let _ = self;
         for r in results {
             if r == false {
                 return true;
@@ -185,53 +113,42 @@ public class Model {
         return false;
     }
 
-    fn prepare_db_value(self, key: string, val) {
+    private fn prepare_db_value(self, key: string, val) {
         if self.casts != null and self.casts.has(key) {
             return serialize_attribute_for_db(string(self.casts[key]), val);
         }
         return val;
     }
 
-    // ------------------------------------------------------------------------
-    // Active Record Persistence Operations
-    // ------------------------------------------------------------------------
-
-    public fn save(self) {
-        let now = string(unix_time());
-
-        if self.exists {
-            // Update — respect fillable (timestamps always allowed)
-            let data_to_update = {};
-            let has_orig = self.original.len() > 0;
-            for k in self.attributes.keys() {
-                if k != self.primary_key {
-                    if self.fillable.len() == 0 or self.fillable.contains(k) or k == "created_at" or k == "updated_at" {
-                        if not has_orig or self.is_dirty(k) {
-                            data_to_update[k] = self.prepare_db_value(k, self.attributes[k]);
-                        }
+    private fn collect_dirty_updates(self, data_to_update, has_orig: bool) {
+        for (k, v) in self.attributes {
+            if k != self.primary_key {
+                if self.fillable.len() == 0 or self.fillable.contains(k) or k == "created_at" or k == "updated_at" {
+                    if not has_orig or self.is_dirty(k) {
+                        data_to_update[k] = self.prepare_db_value(k, v);
                     }
                 }
             }
+        }
+    }
+
+    public fn save(self) -> any {
+        let now = string(unix_time());
+
+        if self.exists {
+            let data_to_update = {
+            };
+            let has_orig = self.original.len() > 0;
+            self.collect_dirty_updates(data_to_update, has_orig);
             if self.uses_timestamps {
                 data_to_update["updated_at"] = now;
                 self.attributes["updated_at"] = now;
             }
-
-            // A listener returning false vetoes the update.
             if self.cancelled(self.fire("updating")) {
                 return false;
             }
-
-            // Re-collect any attributes mutated by the `updating` listener
-            for k in self.attributes.keys() {
-                if k != self.primary_key {
-                    if self.fillable.len() == 0 or self.fillable.contains(k) or k == "created_at" or k == "updated_at" {
-                        if not has_orig or self.is_dirty(k) {
-                            data_to_update[k] = self.prepare_db_value(k, self.attributes[k]);
-                        }
-                    }
-                }
-            }
+            // Re-collect any attributes mutated by the `updating` listener.
+            self.collect_dirty_updates(data_to_update, has_orig);
 
             if data_to_update.len() > 0 {
                 let pk_val = self.attributes[self.primary_key];
@@ -240,51 +157,50 @@ public class Model {
             self.sync_original();
             self.fire("updated");
             return self;
-        } else {
-            // Insert
-            if self.uses_timestamps {
-                if not self.attributes.has("created_at") {
-                    self.attributes["created_at"] = now;
-                }
-                if not self.attributes.has("updated_at") {
-                    self.attributes["updated_at"] = now;
-                }
-            }
-
-            // A listener returning false vetoes the insert.
-            if self.cancelled(self.fire("creating")) {
-                return false;
-            }
-
-            let data_to_insert = {};
-            for k in self.attributes.keys() {
-                if self.fillable.len() == 0 or self.fillable.contains(k) or k == "created_at" or k == "updated_at" {
-                    data_to_insert[k] = self.prepare_db_value(k, self.attributes[k]);
-                }
-            }
-
-            let new_id = self.query().insert(data_to_insert);
-            if new_id == null or int(new_id) == 0 {
-                throw "Model insert failed for table " + self.table;
-            }
-            self.attributes[self.primary_key] = new_id;
-            self.exists = true;
-            self.sync_original();
-            self.fire("created");
-            return self;
         }
+
+        if self.uses_timestamps {
+            if not self.attributes.has("created_at") {
+                self.attributes["created_at"] = now;
+            }
+            if not self.attributes.has("updated_at") {
+                self.attributes["updated_at"] = now;
+            }
+        }
+        if self.cancelled(self.fire("creating")) {
+            return false;
+        }
+
+        let data_to_insert = {
+        };
+        for (k, v) in self.attributes {
+            if self.fillable.len() == 0 or self.fillable.contains(k) or k == "created_at" or k == "updated_at" {
+                data_to_insert[k] = self.prepare_db_value(k, v);
+            }
+        }
+
+        let new_id = self.query().insert(data_to_insert);
+        if new_id == null or int(new_id) == 0 {
+            let tbl = self.table;
+            throw "Model insert failed for table {tbl}";
+        }
+        self.attributes[self.primary_key] = new_id;
+        self.exists = true;
+        self.sync_original();
+        self.fire("created");
+        return self;
     }
 
-    public fn update(self, new_attributes) {
-        for k in new_attributes.keys() {
+    public fn update(self, new_attributes: map) -> any {
+        for (k, v) in new_attributes {
             if self.fillable.len() == 0 or self.fillable.contains(k) {
-                self.attributes[k] = new_attributes[k];
+                self.attributes[k] = v;
             }
         }
         return self.save();
     }
 
-    public fn delete(self) {
+    public fn delete(self) -> bool {
         if self.exists {
             if self.cancelled(self.fire("deleting")) {
                 return false;
@@ -298,15 +214,17 @@ public class Model {
         return false;
     }
 
-    public fn to_map(self) {
-        let hidden_set = {};
+    public fn to_map(self) -> map {
+        let hidden_set = {
+        };
         if self.hidden != null {
             for h in self.hidden {
                 hidden_set[string(h)] = true;
             }
         }
-        let out = {};
-        for k in self.attributes.keys() {
+        let out = {
+        };
+        for (k, _v) in self.attributes {
             if not hidden_set.has(k) {
                 out[k] = self.get(k);
             }
@@ -314,33 +232,26 @@ public class Model {
         return out;
     }
 
-    // ------------------------------------------------------------------------
-    // Relationships
-    // ------------------------------------------------------------------------
-
-    public fn hasMany(self, table: string, foreign_key: string) {
+    public fn hasMany(self, table: string, foreign_key: string) -> QueryBuilder {
         return DB.table(table).where(foreign_key, "=", self.attributes[self.primary_key]);
     }
 
-    public fn belongsTo(self, table: string, foreign_key: string, owner_key: string = "id") {
+    public fn belongsTo(self, table: string, foreign_key: string, owner_key: string = "id") -> any {
         return DB.table(table).where(owner_key, "=", self.attributes[foreign_key]).first();
     }
 
-    // ------------------------------------------------------------------------
-    // Row Refresh Helpers
-    // ------------------------------------------------------------------------
-
-    public fn reload(self) {
+    public fn reload(self) -> Model {
         if not self.exists {
             return self;
         }
         let pk_val = self.attributes[self.primary_key];
         let rows = self.query().where(self.primary_key, "=", pk_val).limit(1).get();
         if rows.len() > 0 {
-            let fresh = {};
+            let fresh = {
+            };
             let row = rows[0];
-            for k in row.keys() {
-                fresh[k] = row[k];
+            for (k, v) in row {
+                fresh[k] = v;
             }
             self.attributes = fresh;
             self.exists = true;
@@ -351,319 +262,37 @@ public class Model {
         return self;
     }
 
-    public fn touch(self) {
+    public fn touch(self) -> Model {
         if not self.exists {
             return self;
         }
         let now = string(unix_time());
         self.attributes["updated_at"] = now;
         let pk_val = self.attributes[self.primary_key];
-        self.query().where(self.primary_key, "=", pk_val).update(map("updated_at", now));
+        self.query().where(self.primary_key, "=", pk_val).update({
+            "updated_at": now
+        });
         self.sync_original();
         return self;
     }
 }
 
-// ============================================================================
-// Zero-Boilerplate Declarative ModelRepository & `model()` Factory
-// ============================================================================
-
-public class ModelRepository {
-    public let table;
-    public let primary_key;
-    public let fillable;
-    public let hidden;
-    public let casts;
-    public let uses_timestamps;
-
-    fn new(table_name: string, opts = {}) {
-        self.table = table_name;
-        self.primary_key = "id";
-        self.fillable = [];
-        self.hidden = [];
-        self.casts = {};
-        self.uses_timestamps = true;
-
-        if opts != null and type_of(opts) == "map" {
-            if opts.has("primary_key") {
-                self.primary_key = string(opts["primary_key"]);
-            }
-            if opts.has("fillable") and type_of(opts["fillable"]) == "list" {
-                self.fillable = opts["fillable"];
-            }
-            if opts.has("hidden") and type_of(opts["hidden"]) == "list" {
-                self.hidden = opts["hidden"];
-            }
-            if opts.has("casts") and type_of(opts["casts"]) == "map" {
-                self.casts = opts["casts"];
-            }
-            if opts.has("timestamps") {
-                self.uses_timestamps = opts["timestamps"] == true;
-            }
-        }
-    }
-
-    public fn new_instance(self, attrs = {}) {
-        let m = new Model(self.table, self.fillable, attrs);
-        m.primary_key = self.primary_key;
-        m.hidden = self.hidden;
-        m.casts = self.casts;
-        m.uses_timestamps = self.uses_timestamps;
-        return m;
-    }
-
-    public fn hydrate(self, row) {
-        if row == null {
-            return null;
-        }
-        let m = self.new_instance(row);
-        m.exists = true;
-        m.sync_original();
-        return m;
-    }
-
-    public fn hydrate_many(self, rows) {
-        let out = [];
-        if rows == null {
-            return out;
-        }
-        for r in rows {
-            out.push(self.hydrate(r));
-        }
-        return out;
-    }
-
-    public fn format_row(self, row) {
-        if row == null {
-            return null;
-        }
-        let m = self.hydrate(row);
-        return m.to_map();
-    }
-
-    public fn format_rows(self, rows) {
-        let out = [];
-        if rows == null {
-            return out;
-        }
-        for r in rows {
-            out.push(self.format_row(r));
-        }
-        return out;
-    }
-
-    public fn query(self) {
-        return DB.table(self.table);
-    }
-
-    public fn all(self) {
-        return self.hydrate_many(self.query().get());
-    }
-
-    public fn find(self, id) {
-        let row = self.query().where(self.primary_key, "=", id).first();
-        return self.hydrate(row);
-    }
-
-    public fn find_or_fail(self, id, message: string = "") {
-        let row = self.query().find_or_fail(id, message);
-        return self.hydrate(row);
-    }
-
-    public fn first(self) {
-        return self.hydrate(self.query().first());
-    }
-
-    public fn first_or_fail(self, message: string = "") {
-        return self.hydrate(self.query().first_or_fail(message));
-    }
-
-    public fn create(self, attrs) {
-        let m = self.new_instance(attrs);
-        return m.save();
-    }
-
-    public fn update_or_create(self, search_attrs, update_attrs = {}) {
-        let q = self.query();
-        for (k, v) in search_attrs {
-            q.where(k, "=", v);
-        }
-        let existing_row = q.first();
-        if existing_row != null {
-            let m = self.hydrate(existing_row);
-            return m.update(update_attrs);
-        }
-        let merged = {};
-        for (k, v) in search_attrs {
-            merged[k] = v;
-        }
-        for (k, v) in update_attrs {
-            merged[k] = v;
-        }
-        return self.create(merged);
-    }
-
-    public fn destroy(self, id) -> bool {
-        let m = self.find(id);
-        if m == null {
-            return false;
-        }
-        return m.delete();
-    }
-
-    public fn where(self, column: string, op, val = null) {
-        if val == null {
-            let s = string(op);
-            if s != "=" and s != "!=" and s != "<>" and s != ">" and s != "<" and s != ">=" and s != "<=" and s != "LIKE" and s != "NOT LIKE" {
-                return self.query().where(column, "=", op);
-            }
-        }
-        return self.query().where(column, string(op), val);
-    }
-
-    public fn where_op(self, column: string, op: string, val) {
-        return self.query().where(column, op, val);
-    }
-
-    public fn whereIn(self, column: string, values_list) {
-        return self.query().whereIn(column, values_list);
-    }
-
-    public fn where_in(self, column: string, values_list) {
-        return self.query().whereIn(column, values_list);
-    }
-
-    public fn orderBy(self, column: string, dir: string = "ASC") {
-        return self.query().orderBy(column, dir);
-    }
-
-    public fn latest(self, column: string = "id") {
-        return self.query().latest(column);
-    }
-
-    public fn oldest(self, column: string = "id") {
-        return self.query().oldest(column);
-    }
-
-    public fn paginate(self, page: int = 1, per_page: int = 15) {
-        let res = self.query().paginate(page, per_page);
-        res["data"] = self.format_rows(res["data"]);
-        return res;
-    }
-
-    public fn count(self) -> int {
-        return self.query().count();
-    }
-
-    public fn exists(self) -> bool {
-        return self.query().exists();
-    }
+public fn load_has_many(
+    models: list,
+    table: string,
+    foreign_key: string,
+    as_key: string,
+    owner_key: string = "id"
+) -> list {
+    return eager_load_has_many(models, table, foreign_key, as_key, owner_key);
 }
 
-public fn define_model(table_name: string, opts = {}) {
-    return new ModelRepository(table_name, opts);
-}
-
-// ============================================================================
-// Eager Loading — batched relation hydration (one extra query, never N+1)
-// ============================================================================
-
-fn _elem_get(m, key: string) {
-    if type_of(m) == "map" {
-        if m.has(key) {
-            return m[key];
-        }
-        return null;
-    }
-    return m.get(key);
-}
-
-fn _elem_set(m, key: string, value) {
-    if type_of(m) == "map" {
-        m[key] = value;
-    } else {
-        m.set(key, value);
-    }
-}
-
-public fn load_has_many(models, table: string, foreign_key: string, as_key: string, owner_key: string = "id") {
-    let key_list = list();
-    let seen = map();
-    let i = 0;
-    while i < len(models) {
-        let k = _elem_get(models[i], owner_key);
-        if k != null {
-            let ks = string(k);
-            if not seen.has(ks) {
-                seen[ks] = true;
-                key_list.push(k);
-            }
-        }
-        i += 1;
-    }
-
-    let grouped = map();
-    if key_list.len() > 0 {
-        let rows = DB.table(table).whereIn(foreign_key, key_list).get();
-        let j = 0;
-        while j < len(rows) {
-            let fk = string(rows[j][foreign_key]);
-            if not grouped.has(fk) {
-                grouped[fk] = list();
-            }
-            grouped[fk].push(rows[j]);
-            j += 1;
-        }
-    }
-
-    i = 0;
-    while i < len(models) {
-        let k = _elem_get(models[i], owner_key);
-        if k != null and grouped.has(string(k)) {
-            _elem_set(models[i], as_key, grouped[string(k)]);
-        } else {
-            _elem_set(models[i], as_key, list());
-        }
-        i += 1;
-    }
-    return models;
-}
-
-public fn load_belongs_to(models, table: string, fk_column: string, as_key: string, owner_key: string = "id") {
-    let key_list = list();
-    let seen = map();
-    let i = 0;
-    while i < len(models) {
-        let k = _elem_get(models[i], fk_column);
-        if k != null {
-            let ks = string(k);
-            if not seen.has(ks) {
-                seen[ks] = true;
-                key_list.push(k);
-            }
-        }
-        i += 1;
-    }
-
-    let parents = map();
-    if key_list.len() > 0 {
-        let rows = DB.table(table).whereIn(owner_key, key_list).get();
-        let j = 0;
-        while j < len(rows) {
-            parents[string(rows[j][owner_key])] = rows[j];
-            j += 1;
-        }
-    }
-
-    i = 0;
-    while i < len(models) {
-        let k = _elem_get(models[i], fk_column);
-        if k != null and parents.has(string(k)) {
-            _elem_set(models[i], as_key, parents[string(k)]);
-        } else {
-            _elem_set(models[i], as_key, null);
-        }
-        i += 1;
-    }
-    return models;
+public fn load_belongs_to(
+    models: list,
+    table: string,
+    fk_column: string,
+    as_key: string,
+    owner_key: string = "id"
+) -> list {
+    return eager_load_belongs_to(models, table, fk_column, as_key, owner_key);
 }

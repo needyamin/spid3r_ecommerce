@@ -3,7 +3,7 @@
 // talks to gateways only through adapters and to the DB only through repos.
 
 import "framework/Database/DB";
-import "framework/HttpException";
+import "framework/Http/HttpException";
 import "app/Repositories/PaymentRepository";
 import "app/Repositories/OrderRepository";
 import "app/Services/OrderService";

@@ -1,0 +1,365 @@
+// framework/Http/Response.matrix
+// Spid3rWeb HTTP Response Builder & Helpers
+
+import "http";
+import "framework/Foundation/Config";
+import "framework/Http/CookieJar";
+
+fn init_hsts_enabled() -> bool {
+    let hsts = env("SPID3R_HSTS");
+    return hsts.is_some() and string(hsts.unwrap()).trim().lower() == "1";
+}
+
+let HSTS_ENABLED = init_hsts_enabled();
+
+fn has_header_ctl(value: string) -> bool {
+    return value.contains("\r") or value.contains("\n") or value.contains(chr(0));
+}
+
+public fn hsts_header_value() -> string {
+    let max_age = int(Config.get("security.hsts.max_age", 31_536_000));
+    let val = "max-age={max_age}";
+    if Config.get("security.hsts.include_subdomains", true) == true {
+        val = "{val}; includeSubDomains";
+    }
+    if Config.get("security.hsts.preload", false) == true {
+        val = "{val}; preload";
+    }
+    return val;
+}
+
+public fn default_security_headers() -> map {
+    let headers = {
+        "content-type": "text/html; charset=utf-8",
+        "x-content-type-options": "nosniff",
+        "x-frame-options": "SAMEORIGIN",
+        "referrer-policy": "strict-origin-when-cross-origin",
+        "x-permitted-cross-domain-policies": "none",
+        "cross-origin-opener-policy": "same-origin",
+        "permissions-policy": "camera=(), microphone=(), geolocation=()",
+        "content-security-policy": "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'; object-src 'none'"
+    };
+    let cfg_headers = Config.get("security.headers", null);
+    if cfg_headers != null and type_of(cfg_headers) == "map" {
+        for (k, v) in cfg_headers {
+            headers[string(k).lower()] = string(v);
+        }
+    }
+    return headers;
+}
+
+// Append a header to a raw HTTP response map without overwriting existing
+// headers of the same name (required for multiple Set-Cookie headers).
+public fn append_http_header(http_map: map, name: string, value: string) {
+    let k = string(name).lower();
+    let v = string(value);
+    if has_header_ctl(k) or has_header_ctl(v) {
+        throw "append_http_header: illegal character (CR/LF/NUL) in header '{k}'";
+    }
+    if not http_map.has("headers") or http_map["headers"] == null {
+        http_map["headers"] = {
+            k: v
+        };
+        return;
+    }
+    let h = http_map["headers"];
+    let ht = type_of(h);
+    if ht == "map" {
+        let dup = false;
+        for (hk, _hv) in h {
+            if string(hk).lower() == k {
+                dup = true;
+                break;
+            }
+        }
+        if dup {
+            let out = [];
+            for (hk, hv) in h {
+                out.push({
+                    "name": string(hk), "value": string(hv)
+                });
+            }
+            out.push({
+                "name": k, "value": v
+            });
+            http_map["headers"] = out;
+        } else {
+            h[k] = v;
+            http_map["headers"] = h;
+        }
+        return;
+    }
+    if ht == "list" {
+        h.push({
+            "name": k, "value": v
+        });
+        http_map["headers"] = h;
+    }
+}
+
+/// Fluent HTTP response builder with security headers, CSP overrides, signed cookies, and streaming.
+public class Response {
+    public let status_code;
+    public let headers;
+    public let cookies;
+    public let body;
+    private let stream_source;
+    private let cookie_jar;
+
+    fn new (body = "", status_code: int = 200) {
+        self.body = string(body);
+        self.status_code = status_code;
+        self.stream_source = null;
+        self.cookie_jar = new CookieJar();
+        self.cookies = self.cookie_jar.all();
+        // Sensible security headers from config/security.matrix. CORS headers are
+        // intentionally NOT global defaults: blanket access-control-allow-*
+        // should only be set by CorsMiddleware / API routing, never on
+        // cookie-authenticated HTML responses.
+        self.headers = default_security_headers();
+        if HSTS_ENABLED or Config.get("security.hsts.enabled", false) == true {
+            self.headers["strict-transport-security"] = hsts_header_value();
+        }
+    }
+
+    public fn set_https(self, flag: bool) -> Response {
+        self.cookie_jar.set_https(flag);
+        return self;
+    }
+
+    public fn csp(self, policy: string) -> Response {
+        return self.header("content-security-policy", string(policy));
+    }
+
+    public fn security_headers(self, overrides: map) -> Response {
+        if overrides != null and type_of(overrides) == "map" {
+            self.withHeaders(overrides);
+        }
+        return self;
+    }
+
+    // Header names and values must never carry CRLF — a single \r or \n
+    // enables HTTP response splitting. Values are rejected, not sanitized,
+    // so misuse fails loudly instead of silently corrupting headers.
+    private fn is_header_safe(self, value: string) -> bool {
+        let _ = self;
+        return not has_header_ctl(value);
+    }
+
+    public fn header(self, key: string, value: string) -> Response {
+        let k = string(key).lower();
+        if not self.is_header_safe(string(value)) {
+            throw "Response.header: illegal character (CR/LF/NUL) in header value for '{k}'";
+        }
+        self.headers[k] = string(value);
+        return self;
+    }
+
+    public fn withHeaders(self, new_headers: map) -> Response {
+        for (k, v) in new_headers {
+            self.header(k, string(v));
+        }
+        return self;
+    }
+
+    public fn cookie(
+        self,
+        name: string,
+        value: string,
+        path: string = "/",
+        max_age: int = 86_400,
+        secure: any = null
+    ) -> Response {
+        self.cookie_jar.queue(name, value, path, max_age, secure);
+        self.cookies = self.cookie_jar.all();
+        return self;
+    }
+
+    public fn signed_cookie(
+        self,
+        name: string,
+        value: string,
+        path: string = "/",
+        max_age: int = 86_400,
+        secure: any = null
+    ) -> Response {
+        self.cookie_jar.queue_signed(name, value, path, max_age, secure);
+        self.cookies = self.cookie_jar.all();
+        return self;
+    }
+
+    public fn clear_cookie(self, name: string, path: string = "/") -> Response {
+        self.cookie_jar.forget(name, path);
+        self.cookies = self.cookie_jar.all();
+        return self;
+    }
+
+    public fn status(self, code: int) -> Response {
+        self.status_code = code;
+        return self;
+    }
+
+    // Express-style fluent methods on `res` (`res.status(201).json(data)`)
+    public fn json(self, data: any, status: int = 0) -> Response {
+        if status > 0 {
+            self.status_code = status;
+        }
+        self.body = json_write(data);
+        self.header("content-type", "application/json; charset=utf-8");
+        return self;
+    }
+
+    public fn html(self, content: string, status: int = 0) -> Response {
+        if status > 0 {
+            self.status_code = status;
+        }
+        self.body = string(content);
+        self.header("content-type", "text/html; charset=utf-8");
+        return self;
+    }
+
+    public fn text(self, content: string, status: int = 0) -> Response {
+        if status > 0 {
+            self.status_code = status;
+        }
+        self.body = string(content);
+        self.header("content-type", "text/plain; charset=utf-8");
+        return self;
+    }
+
+    public fn send(self, content: any, status: int = 0) -> Response {
+        if status > 0 {
+            self.status_code = status;
+        }
+        let t = type_of(content);
+        if t == "map" or t == "list" {
+            return self.json(content);
+        }
+        return self.html(string(content));
+    }
+
+    public fn redirect(self, url: string, status: int = 302) -> Response {
+        self.status_code = status;
+        self.body = "";
+        self.header("location", url);
+        return self;
+    }
+
+    public fn stream(
+        self,
+        source: any,
+        content_type: string = "application/octet-stream",
+        status: int = 0
+    ) -> Response {
+        if status > 0 {
+            self.status_code = status;
+        }
+        self.body = "";
+        self.stream_source = source;
+        self.header("content-type", content_type);
+        return self;
+    }
+
+    public fn sse(self, source: any, status: int = 0) -> Response {
+        if status > 0 {
+            self.status_code = status;
+        }
+        self.body = "";
+        self.stream_source = source;
+        self.header("content-type", "text/event-stream; charset=utf-8");
+        self.header("cache-control", "no-cache");
+        self.header("connection", "keep-alive");
+        return self;
+    }
+
+    private fn build_http_headers(self) {
+        let cookie_count = self.cookies.len();
+        if self.headers.has("set-cookie") {
+            cookie_count = cookie_count + 1;
+        }
+        if cookie_count <= 1 {
+            let out = {
+            };
+            for (k, v) in self.headers {
+                out[k] = v;
+            }
+            if self.cookies.len() == 1 {
+                out["set-cookie"] = self.cookies[0];
+            }
+            return out;
+        }
+        let out = [];
+        for (k, v) in self.headers {
+            out.push({
+                "name": k, "value": string(v)
+            });
+        }
+        for c in self.cookies {
+            out.push({
+                "name": "set-cookie", "value": c
+            });
+        }
+        return out;
+    }
+
+    public fn to_http(self) -> map {
+        let hdrs = self.build_http_headers();
+        if self.stream_source != null {
+            return http_stream(self.status_code, hdrs, self.stream_source);
+        }
+        return http_response(self.status_code, hdrs, self.body);
+    }
+}
+
+// ----------------------------------------------------------------------------
+// Global Fluent Response Helpers
+// ----------------------------------------------------------------------------
+
+public fn response(content: any = "", status: int = 200) -> Response {
+    return new Response(content, status);
+}
+
+public fn json(data: any, status: int = 200) -> Response {
+    let res = new Response(json_write(data), status);
+    res.header("content-type", "application/json; charset=utf-8");
+    return res;
+}
+
+public fn html(content: string, status: int = 200) -> Response {
+    let res = new Response(content, status);
+    res.header("content-type", "text/html; charset=utf-8");
+    return res;
+}
+
+public fn text(content: string, status: int = 200) -> Response {
+    let res = new Response(content, status);
+    res.header("content-type", "text/plain; charset=utf-8");
+    return res;
+}
+
+public fn text_405(allow: string) -> Response {
+    let res = new Response("405 Method Not Allowed", 405);
+    res.header("content-type", "text/plain; charset=utf-8");
+    res.header("allow", allow);
+    return res;
+}
+
+public fn redirect(url: string, status: int = 302) -> Response {
+    let res = new Response("", status);
+    res.header("location", url);
+    return res;
+}
+
+public fn stream(
+    source: any,
+    content_type: string = "application/octet-stream",
+    status: int = 200
+) -> Response {
+    let res = new Response("", status);
+    return res.stream(source, content_type);
+}
+
+public fn sse(source: any, status: int = 200) -> Response {
+    let res = new Response("", status);
+    return res.sse(source);
+}

@@ -1,0 +1,208 @@
+// framework/View/TemplateCompiler.matrix
+// Layout inheritance, @section/@yield, @include, and form directive expansion
+// extracted from BD.matrix.
+
+import "TemplateEvaluator";
+
+public fn extract_quoted_arg(line: string, prefix: string) -> string {
+    let inner = line.slice(prefix.len(), line.len());
+    if inner.ends_with(")") {
+        inner = inner.slice(0, inner.len() - 1);
+    }
+    inner = inner.trim();
+    if (inner.starts_with("'") and inner.ends_with("'")) or (
+        inner.starts_with("\"") and inner.ends_with("\"")
+    ) {
+        return inner.slice(1, inner.len() - 1);
+    }
+    return inner;
+}
+
+public fn expand_form_directives(text: string) -> string {
+    let out_lines = [];
+    for raw_line in text.split("\n") {
+        let line = raw_line;
+        if line.contains("@csrf") {
+            line = line.replace(
+                "@csrf",
+                "<input type=\"hidden\" name=\"_csrf\" value=\"{{ csrf_token }}\">"
+            );
+        }
+        while line.contains("@method(") {
+            let m_start = line.index_of("@method(");
+            let after_m = line.slice(m_start, line.len());
+            let m_end = after_m.index_of(")");
+            if m_end > 8 {
+                let call_str = after_m.slice(0, m_end + 1);
+                let verb = tpl_html_escape(extract_quoted_arg(call_str, "@method(").upper());
+                line = line.replace(
+                    call_str,
+                    "<input type=\"hidden\" name=\"_method\" value=\"{verb}\">"
+                );
+            } else {
+                break;
+            }
+        }
+        out_lines.push(line);
+    }
+    return out_lines.join("\n");
+}
+
+public fn parse_sections(template: string) -> map {
+    let sections = {
+    };
+    let current_section = "";
+    let current_content = [];
+    let in_section = false;
+
+    for raw_line in template.split("\n") {
+        let line = raw_line.trim();
+        if line.starts_with("@section(") and line.contains(",") and line.ends_with(")") {
+            let inner = line.slice(9, line.len() - 1).trim();
+            let comma_idx = inner.index_of(",");
+            if comma_idx > 0 {
+                let sec_name = inner.slice(0, comma_idx).trim().replace("'", "").replace("\"", "");
+                let raw_val = inner.slice(comma_idx + 1, inner.len()).trim();
+                let sec_val = raw_val;
+                if (raw_val.starts_with("'") and raw_val.ends_with("'")) or (
+                    raw_val.starts_with("\"") and raw_val.ends_with("\"")
+                ) {
+                    sec_val = raw_val.slice(1, raw_val.len() - 1);
+                } else {
+                    sec_val = "{{{raw_val}}}";
+                }
+                sections[sec_name] = sec_val;
+            }
+            continue;
+        }
+        if line.starts_with("@section(") and line.ends_with(")") {
+            current_section = extract_quoted_arg(line, "@section(");
+            current_content = [];
+            in_section = true;
+            continue;
+        }
+        if in_section and (line == "@endsection" or line == "@stop") {
+            sections[current_section] = current_content.join("\n");
+            in_section = false;
+            current_section = "";
+            continue;
+        }
+        if in_section {
+            current_content.push(raw_line);
+        }
+    }
+    return sections;
+}
+
+public fn apply_yields(layout: string, sections: map) -> string {
+    let out_lines = [];
+    for raw_line in layout.split("\n") {
+        let line = raw_line;
+        while line.contains("@yield(") {
+            let start_idx = line.index_of("@yield(");
+            let after = line.slice(start_idx, line.len());
+            let rel_end = after.index_of(")");
+            if start_idx >= 0 and rel_end > 0 {
+                let yield_call = after.slice(0, rel_end + 1);
+                let inner = yield_call.slice(7, yield_call.len() - 1).trim();
+                let replacement = "";
+                let comma_idx = inner.index_of(",");
+                if comma_idx > 0 {
+                    let sec_name = inner.slice(0, comma_idx).trim().replace("'", "").replace("\"", "");
+                    let def_raw = inner.slice(comma_idx + 1, inner.len()).trim();
+                    let def_val = def_raw;
+                    if (def_raw.starts_with("'") and def_raw.ends_with("'")) or (
+                        def_raw.starts_with("\"") and def_raw.ends_with("\"")
+                    ) {
+                        def_val = def_raw.slice(1, def_raw.len() - 1);
+                    }
+                    if sections.has(sec_name) {
+                        replacement = sections[sec_name];
+                    } else {
+                        replacement = def_val;
+                    }
+                } else {
+                    let sec_name = inner.trim().replace("'", "").replace("\"", "");
+                    if sections.has(sec_name) {
+                        replacement = sections[sec_name];
+                    }
+                }
+                line = line.replace(yield_call, replacement);
+            } else {
+                break;
+            }
+        }
+        out_lines.push(line);
+    }
+    return out_lines.join("\n");
+}
+
+public fn apply_includes(bd: any, template: string, depth: int) -> string {
+    if depth > 5 {
+        return template;
+    }
+    let out_lines = [];
+    for raw_line in template.split("\n") {
+        let line = raw_line.trim();
+        if line.starts_with("@include(") and line.ends_with(")") {
+            let partial_name = extract_quoted_arg(line, "@include(");
+            let p_file = bd.resolve_view_path(partial_name);
+            let p_content = bd.load_template(p_file);
+            if p_content != null {
+                out_lines.push(apply_includes(bd, p_content, depth + 1));
+            } else {
+                out_lines.push("<!-- BD Include Error: {partial_name} -->");
+            }
+        } else {
+            out_lines.push(raw_line);
+        }
+    }
+    return out_lines.join("\n");
+}
+
+public fn compile_view_lines(bd: any, file_path: string) -> any {
+    let cur_mtime = 0;
+    let mt_res = file_mtime(file_path);
+    if mt_res.is_ok() {
+        cur_mtime = int(mt_res.unwrap());
+    }
+    if bd.compiled_cache.has(file_path) {
+        let entry = bd.compiled_cache[file_path];
+        if int(entry["mtime"]) == cur_mtime and cur_mtime > 0 {
+            return entry["lines"];
+        }
+    }
+
+    let template = bd.load_template(file_path);
+    if template == null {
+        return null;
+    }
+
+    let layout_name = "";
+    for line in template.split("\n") {
+        let s = line.trim();
+        if s.starts_with("@extends(") and s.ends_with(")") {
+            layout_name = extract_quoted_arg(s, "@extends(");
+            break;
+        }
+    }
+
+    let sections = parse_sections(template);
+    let output = template;
+    if layout_name != "" {
+        let layout_file = bd.resolve_view_path(layout_name);
+        let layout_res = bd.load_template(layout_file);
+        if layout_res != null {
+            output = apply_yields(layout_res, sections);
+        }
+    }
+
+    output = apply_includes(bd, output, 0);
+    output = expand_form_directives(output);
+
+    let lines = output.split("\n");
+    bd.compiled_cache[file_path] = {
+        "mtime": cur_mtime, "lines": lines
+    };
+    return lines;
+}

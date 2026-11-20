@@ -1,0 +1,108 @@
+// framework/Foundation/ConfigValidator.matrix
+// Runtime configuration validation across all bundled `config/*.matrix` namespaces.
+
+import "framework/Foundation/Config";
+
+const REQUIRED_NAMESPACES = [
+"app",
+"auth",
+"cache",
+"database",
+"filesystems",
+"http",
+"logging",
+"mail",
+"queue",
+"security",
+"services",
+"session",
+"upload"
+];
+
+fn in_list(val: string, allowed) -> bool {
+    for item in allowed {
+        if string(item) == val {
+            return true;
+        }
+    }
+    return false;
+}
+
+/// Validate all framework configuration namespaces and value bounds.
+public fn validate_all_config() -> map {
+    let errors = [];
+    let checked = 0;
+
+    for ns in REQUIRED_NAMESPACES {
+        checked = checked + 1;
+        if not Config.has(ns) or type_of(Config.get(ns, null)) != "map" {
+            errors.push("missing or non-map namespace '{ns}'");
+        }
+    }
+
+    let app_env = string(Config.get("app.env", "")).trim().lower();
+    if app_env == "" {
+        errors.push("app.env must not be empty");
+    }
+    if string(Config.get("app.paths.public", "")).trim() == "" {
+        errors.push("app.paths.public must not be empty");
+    }
+    if string(Config.get("app.paths.views", "")).trim() == "" {
+        errors.push("app.paths.views must not be empty");
+    }
+    if string(Config.get("app.paths.state_dir", "")).trim() == "" {
+        errors.push("app.paths.state_dir must not be empty");
+    }
+
+    let hash_drv = string(Config.get("auth.hashing.driver", "")).trim().lower();
+    if not in_list(hash_drv, ["argon2id", "argon2i", "argon2d", "argon2", "bcrypt"]) {
+        errors.push("auth.hashing.driver '{hash_drv}' must be argon2id|argon2|bcrypt");
+    }
+    let bcrypt_rounds = int(Config.get("auth.hashing.bcrypt.rounds", 0));
+    if bcrypt_rounds < 4 or bcrypt_rounds > 31 {
+        errors.push("auth.hashing.bcrypt.rounds must be between 4 and 31");
+    }
+
+    let cache_drv = string(Config.get("cache.default", "")).trim().lower();
+    if not in_list(cache_drv, ["memory", "file", "database"]) {
+        errors.push("cache.default '{cache_drv}' must be memory|file|database");
+    }
+
+    let db_drv = string(Config.get("database.default", "")).trim().lower();
+    if not in_list(db_drv, ["sqlite", "postgres", "mysql", "mariadb"]) {
+        errors.push("database.default '{db_drv}' must be sqlite|postgres|mysql|mariadb");
+    }
+
+    if int(Config.get("upload.max_bytes", 0)) <= 0 {
+        errors.push("upload.max_bytes must be > 0");
+    }
+    if int(Config.get("upload.max_files", 0)) <= 0 {
+        errors.push("upload.max_files must be > 0");
+    }
+    if int(Config.get("http.drain_ms", -1)) < 0 {
+        errors.push("http.drain_ms must be >= 0");
+    }
+    if int(Config.get("security.hsts.max_age", -1)) < 0 {
+        errors.push("security.hsts.max_age must be >= 0");
+    }
+
+    let log_lvl = string(Config.get("logging.level", "")).trim().lower();
+    if not in_list(log_lvl, ["debug", "info", "warn", "error"]) {
+        errors.push("logging.level '{log_lvl}' must be debug|info|warn|error");
+    }
+
+    let queue_def = string(Config.get("queue.default", "")).trim().lower();
+    if not in_list(queue_def, ["database", "sync"]) {
+        errors.push("queue.default '{queue_def}' must be database|sync");
+    }
+
+    if not Config.has("filesystems.disks.local") or not Config.has("filesystems.disks.public") {
+        errors.push("filesystems.disks must define both 'local' and 'public'");
+    }
+
+    return {
+        "ok": errors.len() == 0,
+        "errors": errors,
+        "checked": checked
+    };
+}

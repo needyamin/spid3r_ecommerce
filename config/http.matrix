@@ -1,0 +1,49 @@
+// config/http.matrix
+// Spid3rWeb HTTP Server, Proxy Trust & Request Limits Configuration
+//
+// Consumed by framework/Http/RequestParser.matrix and framework/Foundation/Server.matrix.
+
+fn _http_env_int(key: string, fallback: int) -> int {
+    let v = env(key);
+    if v.is_some() {
+        let s = string(v.unwrap()).trim();
+        if s != "" {
+            try {
+                return int(s);
+            } catch (_e) {
+            }
+        }
+    }
+    return fallback;
+}
+
+fn _http_env_proxies() {
+    let v = env("SPID3R_TRUSTED_PROXIES");
+    if v.is_some() {
+        let s = string(v.unwrap()).trim();
+        if s != "" {
+            let out = [];
+            for item in s.split(",") {
+                let t = item.trim();
+                if t != "" {
+                    out.push(t);
+                }
+            }
+            return out;
+        }
+    }
+    return [];
+}
+
+public let config_http = {
+    // Trusted reverse proxies allowed to supply X-Forwarded-For/Proto/Host.
+    // Accepts exact IPs, CIDR suffixes (/8, /16, /24), "loopback", or "*".
+    "trusted_proxies": _http_env_proxies(),
+    // Graceful shutdown request drain window in milliseconds.
+    "drain_ms": _http_env_int("SPID3R_TASK_DRAIN_MS", 2_000),
+    // Server listener overrides (0 = defer to spid3r.ini [net] defaults).
+    "max_body_bytes": _http_env_int("SPID3R_NET_MAX_BODY", 0),
+    "max_headers": _http_env_int("SPID3R_NET_MAX_HEADERS", 0),
+    "timeout_ms": _http_env_int("SPID3R_NET_TIMEOUT_MS", 0),
+    "keepalive_ms": _http_env_int("SPID3R_NET_KEEPALIVE_MS", 0)
+};

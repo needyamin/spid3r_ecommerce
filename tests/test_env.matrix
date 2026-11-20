@@ -1,0 +1,98 @@
+// tests/test_env.matrix
+// Unit tests for framework/Foundation/Env loader and .env-driven DB resolution.
+
+import "framework/Foundation/Env";
+import "framework/Database/DB";
+import "framework/Database/DatabaseManager";
+
+fn test_env_file_loading() {
+    let content = "# Database driver configuration\nSPID3R_TEST_PLAIN=hello\nSPID3R_TEST_QUOTED=\"quoted value\"\nSPID3R_TEST_SINGLE='single quoted'\nexport SPID3R_TEST_EXPORTED=exported\nSPID3R_TEST_EMPTY=\nSPID3R_TEST_EQ=a=b=c\n";
+    let w = write_file(".env_test", content);
+    assert(w.is_ok(), "test .env written");
+
+    assert(load_env_file(".env_test"), "existing .env returns true");
+
+    assert(env("SPID3R_TEST_PLAIN").unwrap() == "hello", "plain KEY=VALUE parsed");
+    assert(env("SPID3R_TEST_QUOTED").unwrap() == "quoted value", "double quotes stripped");
+    assert(env("SPID3R_TEST_SINGLE").unwrap() == "single quoted", "single quotes stripped");
+    assert(env("SPID3R_TEST_EXPORTED").unwrap() == "exported", "export prefix stripped");
+    assert(env("SPID3R_TEST_EMPTY").unwrap() == "", "empty value allowed");
+    assert(env("SPID3R_TEST_EQ").unwrap() == "a=b=c", "only first = is the separator");
+
+    // Precedence: existing non-empty OS env wins over .env
+    env_set("SPID3R_TEST_PRECEDENCE", "from_os");
+    let w2 = write_file(".env_test", "SPID3R_TEST_PRECEDENCE=from_file\n");
+    assert(w2.is_ok(), "precedence .env written");
+    load_env_file(".env_test");
+    assert(env("SPID3R_TEST_PRECEDENCE").unwrap() == "from_os", "OS env wins over .env");
+
+    file_delete(".env_test");
+    println("  [PASS] test_env_file_loading");
+}
+
+fn test_env_file_drives_driver() {
+    // A .env in the project root must control driver resolution.
+    // A real user .env is backed up and restored on all paths.
+    let had_env = file_exists(".env");
+    let backup_content = "";
+    if had_env {
+        let r = read_file(".env");
+        if r.is_ok() {
+            backup_content = r.unwrap();
+        }
+    }
+
+    let ok_driver = false;
+    let ok_addr = false;
+    let ok_fallback = false;
+    try {
+        let w = write_file(
+            ".env",
+            "SPID3R_DB_DRIVER=mysql\nSPID3R_MYSQL_HOST=db.test\nSPID3R_MYSQL_PORT=3400\n"
+        );
+        assert(w.is_ok(), "root .env written");
+
+        env_set("SPID3R_DB_DRIVER", "");
+        env_set("SPID3R_MYSQL_HOST", "");
+        env_set("SPID3R_MYSQL_PORT", "");
+
+        let m = new DatabaseManager();
+        ok_driver = m.driver_name() == "mysql";
+        ok_addr = m.conn_config["addr"] == "db.test:3400";
+
+        if had_env {
+            write_file(".env", backup_content);
+        } else {
+            file_delete(".env");
+        }
+        env_set("SPID3R_DB_DRIVER", "");
+        env_set("SPID3R_MYSQL_HOST", "");
+        env_set("SPID3R_MYSQL_PORT", "");
+        let _m2 = new DatabaseManager();
+        ok_fallback = true;
+    } catch (_e) {
+        if had_env {
+            write_file(".env", backup_content);
+        } elif file_exists(".env") {
+            file_delete(".env");
+        }
+        env_set("SPID3R_DB_DRIVER", "");
+        env_set("SPID3R_MYSQL_HOST", "");
+        env_set("SPID3R_MYSQL_PORT", "");
+        throw _e;
+    }
+
+    assert(ok_driver, ".env driver resolved");
+    assert(ok_addr, ".env connection settings resolved");
+    assert(ok_fallback, "state restored after test");
+    println("  [PASS] test_env_file_drives_driver");
+}
+
+fn main() {
+    println("\n=== Running Environment Loader Test Suite ===");
+    test_env_file_loading();
+    test_env_file_drives_driver();
+    DB.close();
+    println("=== All Environment Loader Tests Passed! ===\n");
+    return 0;
+}

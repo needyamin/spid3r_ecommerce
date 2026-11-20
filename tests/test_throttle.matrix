@@ -3,24 +3,25 @@
 // fixed-window counting, 429 responses (HTML + JSON), per-path/method and
 // per-identity keying, session-identity preference, and window reset.
 
-import "framework/Middleware";
-import "framework/Request";
+import "framework/Http/Middleware";
+import "framework/Http/Request";
 import "framework/Cache/Cache";
 
 // Build a minimal in-process Request.
 fn make_req(method: string, path: string, session: string, ip: string) {
-    let headers = map();
+    let headers = {
+    };
     if ip != "" {
         // ThrottleMiddleware trusts client_ip() only via session here; the
         // IP path is exercised through the proxy header in test_ip_keying.
         headers["x-forwarded-for"] = ip;
     }
-    let req = new Request(map(
-        "method", method,
-        "path", path,
-        "headers", headers,
-        "body", ""
-    ));
+    let req = new Request({
+        "method": method,
+        "path": path,
+        "headers": headers,
+        "body": ""
+    });
     if session != "" {
         req.session_id = session;
         req.session_source = "cookie";
@@ -97,7 +98,7 @@ fn test_per_method_keying() {
     println("  [PASS] Counters keyed per method");
 }
 
-// 6. Session token is the preferred identity — two clients behind one IP
+// 6. Session token is the preferred identity â€” two clients behind one IP
 //    do not share a counter when they carry different sessions.
 fn test_session_identity_preferred() {
     env_set("SPID3R_TRUST_PROXY", "1");
@@ -137,6 +138,7 @@ fn test_window_reset() {
 }
 
 fn main() {
+    Cache.flush();
     println("=== Running Throttle / Rate Limit Test Suite ===");
     test_under_limit_passes();
     test_over_limit_429_html();
@@ -146,5 +148,6 @@ fn main() {
     test_session_identity_preferred();
     test_ip_keying();
     test_window_reset();
+    Cache.flush();
     println("=== All Throttle Tests Passed! ===");
 }

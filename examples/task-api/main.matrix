@@ -1,5 +1,5 @@
 // examples/task-api/main.matrix
-// Spid3rWeb Task API — a complete, runnable full-stack MVC example.
+// Spid3rWeb Task API â€” a complete, runnable full-stack MVC example.
 //
 // Demonstrates the modern Spid3rWeb framework end to end WITHOUT opening a port:
 // single-import barrel (`framework/Web`), zero-boilerplate `model()` repository,
@@ -12,8 +12,8 @@
 //   SPID3R_DB_DRIVER=sqlite spid3r run --engine vm examples/task-api/main.matrix
 
 import "framework/Web";
-import "framework/Providers/ServiceProvider";
-import "framework/Resource";
+import "framework/Foundation/ServiceProvider";
+import "framework/Http/Resource";
 
 // ---------------------------------------------------------------------------
 // 1. Zero-boilerplate domain model + service provider
@@ -28,13 +28,17 @@ let Task = model("tasks", {
 });
 
 class TaskProvider extends ServiceProvider {
-    public fn register(self, container) {
+    public fn register(self, container: any) {
+        let _ = self;
         container.singleton("task.events_fired", fn(_c) {
-            return {"created": 0, "deleted": 0};
+            return {
+                "created": 0, "deleted": 0
+            };
         });
     }
 
-    public fn boot(self, container) {
+    public fn boot(self, container: any) {
+        let _ = self;
         let counter = container.make("task.events_fired");
         events().listen("model.tasks.created", fn(_task, _name) {
             counter["created"] = counter["created"] + 1;
@@ -61,12 +65,14 @@ let task_transformer = fn(t) {
 // ---------------------------------------------------------------------------
 
 class TaskController {
-    public fn index(self, req) {
+    public fn index(self, req: any) -> map {
+        let _ = self;
         let page = Task.orderBy("priority", "DESC").paginate(req.page(), req.per_page(10));
         return resource_paginated(page, task_transformer);
     }
 
-    public fn store(self, req, res) {
+    public fn store(self, req: any, res: any) -> Response {
+        let _ = self;
         let data = req.validate_or_fail({
             "title": "required|min:3|max:200",
             "priority": "nullable|integer|between:1,9"
@@ -83,12 +89,14 @@ class TaskController {
         return res.status(201).json(resource_item(task, task_transformer));
     }
 
-    public fn show(self, req) {
+    public fn show(self, req: any) -> map {
+        let _ = self;
         let task = Task.find_or_fail(req.int("id"), "No task with that id.");
         return resource_item(task, task_transformer);
     }
 
-    public fn destroy(self, req) {
+    public fn destroy(self, req: any) -> map {
+        let _ = self;
         let task = Task.find_or_fail(req.int("id"), "No task with that id.");
         let snapshot = task.to_map();
         task.delete();
@@ -101,7 +109,8 @@ class TaskController {
 // ---------------------------------------------------------------------------
 
 fn show(label: string, test_res) {
-    println("---- " + label + " -> " + string(test_res.status));
+    let st = test_res.status;
+    println("---- {label} -> {st}");
     let body = test_res.body;
     if len(body) > 220 {
         body = body.slice(0, 220) + " ...";
@@ -133,14 +142,18 @@ fn main() {
     println("=== Spid3rWeb Task API demo ===\n");
 
     // 1. Validation failure -> 422 with field errors.
-    let r_invalid = client.post_json("/api/tasks", {"priority": "2"}).assert_unprocessable();
+    let r_invalid = client.post_json("/api/tasks", {
+        "priority": "2"
+    }).assert_unprocessable();
     show("POST invalid (no title)", r_invalid);
 
     // 2. Create -> 201 + resource envelope.
-    let r_created = client.post_json("/api/tasks", {"title": "Ship Spid3rWeb 2.0", "priority": "5"})
-        .assert_created()
-        .assert_json_path("data.title", "Ship Spid3rWeb 2.0")
-        .assert_json_path("data.priority", 5);
+    let r_created = client.post_json("/api/tasks", {
+        "title": "Ship Spid3rWeb 2.0", "priority": "5"
+    })
+    .assert_created()
+    .assert_json_path("data.title", "Ship Spid3rWeb 2.0")
+    .assert_json_path("data.priority", 5);
     show("POST valid", r_created);
 
     // 3. Index -> paginated collection envelope.
@@ -160,8 +173,11 @@ fn main() {
 
     // 6. Proof the provider's model-event listeners ran.
     let counter = app.container.make("task.events_fired");
-    println("---- model.tasks.created events observed: " + string(counter["created"])
-        + ", deleted: " + string(counter["deleted"]));
+    let created_n = counter["created"];
+    let deleted_n = counter["deleted"];
+    println(
+        "---- model.tasks.created events observed: {created_n}, deleted: {deleted_n}"
+    );
 
     schema().dropIfExists("tasks");
     db().close();

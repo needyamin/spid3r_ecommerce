@@ -1,52 +1,29 @@
 # Local Docker environment for Spid3rWeb.
 #
-#   docker compose up -d --build
-#   open http://localhost:8090   (store)
-#   open http://localhost:8091   (phpMyAdmin)
+#   cp .env.example .env && spid3r magic key:generate
+#   docker compose -f deploy/docker-compose.yml up --build -d
+#   open http://localhost:8090
 #
-# The app talks to MySQL. For a zero-external-DB variant switch
-# SPID3R_DB_DRIVER to "sqlite".
+# Database services stay on the internal Docker network only (ports are NOT
+# published to the host). Set required passwords via `.env` or shell env.
 
 services:
   app:
     build:
-      # Context is the REPOSITORY ROOT (the Dockerfile COPYs app/, framework/,
-      # routes/ ... from there); the Dockerfile itself lives in deploy/.
       context: ..
       dockerfile: deploy/Dockerfile
     container_name: spid3rweb-app
     ports:
       - "8090:8000"
-    volumes:
-      - ../:/var/www/app
-      - uploads-data:/var/www/app/public/uploads
     environment:
-      SPID3R_HOST: "0.0.0.0"
-      SPID3R_DB_DRIVER: mysql
+      APP_ENV: ${APP_ENV:-production}
+      APP_KEY: ${APP_KEY:?Set APP_KEY (run 'spid3r magic key:generate')}
+      SPID3R_DB_DRIVER: ${SPID3R_DB_DRIVER:-mysql}
       SPID3R_MYSQL_HOST: mysql
       SPID3R_MYSQL_PORT: "3306"
-      SPID3R_MYSQL_USER: spid3r
-      SPID3R_MYSQL_PASSWORD: spid3r
-      SPID3R_MYSQL_DATABASE: spid3r
-      # Dev stack: shows the seeded demo credentials on the login/register
-      # pages. NEVER set this on a public deployment.
-      SPID3R_ENV: dev
-    depends_on:
-      mysql:
-        condition: service_healthy
-    restart: unless-stopped
-
-  phpmyadmin:
-    image: phpmyadmin:5.2
-    container_name: spid3rweb-phpmyadmin
-    environment:
-      # Connects to the MySQL service on the compose network; you log in
-      # with the MySQL credentials (spid3r / spid3r, or root / rootpass).
-      PMA_HOST: mysql
-      PMA_PORT: "3306"
-      UPLOAD_LIMIT: 100M
-    ports:
-      - "8091:80"
+      SPID3R_MYSQL_USER: ${SPID3R_MYSQL_USER:-spid3r}
+      SPID3R_MYSQL_PASSWORD: ${SPID3R_MYSQL_PASSWORD:?Set SPID3R_MYSQL_PASSWORD}
+      SPID3R_MYSQL_DATABASE: ${SPID3R_MYSQL_DATABASE:-spid3r}
     depends_on:
       mysql:
         condition: service_healthy
@@ -56,22 +33,33 @@ services:
     image: mysql:8.0
     container_name: spid3rweb-mysql
     environment:
-      MYSQL_ROOT_PASSWORD: rootpass
-      MYSQL_DATABASE: spid3r
-      MYSQL_USER: spid3r
-      MYSQL_PASSWORD: spid3r
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Set MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${SPID3R_MYSQL_DATABASE:-spid3r}
+      MYSQL_USER: ${SPID3R_MYSQL_USER:-spid3r}
+      MYSQL_PASSWORD: ${SPID3R_MYSQL_PASSWORD:?Set SPID3R_MYSQL_PASSWORD}
     # The framework's MySQL client speaks mysql_native_password (MySQL 8
     # defaults to caching_sha2_password), so create the app user explicitly.
     command: --default-authentication-plugin=mysql_native_password
-    ports:
-      # Published for host-side tooling (deploy/docker-smoke.sh runs the app
-      # on the host against these engines). The app container itself talks to
-      # the DBs over the compose network.
-      - "3306:3306"
     volumes:
       - mysql-data:/var/lib/mysql
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-prootpass"]
+      test: ["CMD-SHELL", "MYSQL_PWD=\"$MYSQL_ROOT_PASSWORD\" mysqladmin ping -h 127.0.0.1 -uroot"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16
+    container_name: spid3rweb-postgres
+    environment:
+      POSTGRES_DB: ${SPID3R_PG_DATABASE:-spid3r}
+      POSTGRES_USER: ${SPID3R_PG_USER:-spid3r}
+      POSTGRES_PASSWORD: ${SPID3R_PG_PASSWORD:?Set SPID3R_PG_PASSWORD}
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\""]
       interval: 5s
       timeout: 5s
       retries: 20
@@ -79,4 +67,4 @@ services:
 
 volumes:
   mysql-data:
-  uploads-data:
+  pg-data:

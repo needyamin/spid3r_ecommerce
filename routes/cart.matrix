@@ -3,7 +3,7 @@
 // JSON clients set format=json; browsers get a 303 back to /cart.
 // PUT/DELETE have POST equivalents so plain HTML forms work too.
 
-import "framework/Router";
+import "framework/Http/Router";
 import "app/Controllers/CartController";
 
 public fn register_cart_routes() {

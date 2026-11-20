@@ -1,0 +1,112 @@
+// framework/Database/ConnectionPool.matrix
+// Mutex-Guarded Connection Pool with Health Ping & Replacement
+
+/// Mutex-guarded idle connection pool with `ping()` health checks and stale connection replacement.
+public class ConnectionPool {
+    private let factory;
+    public let max_size;
+    private let idle;
+    private let pool_lock;
+    private let stats_map;
+
+    fn new (factory, max_size: int = 4) {
+        self.factory = factory;
+        self.max_size = if max_size > 0 {
+            max_size
+        } else {
+            1
+        };
+        self.idle = [];
+        self.pool_lock = mutex(true);
+        self.stats_map = {
+            "created": 0,
+            "reconnected": 0,
+            "acquired": 0,
+            "released": 0
+        };
+    }
+
+    public fn acquire(self) -> any {
+        let conn = null;
+        let _g = self.pool_lock.lock();
+        if self.idle.len() > 0 {
+            conn = self.idle.pop();
+        }
+        self.stats_map["acquired"] = int(self.stats_map["acquired"]) + 1;
+        self.pool_lock.unlock();
+
+        if conn != null {
+            let healthy = false;
+            try {
+                healthy = conn.ping();
+            } catch (_e) {
+                healthy = false;
+            }
+            if healthy {
+                return conn;
+            }
+            try {
+                conn.close();
+            } catch (_e2) {
+            }
+            let _g2 = self.pool_lock.lock();
+            self.stats_map["reconnected"] = int(self.stats_map["reconnected"]) + 1;
+            self.pool_lock.unlock();
+        }
+
+        let factory_fn = self.factory;
+        let fresh = factory_fn();
+        let _g3 = self.pool_lock.lock();
+        self.stats_map["created"] = int(self.stats_map["created"]) + 1;
+        self.pool_lock.unlock();
+        return fresh;
+    }
+
+    public fn release(self, conn: any) {
+        if conn == null {
+            return;
+        }
+        let close_overflow = false;
+        let _g = self.pool_lock.lock();
+        self.stats_map["released"] = int(self.stats_map["released"]) + 1;
+        if self.idle.len() < self.max_size {
+            self.idle.push(conn);
+        } else {
+            close_overflow = true;
+        }
+        self.pool_lock.unlock();
+        if close_overflow {
+            try {
+                conn.close();
+            } catch (_e) {
+            }
+        }
+    }
+
+    public fn stats(self) -> map {
+        let _g = self.pool_lock.lock();
+        let out = {
+            "max_size": self.max_size,
+            "idle": self.idle.len(),
+            "created": self.stats_map["created"],
+            "reconnected": self.stats_map["reconnected"],
+            "acquired": self.stats_map["acquired"],
+            "released": self.stats_map["released"]
+        };
+        self.pool_lock.unlock();
+        return out;
+    }
+
+    public fn close_all(self) {
+        let _g = self.pool_lock.lock();
+        let conns = self.idle;
+        self.idle = [];
+        self.pool_lock.unlock();
+        for c in conns {
+            try {
+                c.close();
+            } catch (_e) {
+            }
+        }
+    }
+}

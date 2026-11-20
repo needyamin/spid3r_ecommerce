@@ -1,8 +1,8 @@
 // tests/test_store_catalog.matrix
 // Phase 4 — product management integration tests (HTTP level).
 
-import "framework/Application";
-import "framework/Router";
+import "framework/Foundation/Application";
+import "framework/Http/Router";
 import "framework/Database/DB";
 import "framework/Filesystem/Storage";
 import "routes/web";

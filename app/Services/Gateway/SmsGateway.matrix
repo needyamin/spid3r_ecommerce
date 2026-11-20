@@ -16,7 +16,7 @@
 
 import "http";
 import "framework/Log/Log";
-import "framework/HttpException";
+import "framework/Http/HttpException";
 
 fn env_value(key: string, fallback: string) -> string {
     let v = env(key);

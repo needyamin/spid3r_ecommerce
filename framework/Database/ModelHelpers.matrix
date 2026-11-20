@@ -1,0 +1,175 @@
+// framework/Database/ModelHelpers.matrix
+// Attribute cast/serialization and eager-loading helpers extracted from Model.matrix.
+
+import "DB";
+
+public fn cast_attribute_value(cast_type: string, raw_val: any) -> any {
+    if raw_val == null {
+        return null;
+    }
+    let ct = cast_type.lower();
+    if ct == "int" or ct == "integer" {
+        try {
+            return int(raw_val);
+        } catch (_e) {
+            return 0;
+        }
+    }
+    if ct == "float" or ct == "numeric" or ct == "double" {
+        try {
+            return float(raw_val);
+        } catch (_e) {
+            return 0.0;
+        }
+    }
+    if ct == "bool" or ct == "boolean" {
+        if type_of(raw_val) == "bool" {
+            return raw_val;
+        }
+        let s = string(raw_val).trim().lower();
+        return s == "1" or s == "true" or s == "yes";
+    }
+    if ct == "string" {
+        return string(raw_val);
+    }
+    if ct == "json" or ct == "array" or ct == "map" {
+        let t = type_of(raw_val);
+        if t == "map" or t == "list" {
+            return raw_val;
+        }
+        let parsed = json_parse(string(raw_val));
+        if type_of(parsed) == "result" {
+            if parsed.is_ok() {
+                return parsed.unwrap();
+            }
+            return raw_val;
+        }
+        return parsed;
+    }
+    return raw_val;
+}
+
+public fn serialize_attribute_for_db(cast_type: string, val: any) -> any {
+    if val == null {
+        return null;
+    }
+    let ct = cast_type.lower();
+    if ct == "json" or ct == "array" or ct == "map" {
+        let t = type_of(val);
+        if t == "map" or t == "list" {
+            return json_write(val);
+        }
+    }
+    if ct == "bool" or ct == "boolean" {
+        if val == true or string(val) == "true" or string(val) == "1" {
+            return 1;
+        }
+        return 0;
+    }
+    return val;
+}
+
+public fn _elem_get(m: any, key: string) -> any {
+    if type_of(m) == "map" {
+        if m.has(key) {
+            return m[key];
+        }
+        return null;
+    }
+    return m.get(key);
+}
+
+public fn _elem_set(m: any, key: string, value: any) {
+    if type_of(m) == "map" {
+        m[key] = value;
+    } else {
+        m.set(key, value);
+    }
+}
+
+fn collect_unique_keys(models, col: string) {
+    let key_list = [];
+    let seen = {
+    };
+    let i = 0;
+    while i < len(models) {
+        let k = _elem_get(models[i], col);
+        if k != null {
+            let ks = string(k);
+            if not seen.has(ks) {
+                seen[ks] = true;
+                key_list.push(k);
+            }
+        }
+        i += 1;
+    }
+    return key_list;
+}
+
+public fn eager_load_has_many(
+    models: list,
+    table: string,
+    foreign_key: string,
+    as_key: string,
+    owner_key: string = "id"
+) -> list {
+    let key_list = collect_unique_keys(models, owner_key);
+    let grouped = {
+    };
+    if key_list.len() > 0 {
+        let rows = DB.table(table).whereIn(foreign_key, key_list).get();
+        let j = 0;
+        while j < len(rows) {
+            let fk = string(rows[j][foreign_key]);
+            if not grouped.has(fk) {
+                grouped[fk] = [];
+            }
+            grouped[fk].push(rows[j]);
+            j += 1;
+        }
+    }
+
+    let i = 0;
+    while i < len(models) {
+        let k = _elem_get(models[i], owner_key);
+        if k != null and grouped.has(string(k)) {
+            _elem_set(models[i], as_key, grouped[string(k)]);
+        } else {
+            _elem_set(models[i], as_key, []);
+        }
+        i += 1;
+    }
+    return models;
+}
+
+public fn eager_load_belongs_to(
+    models: list,
+    table: string,
+    fk_column: string,
+    as_key: string,
+    owner_key: string = "id"
+) -> list {
+    let key_list = collect_unique_keys(models, fk_column);
+    let parents = {
+    };
+    if key_list.len() > 0 {
+        let rows = DB.table(table).whereIn(owner_key, key_list).get();
+        let j = 0;
+        while j < len(rows) {
+            parents[string(rows[j][owner_key])] = rows[j];
+            j += 1;
+        }
+    }
+
+    let i = 0;
+    while i < len(models) {
+        let k = _elem_get(models[i], fk_column);
+        if k != null and parents.has(string(k)) {
+            _elem_set(models[i], as_key, parents[string(k)]);
+        } else {
+            _elem_set(models[i], as_key, null);
+        }
+        i += 1;
+    }
+    return models;
+}

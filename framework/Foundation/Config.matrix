@@ -1,0 +1,203 @@
+// framework/Config/Config.matrix
+// Spid3rWeb Configuration Repository
+//
+// Central dot-notation access to every config/*.matrix file:
+//
+//   Config.get("app.name")                        -> "Spid3rWeb Developer Platform"
+//   Config.get("session.lifetime", 3600)          -> value or fallback
+//   Config.get("logging.channels.mail.path")
+//
+// Conventions (mirroring config/cache & config/database):
+//   - Mutable settings are resolved from environment variables at READ time
+//     via "*_env" keys (e.g. "driver_env": "SPID3R_CACHE_DRIVER"), so the
+//     same codebase runs anywhere without code edits.
+//   - `Config` is a process-wide singleton (same pattern as `Auth`/`Cache`).
+//
+// Importing this module loads and registers every bundled config file.
+
+import "config/app";
+import "config/cache";
+import "config/database";
+import "config/auth";
+import "config/session";
+import "config/filesystems";
+import "config/logging";
+import "config/mail";
+import "config/queue";
+import "config/services";
+import "config/security";
+import "config/upload";
+import "config/http";
+
+/// Hierarchical dot-notation repository over `config/*.matrix` modules.
+public class ConfigRepository {
+    public let items;
+
+    fn new () {
+        self.items = {
+        };
+        // Register every bundled config file. Application config files can
+        // register their own via Config.load("name", some_map).
+        self.load("app", config_app);
+        self.load("cache", config_cache);
+        self.load("database", config_database);
+        self.load("auth", config_auth);
+        self.load("session", config_session);
+        self.load("filesystems", config_filesystems);
+        self.load("logging", config_logging);
+        self.load("mail", config_mail);
+        self.load("queue", config_queue);
+        self.load("services", config_services);
+        self.load("security", config_security);
+        self.load("upload", config_upload);
+        self.load("http", config_http);
+    }
+
+    // Register (or replace) a config namespace at runtime.
+    public fn load(self, name: string, data: map) -> bool {
+        self.items[name] = data;
+        return true;
+    }
+
+    // Dot-notation read: "logging.channels.mail.path".
+    // Returns `fallback` when any path segment is missing.
+    public fn get(self, key: string, fallback: any = null) -> any {
+        let node = self.items;
+        let parts = string(key).split(".");
+        for p in parts {
+            if type_of(node) != "map" {
+                return fallback;
+            }
+            if not node.has(p) {
+                return fallback;
+            }
+            node = node[p];
+        }
+        return node;
+    }
+
+    // True when the dot-path resolves to an existing value.
+    public fn has(self, key: string) -> bool {
+        let node = self.items;
+        let parts = string(key).split(".");
+        for p in parts {
+            if type_of(node) != "map" or not node.has(p) {
+                return false;
+            }
+            node = node[p];
+        }
+        return true;
+    }
+
+    // Dot-notation write: Config.set("app.maintenance", true).
+    // Creates intermediate maps as needed. Returns false for scalar
+    // collisions along the path.
+    public fn set(self, key: string, value: any) -> bool {
+        let parts = string(key).split(".");
+        let last = parts[parts.len() - 1];
+        let node = self.items;
+        let i = 0;
+        while i < parts.len() - 1 {
+            let p = parts[i];
+            if not node.has(p) or type_of(node[p]) != "map" {
+                node[p] = {
+                };
+            }
+            node = node[p];
+            i = i + 1;
+        }
+        node[last] = value;
+        return true;
+    }
+
+    // Every registered namespace: ["app", "auth", ...]
+    public fn namespaces(self) -> list {
+        return self.items.keys();
+    }
+}
+
+public let Config = new ConfigRepository();
+
+let _ephemeral_app_key = {
+    "value": "", "warned": false
+};
+
+public fn resolve_app_env() -> string {
+    let s = env("APP_ENV").unwrap_or("").trim().lower();
+    if s != "" {
+        return s;
+    }
+    let cfg = string(Config.get("app.env", "production")).trim().lower();
+    if cfg != "" {
+        return cfg;
+    }
+    return "production";
+}
+
+public fn is_production() -> bool {
+    return resolve_app_env() == "production";
+}
+
+public fn resolve_app_debug() -> bool {
+    let s = env("APP_DEBUG").unwrap_or("").trim().lower();
+    if s != "" {
+        return s == "1" or s == "true" or s == "yes" or s == "on";
+    }
+    let e = resolve_app_env();
+    return e == "development" or e == "local";
+}
+
+public fn is_insecure_app_key(key: string) -> bool {
+    let trimmed = string(key).trim();
+    if trimmed == "" or trimmed.len() < 16 {
+        return true;
+    }
+    let lower = trimmed.lower();
+    return lower == "spid3rweb-default-cookie-secret-key"
+    or lower == "spid3rweb-default-jwt-secret-key-change-in-prod"
+    or lower == "changeme"
+    or lower == "secret"
+    or lower == "your-app-key-here";
+}
+
+public fn configured_app_key() -> string {
+    for env_name in ["APP_KEY", "SPID3R_APP_KEY"] {
+        let ev = env(env_name);
+        if ev.is_some() {
+            let s = string(ev.unwrap()).trim();
+            if s != "" {
+                return s;
+            }
+        }
+    }
+    return string(Config.get("app.key", "")).trim();
+}
+
+public fn resolve_app_key() -> string {
+    let key = configured_app_key();
+    if key != "" {
+        if is_production() and is_insecure_app_key(key) {
+            throw "Security error: APP_KEY (or SPID3R_APP_KEY) must be at least 16 characters and not a default placeholder in production. Run 'spid3r magic key:generate'.";
+        }
+        return key;
+    }
+    if is_production() {
+        throw "Security error: APP_KEY (or SPID3R_APP_KEY) is required in production. Run 'spid3r magic key:generate' or set APP_KEY in the environment.";
+    }
+    if _ephemeral_app_key["value"] == "" {
+        _ephemeral_app_key["value"] = "ephemeral:" + hex_encode(random_bytes(32).unwrap());
+        if not _ephemeral_app_key["warned"] {
+            _ephemeral_app_key["warned"] = true;
+            eprint(
+                "[Spid3rWeb] Warning: APP_KEY is not set; using an ephemeral per-process key (non-production only).\n"
+            );
+        }
+    }
+    return _ephemeral_app_key["value"];
+}
+
+public fn assert_app_key_configured() {
+    if is_production() {
+        let _ = resolve_app_key();
+    }
+}

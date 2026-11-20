@@ -3,7 +3,7 @@
 // register_store_middleware(app) is called by BOTH entry points
 // (server.matrix and ConsoleKernel's serve command) and by tests.
 
-import "framework/HttpException";
+import "framework/Http/HttpException";
 import "app/Policies/AccessPolicy";
 
 public class RequireRoleMiddleware {

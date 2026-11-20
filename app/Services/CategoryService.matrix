@@ -3,7 +3,7 @@
 
 import "framework/Database/DB";
 import "app/Support/CatalogCache" as CatalogCache;
-import "framework/HttpException";
+import "framework/Http/HttpException";
 import "app/Repositories/CatalogRepository";
 import "app/Support/Slug" as Slug;
 

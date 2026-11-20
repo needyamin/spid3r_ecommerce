@@ -11,7 +11,7 @@
 
 import "framework/Database/DB";
 import "app/Support/CatalogCache" as CatalogCache;
-import "framework/HttpException";
+import "framework/Http/HttpException";
 import "framework/Filesystem/Storage";
 import "app/Repositories/CatalogRepository";
 import "app/Support/Images" as Images;

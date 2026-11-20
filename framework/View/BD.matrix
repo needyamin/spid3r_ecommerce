@@ -1,46 +1,42 @@
 // framework/View/BD.matrix
-// SpiderBD v2 Template Engine: Pre-compiled Layout/Include Cache, Rich
-// Expressions (@if(a == b), @elif, and/or/not), Loop Metadata, @csrf, @method.
+// SpiderBD v2 Template Engine
 
-import "framework/Response";
+import "framework/Http/Response";
+import {
+    Config
+}
+from "framework/Foundation/Config";
+import "TemplateEvaluator";
+import "TemplateCompiler";
 
-public fn html_escape(value) -> string {
-    if value == null {
-        return "";
-    }
-    return string(value)
-        .replace("&", "&amp;")
-        .replace("<", "&lt;")
-        .replace(">", "&gt;")
-        .replace("\"", "&quot;")
-        .replace("'", "&#039;");
+public fn html_escape(value: any) -> string {
+    return tpl_html_escape(value);
 }
 
+/// SpiderBD v2 HTML template compiler, cache, and evaluator (`@if`, `@foreach`, `@csrf`, `@method`).
 public class BD {
     public let views_path;
     public let template_cache;
     public let compiled_cache;
     public let shared_data;
 
-    fn new(views_path: string = "resources/views") {
+    fn new (views_path: string = "resources/views") {
         self.views_path = views_path;
-        self.template_cache = map();
-        self.compiled_cache = map();
-        self.shared_data = map();
+        self.template_cache = {
+        };
+        self.compiled_cache = {
+        };
+        self.shared_data = {
+        };
     }
 
-    // Register a global shared variable available to all rendered views.
-    public fn share(self, key: string, value) {
+    public fn share(self, key: string, value: any) -> BD {
         self.shared_data[key] = value;
         return self;
     }
 
-    fn load_template(self, file_path: string) {
-        let use_cache = false;
-        let cache_env = env("SPID3R_VIEW_CACHE");
-        if cache_env.is_some() and string(cache_env.unwrap()).trim() == "1" {
-            use_cache = true;
-        }
+    public fn load_template(self, file_path: string) -> any {
+        let use_cache = env("SPID3R_VIEW_CACHE").unwrap_or("").trim() == "1";
         if use_cache and self.template_cache.has(file_path) {
             return self.template_cache[file_path];
         }
@@ -55,297 +51,74 @@ public class BD {
         return content;
     }
 
-    // Load and pre-compile layout inheritance, @section/@yield, @include,
-    // @csrf, and @method into a cached line array keyed by file_path + mtime.
-    fn get_compiled_lines(self, file_path: string) {
-        let cur_mtime = 0;
-        let mt_res = file_mtime(file_path);
-        if mt_res.is_ok() {
-            cur_mtime = int(mt_res.unwrap());
-        }
-        if self.compiled_cache.has(file_path) {
-            let entry = self.compiled_cache[file_path];
-            if int(entry["mtime"]) == cur_mtime and cur_mtime > 0 {
-                return entry["lines"];
-            }
-        }
-
-        let template = self.load_template(file_path);
-        if template == null {
-            return null;
-        }
-
-        // 1. Check for layout extension (@extends('...'))
-        let layout_name = "";
-        let trimmed_first_lines = template.split("\n");
-        for line in trimmed_first_lines {
-            let s = line.trim();
-            if s.starts_with("@extends(") and s.ends_with(")") {
-                layout_name = self.extract_quoted_arg(s, "@extends(");
-                break;
-            }
-        }
-
-        // 2. Parse sections from the view
-        let sections = self.parse_sections(template);
-
-        // 3. If view extends a layout, load the layout template
-        let output = "";
-        if layout_name != "" {
-            let layout_file = self.resolve_view_path(layout_name);
-            let layout_res = self.load_template(layout_file);
-            if layout_res != null {
-                output = layout_res;
-                output = self.apply_yields(output, sections);
-            } else {
-                output = template;
-            }
-        } else {
-            output = template;
-        }
-
-        // 4. Handle @include('...') partials (nested, depth-capped)
-        output = self.apply_includes(output, 0);
-
-        // 5. Expand @csrf and @method('...') directives once at compile time
-        output = self.expand_form_directives(output);
-
-        let lines = output.split("\n");
-        self.compiled_cache[file_path] = {
-            "mtime": cur_mtime,
-            "lines": lines
-        };
-        return lines;
-    }
-
-    fn expand_form_directives(self, text: string) -> string {
-        let out_lines = [];
-        for raw_line in text.split("\n") {
-            let line = raw_line;
-            if line.contains("@csrf") {
-                line = line.replace("@csrf", "<input type=\"hidden\" name=\"_csrf\" value=\"{{ csrf_token }}\">");
-            }
-            while line.contains("@method(") {
-                let m_start = line.index_of("@method(");
-                let after_m = line.slice(m_start, line.len());
-                let m_end = after_m.index_of(")");
-                if m_end > 8 {
-                    let call_str = after_m.slice(0, m_end + 1);
-                    let verb = self.extract_quoted_arg(call_str, "@method(").upper();
-                    let hidden_input = "<input type=\"hidden\" name=\"_method\" value=\"" + html_escape(verb) + "\">";
-                    line = line.replace(call_str, hidden_input);
-                } else {
-                    break;
-                }
-            }
-            out_lines.push(line);
-        }
-        return out_lines.join("\n");
-    }
-
-    public fn render(self, view_name: string, data = null) -> string {
-        let merged = map();
-        for (sk, sv) in self.shared_data {
-            merged[sk] = sv;
-        }
-        if data != null and type_of(data) == "map" {
-            for (k, v) in data {
-                merged[k] = v;
-            }
-        }
-
-        let file_path = self.resolve_view_path(view_name);
-        let lines = self.get_compiled_lines(file_path);
-        if lines == null {
-            return "<!-- BD Error: View '" + view_name + "' not found at '" + file_path + "' -->";
-        }
-
-        let out_lines = list();
-        self.eval_lines(lines, merged, out_lines);
-        let output = out_lines.join("\n");
-        output = self.evaluate_variables(output, merged);
-        return output;
-    }
-
-    // Render an inline template string directly (useful for components, emails, and tests).
-    public fn render_string(self, template: string, data = null) -> string {
-        let merged = map();
-        for (sk, sv) in self.shared_data {
-            merged[sk] = sv;
-        }
-        if data != null and type_of(data) == "map" {
-            for (k, v) in data {
-                merged[k] = v;
-            }
-        }
-        let expanded = self.expand_form_directives(template);
-        let lines = expanded.split("\n");
-        let out_lines = list();
-        self.eval_lines(lines, merged, out_lines);
-        let output = out_lines.join("\n");
-        return self.evaluate_variables(output, merged);
-    }
-
-    fn resolve_view_path(self, view_name: string) -> string {
+    public fn resolve_view_path(self, view_name: string) -> string {
         let clean = view_name.replace(".", "/");
-        let candidates = list(
-            self.views_path + "/" + clean + ".bd.html",
-            self.views_path + "/" + clean + ".html",
-            "resources/views/" + clean + ".bd.html",
-            "resources/views/" + clean + ".html",
-            "examples/spid3r_web/resources/views/" + clean + ".bd.html",
-            "examples/spid3r_web/resources/views/" + clean + ".html"
-        );
+        let cfg_views = string(Config.get("app.paths.views", "resources/views")).replace("\\", "/").trim();
+        while cfg_views.ends_with("/") and cfg_views.len() > 1 {
+            cfg_views = cfg_views.slice(0, cfg_views.len() - 1);
+        }
+        if cfg_views == "" {
+            cfg_views = "resources/views";
+        }
+        let candidates = [
+        "{self.views_path}/{clean}.bd.html",
+        "{self.views_path}/{clean}.html"
+        ];
+        if cfg_views != self.views_path {
+            candidates.push("{cfg_views}/{clean}.bd.html");
+            candidates.push("{cfg_views}/{clean}.html");
+        }
         for p in candidates {
             if file_exists(p) {
                 return p;
             }
         }
-        return self.views_path + "/" + clean + ".bd.html";
+        return "{self.views_path}/{clean}.bd.html";
     }
 
-    fn extract_quoted_arg(self, line: string, prefix: string) -> string {
-        let inner = line.slice(prefix.len(), line.len());
-        if inner.ends_with(")") {
-            inner = inner.slice(0, inner.len() - 1);
+    private fn merge_view_data(self, data) {
+        let merged = {
+        };
+        for (sk, sv) in self.shared_data {
+            merged[sk] = sv;
         }
-        inner = inner.trim();
-        if (inner.starts_with("'") and inner.ends_with("'")) or (inner.starts_with("\"") and inner.ends_with("\"")) {
-            return inner.slice(1, inner.len() - 1);
+        if data != null and type_of(data) == "map" {
+            for (k, v) in data {
+                merged[k] = v;
+            }
         }
-        return inner;
+        return merged;
     }
 
-    fn parse_sections(self, template: string) {
-        let sections = map();
-        let lines = template.split("\n");
-        let current_section = "";
-        let current_content = list();
-        let in_section = false;
-
-        for raw_line in lines {
-            let line = raw_line.trim();
-
-            if line.starts_with("@section(") and line.contains(",") and line.ends_with(")") {
-                let inner = line.slice(9, line.len() - 1).trim();
-                let comma_idx = inner.index_of(",");
-                if comma_idx > 0 {
-                    let sec_name = inner.slice(0, comma_idx).trim().replace("'", "").replace("\"", "");
-                    let raw_val = inner.slice(comma_idx + 1, inner.len()).trim();
-                    let sec_val = raw_val;
-                    if (raw_val.starts_with("'") and raw_val.ends_with("'")) or (raw_val.starts_with("\"") and raw_val.ends_with("\"")) {
-                        sec_val = raw_val.slice(1, raw_val.len() - 1);
-                    } else {
-                        sec_val = "{{" + raw_val + "}}";
-                    }
-                    sections[sec_name] = sec_val;
-                }
-                continue;
-            }
-
-            if line.starts_with("@section(") and line.ends_with(")") {
-                current_section = self.extract_quoted_arg(line, "@section(");
-                current_content = list();
-                in_section = true;
-                continue;
-            }
-
-            if in_section and (line == "@endsection" or line == "@stop") {
-                sections[current_section] = current_content.join("\n");
-                in_section = false;
-                current_section = "";
-                continue;
-            }
-
-            if in_section {
-                current_content.push(raw_line);
-            }
+    public fn render(self, view_name: string, data: any = null) -> string {
+        let merged = self.merge_view_data(data);
+        let file_path = self.resolve_view_path(view_name);
+        let lines = compile_view_lines(self, file_path);
+        if lines == null {
+            let cur_dir = cwd().unwrap_or(".");
+            throw "BD Error: View '{view_name}' not found at '{file_path}' (cwd: {cur_dir})";
         }
-
-        return sections;
+        let out_lines = [];
+        self.eval_lines(lines, merged, out_lines);
+        return evaluate_variables(out_lines.join("\n"), merged);
     }
 
-    fn apply_yields(self, layout: string, sections) -> string {
-        let out_lines = list();
-        let lines = layout.split("\n");
-
-        for raw_line in lines {
-            let line = raw_line;
-            while line.contains("@yield(") {
-                let start_idx = line.index_of("@yield(");
-                let after = line.slice(start_idx, line.len());
-                let rel_end = after.index_of(")");
-                if start_idx >= 0 and rel_end > 0 {
-                    let yield_call = after.slice(0, rel_end + 1);
-                    let inner = yield_call.slice(7, yield_call.len() - 1).trim();
-                    let replacement = "";
-                    let comma_idx = inner.index_of(",");
-                    if comma_idx > 0 {
-                        let sec_name = inner.slice(0, comma_idx).trim().replace("'", "").replace("\"", "");
-                        let def_raw = inner.slice(comma_idx + 1, inner.len()).trim();
-                        let def_val = def_raw;
-                        if (def_raw.starts_with("'") and def_raw.ends_with("'")) or (def_raw.starts_with("\"") and def_raw.ends_with("\"")) {
-                            def_val = def_raw.slice(1, def_raw.len() - 1);
-                        }
-                        if sections.has(sec_name) {
-                            replacement = sections[sec_name];
-                        } else {
-                            replacement = def_val;
-                        }
-                    } else {
-                        let sec_name = inner.trim().replace("'", "").replace("\"", "");
-                        if sections.has(sec_name) {
-                            replacement = sections[sec_name];
-                        }
-                    }
-                    line = line.replace(yield_call, replacement);
-                } else {
-                    break;
-                }
-            }
-            out_lines.push(line);
-        }
-
-        return out_lines.join("\n");
+    public fn render_string(self, template: string, data: any = null) -> string {
+        let merged = self.merge_view_data(data);
+        let lines = expand_form_directives(template).split("\n");
+        let out_lines = [];
+        self.eval_lines(lines, merged, out_lines);
+        return evaluate_variables(out_lines.join("\n"), merged);
     }
 
-    fn apply_includes(self, template: string, depth: int) -> string {
-        if depth > 5 {
-            return template;
-        }
-        let out_lines = list();
-        let lines = template.split("\n");
-
-        for raw_line in lines {
-            let line = raw_line.trim();
-            if line.starts_with("@include(") and line.ends_with(")") {
-                let partial_name = self.extract_quoted_arg(line, "@include(");
-                let p_file = self.resolve_view_path(partial_name);
-                let p_content = self.load_template(p_file);
-                if p_content != null {
-                    out_lines.push(self.apply_includes(p_content, depth + 1));
-                } else {
-                    out_lines.push("<!-- BD Include Error: " + partial_name + " -->");
-                }
-            } else {
-                out_lines.push(raw_line);
-            }
-        }
-
-        return out_lines.join("\n");
-    }
-
-    // Recursive walker: emits lines into out, expanding @if/@elif/@else/@endif
-    // and @foreach/@endforeach blocks.
-    fn eval_lines(self, lines, data, out) {
+    private fn eval_lines(self, lines, data, out) {
         let i = 0;
         while i < lines.len() {
             let raw = lines[i];
             let line = raw.trim();
 
-            // ---- Conditional block (@if / @elif / @elseif / @else / @endif) ----
             if line.starts_with("@if(") and line.ends_with(")") {
-                let first_cond = self.extract_quoted_arg(line, "@if(");
+                let first_cond = extract_quoted_arg(line, "@if(");
                 let branches = [];
                 let current_lines = [];
                 let current_cond = first_cond;
@@ -359,21 +132,29 @@ public class BD {
                         current_lines.push(lines[i]);
                     } elif l2 == "@endif" {
                         if depth == 0 {
-                            branches.push({"cond": current_cond, "lines": current_lines});
+                            branches.push({
+                                "cond": current_cond, "lines": current_lines
+                            });
                             break;
                         }
                         depth = depth - 1;
                         current_lines.push(lines[i]);
                     } elif depth == 0 and l2.starts_with("@elif(") and l2.ends_with(")") {
-                        branches.push({"cond": current_cond, "lines": current_lines});
-                        current_cond = self.extract_quoted_arg(l2, "@elif(");
+                        branches.push({
+                            "cond": current_cond, "lines": current_lines
+                        });
+                        current_cond = extract_quoted_arg(l2, "@elif(");
                         current_lines = [];
                     } elif depth == 0 and l2.starts_with("@elseif(") and l2.ends_with(")") {
-                        branches.push({"cond": current_cond, "lines": current_lines});
-                        current_cond = self.extract_quoted_arg(l2, "@elseif(");
+                        branches.push({
+                            "cond": current_cond, "lines": current_lines
+                        });
+                        current_cond = extract_quoted_arg(l2, "@elseif(");
                         current_lines = [];
                     } elif depth == 0 and l2 == "@else" {
-                        branches.push({"cond": current_cond, "lines": current_lines});
+                        branches.push({
+                            "cond": current_cond, "lines": current_lines
+                        });
                         current_cond = "__ELSE__";
                         current_lines = [];
                     } else {
@@ -381,11 +162,11 @@ public class BD {
                     }
                     i = i + 1;
                 }
-                i = i + 1; // step past @endif
+                i = i + 1;
 
                 for b in branches {
                     let b_cond = string(b["cond"]);
-                    if b_cond == "__ELSE__" or self.evaluate_truthiness(b_cond, data) {
+                    if b_cond == "__ELSE__" or evaluate_truthiness(b_cond, data) {
                         self.eval_lines(b["lines"], data, out);
                         break;
                     }
@@ -393,7 +174,6 @@ public class BD {
                 continue;
             }
 
-            // ---- Loop block (@foreach) ----
             if line.starts_with("@foreach(") and line.ends_with(")") {
                 let expr = line.slice(9, line.len() - 1).trim();
                 let loop_list_name = "";
@@ -419,7 +199,7 @@ public class BD {
                 }
 
                 i = i + 1;
-                let body_lines = list();
+                let body_lines = [];
                 let depth = 0;
                 while i < lines.len() {
                     let l2 = lines[i].trim();
@@ -437,17 +217,18 @@ public class BD {
                     }
                     i = i + 1;
                 }
-                i = i + 1; // step past @endforeach
+                i = i + 1;
 
-                let items = self.resolve_expression(loop_list_name, data);
+                let items = resolve_expression(loop_list_name, data);
                 if items != null and type_of(items) == "list" {
                     let total_items = items.len();
                     let idx = 0;
                     while idx < total_items {
                         let item = items[idx];
-                        let item_data = map();
-                        for k in data.keys() {
-                            item_data[k] = data[k];
+                        let item_data = {
+                        };
+                        for (k, v) in data {
+                            item_data[k] = v;
                         }
                         item_data[loop_item_name] = item;
                         item_data["loop"] = {
@@ -457,364 +238,38 @@ public class BD {
                             "last": idx == total_items - 1,
                             "count": total_items
                         };
-                        let body_out_lines = list();
+                        let body_out_lines = [];
                         self.eval_lines(body_lines, item_data, body_out_lines);
-                        out.push(self.evaluate_variables(body_out_lines.join("\n"), item_data));
+                        out.push(
+                            evaluate_variables(body_out_lines.join("\n"), item_data)
+                        );
                         idx += 1;
                     }
                 }
                 continue;
             }
 
-            // ---- Stray closing directives: never leak into output ----
             if line == "@else" or line == "@endif" or line == "@endforeach" or line.starts_with("@elif(") or line.starts_with("@elseif(") {
                 i = i + 1;
                 continue;
             }
 
             if raw.contains("@if(") and raw.contains("@endif") {
-                out.push(self.expand_inline_conditionals(raw, data));
+                out.push(expand_inline_conditionals(raw, data));
             } else {
                 out.push(raw);
             }
             i = i + 1;
         }
     }
-
-    // Support single-line inline @if(cond)...@else...@endif (e.g. class="@if(active)on@endif")
-    fn expand_inline_conditionals(self, text: string, data) -> string {
-        let cur = text;
-        let guard = 0;
-        while cur.contains("@if(") and cur.contains("@endif") and guard < 10 {
-            guard += 1;
-            let start = cur.index_of("@if(");
-            let after_if = cur.slice(start + 4, cur.len());
-            let close_paren = after_if.index_of(")");
-            let endif_rel = after_if.index_of("@endif");
-            if close_paren < 0 or endif_rel < 0 or close_paren > endif_rel {
-                break;
-            }
-            let cond_str = after_if.slice(0, close_paren).trim();
-            let body_str = after_if.slice(close_paren + 1, endif_rel);
-            let true_str = body_str;
-            let false_str = "";
-            let else_idx = body_str.index_of("@else");
-            if else_idx >= 0 {
-                true_str = body_str.slice(0, else_idx);
-                false_str = body_str.slice(else_idx + 5, body_str.len());
-            }
-            let chosen = false_str;
-            if self.evaluate_truthiness(cond_str, data) {
-                chosen = true_str;
-            }
-            let prefix = cur.slice(0, start);
-            let suffix = after_if.slice(endif_rel + 6, after_if.len());
-            cur = prefix + chosen + suffix;
-        }
-        return cur;
-    }
-
-    // Resolve a token in a condition expression: string literal, numeric literal,
-    // boolean/null literal, or variable/dot-path from `data`.
-    fn resolve_condition_operand(self, raw_token: string, data) {
-        let tok = raw_token.trim();
-        if tok == "" {
-            return null;
-        }
-        if (tok.starts_with("'") and tok.ends_with("'")) or (tok.starts_with("\"") and tok.ends_with("\"")) {
-            return tok.slice(1, tok.len() - 1);
-        }
-        if tok == "true" { return true; }
-        if tok == "false" { return false; }
-        if tok == "null" or tok == "nil" { return null; }
-
-        // Check numeric literal
-        let first_ch = tok.slice(0, 1);
-        if "0123456789-".contains(first_ch) {
-            if tok.contains(".") {
-                try { return float(tok); } catch (_e) {}
-            } else {
-                try { return int(tok); } catch (_e2) {}
-            }
-        }
-        return self.resolve_expression(tok, data);
-    }
-
-    fn compare_values(self, left, op: string, right) -> bool {
-        if op == "==" {
-            if left == null and right == null { return true; }
-            if left == null or right == null { return false; }
-            return string(left) == string(right);
-        }
-        if op == "!=" {
-            if left == null and right == null { return false; }
-            if left == null or right == null { return true; }
-            return string(left) != string(right);
-        }
-        if left == null or right == null {
-            return false;
-        }
-        try {
-            let lf = float(string(left));
-            let rf = float(string(right));
-            if op == ">=" { return lf >= rf; }
-            if op == "<=" { return lf <= rf; }
-            if op == ">"  { return lf > rf; }
-            if op == "<"  { return lf < rf; }
-        } catch (_e) {
-            let ls = string(left);
-            let rs = string(right);
-            if op == ">=" { return ls >= rs; }
-            if op == "<=" { return ls <= rs; }
-            if op == ">"  { return ls > rs; }
-            if op == "<"  { return ls < rs; }
-        }
-        return false;
-    }
-
-    // Rich condition evaluator supporting `or` / `||`, `and` / `&&`, `not` / `!`,
-    // and `==`, `!=`, `>=`, `<=`, `>`, `<` comparisons.
-    fn evaluate_truthiness(self, cond_expr: string, data) -> bool {
-        let effective = string(cond_expr).trim();
-        if effective == "" {
-            return false;
-        }
-
-        // 1. Disjunction (` or ` / ` || `)
-        if effective.contains(" or ") {
-            for part in effective.split(" or ") {
-                if self.evaluate_truthiness(part, data) {
-                    return true;
-                }
-            }
-            return false;
-        }
-        if effective.contains(" || ") {
-            for part in effective.split(" || ") {
-                if self.evaluate_truthiness(part, data) {
-                    return true;
-                }
-            }
-            return false;
-        }
-
-        // 2. Conjunction (` and ` / ` && `)
-        if effective.contains(" and ") {
-            for part in effective.split(" and ") {
-                if not self.evaluate_truthiness(part, data) {
-                    return false;
-                }
-            }
-            return true;
-        }
-        if effective.contains(" && ") {
-            for part in effective.split(" && ") {
-                if not self.evaluate_truthiness(part, data) {
-                    return false;
-                }
-            }
-            return true;
-        }
-
-        // 3. Unary negation (`not ` / `!`)
-        if effective.starts_with("not ") {
-            return not self.evaluate_truthiness(effective.slice(4, effective.len()).trim(), data);
-        }
-        if effective.starts_with("!") and not effective.starts_with("!=") {
-            return not self.evaluate_truthiness(effective.slice(1, effective.len()).trim(), data);
-        }
-
-        // 4. Binary comparison (`==`, `!=`, `>=`, `<=`, `>`, `<`)
-        let ops = ["==", "!=", ">=", "<=", ">", "<"];
-        for op in ops {
-            let op_idx = effective.index_of(op);
-            if op_idx > 0 {
-                let lhs_str = effective.slice(0, op_idx).trim();
-                let rhs_str = effective.slice(op_idx + op.len(), effective.len()).trim();
-                let lhs_val = self.resolve_condition_operand(lhs_str, data);
-                let rhs_val = self.resolve_condition_operand(rhs_str, data);
-                return self.compare_values(lhs_val, op, rhs_val);
-            }
-        }
-
-        // 5. Truthiness of single value / dot-path
-        let val = self.resolve_condition_operand(effective, data);
-        if val == null {
-            return false;
-        }
-        let t = type_of(val);
-        if t == "bool" {
-            return val == true;
-        }
-        if t == "string" {
-            return val != "" and val != "0" and val != "false";
-        }
-        if t == "int" {
-            return val > 0;
-        }
-        if t == "float" {
-            return val > 0.0;
-        }
-        if t == "list" or t == "map" {
-            return val.len() > 0;
-        }
-        return true;
-    }
-
-    fn resolve_expression(self, raw_expr: string, data) {
-        let expr = raw_expr.trim();
-        if expr.starts_with("$") {
-            expr = expr.slice(1, expr.len()).trim();
-        }
-        if expr == "" {
-            return null;
-        }
-        return self.resolve_dot_path(expr, data);
-    }
-
-    fn resolve_dot_path(self, path: string, data) {
-        if path == "" or data == null {
-            return null;
-        }
-
-        if type_of(data) == "map" and data.has(path) {
-            return data[path];
-        }
-
-        let parts = path.split(".");
-        let first = parts[0].trim();
-        if type_of(data) != "map" or not data.has(first) {
-            return null;
-        }
-
-        let curr = data[first];
-        let i = 1;
-        while i < parts.len() {
-            let seg = parts[i].trim();
-            if curr == null {
-                return null;
-            }
-            curr = self.resolve_property(curr, seg);
-            i = i + 1;
-        }
-
-        return curr;
-    }
-
-    fn resolve_property(self, obj, prop: string) {
-        if obj == null {
-            return null;
-        }
-
-        let t = type_of(obj);
-
-        if t == "map" {
-            if obj.has(prop) {
-                return obj[prop];
-            }
-            return null;
-        }
-
-        if t == "instance" {
-            try {
-                let val = obj.get(prop);
-                if val != null {
-                    return val;
-                }
-            } catch (_e1) {}
-
-            try {
-                let attrs = obj.attributes;
-                if attrs != null and type_of(attrs) == "map" and attrs.has(prop) {
-                    return attrs[prop];
-                }
-            } catch (_e2) {}
-
-            return null;
-        }
-
-        if t == "list" {
-            try {
-                let idx = int(prop);
-                if idx >= 0 and idx < obj.len() {
-                    return obj[idx];
-                }
-            } catch (_e5) {}
-            return null;
-        }
-
-        return null;
-    }
-
-    fn evaluate_variables(self, text: string, data) -> string {
-        let result = "";
-        let remaining = text;
-
-        while true {
-            let raw_idx = remaining.index_of("{!!");
-            let esc_idx = remaining.index_of("{{");
-
-            if raw_idx < 0 and esc_idx < 0 {
-                result = result + remaining;
-                break;
-            }
-
-            let is_raw = false;
-            let start_idx = -1;
-            let open_len = 0;
-            let close_tag = "";
-
-            if raw_idx >= 0 and (esc_idx < 0 or raw_idx < esc_idx) {
-                is_raw = true;
-                start_idx = raw_idx;
-                open_len = 3;
-                close_tag = "!!}";
-            } else {
-                is_raw = false;
-                start_idx = esc_idx;
-                open_len = 2;
-                close_tag = "}}";
-            }
-
-            result = result + remaining.slice(0, start_idx);
-            let after_open = remaining.slice(start_idx + open_len, remaining.len());
-
-            let end_idx = after_open.index_of(close_tag);
-            if end_idx < 0 {
-                let open_str = "{{";
-                if is_raw {
-                    open_str = "{!!";
-                }
-                result = result + open_str + after_open;
-                break;
-            }
-
-            let expr = after_open.slice(0, end_idx).trim();
-            remaining = after_open.slice(end_idx + close_tag.len(), after_open.len());
-
-            let val = self.resolve_expression(expr, data);
-            let s_val = "";
-            if val != null {
-                s_val = string(val);
-            }
-
-            if is_raw {
-                result = result + s_val;
-            } else {
-                result = result + html_escape(s_val);
-            }
-        }
-
-        return result;
-    }
 }
 
-// Global Singleton View Renderer
 public let global_bd = new BD();
 
-public fn view(view_name: string, data = null) {
+public fn view(view_name: string, data: any = null) -> Response {
     if data == null {
-        data = map();
+        data = {
+        };
     }
     let rendered = global_bd.render(view_name, data);
     let res = response(rendered, 200);
@@ -822,6 +277,6 @@ public fn view(view_name: string, data = null) {
     return res;
 }
 
-public fn bd_view(view_name: string, data = null) {
+public fn bd_view(view_name: string, data: any = null) -> Response {
     return view(view_name, data);
 }

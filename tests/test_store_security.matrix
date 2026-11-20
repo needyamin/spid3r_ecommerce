@@ -5,8 +5,9 @@
 // resistance, CSRF, authorization gates, rate limiting, upload validation
 // and error-disclosure prevention.
 
-import "framework/Application";
-import "framework/Router";
+import "framework/Foundation/Application";
+import "framework/Http/Router";
+import "framework/Foundation/Config";
 import "framework/Database/DB";
 import "framework/Filesystem/Storage";
 import "routes/web";
@@ -101,6 +102,10 @@ fn test_cookie_flags(app) {
     // HSTS and the Secure flag are opt-in for TLS deployments.
     env_set("SPID3R_HSTS", "1");
     env_set("SPID3R_COOKIE_SECURE", "1");
+    // The framework snapshots SPID3R_HSTS at import time; the per-request
+    // opt-in is config security.hsts.enabled (checked when each Response
+    // is built), so toggle HSTS through Config here.
+    Config.set("security.hsts.enabled", true);
 
     let res = post(app, "/login", map("email", email, "password", "sec-pass"));
     assert(res["status"] == 302, "login succeeds");
@@ -113,6 +118,7 @@ fn test_cookie_flags(app) {
     // Back to the development defaults for the remaining suites.
     env_set("SPID3R_HSTS", "0");
     env_set("SPID3R_COOKIE_SECURE", "0");
+    Config.set("security.hsts.enabled", false);
 
     let again = post(app, "/login", map("email", email, "password", "sec-pass"));
     assert(not string(again["headers"]["set-cookie"]).contains("Secure"), "the Secure flag follows the environment");

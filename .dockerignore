@@ -1,13 +1,26 @@
-# Keep the Docker build context lean (the Dockerfile COPYs only what it needs).
+# Keep the build context small and secrets out of the image.
 .git
 .github
-.idea
-.vscode
-database/*.sqlite
-database/*.sqlite-shm
-database/*.sqlite-wal
-storage/logs
-storage/framework/cache
+.workbuddy-ai
+.screenshots
+.playwright-cli
+storage
+vendor
 node_modules
-deliverables
-docs/history
+tests
+dist
+docs
+examples
+benchmarks
+*.md
+plan.html
+plan.txt
+changes.txt
+*.sqlite
+*.sqlite-*
+*.db
+*.db-*
+deploy/docker-compose.yml
+deploy/Dockerfile
+.env
+ci_jobs.tmp.json

@@ -3,11 +3,11 @@
 // Phase 10 — display currency, language, reviews, recommendations,
 //            recently viewed and the wishlist toggle.
 
-import "framework/Response";
+import "framework/Http/Response";
 import "framework/View/BD";
-import "framework/Container/Container";
+import "framework/Foundation/Container";
 import "framework/Database/DB";
-import "framework/HttpException";
+import "framework/Http/HttpException";
 import "app/Services/StorefrontService";
 import "app/Services/AdvancedStoreService";
 import "app/Services/CurrencyService";

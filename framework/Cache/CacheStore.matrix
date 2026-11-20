@@ -19,7 +19,7 @@ import "framework/Database/DB";
 // Shared helpers
 // ---------------------------------------------------------------------------
 
-public fn cache_expiration(seconds) -> int {
+public fn cache_expiration(seconds: any) -> int {
     // null / 0 -> forever (sentinel 0)
     // negative -> already expired (unix_time + negative offset)
     // positive -> unix_time + seconds
@@ -35,14 +35,14 @@ public fn cache_expiration(seconds) -> int {
 
 public fn cache_is_expired(expires_at: int) -> bool {
     if expires_at == 0 {
-        return false; // forever
+        return false;  // forever
     }
     return int(unix_time()) >= expires_at;
 }
 
 // json_parse throws on invalid input; this wrapper returns a fallback instead.
 // Note: JSON null parses to null — treated as a miss by the stores.
-public fn cache_json_parse(text: string, fallback) {
+public fn cache_json_parse(text: string, fallback: any) -> any {
     try {
         return json_parse(text);
     } catch (_e) {
@@ -59,13 +59,15 @@ public class MemoryCacheStore {
     public let max_entries;
     private let store_lock;
 
-    fn new(max_entries: int = 10000) {
-        self.items = {};
+    fn new (max_entries: int = 10000) {
+        self.items = {
+        };
         self.max_entries = max_entries;
         self.store_lock = mutex(true);
     }
 
     public fn driver_name(self) -> string {
+        let _ = self;
         return "memory";
     }
 
@@ -90,7 +92,7 @@ public class MemoryCacheStore {
         }
     }
 
-    public fn get(self, key: string, default_val = null) {
+    public fn get(self, key: string, default_val: any = null) -> any {
         let _g = self.store_lock.lock();
         if not self.items.has(key) {
             self.store_lock.unlock();
@@ -108,7 +110,21 @@ public class MemoryCacheStore {
         return val;
     }
 
-    public fn put(self, key: string, value, seconds) {
+    public fn gc(self) -> int {
+        let _g = self.store_lock.lock();
+        let removed = 0;
+        let keys = self.items.keys();
+        for k in keys {
+            if self.items.has(k) and cache_is_expired(int(self.items[k]["expires_at"])) {
+                self.items.remove(k);
+                removed = removed + 1;
+            }
+        }
+        self.store_lock.unlock();
+        return removed;
+    }
+
+    public fn put(self, key: string, value: any, seconds: any) -> bool {
         let _g = self.store_lock.lock();
         if not self.items.has(key) {
             self.evict_if_needed();
@@ -121,7 +137,7 @@ public class MemoryCacheStore {
         return true;
     }
 
-    public fn add(self, key: string, value, seconds) -> bool {
+    public fn add(self, key: string, value: any, seconds: any) -> bool {
         let _g = self.store_lock.lock();
         if self.items.has(key) {
             if not cache_is_expired(int(self.items[key]["expires_at"])) {
@@ -163,7 +179,7 @@ public class MemoryCacheStore {
         return next;
     }
 
-    public fn forget(self, key: string) {
+    public fn forget(self, key: string) -> bool {
         let _g = self.store_lock.lock();
         if self.items.has(key) {
             self.items.remove(key);
@@ -172,9 +188,10 @@ public class MemoryCacheStore {
         return true;
     }
 
-    public fn flush(self) {
+    public fn flush(self) -> bool {
         let _g = self.store_lock.lock();
-        self.items = {};
+        self.items = {
+        };
         self.store_lock.unlock();
         return true;
     }
@@ -203,7 +220,7 @@ public class MemoryCacheStore {
 public class FileCacheStore {
     public let dir;
 
-    fn new(path: string = "storage/framework/cache") {
+    fn new (path: string = "storage/framework/cache") {
         self.dir = path;
         // Create each path level (dir_create makes one level)
         if not file_exists("storage") {
@@ -218,6 +235,7 @@ public class FileCacheStore {
     }
 
     public fn driver_name(self) -> string {
+        let _ = self;
         return "file";
     }
 
@@ -225,7 +243,7 @@ public class FileCacheStore {
         return self.dir + "/" + sha256(key) + ".json";
     }
 
-    public fn get(self, key: string, default_val = null) {
+    public fn get(self, key: string, default_val: any = null) -> any {
         let p = self.path_for(key);
         if not file_exists(p) {
             return default_val;
@@ -247,16 +265,42 @@ public class FileCacheStore {
         return entry["value"];
     }
 
-    public fn put(self, key: string, value, seconds) {
-        let entry = map(
-            "expires_at", cache_expiration(seconds),
-            "value", value
-        );
-        let res = write_file(self.path_for(key), json_write(entry));
+    public fn put(self, key: string, value: any, seconds: any) -> bool {
+        let entry = {
+            "expires_at": cache_expiration(seconds),
+            "value": value
+        };
+        let res = write_file_atomic(self.path_for(key), json_write(entry));
         return res.is_ok();
     }
 
-    public fn forget(self, key: string) {
+    public fn gc(self) -> int {
+        let res = list_dir(self.dir);
+        if res.is_err() {
+            return 0;
+        }
+        let removed = 0;
+        for name in res.unwrap() {
+            let n = string(name);
+            if not n.ends_with(".json") {
+                continue;
+            }
+            let p = "{self.dir}/{n}";
+            let r = read_file(p);
+            if r.is_err() {
+                continue;
+            }
+            let entry = cache_json_parse(r.unwrap(), null);
+            if entry == null or cache_is_expired(int(entry["expires_at"])) {
+                if file_delete(p).is_ok() {
+                    removed = removed + 1;
+                }
+            }
+        }
+        return removed;
+    }
+
+    public fn forget(self, key: string) -> bool {
         let p = self.path_for(key);
         if file_exists(p) {
             file_delete(p);
@@ -264,7 +308,7 @@ public class FileCacheStore {
         return true;
     }
 
-    public fn flush(self) {
+    public fn flush(self) -> bool {
         let res = list_dir(self.dir);
         if res.is_err() {
             return false;
@@ -300,13 +344,14 @@ public class FileCacheStore {
 // ---------------------------------------------------------------------------
 
 public class DatabaseCacheStore {
-    public let table_ready;
+    private let table_ready;
 
-    fn new() {
+    fn new () {
         self.table_ready = false;
     }
 
     public fn driver_name(self) -> string {
+        let _ = self;
         return "database";
     }
 
@@ -323,14 +368,16 @@ public class DatabaseCacheStore {
         if d == "mysql" or d == "mariadb" {
             key_column = "VARCHAR(255)";
         }
-        DB.statement("CREATE TABLE IF NOT EXISTS cache (" +
+        DB.statement(
+            "CREATE TABLE IF NOT EXISTS cache (" +
             "cache_key " + key_column + " NOT NULL PRIMARY KEY, " +
             "cache_value TEXT NOT NULL, " +
-            "expiration INTEGER NOT NULL)");
+            "expiration INTEGER NOT NULL)"
+        );
         self.table_ready = true;
     }
 
-    public fn get(self, key: string, default_val = null) {
+    public fn get(self, key: string, default_val: any = null) -> any {
         self.ensure_table();
         let rows = DB.table("cache").where("cache_key", "=", key).limit(1).get();
         if rows.len() == 0 {
@@ -349,20 +396,20 @@ public class DatabaseCacheStore {
         return parsed;
     }
 
-    public fn put(self, key: string, value, seconds) {
+    public fn put(self, key: string, value: any, seconds: any) -> bool {
         self.ensure_table();
         let exp = cache_expiration(seconds);
         // Portable upsert: delete-then-insert
         DB.table("cache").where("cache_key", "=", key).delete();
-        DB.table("cache").insert(map(
-            "cache_key", key,
-            "cache_value", json_write(value),
-            "expiration", exp
-        ));
+        DB.table("cache").insert({
+            "cache_key": key,
+            "cache_value": json_write(value),
+            "expiration": exp
+        });
         return true;
     }
 
-    public fn add(self, key: string, value, seconds) -> bool {
+    public fn add(self, key: string, value: any, seconds: any) -> bool {
         self.ensure_table();
         if self.has(key) {
             return false;
@@ -370,13 +417,13 @@ public class DatabaseCacheStore {
         return self.put(key, value, seconds);
     }
 
-    public fn forget(self, key: string) {
+    public fn forget(self, key: string) -> bool {
         self.ensure_table();
         DB.table("cache").where("cache_key", "=", key).delete();
         return true;
     }
 
-    public fn flush(self) {
+    public fn flush(self) -> bool {
         self.ensure_table();
         DB.statement("DELETE FROM cache");
         return true;
@@ -393,5 +440,15 @@ public class DatabaseCacheStore {
             return false;
         }
         return true;
+    }
+
+    public fn gc(self) -> int {
+        self.ensure_table();
+        let now = int(unix_time());
+        let res = DB.connection().run(
+            "DELETE FROM cache WHERE expiration > 0 AND expiration <= ?",
+            [now]
+        );
+        return int(res["changes"]);
     }
 }

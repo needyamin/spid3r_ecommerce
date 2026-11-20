@@ -2,9 +2,9 @@
 // Spid3r Store — Phase 1 smoke tests: bootstrap, home page, health
 // endpoint, and the Money helpers.
 
-import "framework/Application";
-import "framework/Router";
-import "framework/Container/Container";
+import "framework/Foundation/Application";
+import "framework/Http/Router";
+import "framework/Foundation/Container";
 import "routes/web";
 import "app/Support/Money" as Money;
 

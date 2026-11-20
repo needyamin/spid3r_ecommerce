@@ -9,7 +9,7 @@
 // MONEY RULE: every amount is INTEGER MINOR UNITS.
 
 import "framework/Database/DB";
-import "framework/HttpException";
+import "framework/Http/HttpException";
 
 public class CampaignService {
     fn new() {}

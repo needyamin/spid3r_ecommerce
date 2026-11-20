@@ -6,44 +6,53 @@
 //   Log.write("warn", "...", ctx, "queue");   // explicit channel
 //
 // Channels live in config/logging.matrix. Drivers:
-//   single — one fixed file (cfg "path")
-//   daily  — per-UTC-day file: <path-without-.log>-YYYY-MM-DD.log
+//   single â€” one fixed file (cfg "path")
+//   daily  â€” per-UTC-day file: <path-without-.log>-YYYY-MM-DD.log
 //
 // Every line: [YYYY-MM-DDTHH:MM:SSZ] LEVEL: message {"ctx":"json"}
 // Minimum level: channel "level" else logging.level, with the real
 // environment variable SPID3R_LOG_LEVEL overriding both. Nothing is ever
 // logged below the effective minimum.
 
-import "framework/Config/Config";
-import "framework/Env";
+import "framework/Foundation/Config";
+import "framework/Foundation/Env";
 
+/// Thread-safe structured logger supporting `single`, `daily`, and channel-based log retention pruning.
 public class LogManager {
-    public let levels;
+    private let levels;
     private let write_lock;
 
-    fn new() {
-        self.levels = {"debug": 100, "info": 200, "warn": 300, "error": 400};
+    fn new () {
+        self.levels = {
+            "debug": 100, "info": 200, "warn": 300, "error": 400
+        };
         self.write_lock = mutex(true);
     }
 
     // ------------------------------------------------------------------
     // Facade API
     // ------------------------------------------------------------------
-    public fn debug(self, message: string, context = null) -> bool {
+    public fn debug(self, message: string, context: any = null) -> bool {
         return self.write("debug", message, context, "");
     }
-    public fn info(self, message: string, context = null) -> bool {
+    public fn info(self, message: string, context: any = null) -> bool {
         return self.write("info", message, context, "");
     }
-    public fn warn(self, message: string, context = null) -> bool {
+    public fn warn(self, message: string, context: any = null) -> bool {
         return self.write("warn", message, context, "");
     }
-    public fn error(self, message: string, context = null) -> bool {
+    public fn error(self, message: string, context: any = null) -> bool {
         return self.write("error", message, context, "");
     }
 
     // Core entry. Empty channel = the configured default channel.
-    public fn write(self, level: string, message: string, context = null, channel: string = "") -> bool {
+    public fn write(
+        self,
+        level: string,
+        message: string,
+        context: any = null,
+        channel: string = ""
+    ) -> bool {
         let lvl = string(level).lower();
         if not self.levels.has(lvl) {
             lvl = "info";
@@ -72,7 +81,7 @@ public class LogManager {
             min = int(self.levels[min_name]);
         }
         if int(self.levels[lvl]) < min {
-            return false; // filtered out
+            return false;  // filtered out
         }
 
         let cfg = self.channel_cfg(ch);
@@ -84,33 +93,45 @@ public class LogManager {
         let safe_msg = string(message);
         safe_msg = safe_msg.replace("\r", "\\r").replace("\n", "\\n");
 
-        let line = "[" + self.stamp(int(unix_time())) + "] " + string(lvl).upper() + ": " + safe_msg;
+        let upper_lvl = string(lvl).upper();
+        let stamp_str = self.stamp(int(unix_time()));
+        let line = "[{stamp_str}] {upper_lvl}: {safe_msg}";
         if context != null {
-            line = line + " " + json_write(context);
+            let ctx_json = json_write(context);
+            line = "{line} {ctx_json}";
         }
-        line = line + "\n";
+        line = "{line}\n";
 
         let _guard = self.write_lock.lock();
-        let existing = "";
-        if file_exists(path) {
-            let r_read = read_file(path);
-            if r_read.is_ok() {
-                existing = r_read.unwrap();
+        let ok = false;
+        let open_res = file_open(path, "a");
+        if open_res.is_ok() {
+            let fh = open_res.unwrap();
+            try {
+                file_lock(fh, true);
+                let w = file_write(fh, line);
+                file_flush(fh);
+                ok = w.is_ok();
+            } finally {
+                file_unlock(fh);
+                file_close(fh);
             }
         }
-        let res = write_file(path, existing + line);
         self.write_lock.unlock();
-        return res.is_ok();
+        return ok;
     }
 
     // ------------------------------------------------------------------
     // Internals
     // ------------------------------------------------------------------
-    fn channel_cfg(self, channel: string) {
+    fn channel_cfg(self, channel: string) -> map {
+        let _ = self;
         let cfg = Config.get("logging.channels." + channel, null);
         if cfg == null or type_of(cfg) != "map" {
-            // Unknown channel — fall back to the single-file channel config
-            cfg = Config.get("logging.channels.single", map("driver", "single", "path", "storage/logs/app.log", "level", "debug"));
+            // Unknown channel â€” fall back to the single-file channel config
+            cfg = Config.get("logging.channels.single", {
+                "driver": "single", "path": "storage/logs/app.log", "level": "debug"
+            });
         }
         return cfg;
     }
@@ -130,7 +151,10 @@ public class LogManager {
             if base.ends_with(".log") {
                 base = base.slice(0, base.len() - 4);
             }
-            path = base + "-" + string(parts["y"]) + "-" + self.pad2(parts["m"]) + "-" + self.pad2(parts["d"]) + ".log";
+            let py = parts["y"];
+            let pm = self.pad2(parts["m"]);
+            let pd = self.pad2(parts["d"]);
+            path = "{base}-{py}-{pm}-{pd}.log";
         }
         self.ensure_dir(path);
         return path;
@@ -138,6 +162,7 @@ public class LogManager {
 
     // Create parent directories for a path like storage/logs/app.log
     fn ensure_dir(self, path: string) {
+        let _ = self;
         let parts = string(path).split("/");
         if parts.len() < 2 {
             return;
@@ -161,10 +186,11 @@ public class LogManager {
         let mm = (rem - hh * 3600) / 60;
         let ss = rem - hh * 3600 - mm * 60;
         return string(p["y"]) + "-" + self.pad2(p["m"]) + "-" + self.pad2(p["d"])
-            + "T" + self.pad2(hh) + ":" + self.pad2(mm) + ":" + self.pad2(ss) + "Z";
+        + "T" + self.pad2(hh) + ":" + self.pad2(mm) + ":" + self.pad2(ss) + "Z";
     }
 
-    fn pad2(self, n) -> string {
+    fn pad2(self, n: any) -> string {
+        let _ = self;
         let s = string(int(n));
         if s.len() < 2 {
             return "0" + s;
@@ -174,8 +200,9 @@ public class LogManager {
 
     // Civil date from days-since-epoch (Howard Hinnant's algorithm).
     // Safe with plain integer division: z is always positive here.
-    fn date_parts(self, ts: int) {
-        let days = ts / 86400;
+    fn date_parts(self, ts: int) -> map {
+        let _ = self;
+        let days = ts / 86_400;
         let z = days + 719468;
         let era = z / 146097;
         let doe = z - era * 146097;
@@ -193,7 +220,53 @@ public class LogManager {
         if m <= 2 {
             y = y + 1;
         }
-        return map("y", y, "m", m, "d", d);
+        return {
+            "y": y, "m": m, "d": d
+        };
+    }
+
+    public fn prune(self, days: int = -1, dir_path: string = "storage/logs") -> int {
+        let _ = self;
+        let retention = days;
+        if retention < 0 {
+            let env_days = env("SPID3R_LOG_RETENTION_DAYS");
+            if env_days.is_some() and string(env_days.unwrap()).trim() != "" {
+                try {
+                    retention = int(string(env_days.unwrap()).trim());
+                } catch (_e) {
+                    retention = -1;
+                }
+            }
+        }
+        if retention < 0 {
+            retention = int(Config.get("logging.retention_days", 14));
+        }
+        if retention < 0 or not file_exists(dir_path) {
+            return 0;
+        }
+        let listing = list_dir(dir_path);
+        if listing.is_err() {
+            return 0;
+        }
+        let cutoff = int(unix_time()) - retention * 86_400;
+        let removed = 0;
+        for name in listing.unwrap() {
+            let n = string(name);
+            if not n.ends_with(".log") {
+                continue;
+            }
+            let p = "{dir_path}/{n}";
+            if not is_file(p) {
+                continue;
+            }
+            let mt = file_mtime(p);
+            if mt.is_ok() and int(mt.unwrap()) <= cutoff {
+                if file_delete(p).is_ok() {
+                    removed = removed + 1;
+                }
+            }
+        }
+        return removed;
     }
 }
 

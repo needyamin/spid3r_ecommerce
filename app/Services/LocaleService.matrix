@@ -10,7 +10,7 @@
 // works for shareable links.
 
 import "framework/Database/DB";
-import "framework/HttpException";
+import "framework/Http/HttpException";
 import "app/Support/CartIdentity" as CartIdentity;
 
 public class LocaleService {

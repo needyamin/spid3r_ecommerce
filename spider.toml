@@ -1,7 +1,10 @@
 [package]
 name = "spid3r_web"
-version = "1.0.0"
+version = "1.1.1"
 entry = "server.matrix"
+# Requires Spid3r runtime >= 1.1.1 (enforced at boot/doctor via
+# framework/Foundation/RuntimeVersion.matrix; spider.toml v1.1.1 permits only
+# name, version, and entry keys).
 # Spid3rWeb - A modern full-stack web framework for the Spid3r programming language with Active Record ORM, SpiderBD template engine, expressive routing, and Magic CLI.
 
 [dependencies]

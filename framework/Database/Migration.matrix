@@ -2,59 +2,153 @@
 // Spid3rWeb Transactional Database Migration Runner
 
 import "DB";
+import {
+    sql_check_identifier
+}
+from "Connection";
 
+/// Base class for schema migrations defining reversible `up()` and `down()` steps.
 public class Migration {
     public let name;
+    public let checksum;
 
-    fn new(name: string = "") {
+    fn new (name: string = "") {
         self.name = name;
+        self.checksum = "";
     }
 
-    public fn up(self) {}
-    public fn down(self) {}
+    public fn up(self) {
+        let _ = self;
+    }
+    public fn down(self) {
+        let _ = self;
+    }
 }
 
-public class MigrationRunner {
-    fn new() {
-        self.ensure_migrations_table();
+/// Wrapper adapting Laravel-style module function pairs (`up()` / `down()`) as migrations.
+public class FunctionMigration extends Migration {
+    private let up_fn;
+    private let down_fn;
+
+    fn new (name: string, up_fn: any, down_fn: any, checksum: string = "") {
+        self.name = name;
+        self.checksum = checksum;
+        self.up_fn = up_fn;
+        self.down_fn = down_fn;
     }
 
-    fn ensure_migrations_table(self) {
-        let dialect = DB.driver_name();
-        if dialect == "postgres" {
-            DB.statement("CREATE TABLE IF NOT EXISTS migrations (
-                id SERIAL PRIMARY KEY,
-                migration TEXT NOT NULL UNIQUE,
-                batch INTEGER NOT NULL,
-                applied_at TEXT NOT NULL
-            );");
-        } elif dialect == "mysql" or dialect == "mariadb" {
-            DB.statement("CREATE TABLE IF NOT EXISTS migrations (
-                id INT AUTO_INCREMENT PRIMARY KEY,
-                migration VARCHAR(255) NOT NULL UNIQUE,
-                batch INT NOT NULL,
-                applied_at VARCHAR(32) NOT NULL
-            );");
-        } else {
-            DB.statement("CREATE TABLE IF NOT EXISTS migrations (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                migration TEXT NOT NULL UNIQUE,
-                batch INTEGER NOT NULL,
-                applied_at TEXT NOT NULL
-            );");
+    public fn up(self) {
+        let h = self.up_fn;
+        if h != null {
+            h();
         }
     }
 
-    public fn get_applied(self) {
+    public fn down(self) {
+        let h = self.down_fn;
+        if h != null {
+            h();
+        }
+    }
+}
+
+/// Tracks and executes database migration batches atomically in the `migrations` table.
+public class MigrationRunner {
+    fn new () {
+        self.ensure_migrations_table();
+    }
+
+    public fn ensure_migrations_table(self) {
+        let _ = self;
+        let dialect = DB.driver_name();
+        if dialect == "postgres" {
+            DB.statement(
+                "CREATE TABLE IF NOT EXISTS migrations (
+                id SERIAL PRIMARY KEY,
+                migration TEXT NOT NULL UNIQUE,
+                batch INTEGER NOT NULL,
+                applied_at TEXT NOT NULL,
+                checksum TEXT DEFAULT ''
+            );"
+            );
+            try {
+                DB.statement("ALTER TABLE migrations ADD COLUMN checksum TEXT DEFAULT '';");
+            } catch (_e) {
+            }
+        } elif dialect == "mysql" or dialect == "mariadb" {
+            DB.statement(
+                "CREATE TABLE IF NOT EXISTS migrations (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                migration VARCHAR(255) NOT NULL UNIQUE,
+                batch INT NOT NULL,
+                applied_at VARCHAR(32) NOT NULL,
+                checksum VARCHAR(64) DEFAULT ''
+            );"
+            );
+            try {
+                DB.statement("ALTER TABLE migrations ADD COLUMN checksum VARCHAR(64) DEFAULT '';");
+            } catch (_e) {
+            }
+        } else {
+            DB.statement(
+                "CREATE TABLE IF NOT EXISTS migrations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                migration TEXT NOT NULL UNIQUE,
+                batch INTEGER NOT NULL,
+                applied_at TEXT NOT NULL,
+                checksum TEXT DEFAULT ''
+            );"
+            );
+            try {
+                DB.statement("ALTER TABLE migrations ADD COLUMN checksum TEXT DEFAULT '';");
+            } catch (_e) {
+            }
+        }
+    }
+
+    private fn supports_transactional_ddl(self) -> bool {
+        let _ = self;
+        let d = DB.driver_name();
+        return d == "sqlite" or d == "postgres";
+    }
+
+    private fn run_migration_unit(self, work_fn: any) {
+        if self.supports_transactional_ddl() {
+            DB.transaction(work_fn);
+        } else {
+            work_fn();
+        }
+    }
+
+    public fn get_applied(self) -> map {
+        let _ = self;
         let rows = DB.select("SELECT migration, batch FROM migrations ORDER BY id ASC");
-        let applied_map = {};
+        let applied_map = {
+        };
         for r in rows {
             applied_map[string(r["migration"])] = int(r["batch"]);
         }
         return applied_map;
     }
 
+    public fn get_checksums(self) -> map {
+        let _ = self;
+        let rows = DB.select("SELECT migration, checksum FROM migrations ORDER BY id ASC");
+        let csums = {
+        };
+        for r in rows {
+            let cs = if r.has("checksum") and r["checksum"] != null {
+                string(r["checksum"]).trim()
+            } else {
+                ""
+            };
+            csums[string(r["migration"])] = cs;
+        }
+        return csums;
+    }
+
     public fn get_next_batch(self) -> int {
+        let _ = self;
         let rows = DB.select("SELECT max(batch) as max_b FROM migrations");
         if rows.len() > 0 and rows[0]["max_b"] != null {
             let val = rows[0]["max_b"];
@@ -69,24 +163,54 @@ public class MigrationRunner {
         return 1;
     }
 
-    public fn migrate(self, migrations_list) {
+    public fn migrate(self, migrations_list: list, pretend: bool = false, step: bool = false) -> int {
         let applied = self.get_applied();
+        let stored_checksums = self.get_checksums();
         let next_batch = self.get_next_batch();
         let ran_count = 0;
 
         for m in migrations_list {
             let m_name = m.name;
-            if not applied.has(m_name) {
-                println("[Migrate] Running: {m_name}");
-                // Atomic: the schema change and its bookkeeping row commit
-                // together; a failed up() rolls back both.
-                DB.transaction(fn() {
-                    m.up();
-                    let now = string(unix_time());
-                    DB.statement("INSERT INTO migrations (migration, batch, applied_at) VALUES (?, ?, ?)", [m_name, next_batch, now]);
-                });
-                println("[Migrate] Done:    {m_name}");
+            let cur_sum = string(m.checksum ?? "").trim();
+            if applied.has(m_name) {
+                let prev_sum = if stored_checksums.has(m_name) {
+                    stored_checksums[m_name]
+                } else {
+                    ""
+                };
+                if cur_sum != "" and prev_sum != "" and cur_sum != prev_sum {
+                    println(
+                        "[Migrate WARN] Checksum mismatch for '{m_name}' (edited after applying)."
+                    );
+                }
+                continue;
+            }
+            if pretend {
+                println("[Pretend] Would apply: {m_name} (batch {next_batch})");
                 ran_count = ran_count + 1;
+                if step {
+                    next_batch = next_batch + 1;
+                }
+                continue;
+            }
+            println("[Migrate] Running: {m_name}");
+            let mig_ref = m;
+            let batch_num = next_batch;
+            self.run_migration_unit(fn() {
+                mig_ref.up();
+                let now = string(unix_time());
+                DB.statement(
+                    "INSERT INTO migrations (migration, batch, applied_at, checksum) VALUES (?, ?, ?, ?)",
+                    [m_name,
+                    batch_num,
+                    now,
+                    cur_sum]
+                );
+            });
+            println("[Migrate] Done:    {m_name}");
+            ran_count = ran_count + 1;
+            if step {
+                next_batch = next_batch + 1;
             }
         }
 
@@ -96,7 +220,7 @@ public class MigrationRunner {
         return ran_count;
     }
 
-    public fn rollback(self, migrations_list) {
+    public fn rollback(self, migrations_list: list) -> int {
         let rows = DB.select("SELECT max(batch) as max_b FROM migrations");
         if rows.len() == 0 or rows[0]["max_b"] == null {
             println("[Rollback] Nothing to rollback.");
@@ -108,7 +232,10 @@ public class MigrationRunner {
             return 0;
         }
         let last_batch = int(val);
-        let batch_rows = DB.select("SELECT migration FROM migrations WHERE batch = ? ORDER BY id DESC", [last_batch]);
+        let batch_rows = DB.select(
+            "SELECT migration FROM migrations WHERE batch = ? ORDER BY id DESC",
+            [last_batch]
+        );
 
         let rolled_count = 0;
         for r in batch_rows {
@@ -116,11 +243,10 @@ public class MigrationRunner {
             for m in migrations_list {
                 if m.name == target_name {
                     println("[Rollback] Rolling back: {m.name}");
-                    // Atomic: the down() change and the bookkeeping row
-                    // removal commit together.
                     let m_name = m.name;
-                    DB.transaction(fn() {
-                        m.down();
+                    let mig_ref = m;
+                    self.run_migration_unit(fn() {
+                        mig_ref.down();
                         DB.statement("DELETE FROM migrations WHERE migration = ?", [m_name]);
                     });
                     println("[Rollback] Reverted:     {m.name}");
@@ -131,24 +257,106 @@ public class MigrationRunner {
         return rolled_count;
     }
 
-    public fn status(self, migrations_list) {
+    public fn reset(self, migrations_list: list) -> int {
+        let total = 0;
+        while true {
+            let n = self.rollback(migrations_list);
+            if n <= 0 {
+                break;
+            }
+            total = total + n;
+        }
+        return total;
+    }
+
+    public fn wipe(self) -> int {
+        let _ = self;
+        let dialect = DB.driver_name();
+        let dropped = 0;
+        if dialect == "sqlite" {
+            let rows = DB.select(
+                "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name DESC"
+            );
+            DB.statement("PRAGMA foreign_keys = OFF;");
+            for r in rows {
+                let tbl = sql_check_identifier(string(r["name"]));
+                DB.statement("DROP TABLE IF EXISTS \"{tbl}\";");
+                dropped = dropped + 1;
+            }
+            DB.statement("PRAGMA foreign_keys = ON;");
+            return dropped;
+        }
+        if dialect == "postgres" {
+            let rows = DB.select(
+                "SELECT tablename AS name FROM pg_tables WHERE schemaname = 'public' ORDER BY tablename DESC"
+            );
+            for r in rows {
+                let tbl = sql_check_identifier(string(r["name"]));
+                DB.statement("DROP TABLE IF EXISTS \"{tbl}\" CASCADE;");
+                dropped = dropped + 1;
+            }
+            return dropped;
+        }
+        let rows = DB.select(
+            "SELECT table_name AS name FROM information_schema.tables WHERE table_schema = DATABASE() ORDER BY table_name DESC"
+        );
+        DB.statement("SET FOREIGN_KEY_CHECKS = 0;");
+        for r in rows {
+            let tbl = sql_check_identifier(string(r["name"]));
+            DB.statement("DROP TABLE IF EXISTS `{tbl}`;");
+            dropped = dropped + 1;
+        }
+        DB.statement("SET FOREIGN_KEY_CHECKS = 1;");
+        return dropped;
+    }
+
+    public fn fresh(self, migrations_list: list, pretend: bool = false, step: bool = false) -> int {
+        if pretend {
+            for m in migrations_list {
+                let m_name = m.name;
+                println("[Pretend] Would wipe schema and apply: {m_name}");
+            }
+            return migrations_list.len();
+        }
+        let dropped = self.wipe();
+        println("[Migrate] Dropped {dropped} table(s); re-running migrations...");
+        self.ensure_migrations_table();
+        return self.migrate(migrations_list, false, step);
+    }
+
+    public fn status(self, migrations_list: list) {
         let applied = self.get_applied();
-        println("\n+------------------------------------------------+-------+");
-        println("| Migration                                      | Ran?  |");
-        println("+------------------------------------------------+-------+");
+        let checksums = self.get_checksums();
+        println("\n+------------------------------------------------+---------------+");
+        println("| Migration                                      | Status        |");
+        println("+------------------------------------------------+---------------+");
 
         for m in migrations_list {
             let status = "No";
             if applied.has(m.name) {
                 let batch_num = applied[m.name];
-                status = "Yes ({batch_num})";
+                let cur_sum = string(m.checksum ?? "").trim();
+                let prev_sum = if checksums.has(m.name) {
+                    checksums[m.name]
+                } else {
+                    ""
+                };
+                if cur_sum != "" and prev_sum != "" and cur_sum != prev_sum {
+                    status = "Yes ({batch_num}) [MOD]";
+                } else {
+                    status = "Yes ({batch_num})";
+                }
             }
             let name_padded = m.name;
             while name_padded.len() < 46 {
                 name_padded = name_padded + " ";
             }
-            println("| {name_padded} | {status}   |");
+            let st_padded = status;
+            while st_padded.len() < 13 {
+                st_padded = st_padded + " ";
+            }
+            println("| {name_padded} | {st_padded} |");
         }
-        println("+------------------------------------------------+-------+\n");
+        println("+------------------------------------------------+---------------+\n");
     }
 }

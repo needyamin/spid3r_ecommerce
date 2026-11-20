@@ -7,8 +7,8 @@
 // 5. bKash Tokenized API credentials & execution handling
 // 6. Verification that mock simulator interceptor is gone
 
-import "framework/Application";
-import "framework/Router";
+import "framework/Foundation/Application";
+import "framework/Http/Router";
 import "framework/Database/DB";
 import "routes/web";
 import "routes/queue";

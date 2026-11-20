@@ -1,0 +1,247 @@
+// framework/Console/Commands/MigrateCommands.matrix
+// Database migration CLI command classes registered into ConsoleKernel.
+
+import "framework/Database/DB";
+import "framework/Database/Migration";
+import "MigrationRegistry";
+
+fn parse_migrate_flags(cli_args) {
+    let pretend = false;
+    let step = false;
+    let extra = [];
+    for a in cli_args {
+        let s = string(a);
+        if s == "--pretend" and not pretend {
+            pretend = true;
+            extra.push("--pretend");
+        } elif s == "--step" and not step {
+            step = true;
+            extra.push("--step");
+        }
+    }
+    return {
+        "pretend": pretend, "step": step, "extra": extra
+    };
+}
+
+public class MigrateCommand {
+    public let name;
+    public let usage;
+    public let description;
+    private let kernel;
+
+    fn new (kernel) {
+        self.name = "migrate";
+        self.usage = "migrate [--pretend] [--step]";
+        self.description = "Run outstanding database migrations";
+        self.kernel = kernel;
+    }
+
+    public fn handle(self, cli_args: list) -> int {
+        let flags = parse_migrate_flags(cli_args);
+        let mem = self.kernel.migrations();
+        if mem.len() > 0 {
+            let runner = new MigrationRunner();
+            runner.migrate(mem, flags["pretend"] == true, flags["step"] == true);
+            DB.close();
+            return 0;
+        }
+        return run_migration_action(
+            "migrate",
+            self.kernel.migrations_dir(),
+            self.kernel.registry_path(),
+            flags["extra"]
+        );
+    }
+}
+
+public class MigrateFreshCommand {
+    public let name;
+    public let usage;
+    public let description;
+    private let kernel;
+
+    fn new (kernel) {
+        self.name = "migrate:fresh";
+        self.usage = "migrate:fresh [--pretend] [--step]";
+        self.description = "Drop all tables and re-run all migrations";
+        self.kernel = kernel;
+    }
+
+    public fn handle(self, cli_args: list) -> int {
+        let flags = parse_migrate_flags(cli_args);
+        let mem = self.kernel.migrations();
+        if mem.len() > 0 {
+            let runner = new MigrationRunner();
+            runner.fresh(mem, flags["pretend"] == true, flags["step"] == true);
+            DB.close();
+            return 0;
+        }
+        return run_migration_action(
+            "fresh",
+            self.kernel.migrations_dir(),
+            self.kernel.registry_path(),
+            flags["extra"]
+        );
+    }
+}
+
+public class MigrateResetCommand {
+    public let name;
+    public let usage;
+    public let description;
+    private let kernel;
+
+    fn new (kernel) {
+        self.name = "migrate:reset";
+        self.usage = "migrate:reset";
+        self.description = "Rollback all executed database migrations";
+        self.kernel = kernel;
+    }
+
+    public fn handle(self, _cli_args: list) -> int {
+        let mem = self.kernel.migrations();
+        if mem.len() > 0 {
+            let runner = new MigrationRunner();
+            runner.reset(mem);
+            DB.close();
+            return 0;
+        }
+        return run_migration_action(
+            "reset",
+            self.kernel.migrations_dir(),
+            self.kernel.registry_path()
+        );
+    }
+}
+
+public class DbWipeCommand {
+    public let name;
+    public let usage;
+    public let description;
+    private let kernel;
+
+    fn new (kernel) {
+        self.name = "db:wipe";
+        self.usage = "db:wipe";
+        self.description = "Drop all tables from the active database";
+        self.kernel = kernel;
+    }
+
+    public fn handle(self, _cli_args: list) -> int {
+        if self.kernel.migrations().len() > 0 {
+            let runner = new MigrationRunner();
+            let n = runner.wipe();
+            println("[DB] Dropped {n} table(s).");
+            DB.close();
+            return 0;
+        }
+        let code = run_migration_action(
+            "wipe",
+            self.kernel.migrations_dir(),
+            self.kernel.registry_path()
+        );
+        return code;
+    }
+}
+
+public class MigrateSyncCommand {
+    public let name;
+    public let usage;
+    public let description;
+    private let kernel;
+
+    fn new (kernel) {
+        self.name = "migrate:sync";
+        self.usage = "migrate:sync";
+        self.description = "Re-scan database/migrations and rebuild the registry";
+        self.kernel = kernel;
+    }
+
+    public fn handle(self, _cli_args: list) -> int {
+        let n = self.kernel.sync_migration_registry(true, true);
+        if n < 0 {
+            return 1;
+        }
+        return 0;
+    }
+}
+
+public class MigrateRollbackCommand {
+    public let name;
+    public let usage;
+    public let description;
+    private let kernel;
+
+    fn new (kernel) {
+        self.name = "migrate:rollback";
+        self.usage = "migrate:rollback";
+        self.description = "Rollback the last database migration batch";
+        self.kernel = kernel;
+    }
+
+    public fn handle(self, _cli_args: list) -> int {
+        let mem = self.kernel.migrations();
+        if mem.len() > 0 {
+            let runner = new MigrationRunner();
+            runner.rollback(mem);
+            DB.close();
+            return 0;
+        }
+        return run_migration_action(
+            "rollback",
+            self.kernel.migrations_dir(),
+            self.kernel.registry_path()
+        );
+    }
+}
+
+public class MigrateStatusCommand {
+    public let name;
+    public let usage;
+    public let description;
+    private let kernel;
+
+    fn new (kernel) {
+        self.name = "migrate:status";
+        self.usage = "migrate:status";
+        self.description = "Show the status of each migration";
+        self.kernel = kernel;
+    }
+
+    public fn handle(self, _cli_args: list) -> int {
+        let mem = self.kernel.migrations();
+        if mem.len() > 0 {
+            let runner = new MigrationRunner();
+            runner.status(mem);
+            DB.close();
+            return 0;
+        }
+        return run_migration_action(
+            "status",
+            self.kernel.migrations_dir(),
+            self.kernel.registry_path()
+        );
+    }
+}
+
+public class MigrateRenameLegacyCommand {
+    public let name;
+    public let usage;
+    public let description;
+    private let kernel;
+
+    fn new (kernel) {
+        self.name = "migrate:rename-legacy";
+        self.usage = "migrate:rename-legacy";
+        self.description = "Rename NNN_* migrations to timestamped filenames";
+        self.kernel = kernel;
+    }
+
+    public fn handle(self, _cli_args: list) -> int {
+        return rename_legacy_migrations(
+            self.kernel.migrations_dir(),
+            self.kernel.registry_path()
+        );
+    }
+}

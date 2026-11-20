@@ -1,0 +1,465 @@
+// framework/Http/RequestParser.matrix
+// Cookie, query string, form, multipart, client IP, and upload storage helpers.
+
+import "framework/Foundation/Config";
+import "framework/Filesystem/Storage";
+import "framework/Http/HttpException";
+
+public fn parse_cookies_into(cookie_header: string, cookies_map: map) {
+    let pairs = cookie_header.split(";");
+    for p in pairs {
+        let trimmed = p.trim();
+        if trimmed != "" {
+            let eq = trimmed.index_of("=");
+            if eq > 0 {
+                let k = trimmed.slice(0, eq).trim();
+                let v = trimmed.slice(eq + 1, trimmed.len()).trim();
+                cookies_map[k] = url_decode(v);
+            }
+        }
+    }
+}
+
+public fn parse_query_into(qs: string, query_params: map, data: map) {
+    let clean_qs = qs.trim();
+    if clean_qs.starts_with("?") {
+        clean_qs = clean_qs.slice(1);
+    }
+    let pairs = clean_qs.split("&");
+    for p in pairs {
+        let p_trim = p.trim();
+        if p_trim != "" {
+            let eq = p_trim.index_of("=");
+            if eq >= 0 {
+                let k = url_decode(p_trim.slice(0, eq).trim());
+                let v = url_decode(p_trim.slice(eq + 1));
+                query_params[k] = v;
+                if not data.has(k) {
+                    data[k] = v;
+                }
+            } else {
+                let k = url_decode(p_trim);
+                query_params[k] = "";
+                if not data.has(k) {
+                    data[k] = "";
+                }
+            }
+        }
+    }
+}
+
+public fn parse_form_into(body_text: string, data: map) {
+    let clean_body = body_text.trim();
+    let pairs = clean_body.split("&");
+    for p in pairs {
+        let p_trim = p.trim();
+        if p_trim != "" {
+            let eq = p_trim.index_of("=");
+            if eq >= 0 {
+                let k = url_decode(p_trim.slice(0, eq).trim());
+                let v = url_decode(p_trim.slice(eq + 1));
+                data[k] = v;
+            } else {
+                let k = url_decode(p_trim);
+                data[k] = "";
+            }
+        }
+    }
+}
+
+public fn parse_multipart_into(body_text: string, content_type: string, data: map, files: map) {
+    let b_idx = content_type.index_of("boundary=");
+    if b_idx < 0 {
+        return;
+    }
+    let boundary = content_type.slice(b_idx + 9, content_type.len()).trim();
+    if boundary.starts_with("\"") and boundary.ends_with("\"") {
+        boundary = boundary.slice(1, boundary.len() - 1);
+    }
+    let delim = "--{boundary}";
+
+    let max_files = int(Config.get("upload.max_files", 10));
+    let max_bytes = int(Config.get("upload.max_bytes", 5_242_880));
+    let file_count = 0;
+
+    let chunks = body_text.split(delim);
+    for chunk in chunks {
+        let c = chunk;
+        if c.starts_with("\r\n") {
+            c = c.slice(2, c.len());
+        } elif c.starts_with("\n") {
+            c = c.slice(1, c.len());
+        }
+        if c.len() == 0 or c == "--" {
+            continue;
+        }
+
+        let sep = c.index_of("\r\n\r\n");
+        let header_len = 4;
+        if sep < 0 {
+            sep = c.index_of("\n\n");
+            header_len = 2;
+            if sep < 0 {
+                continue;
+            }
+        }
+        let part_headers_raw = c.slice(0, sep);
+        let part_headers = part_headers_raw.lower();
+        let value = c.slice(sep + header_len, c.len());
+
+        if value.ends_with("\r\n") {
+            value = value.slice(0, value.len() - 2);
+        } elif value.ends_with("\n") or value.ends_with("\r") {
+            value = value.slice(0, value.len() - 1);
+        }
+
+        let n_idx = part_headers.index_of("name=\"");
+        if n_idx < 0 {
+            continue;
+        }
+        let rest = part_headers_raw.slice(n_idx + 6, part_headers_raw.len());
+        let end_q = rest.index_of("\"");
+        if end_q < 0 {
+            continue;
+        }
+        let field = rest.slice(0, end_q);
+        if field == "" {
+            continue;
+        }
+
+        let fn_idx = part_headers.index_of("filename=\"");
+        if fn_idx >= 0 {
+            let fn_rest = part_headers_raw.slice(fn_idx + 10, part_headers_raw.len());
+            let fn_end = fn_rest.index_of("\"");
+            let filename = "";
+            if fn_end >= 0 {
+                let raw_fn = fn_rest.slice(0, fn_end).replace("\\", "/");
+                let fn_segs = raw_fn.split("/");
+                filename = fn_segs[fn_segs.len() - 1];
+            }
+            let part_ct = "application/octet-stream";
+            let ct_idx = part_headers.index_of("content-type:");
+            if ct_idx >= 0 {
+                let ct_sub = part_headers_raw.slice(ct_idx + 13, part_headers_raw.len());
+                let ct_lines = ct_sub.split("\n");
+                if ct_lines.len() > 0 {
+                    part_ct = ct_lines[0].trim();
+                }
+            }
+            if filename != "" {
+                file_count = file_count + 1;
+                if max_files > 0 and file_count > max_files {
+                    throw make_http_exception(413, "Too many uploaded files (max {max_files}).");
+                }
+                if max_bytes > 0 and value.len() > max_bytes {
+                    throw make_http_exception(
+                        413,
+                        "Uploaded file '{filename}' exceeds max_bytes limit ({max_bytes} bytes)."
+                    );
+                }
+                let ext = "";
+                let dot_segs = filename.split(".");
+                if dot_segs.len() > 1 {
+                    let tail = dot_segs[dot_segs.len() - 1].lower();
+                    ext = ".{tail}";
+                }
+                files[field] = {
+                    "name": filename,
+                    "type": part_ct,
+                    "size": value.len(),
+                    "content": value,
+                    "ext": ext
+                };
+            }
+            continue;
+        }
+
+        data[field] = value;
+    }
+}
+
+public fn strip_ip_port(raw_addr: string) -> string {
+    let s = string(raw_addr).trim();
+    if s == "" {
+        return "";
+    }
+    if s.starts_with("[") {
+        let close_b = s.index_of("]");
+        if close_b > 1 {
+            return s.slice(1, close_b);
+        }
+    }
+    let parts = s.split(":");
+    if parts.len() == 2 {
+        return parts[0].trim();
+    }
+    return s;
+}
+
+public fn resolve_peer_ip(raw: any) -> string {
+    if raw != null and type_of(raw) == "map" {
+        for k in ["remote", "peer_addr", "remote_addr", "client_addr", "ip"] {
+            if raw.has(k) {
+                let v = strip_ip_port(string(raw[k]));
+                if v != "" {
+                    return v;
+                }
+            }
+        }
+    }
+    return "";
+}
+
+fn cidr_prefix_match(ip: string, pattern: string) -> bool {
+    if pattern == "" {
+        return false;
+    }
+    if ip == pattern {
+        return true;
+    }
+    if pattern.contains("/") {
+        let slash = pattern.index_of("/");
+        let net = pattern.slice(0, slash);
+        let bits = -1;
+        try {
+            bits = int(pattern.slice(slash + 1, pattern.len()));
+        } catch (_e) {
+            return false;
+        }
+        let ip_octets = ip.split(".");
+        let net_octets = net.split(".");
+        if ip_octets.len() != 4 or net_octets.len() != 4 {
+            return false;
+        }
+        let match_octets = 0;
+        if bits == 8 {
+            match_octets = 1;
+        } elif bits == 16 {
+            match_octets = 2;
+        } elif bits == 24 {
+            match_octets = 3;
+        } elif bits == 32 {
+            match_octets = 4;
+        } else {
+            return false;
+        }
+        let i = 0;
+        while i < match_octets {
+            if ip_octets[i] != net_octets[i] {
+                return false;
+            }
+            i = i + 1;
+        }
+        return true;
+    }
+    if pattern.ends_with(".") and ip.starts_with(pattern) {
+        return true;
+    }
+    return false;
+}
+
+fn configured_trusted_proxies() {
+    let proxies = [];
+    let env_list = env("SPID3R_TRUSTED_PROXIES").unwrap_or("").trim();
+    if env_list != "" {
+        for item in env_list.split(",") {
+            let t = item.trim();
+            if t != "" {
+                proxies.push(t);
+            }
+        }
+    }
+    let cfg_list = Config.get("http.trusted_proxies", null);
+    if cfg_list != null and type_of(cfg_list) == "list" {
+        for item in cfg_list {
+            let t = string(item).trim();
+            if t != "" {
+                proxies.push(t);
+            }
+        }
+    }
+    return proxies;
+}
+
+public fn is_trusted_proxy(peer_ip: string) -> bool {
+    let legacy = env("SPID3R_TRUST_PROXY").unwrap_or("").trim().lower();
+    if legacy == "1" or legacy == "true" or legacy == "yes" {
+        return true;
+    }
+    let proxies = configured_trusted_proxies();
+    if proxies.len() == 0 {
+        return false;
+    }
+    let peer = strip_ip_port(peer_ip).lower();
+    for entry in proxies {
+        let p = string(entry).trim().lower();
+        if p == "*" {
+            return true;
+        }
+        if peer == "" {
+            continue;
+        }
+        if p == "loopback" {
+            if peer == "127.0.0.1" or peer == "::1" or peer == "localhost" or peer.starts_with("127.") {
+                return true;
+            }
+        }
+        if cidr_prefix_match(peer, p) {
+            return true;
+        }
+    }
+    return false;
+}
+
+public fn resolve_client_ip(headers: map, raw: any) -> string {
+    let peer = resolve_peer_ip(raw);
+    if is_trusted_proxy(peer) {
+        if headers.has("x-forwarded-for") {
+            let parts = string(headers["x-forwarded-for"]).split(",");
+            if parts.len() > 0 {
+                let first = strip_ip_port(parts[0]);
+                if first != "" {
+                    return first;
+                }
+            }
+        }
+        if headers.has("x-real-ip") {
+            let rip = strip_ip_port(string(headers["x-real-ip"]));
+            if rip != "" {
+                return rip;
+            }
+        }
+    }
+    if peer != "" {
+        return peer;
+    }
+    return "unknown";
+}
+
+public fn resolve_request_scheme(headers: map, raw: any) -> string {
+    if raw != null and type_of(raw) == "map" and raw.has("tls") and raw["tls"] == true {
+        return "https";
+    }
+    let peer = resolve_peer_ip(raw);
+    if is_trusted_proxy(peer) and headers.has("x-forwarded-proto") {
+        let raw_proto = string(headers["x-forwarded-proto"]).split(",")[0].trim().lower();
+        if raw_proto == "https" or raw_proto == "http" {
+            return raw_proto;
+        }
+    }
+    return "http";
+}
+
+public fn resolve_request_host(headers: map, raw: any) -> string {
+    let peer = resolve_peer_ip(raw);
+    if is_trusted_proxy(peer) and headers.has("x-forwarded-host") {
+        let fh = string(headers["x-forwarded-host"]).split(",")[0].trim();
+        if fh != "" {
+            return fh;
+        }
+    }
+    if headers.has("host") {
+        return string(headers["host"]).trim();
+    }
+    return "";
+}
+
+public fn verify_signed_cookie_value(raw_val: string, name: string, default_val: any) -> any {
+    let parts = raw_val.split(".");
+    if parts.len() < 2 {
+        return default_val;
+    }
+    let sig = parts[parts.len() - 1];
+    if sig == "" or raw_val.len() <= sig.len() + 1 {
+        return default_val;
+    }
+    let payload = raw_val.slice(0, raw_val.len() - sig.len() - 1);
+    let expected = hmac_sha256(resolve_app_key(), "{name}={payload}");
+    if secure_compare(sig, expected) {
+        return payload;
+    }
+    return default_val;
+}
+
+fn list_has_lower(items, target: string) -> bool {
+    if items == null or type_of(items) != "list" {
+        return false;
+    }
+    for item in items {
+        if string(item).trim().lower() == target {
+            return true;
+        }
+    }
+    return false;
+}
+
+public fn validate_uploaded_file(f: map, opts: any = null) {
+    let max_bytes = int(Config.get("upload.max_bytes", 5_242_880));
+    let allowed_exts = Config.get("upload.allowed_extensions", null);
+    let blocked_exts = Config.get("upload.blocked_extensions", null);
+    let allowed_mimes = Config.get("upload.allowed_mimes", null);
+    if opts != null and type_of(opts) == "map" {
+        if opts.has("max_bytes") {
+            max_bytes = int(opts["max_bytes"]);
+        }
+        if opts.has("allowed_extensions") {
+            allowed_exts = opts["allowed_extensions"];
+        }
+        if opts.has("blocked_extensions") {
+            blocked_exts = opts["blocked_extensions"];
+        }
+        if opts.has("allowed_mimes") {
+            allowed_mimes = opts["allowed_mimes"];
+        }
+    }
+
+    let size = int(f["size"]);
+    if max_bytes > 0 and size > max_bytes {
+        throw make_http_exception(413, "Uploaded file exceeds max_bytes limit ({max_bytes} bytes).");
+    }
+
+    let raw_ext = "";
+    if f.has("ext") {
+        raw_ext = string(f["ext"]).trim().lower();
+        if raw_ext.starts_with(".") {
+            raw_ext = raw_ext.slice(1, raw_ext.len());
+        }
+    }
+    if raw_ext != "" and list_has_lower(blocked_exts, raw_ext) {
+        throw make_http_exception(415, "File extension '.{raw_ext}' is blocked.");
+    }
+    if allowed_exts != null and type_of(allowed_exts) == "list" and allowed_exts.len() > 0 {
+        if raw_ext == "" or not list_has_lower(allowed_exts, raw_ext) {
+            throw make_http_exception(415, "File extension '.{raw_ext}' is not allowed.");
+        }
+    }
+    if allowed_mimes != null and type_of(allowed_mimes) == "list" and allowed_mimes.len() > 0 {
+        let mime = "";
+        if f.has("type") {
+            mime = string(f["type"]).split(";")[0].trim().lower();
+        }
+        if mime != "" and not list_has_lower(allowed_mimes, mime) {
+            throw make_http_exception(415, "Uploaded media type '{mime}' is not allowed.");
+        }
+    }
+}
+
+public fn store_uploaded_file(f: map, directory: string, disk_name: string) -> string {
+    validate_uploaded_file(f);
+    let rnd = hex_encode(random_bytes(16).unwrap());
+    let ext = "";
+    if f.has("ext") {
+        ext = string(f["ext"]).trim().lower();
+        if ext != "" and not ext.starts_with(".") {
+            ext = ".{ext}";
+        }
+    }
+    let safe_name = "{rnd}{ext}";
+    let rel_path = directory;
+    if rel_path != "" and not rel_path.ends_with("/") {
+        rel_path = "{rel_path}/";
+    }
+    rel_path = "{rel_path}{safe_name}";
+    Storage.disk(disk_name).put(rel_path, string(f["content"]));
+    return rel_path;
+}

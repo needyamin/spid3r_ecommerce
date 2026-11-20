@@ -1,0 +1,197 @@
+// tests/test_phase7_polish.matrix
+// Phase 7 Regression & Polish Suite:
+//   - State dir (`app.paths.state_dir` / `SPID3R_STATE_DIR`) & SQLite parent dir creation
+//   - Typed Public API contracts across `framework/Web`, Http, Auth, Cache, Event, Validator, CookieJar
+//   - Zero `unused variable 'self'` under strict `spid3r check --deny-warnings --allow unused-import`
+//   - ConsoleKernel `bench` command registration
+
+import "framework/Web";
+import "framework/Foundation/Config";
+import "framework/Foundation/ConfigValidator";
+import "framework/Database/Connection";
+import "framework/Database/DatabaseManager";
+import "framework/Database/DB";
+import "framework/Http/CookieJar";
+import "framework/Http/Router";
+import "framework/Console/ConsoleKernel";
+import "framework/Console/TestRunner";
+
+fn assert_eq(actual: any, expected: any, label: string) {
+    let a = string(actual);
+    let e = string(expected);
+    if a != e {
+        throw "FAIL [{label}]: expected '{e}', got '{a}'";
+    }
+}
+
+fn assert_true(cond: bool, label: string) {
+    if not cond {
+        throw "FAIL [{label}]: expected true, got false";
+    }
+}
+
+fn rm_tree(path: string) {
+    if not file_exists(path) {
+        return;
+    }
+    if not is_dir(path) {
+        let _f = file_delete(path);
+        return;
+    }
+    let ls = list_dir(path);
+    if ls.is_ok() {
+        for name in ls.unwrap() {
+            let n = string(name);
+            if n == "." or n == ".." {
+                continue;
+            }
+            rm_tree("{path}/{n}");
+        }
+    }
+    let _d = dir_remove(path);
+}
+
+fn test_state_dir_and_sqlite_path_resolution() {
+    let orig_state_cfg = Config.get("app.paths.state_dir", "storage");
+    let prev_dbp = env("SPID3R_DB_PATH").unwrap_or("");
+    let prev_state = env("SPID3R_STATE_DIR").unwrap_or("");
+    let tmp_state = "storage/framework/test_p7_state";
+    rm_tree(tmp_state);
+
+    try {
+        assert_eq(orig_state_cfg, "storage", "default app.paths.state_dir is storage");
+        assert_true(validate_all_config()["ok"] == true, "config schema passes by default");
+
+        Config.set("app.paths.state_dir", "");
+        let bad = validate_all_config();
+        assert_true(bad["ok"] == false, "empty app.paths.state_dir fails ConfigValidator");
+        Config.set("app.paths.state_dir", orig_state_cfg);
+
+        env_set("SPID3R_DB_PATH", "");
+        env_set("SPID3R_STATE_DIR", "{tmp_state}/");
+        let resolved = resolve_sqlite_path();
+        assert_eq(
+            resolved,
+            "{tmp_state}/database/database.sqlite",
+            "SPID3R_STATE_DIR isolates SQLite under state/database/database.sqlite"
+        );
+
+        let conn = new SqliteConnection(resolved);
+        assert_true(conn.ping(), "SqliteConnection auto-creates parent dirs and pings");
+        assert_eq(conn.driver_name(), "sqlite", "driver_name returns sqlite");
+        conn.close();
+        assert_true(file_exists(resolved), "SQLite DB file materialized under state_dir");
+
+        let custom_db = "{tmp_state}/custom.sqlite";
+        env_set("SPID3R_DB_PATH", custom_db);
+        assert_eq(
+            resolve_sqlite_path(),
+            custom_db,
+            "SPID3R_DB_PATH takes precedence over SPID3R_STATE_DIR"
+        );
+    } finally {
+        Config.set("app.paths.state_dir", orig_state_cfg);
+        env_set("SPID3R_DB_PATH", prev_dbp);
+        env_set("SPID3R_STATE_DIR", prev_state);
+        rm_tree(tmp_state);
+    }
+    println("  [PASS] test_state_dir_and_sqlite_path_resolution");
+}
+
+fn test_typed_public_api_contracts() {
+    Route.clear();
+    let app = web();
+    app.get("/p7-hello", _req => {
+        return {
+            "hello": "typed"
+        };
+    }).name("p7.hello");
+
+    let u = route("p7.hello");
+    assert_eq(u, "/p7-hello", "named route url() returns string");
+
+    let client = test_client(app);
+    let r = client.get("/p7-hello").assert_ok().assert_json_path("hello", "typed");
+    assert_true(r.header("content-type").contains("application/json"), "typed header()");
+
+    let jar = new CookieJar();
+    let hdr = jar.queue("p7_ck", "ok", "/", 60, false);
+    assert_true(hdr.starts_with("p7_ck=ok"), "CookieJar.queue returns formatted header");
+    assert_eq(jar.count(), 1, "CookieJar.count tracks queued cookies");
+
+    let resp = send_json({
+        "ok": true
+    }, 201);
+    assert_eq(resp.status_code, 201, "send_json sets status code");
+    let text_res = send_text("plain", 200);
+    assert_eq(text_res.body, "plain", "send_text sets body");
+    let redir_res = redirect_to("/next", 302);
+    assert_eq(redir_res.status_code, 302, "redirect_to returns Response");
+
+    let hashed = hash().make("hunter2");
+    assert_true(hash().check("hunter2", hashed), "Hash.make + Hash.check work");
+    let tok = jwt().sign({
+        "sub": 7
+    }, 120, "phase7-typed-api-test-secret-key-01");
+    let claims = jwt().verify(tok, "phase7-typed-api-test-secret-key-01");
+    assert_eq(claims["sub"], 7, "Jwt.sign + Jwt.verify round-trip");
+
+    cache().put("_p7_key", "cached", 60);
+    assert_eq(cache().get("_p7_key", ""), "cached", "Cache.put + Cache.get work");
+    cache().forget("_p7_key");
+
+    let seen = {
+        "n": 0
+    };
+    events().flush().listen("p7.evt", fn(p, _n) {
+        seen["n"] = int(p);
+        return true;
+    });
+    events().dispatch("p7.evt", 42);
+    assert_eq(seen["n"], 42, "Event.listen + Event.dispatch work");
+    events().flush();
+
+    Route.clear();
+    println("  [PASS] test_typed_public_api_contracts");
+}
+
+fn test_strict_lint_and_bench_command() {
+    let k = new ConsoleKernel();
+    assert_true(k.handle(["help"]) == 0, "ConsoleKernel help renders bench command");
+
+    let bin = find_spid3r_binary();
+    if env("SPID3R_PATH").unwrap_or("").trim() == "" {
+        env_set("SPID3R_PATH", ".");
+    }
+    let targets = [
+    "app/Controllers/HomeController.matrix",
+    "framework/Http/Controller.matrix",
+    "framework/Database/DatabaseManager.matrix"
+    ];
+    for t in targets {
+        let r = exec_capture(
+            bin,
+            ["check",
+            "--deny-warnings",
+            "--allow",
+            "unused-import",
+            t],
+            null
+        );
+        assert_true(r.is_ok() and int(r.unwrap()["code"]) == 0, "strict check passes on {t}");
+        let info = r.unwrap();
+        let combined = string(info["stdout"]) + "\n" + string(info["stderr"]);
+        assert_true(not combined.contains("unused variable"), "no unused variable in {t}");
+    }
+    println("  [PASS] test_strict_lint_and_bench_command");
+}
+
+fn main() -> int {
+    println("\n=== Running Phase 7 Final Polish & Contracts Suite ===");
+    test_state_dir_and_sqlite_path_resolution();
+    test_typed_public_api_contracts();
+    test_strict_lint_and_bench_command();
+    DB.close();
+    println("=== All Phase 7 Polish Tests Passed! ===\n");
+    return 0;
+}

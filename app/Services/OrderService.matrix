@@ -2,7 +2,7 @@
 // Phase 7 — order lifecycle, ownership checks, cancellation & invoices.
 
 import "framework/Database/DB";
-import "framework/HttpException";
+import "framework/Http/HttpException";
 import "app/Repositories/OrderRepository";
 import "app/Repositories/InventoryRepository";
 import "app/Services/AdvancedStoreService";

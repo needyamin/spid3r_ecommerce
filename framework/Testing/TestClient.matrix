@@ -49,16 +49,76 @@ public class TestResponse {
     public let status;
     public let headers;
     public let body;
+    public let body_bytes;
+    public let stream_bytes;
+    public let is_streamed;
     public let raw;
 
-    fn new(raw_http) {
+    fn new (raw_http) {
         self.raw = raw_http;
         self.status = int(raw_http["status"]);
         self.headers = raw_http["headers"];
-        self.body = string(raw_http["body"]);
+        self.body_bytes = null;
+        self.stream_bytes = 0;
+        self.is_streamed = false;
+        if raw_http.has("stream") and raw_http["stream"] != null {
+            self.is_streamed = true;
+            let src = raw_http["stream"];
+            let st = type_of(src);
+            let chunks = [];
+            let text_parts = [];
+            let total = 0;
+            let has_binary = false;
+            if st == "function" {
+                while true {
+                    let c = src();
+                    if c == null or len(c) == 0 {
+                        break;
+                    }
+                    total = total + len(c);
+                    chunks.push(c);
+                    if type_of(c) == "bytes" {
+                        has_binary = true;
+                    } else {
+                        text_parts.push(string(c));
+                    }
+                }
+            } elif st == "list" {
+                for c in src {
+                    if c != null and len(c) > 0 {
+                        total = total + len(c);
+                        chunks.push(c);
+                        if type_of(c) == "bytes" {
+                            has_binary = true;
+                        } else {
+                            text_parts.push(string(c));
+                        }
+                    }
+                }
+            } else {
+                total = len(src);
+                chunks.push(src);
+                if type_of(src) == "bytes" {
+                    has_binary = true;
+                } else {
+                    text_parts.push(string(src));
+                }
+            }
+            self.stream_bytes = total;
+            self.body_bytes = bytes_concat(chunks);
+            self.body = if has_binary and text_parts.len() == 0 {
+                ""
+            } else {
+                text_parts.join("")
+            };
+        } elif raw_http["body"] == null {
+            self.body = "";
+        } else {
+            self.body = string(raw_http["body"]);
+        }
     }
 
-    public fn json(self) {
+    public fn json(self) -> any {
         let parsed = json_parse(self.body);
         if type_of(parsed) == "result" {
             if parsed.is_err() {
@@ -69,131 +129,175 @@ public class TestResponse {
         return parsed;
     }
 
-    public fn header(self, key: string, default_val: string = "") -> string {
+    public fn header_values(self, key: string) -> list {
         let lk = key.lower();
-        if self.headers != null and self.headers.has(lk) {
-            return string(self.headers[lk]);
+        let out = [];
+        if self.headers == null {
+            return out;
+        }
+        let ht = type_of(self.headers);
+        if ht == "map" {
+            for (hk, hv) in self.headers {
+                if string(hk).lower() == lk {
+                    out.push(string(hv));
+                }
+            }
+            return out;
+        }
+        if ht == "list" {
+            for entry in self.headers {
+                if type_of(entry) == "map" and entry.has("name") and entry.has("value") {
+                    if string(entry["name"]).lower() == lk {
+                        out.push(string(entry["value"]));
+                    }
+                }
+            }
+        }
+        return out;
+    }
+
+    public fn header(self, key: string, default_val: string = "") -> string {
+        let vals = self.header_values(key);
+        if vals.len() > 0 {
+            return vals[0];
         }
         return default_val;
     }
 
-    public fn assert_status(self, expected: int) {
+    public fn assert_status(self, expected: int) -> TestResponse {
         if self.status != expected {
-            throw "Assertion failed: expected HTTP status " + string(expected) + ", got " + string(self.status) + " (body: " + self.body + ")";
+            throw "Assertion failed: expected HTTP status {expected}, got {self.status} (body: {self.body})";
         }
         return self;
     }
 
-    public fn assert_ok(self) {
+    public fn assert_ok(self) -> TestResponse {
         return self.assert_status(200);
     }
 
-    public fn assert_created(self) {
+    public fn assert_created(self) -> TestResponse {
         return self.assert_status(201);
     }
 
-    public fn assert_no_content(self) {
+    public fn assert_no_content(self) -> TestResponse {
         return self.assert_status(204);
     }
 
-    public fn assert_not_found(self) {
+    public fn assert_not_found(self) -> TestResponse {
         return self.assert_status(404);
     }
 
-    public fn assert_unauthorized(self) {
+    public fn assert_unauthorized(self) -> TestResponse {
         return self.assert_status(401);
     }
 
-    public fn assert_forbidden(self) {
+    public fn assert_forbidden(self) -> TestResponse {
         return self.assert_status(403);
     }
 
-    public fn assert_unprocessable(self) {
+    public fn assert_unprocessable(self) -> TestResponse {
         return self.assert_status(422);
     }
 
-    public fn assert_header(self, key: string, expected_val: string = "") {
+    public fn assert_header(self, key: string, expected_val: string = "") -> TestResponse {
         let lk = key.lower();
-        if self.headers == null or not self.headers.has(lk) {
+        let vals = self.header_values(lk);
+        if vals.len() == 0 {
             throw "Assertion failed: expected header '" + lk + "' to be present.";
         }
-        if expected_val != "" and string(self.headers[lk]) != expected_val {
-            throw "Assertion failed: expected header '" + lk + "' to equal '" + expected_val + "', got '" + string(self.headers[lk]) + "'";
+        if expected_val != "" {
+            let matched = false;
+            for v in vals {
+                if v == expected_val {
+                    matched = true;
+                    break;
+                }
+            }
+            if not matched {
+                throw "Assertion failed: expected header '" + lk + "' to equal '" + expected_val + "', got '" + vals.join(", ") + "'";
+            }
         }
         return self;
     }
 
-    public fn assert_see(self, substring: string) {
+    public fn assert_see(self, substring: string) -> TestResponse {
         if not self.body.contains(substring) {
             throw "Assertion failed: expected response body to contain '" + substring + "', got: " + self.body;
         }
         return self;
     }
 
-    public fn assert_dont_see(self, substring: string) {
+    public fn assert_dont_see(self, substring: string) -> TestResponse {
         if self.body.contains(substring) {
             throw "Assertion failed: expected response body NOT to contain '" + substring + "'.";
         }
         return self;
     }
 
-    public fn assert_json_path(self, dot_path: string, expected_val) {
+    public fn assert_json_path(self, dot_path: string, expected_val: any) -> TestResponse {
         let data = self.json();
         let actual = resolve_json_dot_path(data, dot_path);
-        if string(actual) != string(expected_val) {
-            throw "Assertion failed at JSON path '" + dot_path + "': expected '" + string(expected_val) + "', got '" + string(actual) + "'";
+        let exp_str = string(expected_val);
+        let act_str = string(actual);
+        if act_str != exp_str {
+            throw "Assertion failed at JSON path '{dot_path}': expected '{exp_str}', got '{act_str}'";
         }
         return self;
     }
 }
 
+/// In-memory HTTP test client supporting `acting_as()` JWT auth, cookie jars, and fluent assertions.
 public class TestClient {
     public let app;
     public let default_headers;
     public let cookies;
 
-    fn new(app_instance) {
+    fn new (app_instance) {
         self.app = app_instance;
-        self.default_headers = {};
-        self.cookies = {};
+        self.default_headers = {
+        };
+        self.cookies = {
+        };
     }
 
-    public fn with_header(self, key: string, value: string) {
+    public fn with_header(self, key: string, value: string) -> TestClient {
         self.default_headers[key.lower()] = value;
         return self;
     }
 
-    public fn with_headers(self, hdrs) {
+    public fn with_headers(self, hdrs: map) -> TestClient {
         for (k, v) in hdrs {
             self.default_headers[string(k).lower()] = string(v);
         }
         return self;
     }
 
-    public fn with_token(self, token: string) {
+    public fn with_token(self, token: string) -> TestClient {
         self.default_headers["authorization"] = "Bearer " + token;
         return self;
     }
 
-    public fn acting_as(self, user, ttl: int = 3600) {
+    public fn acting_as(self, user: map, ttl: int = 3600) -> TestClient {
         let token = Jwt.sign(user, ttl);
         return self.with_token(token);
     }
 
-    public fn with_cookie(self, name: string, value: string) {
+    public fn with_cookie(self, name: string, value: string) -> TestClient {
         self.cookies[name] = value;
         return self;
     }
 
-    public fn request(self, method: string, path: string, body_str: string = "", extra_headers = {}) {
-        let merged_headers = {};
+    public fn request(self, method: string, path: string, body_str: string = "", extra_headers: map = {
+    }) -> TestResponse {
+        let merged_headers = {
+        };
         for (dk, dv) in self.default_headers {
             merged_headers[dk] = dv;
         }
         if self.cookies.len() > 0 {
             let c_parts = [];
             for (ck, cv) in self.cookies {
-                c_parts.push(string(ck) + "=" + string(cv));
+                c_parts.push("{ck}={cv}");
             }
             merged_headers["cookie"] = c_parts.join("; ");
         }
@@ -212,42 +316,67 @@ public class TestClient {
         return new TestResponse(raw_res);
     }
 
-    public fn get(self, path: string, headers = {}) {
+    public fn get(self, path: string, headers: map = {
+    }) -> TestResponse {
         return self.request("GET", path, "", headers);
     }
 
-    public fn delete(self, path: string, headers = {}) {
+    public fn delete(self, path: string, headers: map = {
+    }) -> TestResponse {
         return self.request("DELETE", path, "", headers);
     }
 
-    public fn post(self, path: string, body_or_map = "", headers = {}) {
+    public fn post(self, path: string, body_or_map: any = "", headers: map = {
+    }) -> TestResponse {
         if type_of(body_or_map) == "map" {
             let pairs = [];
             for (k, v) in body_or_map {
-                pairs.push(string(k) + "=" + string(v));
+                pairs.push("{k}={v}");
             }
-            let h = {"content-type": "application/x-www-form-urlencoded"};
-            for (ek, ev) in headers { h[string(ek).lower()] = string(ev); }
+            let h = {
+                "content-type": "application/x-www-form-urlencoded"
+            };
+            for (ek, ev) in headers {
+                h[string(ek).lower()] = string(ev);
+            }
             return self.request("POST", path, pairs.join("&"), h);
         }
         return self.request("POST", path, string(body_or_map), headers);
     }
 
-    public fn post_json(self, path: string, payload = {}, headers = {}) {
-        let h = {"content-type": "application/json", "accept": "application/json"};
-        for (ek, ev) in headers { h[string(ek).lower()] = string(ev); }
+    public fn post_json(self, path: string, payload: any = {
+    }, headers: map = {
+    }) -> TestResponse {
+        let h = {
+            "content-type": "application/json", "accept": "application/json"
+        };
+        for (ek, ev) in headers {
+            h[string(ek).lower()] = string(ev);
+        }
         return self.request("POST", path, json_write(payload), h);
     }
 
-    public fn put_json(self, path: string, payload = {}, headers = {}) {
-        let h = {"content-type": "application/json", "accept": "application/json"};
-        for (ek, ev) in headers { h[string(ek).lower()] = string(ev); }
+    public fn put_json(self, path: string, payload: any = {
+    }, headers: map = {
+    }) -> TestResponse {
+        let h = {
+            "content-type": "application/json", "accept": "application/json"
+        };
+        for (ek, ev) in headers {
+            h[string(ek).lower()] = string(ev);
+        }
         return self.request("PUT", path, json_write(payload), h);
     }
 
-    public fn patch_json(self, path: string, payload = {}, headers = {}) {
-        let h = {"content-type": "application/json", "accept": "application/json"};
-        for (ek, ev) in headers { h[string(ek).lower()] = string(ev); }
+    public fn patch_json(self, path: string, payload: any = {
+    }, headers: map = {
+    }) -> TestResponse {
+        let h = {
+            "content-type": "application/json", "accept": "application/json"
+        };
+        for (ek, ev) in headers {
+            h[string(ek).lower()] = string(ev);
+        }
         return self.request("PATCH", path, json_write(payload), h);
     }
 }

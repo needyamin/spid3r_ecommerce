@@ -13,7 +13,7 @@
 // (quantity x unit price) and can only be lowered by staff, never raised.
 
 import "framework/Database/DB";
-import "framework/HttpException";
+import "framework/Http/HttpException";
 import "app/Repositories/OrderRepository";
 import "app/Repositories/InventoryRepository";
 

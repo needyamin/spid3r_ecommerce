@@ -1,0 +1,101 @@
+// framework/Console/Commands/WatchHelper.matrix
+// File mtime snapshot and change detector for `spid3r magic serve --watch`.
+
+fn collect_watch_files(dir: string, snap) {
+    if not file_exists(dir) {
+        return;
+    }
+    let ls = list_dir(dir);
+    if ls.is_err() {
+        return;
+    }
+    for raw in ls.unwrap() {
+        let name = string(raw);
+        if name == "." or name == ".." or name == ".git" {
+            continue;
+        }
+        let full = "{dir}/{name}";
+        if is_dir(full) {
+            collect_watch_files(full, snap);
+        } elif name.ends_with(".matrix") or name.ends_with(".bd.html") {
+            let mt = file_mtime(full);
+            if mt.is_ok() {
+                snap[full] = int(mt.unwrap());
+            }
+        }
+    }
+}
+
+/// Capture `path -> mtime` across watched application source directories.
+public fn snapshot_watch_mtimes(root: string = "", extra_dirs: any = null) -> map {
+    let snap = {
+    };
+    let dirs = extra_dirs ?? [
+    "app",
+    "bootstrap",
+    "config",
+    "framework",
+    "routes",
+    "resources/views"
+    ];
+    for d in dirs {
+        collect_watch_files("{root}{d}", snap);
+    }
+    let srv = "{root}server.matrix";
+    if file_exists(srv) {
+        let mt = file_mtime(srv);
+        if mt.is_ok() {
+            snap[srv] = int(mt.unwrap());
+        }
+    }
+    return snap;
+}
+
+/// Return modified, added, or removed paths between two snapshots.
+public fn detect_watch_changes(prev_snap: map, next_snap: map) -> list {
+    let changed = [];
+    for (p, mt) in next_snap {
+        if not prev_snap.has(p) or int(prev_snap[p]) != int(mt) {
+            changed.push(p);
+        }
+    }
+    for (p, _mt) in prev_snap {
+        if not next_snap.has(p) {
+            changed.push(p);
+        }
+    }
+    return changed;
+}
+
+/// Poll project sources on a background task and request cooperative shutdown on change.
+public fn start_watch_reload_thread(
+    root: string = "",
+    interval_ms: int = 750,
+    state: any = null
+) {
+    let watch_root = root;
+    let poll_ms = if interval_ms > 100 {
+        interval_ms
+    } else {
+        750
+    };
+    spawn fn() {
+        let prev = snapshot_watch_mtimes(watch_root);
+        while not shutdown_requested() {
+            sleep_ms(poll_ms);
+            let cur = snapshot_watch_mtimes(watch_root);
+            let diffs = detect_watch_changes(prev, cur);
+            if diffs.len() > 0 {
+                let first_path = string(diffs[0]);
+                println("[Watch] Detected change in {first_path} — reloading server...");
+                if state != null {
+                    state["changed"] = true;
+                }
+                request_shutdown();
+                return 0;
+            }
+            prev = cur;
+        }
+        return 0;
+    };
+}

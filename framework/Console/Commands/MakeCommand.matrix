@@ -1,0 +1,296 @@
+// framework/Console/Commands/MakeCommand.matrix
+// Scaffolding commands (make:controller, make:model, make:middleware,
+// make:provider, make:test, make:migration).
+
+import "MigrationRegistry";
+
+fn valid_scaffold_name(name: string) -> bool {
+    let allowed = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_";
+    let s = string(name);
+    if s.len() == 0 {
+        return false;
+    }
+    let i = 0;
+    while i < s.len() {
+        if not allowed.contains(s.slice(i, i + 1)) {
+            return false;
+        }
+        i = i + 1;
+    }
+    return not string("0123456789").contains(s.slice(0, 1));
+}
+
+fn write_scaffold(file_path: string, content: string, label: string) -> int {
+    ensure_parent_dirs(file_path);
+    let res = write_file(file_path, content);
+    if res.is_err() {
+        let err = string(res.unwrap_err());
+        println("[Magic Error] {err}");
+        return 1;
+    }
+    println("[Magic] {label} created successfully: {file_path}");
+    return 0;
+}
+
+fn make_controller(root: string, name: string) -> int {
+    if not valid_scaffold_name(name) {
+        println(
+            "[Magic Error] Invalid controller name '{name}' — use letters, digits and underscores only (e.g. PostController)."
+        );
+        return 1;
+    }
+    let clean = name;
+    if not clean.ends_with("Controller") {
+        clean = "{clean}Controller";
+    }
+    let base_view = clean.slice(0, clean.len() - 10).lower();
+    let file_path = "{root}app/Controllers/{clean}.matrix";
+    let content = "// {file_path}\nimport \"framework/Http/Controller\";\n\npublic class {clean} extends Controller {\n    fn new() {\n        let _ = self;\n    }\n\n    public fn index(self, req: any) -> Response {\n        return self.render(req, \"{base_view}.index\", {\"title\": \"{clean}\"});\n    }\n\n    public fn show(self, req: any) -> Response {\n        let id = req.int(\"id\");\n        return self.ok({\"id\": id});\n    }\n\n    public fn store(self, req: any) -> Response {\n        let data = req.validate_or_fail({\"title\": \"required|min:2\"});\n        return self.created(data);\n    }\n}\n";
+    return write_scaffold(file_path, content, "Controller");
+}
+
+fn make_model(kernel, root: string, name: string, with_mig: bool) -> int {
+    if not valid_scaffold_name(name) {
+        println(
+            "[Magic Error] Invalid model name '{name}' — use letters, digits and underscores only (e.g. Post)."
+        );
+        return 1;
+    }
+    let file_path = "{root}app/Models/{name}.matrix";
+    let lower_n = string(name).lower();
+    let table_name = "{lower_n}s";
+    let content = "// {file_path}\nimport \"framework/Database/ModelRepository\";\n\npublic let {name} = define_model(\"{table_name}\", {\n    \"fillable\": [],\n    \"hidden\": [],\n    \"casts\": {}\n});\n\npublic let {name}Model = {name};\n";
+    let code = write_scaffold(file_path, content, "Model");
+    if code == 0 and with_mig {
+        return make_migration(kernel, "create_{table_name}_table");
+    }
+    return code;
+}
+
+fn make_middleware(root: string, name: string) -> int {
+    if not valid_scaffold_name(name) {
+        println("[Magic Error] Invalid middleware name '{name}'.");
+        return 1;
+    }
+    let clean = name;
+    if not clean.ends_with("Middleware") {
+        clean = "{clean}Middleware";
+    }
+    let file_path = "{root}app/Middleware/{clean}.matrix";
+    let content = "// {file_path}\npublic class {clean} {\n    fn new() {\n        let _ = self;\n    }\n\n    public fn handle(self, req: any, next: any = null) -> any {\n        let _ = self;\n        if next != null {\n            return next(req);\n        }\n        return null;\n    }\n}\n";
+    return write_scaffold(file_path, content, "Middleware");
+}
+
+fn make_provider(root: string, name: string) -> int {
+    if not valid_scaffold_name(name) {
+        println("[Magic Error] Invalid provider name '{name}'.");
+        return 1;
+    }
+    let clean = name;
+    if not clean.ends_with("Provider") {
+        clean = "{clean}Provider";
+    }
+    let file_path = "{root}app/Providers/{clean}.matrix";
+    let content = "// {file_path}\nimport \"framework/Foundation/ServiceProvider\";\n\npublic class {clean} extends ServiceProvider {\n    fn new() {\n        let _ = self;\n    }\n\n    public fn register(self, _container: any) {\n        let _ = self;\n    }\n\n    public fn boot(self, _container: any) {\n        let _ = self;\n    }\n}\n";
+    return write_scaffold(file_path, content, "Provider");
+}
+
+fn make_test(root: string, name: string) -> int {
+    if not valid_scaffold_name(name) {
+        println("[Magic Error] Invalid test name '{name}'.");
+        return 1;
+    }
+    let clean = name.lower();
+    if not clean.starts_with("test_") {
+        clean = "test_{clean}";
+    }
+    let file_path = "{root}tests/{clean}.matrix";
+    let content = "// {file_path}\nimport \"framework/Web\";\n\nfn main() {\n    let app = web();\n    app.get(\"/ping\", req => {\"pong\": true});\n    app.test_client().get(\"/ping\").assert_ok().assert_json_path(\"pong\", true);\n    println(\"=== All {clean} Tests Passed! ===\");\n}\n";
+    return write_scaffold(file_path, content, "Test suite");
+}
+
+fn ensure_suffix(name: string, suffix: string) -> string {
+    if name.ends_with(suffix) {
+        return name;
+    }
+    return "{name}{suffix}";
+}
+
+fn make_request(root: string, name: string) -> int {
+    if not valid_scaffold_name(name) {
+        println("[Magic Error] Invalid request name '{name}'.");
+        return 1;
+    }
+    let clean = ensure_suffix(name, "Request");
+    let file_path = "{root}app/Requests/{clean}.matrix";
+    let content = "// {file_path}\npublic class {clean} {\n    fn new () {\n        let _ = self;\n    }\n\n    public fn rules(self) -> map {\n        let _ = self;\n        return {\n            \"name\": \"required|min:2\"\n        };\n    }\n\n    public fn validate(self, req: any) -> map {\n        return req.validate_or_fail(self.rules());\n    }\n}\n";
+    return write_scaffold(file_path, content, "Request");
+}
+
+fn make_resource(root: string, name: string) -> int {
+    if not valid_scaffold_name(name) {
+        println("[Magic Error] Invalid resource name '{name}'.");
+        return 1;
+    }
+    let clean = ensure_suffix(name, "Resource");
+    let file_path = "{root}app/Resources/{clean}.matrix";
+    let content = "// {file_path}\nimport \"framework/Http/Resource\";\n\npublic fn format_{clean}(row) {\n    return {\n        \"id\": row[\"id\"]\n    };\n}\n\npublic class {clean} {\n    public static fn item(model) {\n        let _ = self;\n        return resource_item(model, format_{clean});\n    }\n\n    public static fn collection(items) {\n        let _ = self;\n        return resource_collection(items, format_{clean});\n    }\n}\n";
+    return write_scaffold(file_path, content, "Resource");
+}
+
+fn make_command(root: string, name: string) -> int {
+    if not valid_scaffold_name(name) {
+        println("[Magic Error] Invalid command name '{name}'.");
+        return 1;
+    }
+    let clean = ensure_suffix(name, "Command");
+    let slug = clean.slice(0, clean.len() - 7).lower();
+    let file_path = "{root}app/Console/{clean}.matrix";
+    let content = "// {file_path}\npublic class {clean} {\n    public let name;\n    public let usage;\n    public let description;\n\n    fn new () {\n        self.name = \"app:{slug}\";\n        self.usage = \"app:{slug}\";\n        self.description = \"Custom {clean}\";\n    }\n\n    public fn handle(self, _cli_args) -> int {\n        println(\"[{clean}] Running app:{slug}...\");\n        return 0;\n    }\n}\n";
+    return write_scaffold(file_path, content, "Command");
+}
+
+fn make_seeder(root: string, name: string) -> int {
+    if not valid_scaffold_name(name) {
+        println("[Magic Error] Invalid seeder name '{name}'.");
+        return 1;
+    }
+    let clean = ensure_suffix(name, "Seeder");
+    let file_path = "{root}database/seeders/{clean}.matrix";
+    let content = "// {file_path}\nimport \"framework/Database/DB\";\n\npublic class {clean} {\n    fn new () {\n        let _ = self;\n    }\n\n    public fn run(self) {\n        let _ = self;\n        // DB.table(\"items\").insert({\"name\": \"sample\"});\n    }\n}\n";
+    return write_scaffold(file_path, content, "Seeder");
+}
+
+fn make_migration(kernel, name: string, fn_mode: bool = false) -> int {
+    let allowed = "abcdefghijklmnopqrstuvwxyz0123456789_";
+    let sn = string(name);
+    let ok = sn.len() > 0;
+    let i = 0;
+    while i < sn.len() {
+        if not allowed.contains(sn.slice(i, i + 1)) {
+            ok = false;
+        }
+        i = i + 1;
+    }
+    if not ok {
+        println(
+            "[Magic Error] Invalid migration name '{sn}' — use lowercase words separated by underscores (e.g. create_posts_table)."
+        );
+        return 1;
+    }
+    let ts = format_migration_timestamp(int(unix_time()));
+    let stem = "{ts}_{name}";
+    let mdir = kernel.migrations_dir();
+    let file_path = "{mdir}/{stem}.matrix";
+
+    let content = "";
+    if fn_mode {
+        content = "// database/migrations/{stem}.matrix\nimport \"framework/Database/Schema\";\n\npublic fn up() {\n    Schema.create(\"sample\", table => {\n        table.id();\n        table.timestamps();\n    });\n}\n\npublic fn down() {\n    Schema.dropIfExists(\"sample\");\n}\n";
+    } else {
+        let class_words = [];
+        for w in name.split("_") {
+            let fw = w.trim();
+            if fw != "" {
+                let head = fw.slice(0, 1).upper();
+                if fw.len() > 1 {
+                    head = head + fw.slice(1, fw.len());
+                }
+                class_words.push(head);
+            }
+        }
+        let cls_tail = class_words.join("");
+        let class_name = "Migration{cls_tail}";
+        content = "// database/migrations/{stem}.matrix\nimport \"framework/Database/Schema\";\nimport \"framework/Database/Migration\";\n\npublic class {class_name} extends Migration {\n    fn new (name: string = \"{stem}\") {\n        self.name = name;\n        self.checksum = \"\";\n    }\n\n    public fn up(self) {\n        let _ = self;\n        Schema.create(\"sample\", table => {\n            table.id();\n            table.timestamps();\n        });\n    }\n\n    public fn down(self) {\n        let _ = self;\n        Schema.dropIfExists(\"sample\");\n    }\n}\n";
+    }
+    let code = write_scaffold(file_path, content, "Migration");
+    if code == 0 {
+        let _ = kernel.sync_migration_registry(true, true);
+        println("[Magic] Registered automatically — run `spid3r magic migrate` to apply.");
+    }
+    return code;
+}
+
+public class MakeCommand {
+    public let name;
+    public let usage;
+    public let description;
+    private let missing_msg;
+    private let kernel;
+
+    fn new (
+        kernel,
+        cmd_name: string,
+        usage: string,
+        description: string,
+        missing_msg: string
+    ) {
+        self.kernel = kernel;
+        self.name = cmd_name;
+        self.usage = usage;
+        self.description = description;
+        self.missing_msg = missing_msg;
+    }
+
+    public fn handle(self, cli_args: list) -> int {
+        if cli_args.len() < 2 {
+            let u = self.usage;
+            let msg = self.missing_msg;
+            println("Error: Not enough arguments ({msg}). Usage: {u}");
+            return 1;
+        }
+        let target = string(cli_args[1]);
+        let root = self.kernel.resolve_root();
+        match (self.name) {
+            "make:controller" => {
+                return make_controller(root, target);
+            }
+            ,
+            "make:model" => {
+                let with_mig = cli_args.len() > 2 and string(cli_args[2]) == "-m";
+                return make_model(self.kernel, root, target, with_mig);
+            }
+            ,
+            "make:middleware" => {
+                return make_middleware(root, target);
+            }
+            ,
+            "make:provider" => {
+                return make_provider(root, target);
+            }
+            ,
+            "make:test" => {
+                return make_test(root, target);
+            }
+            ,
+            "make:migration" => {
+                let fn_mode = false;
+                for a in cli_args {
+                    if string(a) == "--fn" {
+                        fn_mode = true;
+                    }
+                }
+                return make_migration(self.kernel, target, fn_mode);
+            }
+            ,
+            "make:request" => {
+                return make_request(root, target);
+            }
+            ,
+            "make:resource" => {
+                return make_resource(root, target);
+            }
+            ,
+            "make:command" => {
+                return make_command(root, target);
+            }
+            ,
+            "make:seeder" => {
+                return make_seeder(root, target);
+            }
+            ,
+            _ => {
+                return 1;
+            }
+        }
+    }
+}

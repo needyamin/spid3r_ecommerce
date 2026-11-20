@@ -1,0 +1,309 @@
+// framework/Console/Commands/DoctorCommand.matrix
+// `spid3r magic doctor [--fix] [--strict]` — checks permissions, secrets,
+// config validity, writable storage, security policy, and DB connectivity.
+
+import "framework/Foundation/Config";
+import "framework/Foundation/ConfigValidator";
+import "framework/Foundation/RuntimeVersion";
+import "framework/Database/DB";
+import "framework/Console/TestRunner";
+
+fn detect_windows() -> bool {
+    let os_env = env("OS").unwrap_or("").trim().lower();
+    if os_env.contains("windows") {
+        return true;
+    }
+    return env("USERPROFILE").is_some() and env("SystemRoot").is_some();
+}
+
+fn posix_stat_mode(path: string) -> string {
+    let r1 = exec_capture("stat", ["-c", "%a", path], null);
+    if r1.is_ok() {
+        let out = r1.unwrap();
+        if int(out["code"]) == 0 {
+            let m = string(out["stdout"]).trim();
+            if m.len() >= 3 {
+                return m.slice(m.len() - 3, m.len());
+            }
+            return m;
+        }
+    }
+    let r2 = exec_capture("stat", ["-f", "%Lp", path], null);
+    if r2.is_ok() {
+        let out2 = r2.unwrap();
+        if int(out2["code"]) == 0 {
+            let m2 = string(out2["stdout"]).trim();
+            if m2.len() >= 3 {
+                return m2.slice(m2.len() - 3, m2.len());
+            }
+            return m2;
+        }
+    }
+    return "";
+}
+
+fn chmod_path(mode: string, path: string) -> bool {
+    let r = exec_capture("chmod", [mode, path], null);
+    if r.is_err() {
+        return false;
+    }
+    return int(r.unwrap()["code"]) == 0;
+}
+
+public class DoctorCommand {
+    public let name;
+    public let usage;
+    public let description;
+    private let kernel;
+
+    fn new (kernel) {
+        self.name = "doctor";
+        self.usage = "doctor [--fix] [--strict]";
+        self.description = "Inspect permissions, secrets, ini config, and DB health";
+        self.kernel = kernel;
+    }
+
+    private fn rec(self, stats: map, kind: string, label: string, detail: string) {
+        let _ = self;
+        stats[kind] = int(stats[kind]) + 1;
+        let tag = string(kind).upper();
+        println("  [{tag}] {label}: {detail}");
+    }
+
+    private fn check_posix_perms(self, stats, root: string, fix: bool) {
+        let env_path = "{root}.env";
+        let env_exists = false;
+        try {
+            env_exists = file_exists(env_path);
+        } catch (_e) {
+            env_exists = false;
+        }
+        if env_exists {
+            let mode = posix_stat_mode(env_path);
+            if mode == "" {
+                self.rec(stats, "warn", ".env permissions", "unable to stat mode");
+            } elif mode == "600" or mode == "400" {
+                self.rec(stats, "pass", ".env permissions", "mode 0{mode}");
+            } elif fix and chmod_path("0600", env_path) {
+                self.rec(stats, "pass", ".env permissions", "repaired 0{mode} -> 0600");
+            } else {
+                let lvl = if is_production() {
+                    "fail"
+                } else {
+                    "warn"
+                };
+                self.rec(stats, lvl, ".env permissions", "mode 0{mode}; expected 0600 (run --fix)");
+            }
+        } else {
+            self.rec(
+                stats,
+                "pass",
+                ".env permissions",
+                "no .env file (or confined by basedir; using OS environment)"
+            );
+        }
+
+        let writable_dirs = [
+        "{root}storage",
+        "{root}storage/logs",
+        "{root}storage/framework",
+        "{root}storage/framework/cache",
+        "{root}storage/app",
+        "{root}storage/backups",
+        "{root}storage/database",
+        "{root}database"
+        ];
+        for d in writable_dirs {
+            if not is_dir(d) {
+                continue;
+            }
+            let mode = posix_stat_mode(d);
+            if mode == "" {
+                continue;
+            }
+            let tail = if mode.len() >= 2 {
+                mode.slice(mode.len() - 2, mode.len())
+            } else {
+                mode
+            };
+            if tail == "00" or tail == "50" {
+                self.rec(stats, "pass", "dir {d}", "mode 0{mode}");
+            } elif fix and chmod_path("0700", d) {
+                self.rec(stats, "pass", "dir {d}", "repaired 0{mode} -> 0700");
+            } else {
+                self.rec(stats, "warn", "dir {d}", "mode 0{mode}; expected 0700/0750");
+            }
+        }
+
+        if DB.driver_name() == "sqlite" and file_exists(DB.db_path) {
+            let dbm = posix_stat_mode(DB.db_path);
+            if dbm == "600" or dbm == "640" or dbm == "400" {
+                self.rec(stats, "pass", "sqlite db perms", "mode 0{dbm}");
+            } elif dbm != "" and fix and chmod_path("0600", DB.db_path) {
+                self.rec(stats, "pass", "sqlite db perms", "repaired 0{dbm} -> 0600");
+            } elif dbm != "" {
+                self.rec(stats, "warn", "sqlite db perms", "mode 0{dbm}; expected 0600");
+            }
+        }
+    }
+
+    public fn handle(self, cli_args: list) -> int {
+        let fix = false;
+        let strict = false;
+        for a in cli_args {
+            let s = string(a);
+            if s == "--fix" {
+                fix = true;
+            } elif s == "--strict" {
+                strict = true;
+            }
+        }
+
+        let stats = {
+            "pass": 0, "warn": 0, "fail": 0, "info": 0
+        };
+        let root = self.kernel.resolve_root();
+        let bin = find_spid3r_binary();
+        println("[Doctor] Inspecting Spid3rWeb runtime health...");
+
+        // 1. Runtime version
+        let v_res = exec_capture(bin, ["--version"], null);
+        if v_res.is_ok() and int(v_res.unwrap()["code"]) == 0 {
+            let v_txt = string(v_res.unwrap()["stdout"]).trim();
+            let parsed = parse_semver(v_txt);
+            if version_at_least(parsed, 1, 1, 1) {
+                let ver_label = string(parsed[0]) + "." + string(parsed[1]) + "." + string(parsed[2]);
+                self.rec(stats, "pass", "spid3r runtime", "v{ver_label}");
+            } else {
+                self.rec(
+                    stats,
+                    "fail",
+                    "spid3r runtime",
+                    "requires >= {MIN_SPID3R_VERSION} (got {v_txt})"
+                );
+            }
+        } else {
+            self.rec(stats, "warn", "spid3r runtime", "unable to query '{bin} --version'");
+        }
+
+        // 2. Config validation
+        let c_res = exec_capture(bin, ["config", "validate"], null);
+        if c_res.is_ok() and int(c_res.unwrap()["code"]) == 0 {
+            self.rec(stats, "pass", "spid3r config validate", "ok");
+        } else {
+            self.rec(
+                stats,
+                "fail",
+                "spid3r config validate",
+                "spid3r.ini has invalid or unknown keys"
+            );
+        }
+
+        let cfg_check = validate_all_config();
+        if cfg_check["ok"] == true {
+            let ns_count = cfg_check["checked"];
+            self.rec(stats, "pass", "config schema", "validated {ns_count} namespace(s)");
+        } else {
+            let first_err = string(cfg_check["errors"][0]);
+            self.rec(stats, "fail", "config schema", first_err);
+        }
+
+        // 3. APP_ENV & APP_DEBUG consistency
+        let app_env = resolve_app_env();
+        let app_dbg = resolve_app_debug();
+        if app_env == "production" and app_dbg {
+            self.rec(stats, "fail", "debug mode", "APP_ENV=production with debug=true");
+        } else {
+            self.rec(stats, "pass", "environment", "env={app_env}, debug={app_dbg}");
+        }
+
+        // 4. APP_KEY check
+        let key = configured_app_key();
+        if key == "" or is_insecure_app_key(key) {
+            let lvl = if is_production() {
+                "fail"
+            } else {
+                "warn"
+            };
+            self.rec(
+                stats,
+                lvl,
+                "APP_KEY",
+                "missing or insecure placeholder; run 'spid3r magic key:generate'"
+            );
+        } else {
+            self.rec(stats, "pass", "APP_KEY", "configured");
+        }
+
+        // 5. Security policy snapshot
+        let bd = string(config_get("security.basedir") ?? "").trim();
+        let dis_mods = string(config_get("modules.disable") ?? "").trim();
+        if bd == "" {
+            self.rec(stats, "info", "security policy", "security.basedir unset (dev profile)");
+        } else {
+            self.rec(stats, "pass", "security policy", "basedir='{bd}', disable='{dis_mods}'");
+        }
+
+        // 6. Required writable directories
+        let dirs = [
+        "{root}storage",
+        "{root}storage/logs",
+        "{root}storage/framework",
+        "{root}storage/framework/cache",
+        "{root}storage/app",
+        "{root}storage/database",
+        "{root}database"
+        ];
+        for d in dirs {
+            if is_dir(d) {
+                self.rec(stats, "pass", "directory", "{d} exists");
+            } elif fix and dir_create(d).is_ok() {
+                self.rec(stats, "pass", "directory", "created {d}");
+            } else {
+                self.rec(stats, "fail", "directory", "missing writable directory '{d}' (run --fix)");
+            }
+        }
+        if fix and not is_dir("{root}storage/backups") {
+            let _bk = dir_create("{root}storage/backups");
+        }
+
+        // 7. File permissions / Windows OneDrive guard
+        if detect_windows() {
+            self.rec(
+                stats,
+                "info",
+                "file permissions",
+                "Windows host (POSIX 0600/0700 checks skipped)"
+            );
+            let cw = cwd();
+            if cw.is_ok() and string(cw.unwrap()).lower().contains("onedrive") {
+                self.rec(
+                    stats,
+                    "warn",
+                    "OneDrive sync",
+                    "workspace is inside OneDrive; set SPID3R_STATE_DIR or SPID3R_DB_PATH outside synced folders for production/heavy SQLite writes"
+                );
+            }
+        } else {
+            self.check_posix_perms(stats, root, fix);
+        }
+
+        // 8. Database health
+        if DB.ping() {
+            let drv = DB.driver_name();
+            self.rec(stats, "pass", "database", "{drv} reachable (SELECT 1 ok)");
+        } else {
+            self.rec(stats, "fail", "database", "unable to reach configured database");
+        }
+        DB.close();
+
+        let p = stats["pass"];
+        let w = stats["warn"];
+        let f = stats["fail"];
+        println("\nDoctor summary: {p} passed, {w} warning(s), {f} failed.");
+        if f > 0 or (strict and w > 0) {
+            return 1;
+        }
+        return 0;
+    }
+}

@@ -1,8 +1,8 @@
 // tests/test_store_storefront.matrix
 // Phase 5 — public storefront integration tests (HTTP level).
 
-import "framework/Application";
-import "framework/Router";
+import "framework/Foundation/Application";
+import "framework/Http/Router";
 import "framework/Database/DB";
 import "routes/web";
 import "routes/queue";
@@ -179,7 +179,7 @@ fn test_product_detail(app, tag: string) {
     CatalogCache.bump_catalog_version();
     let fully_reserved = text(get(app, "/product/" + slug));
     assert(fully_reserved.contains("Out of stock"), "fully reserved stock is unavailable to shoppers");
-    assert(fully_reserved.contains("disabled>Out of stock"), "add-to-cart is disabled when available quantity is zero");
+    assert(fully_reserved.contains("disabled>Out of Stock"), "add-to-cart is disabled when available quantity is zero");
     DB.table("inventory").where("product_id", "=", product["id"]).whereNull("variant_id").update(map("reserved", 0));
     CatalogCache.bump_catalog_version();
 

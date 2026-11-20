@@ -24,7 +24,7 @@ import "framework/Auth/Auth";
 import "framework/Auth/Hash";
 import "framework/Cache/CacheStore";
 import "framework/Queue/Queue";
-import "framework/Config/Config";
+import "framework/Foundation/Config";
 
 let passed_count = 0;
 let skipped_count = 0;
@@ -51,7 +51,7 @@ fn open_live() {
     }
     try {
         return mgr.connection();
-    } catch (e) {
+    } catch (_e) {
         return null;
     }
 }
@@ -59,17 +59,23 @@ fn open_live() {
 // Clean any rows this suite created (idempotent across runs).
 fn cleanup(conn) {
     try {
-        conn.statement("DELETE FROM sessions WHERE user_id IN (SELECT id FROM users WHERE email LIKE '%@spid3r-live.test')");
-    } catch (_e) {}
+        conn.statement(
+            "DELETE FROM sessions WHERE user_id IN (SELECT id FROM users WHERE email LIKE '%@spid3r-live.test')"
+        );
+    } catch (_e) {
+    }
     try {
         conn.statement("DELETE FROM users WHERE email LIKE '%@spid3r-live.test'");
-    } catch (_e) {}
+    } catch (_e) {
+    }
     try {
         conn.statement("DELETE FROM cache WHERE cache_key LIKE 'live-systems-%'");
-    } catch (_e) {}
+    } catch (_e) {
+    }
     try {
         conn.statement("DELETE FROM jobs WHERE queue = 'live-systems'");
-    } catch (_e) {}
+    } catch (_e) {
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -83,54 +89,100 @@ fn test_auth_and_session_live(conn) {
     let hash = Hash.make(password);
     assert(hash != password, "auth-live: password is hashed, not stored plain");
     assert(Hash.check(password, hash) == true, "auth-live: bcrypt verify (good password)");
-    assert(Hash.check("wrong-password", hash) == false, "auth-live: bcrypt reject (bad password)");
+    assert(
+        Hash.check("wrong-password", hash) == false,
+        "auth-live: bcrypt reject (bad password)"
+    );
 
-    let r = conn.run("INSERT INTO users (name, email, password, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
-        list("Live Auth", email, hash, stamp, stamp));
+    let r = conn.run(
+        "INSERT INTO users (name, email, password, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+        ["Live Auth",
+        email,
+        hash,
+        stamp,
+        stamp]
+    );
     let user_id = int(r["last_id"]);
     assert(user_id > 0, "auth-live: user row persisted on live engine");
 
     // --- failed attempts ---
-    assert(Auth.attempt(email, "totally-wrong") == false, "auth-live: attempt rejects bad password");
-    assert(Auth.attempt("nobody" + stamp + "@spid3r-live.test", password) == false, "auth-live: attempt rejects unknown email");
+    assert(
+        Auth.attempt(email, "totally-wrong") == false,
+        "auth-live: attempt rejects bad password"
+    );
+    assert(
+        Auth.attempt("nobody" + stamp + "@spid3r-live.test", password) == false,
+        "auth-live: attempt rejects unknown email"
+    );
     assert(Auth.check() == false, "auth-live: no session after failed attempts");
 
     // --- successful login ---
-    assert(Auth.attempt(email, password) == true, "auth-live: attempt with correct password logs in");
+    assert(
+        Auth.attempt(email, password) == true,
+        "auth-live: attempt with correct password logs in"
+    );
     assert(Auth.check() == true, "auth-live: check() true after login");
     assert(Auth.user()["email"] == email, "auth-live: user() carries the email");
-    assert(Auth.user().has("password") == false, "auth-live: password hash NEVER enters auth state");
+    assert(
+        Auth.user().has("password") == false,
+        "auth-live: password hash NEVER enters auth state"
+    );
     let token = Auth.token();
     assert(token.slice(0, 5) == "sess_", "auth-live: session token has sess_ prefix");
     assert(Auth.csrf().slice(0, 5) == "csrf_", "auth-live: CSRF token has csrf_ prefix");
 
     // --- the login wrote a real session row on the engine ---
-    let sess = conn.query("SELECT token, user_id, payload, last_activity FROM sessions WHERE token = ?", list(token));
+    let sess = conn.query(
+        "SELECT token, user_id, payload, last_activity FROM sessions WHERE token = ?",
+        [token]
+    );
     assert(sess.len() == 1, "auth-live: login persisted sessions row");
-    assert(int(sess[0]["user_id"]) == user_id, "auth-live: session row references the user");
-    assert(sess[0]["payload"] == Auth.csrf(), "auth-live: CSRF token stored in session payload");
+    assert(
+        int(sess[0]["user_id"]) == user_id,
+        "auth-live: session row references the user"
+    );
+    assert(
+        sess[0]["payload"] == Auth.csrf(),
+        "auth-live: CSRF token stored in session payload"
+    );
 
     // --- authenticate_token on a FRESH manager (simulates the next request) ---
     let fresh = new AuthManager();
-    assert(fresh.authenticate_token(token) == true, "auth-live: token authenticates on a fresh manager");
+    assert(
+        fresh.authenticate_token(token) == true,
+        "auth-live: token authenticates on a fresh manager"
+    );
     assert(fresh.user()["email"] == email, "auth-live: fresh manager resolves the user");
-    assert(fresh.user().has("password") == false, "auth-live: JOIN path also strips the hash");
+    assert(
+        fresh.user().has("password") == false,
+        "auth-live: JOIN path also strips the hash"
+    );
     assert(fresh.csrf() == Auth.csrf(), "auth-live: CSRF restored from session payload");
 
     // --- sliding expiration: an old-but-within-TTL session gets touched ---
     let oldish = unix_time() - 300;
-    conn.statement("UPDATE sessions SET last_activity = ? WHERE token = ?", list(oldish, token));
+    conn.statement("UPDATE sessions SET last_activity = ? WHERE token = ?", [oldish, token]);
     let fresh2 = new AuthManager();
-    assert(fresh2.authenticate_token(token) == true, "auth-live: within-TTL session authenticates");
-    let touched = conn.query("SELECT last_activity FROM sessions WHERE token = ?", list(token));
-    assert(int(touched[0]["last_activity"]) > oldish, "auth-live: last_activity slid forward on use");
+    assert(
+        fresh2.authenticate_token(token) == true,
+        "auth-live: within-TTL session authenticates"
+    );
+    let touched = conn.query("SELECT last_activity FROM sessions WHERE token = ?", [token]);
+    assert(
+        int(touched[0]["last_activity"]) > oldish,
+        "auth-live: last_activity slid forward on use"
+    );
 
     // --- TTL expiry: beyond session.lifetime the token is dead AND cleaned ---
-    let expired = unix_time() - int(Config.get("session.lifetime", 86400)) - 10;
-    conn.statement("UPDATE sessions SET last_activity = ? WHERE token = ?", list(expired, token));
+    let expired = unix_time() - int(Config.get("session.lifetime", 86_400)) - 10;
+    conn.statement(
+        "UPDATE sessions SET last_activity = ? WHERE token = ?",
+        [expired,
+        token]
+    );
     let fresh3 = new AuthManager();
     assert(fresh3.authenticate_token(token) == false, "auth-live: expired token is rejected");
-    let gone = conn.query("SELECT token FROM sessions WHERE token = ?", list(token));
+    let gone = conn.query("SELECT token FROM sessions WHERE token = ?", [token]);
     assert(gone.len() == 0, "auth-live: expired session row is deleted from the engine");
 
     // --- logout cleanup ---
@@ -139,10 +191,11 @@ fn test_auth_and_session_live(conn) {
     assert(token2 != token, "auth-live: each login mints a fresh token");
     Auth.logout();
     assert(Auth.check() == false, "auth-live: check() false after logout");
-    let after_logout = conn.query("SELECT token FROM sessions WHERE token = ?", list(token2));
+    let after_logout = conn.query("SELECT token FROM sessions WHERE token = ?", [token2]);
     assert(after_logout.len() == 0, "auth-live: logout deleted the session row");
 
-    report_pass("auth+session/" + string(env("SPID3R_DB_DRIVER").unwrap()));
+    let drv = string(env("SPID3R_DB_DRIVER").unwrap());
+    report_pass("auth+session/{drv}");
 }
 
 // ---------------------------------------------------------------------------
@@ -157,7 +210,9 @@ fn test_cache_live(conn) {
     s.put("live-systems-str", "engine cached", 60);
     assert(s.get("live-systems-str") == "engine cached", "cache-live: string round-trip");
 
-    s.put("live-systems-map", map("engine", "live", "n", 42), 60);
+    s.put("live-systems-map", {
+        "engine": "live", "n": 42
+    }, 60);
     let m = s.get("live-systems-map");
     assert(m["engine"] == "live" and int(m["n"]) == 42, "cache-live: map round-trip");
 
@@ -169,14 +224,21 @@ fn test_cache_live(conn) {
 
     // The value really lives in the engine's cache table
     let rows = conn.query("SELECT COUNT(*) AS c FROM cache WHERE cache_key LIKE 'live-systems-%'");
-    assert(int(rows[0]["c"]) >= 2, "cache-live: entries persisted in the engine's cache table");
+    assert(
+        int(rows[0]["c"]) >= 2,
+        "cache-live: entries persisted in the engine's cache table"
+    );
 
     s.forget("live-systems-str");
     assert(s.get("live-systems-str") == null, "cache-live: forget removes the row");
 
     s.flush();
-    assert(conn.query("SELECT COUNT(*) AS c FROM cache WHERE cache_key LIKE 'live-systems-%'")[0]["c"] == 0 || true, "cache-live: flush executed");
-    report_pass("cache-db/" + string(env("SPID3R_DB_DRIVER").unwrap()));
+    assert(
+        conn.query("SELECT COUNT(*) AS c FROM cache WHERE cache_key LIKE 'live-systems-%'")[0]["c"] == 0 || true,
+        "cache-live: flush executed"
+    );
+    let drv = string(env("SPID3R_DB_DRIVER").unwrap());
+    report_pass("cache-db/{drv}");
 }
 
 // ---------------------------------------------------------------------------
@@ -184,8 +246,13 @@ fn test_cache_live(conn) {
 // ---------------------------------------------------------------------------
 fn test_queue_live(conn) {
     let before = int(Queue.size("live-systems"));
-    Queue.push("log.message", map("message", "live systems queue probe"), "live-systems");
-    assert(int(Queue.size("live-systems")) == before + 1, "queue-live: push added a row on the engine");
+    Queue.push("log.message", {
+        "message": "live systems queue probe"
+    }, "live-systems");
+    assert(
+        int(Queue.size("live-systems")) == before + 1,
+        "queue-live: push added a row on the engine"
+    );
 
     let raw = conn.query("SELECT queue, attempts FROM jobs WHERE queue = 'live-systems'");
     assert(raw.len() == 1, "queue-live: job row readable from the engine");
@@ -196,12 +263,16 @@ fn test_queue_live(conn) {
     assert(int(job["attempts"]) == 1, "queue-live: pop incremented attempts on the engine");
 
     // A second worker pop must NOT see the reserved job
-    assert(Queue.pop("live-systems") == null, "queue-live: reserved job invisible to other workers");
+    assert(
+        Queue.pop("live-systems") == null,
+        "queue-live: reserved job invisible to other workers"
+    );
 
     // Finish it off (simulating worker completion) and drain
-    conn.statement("DELETE FROM jobs WHERE id = ?", list(job["id"]));
+    conn.statement("DELETE FROM jobs WHERE id = ?", [job["id"]]);
     assert(int(Queue.size("live-systems")) == before, "queue-live: queue back to baseline");
-    report_pass("queue-db/" + string(env("SPID3R_DB_DRIVER").unwrap()));
+    let drv = string(env("SPID3R_DB_DRIVER").unwrap());
+    report_pass("queue-db/{drv}");
 }
 
 // ---------------------------------------------------------------------------
@@ -214,7 +285,10 @@ fn test_services_env_live() {
     let key_env = Config.get("services.payments.stripe.secret_env");
     assert(key_env == "SPID3R_STRIPE_SECRET", "services: stripe secret_env key configured");
     let resolved = env(key_env);
-    assert(resolved.is_some() and resolved.unwrap() == "sk_test_live_probe_123", "services: credential resolves from env at use time");
+    assert(
+        resolved.is_some() and resolved.unwrap() == "sk_test_live_probe_123",
+        "services: credential resolves from env at use time"
+    );
     env_set("SPID3R_STRIPE_SECRET", "");
 
     let missing = env("SPID3R_DEFINITELY_NOT_SET_9x");
@@ -227,13 +301,13 @@ fn main() {
 
     let driver_env = env("SPID3R_DB_DRIVER");
     if driver_env.is_none() {
-        println("SPID3R_DB_DRIVER not set — nothing to test live.");
+        println("SPID3R_DB_DRIVER not set â€” nothing to test live.");
         println("=== Live Systems Suite Finished (0 run / 0 skipped) ===\n");
         return 0;
     }
     let raw = string(driver_env.unwrap()).trim().lower();
     if raw != "postgres" and raw != "postgresql" and raw != "pg" and raw != "mysql" and raw != "mariadb" {
-        println("SPID3R_DB_DRIVER is not a server driver — nothing to test live.");
+        println("SPID3R_DB_DRIVER is not a server driver â€” nothing to test live.");
         println("=== Live Systems Suite Finished (0 run / 0 skipped) ===\n");
         return 0;
     }
@@ -256,7 +330,9 @@ fn main() {
     conn.close();
 
     println("");
-    println("=== Live Systems Suite Finished (" + string(passed_count) + " passed / " + string(skipped_count) + " skipped) ===");
+    println(
+        "=== Live Systems Suite Finished ({passed_count} passed / {skipped_count} skipped) ==="
+    );
     println("");
     return 0;
 }

@@ -1,12 +1,18 @@
 // routes/web.matrix
 // Spid3rWeb Web Application Route Registrations
-// On the eCommerce branch this delegates to the Spid3r Store storefront.
+// On the eCommerce branch this delegates to the Spid3r Store storefront,
+// and keeps the framework's bootstrap-contract endpoints ("/info") so
+// framework diagnostics (doctor, tests) keep working.
 
-import "framework/Router";
-import "framework/Response";
-import "framework/View/BD";
+import "framework/Http/Router";
+import "framework/Http/Response";
 import "routes/store";
 
 public fn register_web_routes() {
     register_store_routes();
+
+    // Framework bootstrap contract endpoint (spid3rinfo() diagnostics page).
+    Route.get("/info", fn(req) {
+        return html(string(spid3rinfo()));
+    }).name("info");
 }

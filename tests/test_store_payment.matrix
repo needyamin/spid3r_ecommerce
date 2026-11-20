@@ -1,8 +1,8 @@
 // tests/test_store_payment.matrix
 // Phase 8 — payment integration tests (HTTP level, no external network).
 
-import "framework/Application";
-import "framework/Router";
+import "framework/Foundation/Application";
+import "framework/Http/Router";
 import "framework/Database/DB";
 import "routes/web";
 import "routes/queue";

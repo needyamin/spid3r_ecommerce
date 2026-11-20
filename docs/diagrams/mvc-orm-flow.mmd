@@ -1,0 +1,25 @@
+%% Spid3r Store — MVC + ORM data flow
+flowchart LR
+    subgraph M["Model / Data"]
+        AR["Active Record Model<br/>framework/Database/Model"]
+        QB["QueryBuilder<br/>where · join · orderBy · whereNull"]
+        SC["Schema + Migrations<br/>database/migrations (010–020)"]
+    end
+    subgraph V["View"]
+        BD["SpiderBD templates<br/>resources/views/**/*.bd.html<br/>@if @foreach {{ var }}"]
+        LAY["Layouts<br/>layouts/store · layouts/admin"]
+    end
+    C["Controller<br/>app/Controllers"]
+    SVC["Service layer<br/>OrderService · InventoryService · …"]
+    DB[("Database<br/>MySQL / SQLite")]
+
+    C --> SVC
+    SVC --> AR
+    C --> QB
+    AR --> QB
+    QB --> DB
+    SC -->|migrate| DB
+    DB -->|rows → maps| C
+    C -->|ctx map| BD
+    BD --> LAY
+    LAY -->|HTML| C

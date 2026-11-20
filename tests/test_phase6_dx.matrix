@@ -1,0 +1,410 @@
+// tests/test_phase6_dx.matrix
+// Phase 6 Regression & Security Suite:
+//   - Advanced Migrations (--pretend, --step, checksums, rollback/reset, wipe/fresh, FunctionMigration registry)
+//   - ConfigValidator & `magic config:check`
+//   - New CLI Generators (make:request, make:resource, make:command, make:seeder, make:migration --fn syntax check)
+//   - Static Range (206/416) & Gzip Compression (gzip_compress + Vary: Accept-Encoding)
+//   - Route Model Binding (`app.bind` / `req.bound`)
+//   - OWASP path traversal + header injection negative security tests
+//   - Watch helper mtime change detection
+
+import "framework/Database/DB";
+import "framework/Database/Migration";
+import "framework/Foundation/Application";
+import "framework/Foundation/Config";
+import "framework/Foundation/ConfigValidator";
+import "framework/Http/StaticFiles";
+import "framework/Http/Response";
+import "framework/Http/CookieJar";
+import "framework/Http/HttpException";
+import "framework/Http/Router";
+import "framework/Console/ConsoleKernel";
+import "framework/Console/TestRunner";
+import "framework/Console/Commands/MigrationRegistry";
+import "framework/Console/Commands/WatchHelper";
+import "framework/Testing/TestClient";
+
+fn assert_eq(actual, expected, label: string) {
+    let a = string(actual);
+    let e = string(expected);
+    if a != e {
+        throw "FAIL [{label}]: expected '{e}', got '{a}'";
+    }
+}
+
+fn assert_true(cond: bool, label: string) {
+    if not cond {
+        throw "FAIL [{label}]: expected true, got false";
+    }
+}
+
+fn rm_tree(path: string) {
+    if not file_exists(path) {
+        return;
+    }
+    if not is_dir(path) {
+        let _f = file_delete(path);
+        return;
+    }
+    let ls = list_dir(path);
+    if ls.is_ok() {
+        for name in ls.unwrap() {
+            let n = string(name);
+            if n == "." or n == ".." {
+                continue;
+            }
+            rm_tree("{path}/{n}");
+        }
+    }
+    let _d = dir_remove(path);
+}
+
+class P6SampleMigration extends Migration {
+    fn new (name: string = "_p6_cls_001") {
+        self.name = name;
+        self.checksum = sha256("cls_v1");
+    }
+
+    public fn up(self) {
+        let _ = self;
+        DB.statement("CREATE TABLE IF NOT EXISTS _p6_cls_tbl (id INTEGER PRIMARY KEY, title TEXT);");
+    }
+
+    public fn down(self) {
+        let _ = self;
+        DB.statement("DROP TABLE IF EXISTS _p6_cls_tbl;");
+    }
+}
+
+fn test_advanced_migrations_and_function_registry() {
+    let runner = new MigrationRunner();
+    let base = "storage/framework/test_p6_migs";
+    rm_tree(base);
+    ensure_parent_dirs("{base}/migrations/dummy.txt");
+    dir_create("{base}/migrations");
+
+    let m1 = new P6SampleMigration("_p6_cls_001");
+    let m2 = new FunctionMigration("_p6_fn_002", fn() {
+        DB.statement(
+            "CREATE TABLE IF NOT EXISTS _p6_fn_tbl (id INTEGER PRIMARY KEY, label TEXT);"
+        );
+    }, fn() {
+        DB.statement("DROP TABLE IF EXISTS _p6_fn_tbl;");
+    }, sha256("fn_v1"));
+    let mlist = [m1, m2];
+
+    let prev_drv = env("SPID3R_DB_DRIVER").unwrap_or("");
+    let prev_dbp = env("SPID3R_DB_PATH").unwrap_or("");
+    try {
+        // Pre-clean any stray rows from an aborted run
+        try {
+            DB.statement(
+                "DELETE FROM migrations WHERE migration IN ('_p6_cls_001', '_p6_fn_002')"
+            );
+            DB.statement("DROP TABLE IF EXISTS _p6_cls_tbl;");
+            DB.statement("DROP TABLE IF EXISTS _p6_fn_tbl;");
+        } catch (_pre) {
+        }
+
+        // 1. Pretend does not record migrations
+        let p_cnt = runner.migrate(mlist, true, true);
+        assert_eq(p_cnt, 2, "pretend reports 2 pending migrations");
+        let applied0 = runner.get_applied();
+        assert_true(not applied0.has("_p6_cls_001"), "pretend did not record _p6_cls_001");
+
+        // 2. Step mode puts each migration in its own batch + stores checksum
+        let r_cnt = runner.migrate(mlist, false, true);
+        assert_eq(r_cnt, 2, "step migrate ran 2 migrations");
+        let applied1 = runner.get_applied();
+        let csums1 = runner.get_checksums();
+        assert_true(
+            applied1.has("_p6_cls_001") and applied1.has("_p6_fn_002"),
+            "both recorded"
+        );
+        assert_eq(
+            int(applied1["_p6_fn_002"]),
+            int(applied1["_p6_cls_001"]) + 1,
+            "step mode assigns distinct sequential batches"
+        );
+        assert_eq(csums1["_p6_fn_002"], sha256("fn_v1"), "checksum persisted");
+
+        // Checksum drift detection tolerates re-run without throwing
+        m2.checksum = sha256("fn_v2_edited");
+        assert_eq(runner.migrate(mlist, false, false), 0, "no pending on re-run");
+
+        // 3. Single rollback reverts ONLY _p6_fn_002
+        let rb = runner.rollback(mlist);
+        assert_eq(rb, 1, "rollback reverted last batch (1 migration)");
+        let applied2 = runner.get_applied();
+        assert_true(applied2.has("_p6_cls_001"), "_p6_cls_001 remains applied");
+        assert_true(not applied2.has("_p6_fn_002"), "_p6_fn_002 rolled back");
+
+        // 4. Reset reverts remaining test migration
+        let rb2 = runner.rollback(mlist);
+        assert_eq(rb2, 1, "second rollback reverted _p6_cls_001");
+
+        // 5. Function-based migration auto-discovery + execution via sync_registry + wipe/fresh on isolated sqlite
+        let fn_mig_src = "import \"framework/Database/DB\";\n\npublic fn up() {\n    DB.statement(\"CREATE TABLE IF NOT EXISTS _p6_isolated (id INTEGER PRIMARY KEY);\");\n}\n\npublic fn down() {\n    DB.statement(\"DROP TABLE IF EXISTS _p6_isolated;\");\n}\n";
+        let stem = "2026_11_20_075000_create_p6_isolated";
+        write_file("{base}/migrations/{stem}.matrix", fn_mig_src);
+        let reg_path = "{base}/reg.matrix";
+        let added = sync_registry("{base}/migrations", reg_path, false, true);
+        assert_eq(added, 1, "sync_registry discovers function-based migration");
+        let reg_body = string(read_file(reg_path).unwrap());
+        assert_true(
+            reg_body.contains("up as up_0, down as down_0"),
+            "registry aliases function migration exports"
+        );
+        assert_true(
+            reg_body.contains("new FunctionMigration"),
+            "registry wraps function migration in FunctionMigration"
+        );
+
+        let iso_db = "{base}/isolated.sqlite";
+        env_set("SPID3R_DB_DRIVER", "sqlite");
+        env_set("SPID3R_DB_PATH", iso_db);
+        let bin = find_spid3r_binary();
+        let f_res = exec_capture(bin, ["run", reg_path, "fresh", "--step"], null);
+        assert_true(
+            f_res.is_ok() and int(f_res.unwrap()["code"]) == 0,
+            "fresh --step exits 0"
+        );
+        let s_res = exec_capture(bin, ["run", reg_path, "status"], null);
+        assert_true(
+            s_res.is_ok() and string(s_res.unwrap()["stdout"]).contains("Yes (1)"),
+            "status confirms function migration batch recorded"
+        );
+        let r_res = exec_capture(bin, ["run", reg_path, "reset"], null);
+        assert_true(
+            r_res.is_ok() and int(r_res.unwrap()["code"]) == 0,
+            "reset exits 0"
+        );
+    } finally {
+        env_set("SPID3R_DB_DRIVER", prev_drv);
+        env_set("SPID3R_DB_PATH", prev_dbp);
+        try {
+            DB.statement(
+                "DELETE FROM migrations WHERE migration IN ('_p6_cls_001', '_p6_fn_002')"
+            );
+            DB.statement("DROP TABLE IF EXISTS _p6_cls_tbl;");
+            DB.statement("DROP TABLE IF EXISTS _p6_fn_tbl;");
+        } catch (_clean) {
+        }
+        rm_tree(base);
+    }
+
+    println("  [PASS] test_advanced_migrations_and_function_registry");
+}
+
+fn test_config_validation_and_generators() {
+    let orig_max = int(Config.get("upload.max_bytes", 5_242_880));
+    let cleanup_files = [
+    "app/Requests/_P6TempReqRequest.matrix",
+    "app/Resources/_P6TempResResource.matrix",
+    "app/Console/_P6TempCmdCommand.matrix",
+    "database/seeders/_P6TempSeedSeeder.matrix"
+    ];
+    let created_dirs = ["app/Requests", "app/Resources", "app/Console"];
+    let dir_existed = {
+    };
+    for d in created_dirs {
+        dir_existed[d] = is_dir(d);
+    }
+
+    try {
+        let ok_res = validate_all_config();
+        assert_true(ok_res["ok"] == true, "validate_all_config passes defaults");
+        assert_eq(ok_res["checked"], 13, "all 13 config namespaces checked");
+
+        Config.set("upload.max_bytes", 0);
+        let bad_res = validate_all_config();
+        assert_true(bad_res["ok"] == false, "invalid upload.max_bytes=0 rejected");
+        Config.set("upload.max_bytes", orig_max);
+
+        let k = new ConsoleKernel();
+        assert_eq(k.handle(["config:check"]), 0, "magic config:check exits 0");
+
+        assert_eq(k.handle(["make:request", "_P6TempReq"]), 0, "make:request exits 0");
+        assert_eq(k.handle(["make:resource", "_P6TempRes"]), 0, "make:resource exits 0");
+        assert_eq(k.handle(["make:command", "_P6TempCmd"]), 0, "make:command exits 0");
+        assert_eq(k.handle(["make:seeder", "_P6TempSeed"]), 0, "make:seeder exits 0");
+
+        let req_src = string(read_file("app/Requests/_P6TempReqRequest.matrix").unwrap());
+        assert_true(req_src.contains("validate_or_fail"), "request generator template valid");
+        let res_src = string(read_file("app/Resources/_P6TempResResource.matrix").unwrap());
+        assert_true(res_src.contains("resource_item"), "resource generator template valid");
+        let cmd_src = string(read_file("app/Console/_P6TempCmdCommand.matrix").unwrap());
+        assert_true(cmd_src.contains("app:_p6tempcmd"), "command generator template valid");
+        let seed_src = string(read_file("database/seeders/_P6TempSeedSeeder.matrix").unwrap());
+        assert_true(seed_src.contains("public fn run"), "seeder generator template valid");
+
+        let mk_src = string(
+            read_file("framework/Console/Commands/MakeCommand.matrix").unwrap()
+        );
+        assert_true(not mk_src.contains("super("), "MakeCommand omits AOT-unsupported super()");
+    } finally {
+        Config.set("upload.max_bytes", orig_max);
+        for f in cleanup_files {
+            if file_exists(f) {
+                let _rm = file_delete(f);
+            }
+        }
+        for d in created_dirs {
+            if dir_existed[d] != true and is_dir(d) {
+                let _rd = dir_remove(d);
+            }
+        }
+    }
+
+    println("  [PASS] test_config_validation_and_generators");
+}
+
+fn test_static_range_gzip_and_owasp() {
+    let tmp_css = "public/css/_p6_range_tmp.css";
+    let payload = "";
+    while payload.len() < 1536 {
+        payload = "{payload}/* spid3r-range-gzip-segment */ body\{color:#38bdf8;\}\n";
+    }
+    write_file(tmp_css, payload);
+
+    let app = new Application();
+    app.router.clear();
+    let client = new TestClient(app);
+
+    try {
+        // Range: bytes=0-15 -> 206
+        let r1 = client.with_header("range", "bytes=0-15").get("/css/_p6_range_tmp.css");
+        assert_eq(r1.status, 206, "range 0-15 returns 206 Partial Content");
+        assert_eq(r1.header("accept-ranges"), "bytes", "accept-ranges header present");
+        assert_true(
+            r1.header("content-range").starts_with("bytes 0-15/"),
+            "content-range header matches slice"
+        );
+        assert_eq(r1.stream_bytes, 16, "206 stream length is 16 bytes");
+        assert_eq(
+            sha256(r1.body_bytes),
+            sha256(payload.slice(0, 16)),
+            "206 slice matches exact file bytes"
+        );
+
+        // Suffix range: bytes=-10 -> last 10 bytes
+        let r2 = client.with_header("range", "bytes=-10").get("/css/_p6_range_tmp.css");
+        assert_eq(r2.status, 206, "suffix range returns 206");
+        assert_eq(r2.stream_bytes, 10, "suffix range length is 10 bytes");
+        assert_eq(
+            sha256(r2.body_bytes),
+            sha256(payload.slice(payload.len() - 10, payload.len())),
+            "suffix range returns exact tail"
+        );
+
+        // Unsatisfiable range -> 416
+        let r3 = client.with_header("range", "bytes=999999-1000000").get("/css/_p6_range_tmp.css");
+        assert_eq(r3.status, 416, "unsatisfiable range returns 416");
+        assert_true(
+            r3.header("content-range").starts_with("bytes */"),
+            "416 includes bytes */total"
+        );
+
+        // Gzip compression
+        let gz_client = new TestClient(app);
+        let r4 = gz_client.with_header("accept-encoding", "gzip, deflate").get(
+            "/css/_p6_range_tmp.css"
+        );
+        assert_eq(r4.status, 200, "gzip response returns 200");
+        assert_eq(r4.header("content-encoding"), "gzip", "content-encoding is gzip");
+        assert_eq(r4.header("vary"), "Accept-Encoding", "vary header set");
+        let gunzipped = gunzip(r4.body_bytes).unwrap();
+        assert_eq(len(gunzipped), payload.len(), "gunzip length matches original asset");
+        assert_eq(sha256(gunzipped), sha256(payload), "gunzip restores exact original asset");
+
+        // OWASP traversal negative vectors
+        let bad_paths = [
+        "/%2e%2e/.env",
+        "/css/..%2fsecrets",
+        "/css/..%5c.env",
+        "/css/a%00.css",
+        "/C:/Windows/win.ini",
+        "/..\\secret"
+        ];
+        for bp in bad_paths {
+            assert_true(is_unsafe_path(bp), "OWASP traversal blocked: {bp}");
+        }
+        assert_true(not is_unsafe_path("/css/app..min.css"), "dots inside filename allowed");
+
+        // CRLF / NUL header injection rejection
+        let crlf_blocked = false;
+        try {
+            let resp = response("ok");
+            resp.header("x-bad", "val\r\nInjected: 1");
+        } catch (_e1) {
+            crlf_blocked = true;
+        }
+        assert_true(crlf_blocked, "Response.header blocks CRLF injection");
+
+        let jar_blocked = false;
+        try {
+            let jar = new CookieJar();
+            jar.queue("bad\nname", "ok");
+        } catch (_e2) {
+            jar_blocked = true;
+        }
+        assert_true(jar_blocked, "CookieJar blocks illegal cookie name chars");
+    } finally {
+        if file_exists(tmp_css) {
+            let _rm = file_delete(tmp_css);
+        }
+    }
+
+    println("  [PASS] test_static_range_gzip_and_owasp");
+}
+
+fn test_route_model_binding_and_watch_helper() {
+    let app = new Application();
+    app.router.clear();
+    app.bind("item", fn(raw) {
+        if raw == "missing" {
+            throw not_found("Item missing.");
+        }
+        return {
+            "id": raw, "title": "Widget-{raw}"
+        };
+    });
+    app.get("/p6-items/:item", req => {
+        let model = req.bound("item");
+        return {
+            "bound": model
+        };
+    });
+
+    let client = new TestClient(app);
+    client.get("/p6-items/42").assert_ok().assert_json_path("bound.title", "Widget-42");
+    client.get("/p6-items/missing").assert_status(404);
+
+    // Watch helper mtime change detection
+    let wdir = "storage/framework/test_p6_watch";
+    rm_tree(wdir);
+    dir_create(wdir);
+    try {
+        write_file("{wdir}/a.matrix", "fn a() {}\n");
+        let snap1 = snapshot_watch_mtimes("", [wdir]);
+        write_file("{wdir}/b.matrix", "fn b() {}\n");
+        let snap2 = snapshot_watch_mtimes("", [wdir]);
+        let diffs = detect_watch_changes(snap1, snap2);
+        assert_true(diffs.len() == 1, "watch helper detects newly added file");
+    } finally {
+        rm_tree(wdir);
+    }
+
+    println("  [PASS] test_route_model_binding_and_watch_helper");
+}
+
+fn main() {
+    println("\n=== Running Phase 6 DX, Migrations & Static Test Suite ===");
+    test_advanced_migrations_and_function_registry();
+    test_config_validation_and_generators();
+    test_static_range_gzip_and_owasp();
+    test_route_model_binding_and_watch_helper();
+    DB.close();
+    println("=== All Phase 6 Tests Passed! ===\n");
+    return 0;
+}

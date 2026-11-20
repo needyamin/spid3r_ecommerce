@@ -5,29 +5,50 @@
 // root. The minimum level can be overridden globally with SPID3R_LOG_LEVEL
 // (debug | info | warn | error).
 
+fn _log_env_int(key: string, fallback: int) -> int {
+    let v = env(key);
+    if v.is_some() {
+        let s = string(v.unwrap()).trim();
+        if s != "" {
+            try {
+                let parsed = int(s);
+                if parsed > 0 {
+                    return parsed;
+                }
+            } catch (_e) {
+            }
+        }
+    }
+    return fallback;
+}
+
 public let config_logging = {
     "default": "daily",
     "level_env": "SPID3R_LOG_LEVEL",
     "level": "debug",
+    "retention_days": _log_env_int("SPID3R_LOG_RETENTION_DAYS", 14),
     "channels": {
         "single": {
             "driver": "single",
             "path": "storage/logs/app.log",
             "level": "debug"
-        },
+        }
+        ,
         "daily": {
-            "driver": "daily",          // one file per UTC day: app-YYYY-MM-DD.log
+            "driver": "daily",  // one file per UTC day: app-YYYY-MM-DD.log
             "path": "storage/logs/app.log",
-            "days": 14,                 // retention hint (manual cleanup)
+            "days": 14,  // retention hint (manual cleanup)
             "level": "debug"
-        },
+        }
+        ,
         // Dedicated channel used by framework/Mail (Mail log driver)
         "mail": {
             "driver": "daily",
             "path": "storage/logs/mail.log",
             "days": 14,
             "level": "debug"
-        },
+        }
+        ,
         // Dedicated channel used by framework/Queue workers
         "queue": {
             "driver": "daily",

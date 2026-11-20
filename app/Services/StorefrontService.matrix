@@ -4,7 +4,7 @@
 // objects are passed in (controllers hand over plain query maps + paths).
 
 import "framework/Database/DB";
-import "framework/HttpException";
+import "framework/Http/HttpException";
 import "app/Repositories/ProductRepository";
 import "app/Repositories/CatalogRepository";
 import "app/Support/Money" as Money;
@@ -12,7 +12,7 @@ import "app/Support/Fx" as Fx;
 import "app/Support/CatalogCache" as CatalogCache;
 import "app/Support/Images" as Images;
 import "framework/Cache/Cache";
-import "framework/Container/Container";
+import "framework/Foundation/Container";
 
 public class StorefrontService {
     public let products;

@@ -1,0 +1,23 @@
+%% Spid3r Store — payment gateway flow
+flowchart LR
+    subgraph CLIENT["Checkout"]
+        CO["CheckoutController"]
+    end
+    PS["PaymentService<br/>app/Services/PaymentService"]
+    subgraph GW["Gateways (sandbox integrations)"]
+        SSL["SSLCommerz"]
+        STR["Stripe"]
+        BK["bKash"]
+        NG["Nagad"]
+        SIM["Simulator (dev)"]
+    end
+    PC["PaymentController<br/>/payment/index · callbacks · /payment/return"]
+    PR["PaymentRepository<br/>payments table, audit trail"]
+    REF["Refunds + reconciliation<br/>OrderService / Admin panel"]
+
+    CO --> PS
+    PS --> GW
+    GW --> PC
+    PC --> PR
+    PR --> REF
+    PC -->|success/fail redirect| CLIENT

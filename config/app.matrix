@@ -1,17 +1,60 @@
 // config/app.matrix
 // Spid3rWeb Application Configuration
 
+import "framework/Foundation/Env";
+
+let _app_env_loaded = load_env_file(".env");
+
+fn _app_env_str(key: string, fallback: string) -> string {
+    let v = env(key);
+    if v.is_some() {
+        let s = string(v.unwrap()).trim();
+        if s != "" {
+            return s;
+        }
+    }
+    return fallback;
+}
+
+fn _app_parse_bool(raw: string) -> bool {
+    let s = string(raw).trim().lower();
+    return s == "1" or s == "true" or s == "yes" or s == "on";
+}
+
+let _resolved_env = _app_env_str("APP_ENV", "production").lower();
+let _debug_raw = _app_env_str("APP_DEBUG", "");
+let _resolved_debug = if _debug_raw != "" {
+    _app_parse_bool(_debug_raw)
+} else {
+    _resolved_env == "development" or _resolved_env == "local"
+};
+
+let _app_key_raw = _app_env_str("APP_KEY", "");
+let _resolved_key = if _app_key_raw != "" {
+    _app_key_raw
+} else {
+    _app_env_str("SPID3R_APP_KEY", "")
+};
+
 public let config_app = {
-    "name": "Spid3rWeb Developer Platform",
-    "env": "development",
-    "debug": true,
-    "url": "http://localhost:8000",
+    "name": _app_env_str("APP_NAME", "Spid3rWeb Developer Platform"),
+    "version": "1.1.1",
+    "min_spid3r": "1.1.1",
+    "env": _resolved_env,
+    "debug": _resolved_debug,
+    "url": _app_env_str("APP_URL", "http://localhost:8000"),
     "timezone": "UTC",
     "locale": "en",
-    // Application key used for signed values (set SPID3R_APP_KEY in .env
-    // for anything beyond development).
-    "key_env": "SPID3R_APP_KEY",
-    "key": "",
+    // Application key used for signed values (set APP_KEY or SPID3R_APP_KEY
+    // in .env; run `spid3r magic key:generate` to mint a 256-bit key).
+    "key_env": "APP_KEY",
+    "key": _resolved_key,
+    "paths": {
+        "public": "public",
+        "views": "resources/views",
+        "state_dir": _app_env_str("SPID3R_STATE_DIR", "storage")
+    }
+    ,
     // Toggle for the built-in maintenance placeholder (reserved)
     "maintenance": false
 };

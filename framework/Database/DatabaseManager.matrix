@@ -2,10 +2,79 @@
 // Spid3rWeb Connection & Driver Manager — resolves driver/config from env,
 // lazily opens connections, and hands out QueryBuilder instances.
 
+import "Driver";
 import "Connection";
+import "ServerConnections";
+import "ConnectionPool";
 import "QueryBuilder";
-import "framework/Env";
+import "framework/Foundation/Env";
+import "framework/Foundation/Config";
 
+fn trim_trailing_slash(p: string) -> string {
+    let s = string(p).trim().replace("\\", "/");
+    while s.len() > 1 and s.ends_with("/") {
+        s = s.slice(0, s.len() - 1);
+    }
+    return s;
+}
+
+fn db_env_or(key: string, fallback: string) -> string {
+    let v = env(key);
+    if v.is_some() {
+        let val = string(v.unwrap());
+        if val != "" {
+            return val;
+        }
+    }
+    return fallback;
+}
+
+fn resolve_db_driver() -> string {
+    let raw = "";
+    let env_driver = env("SPID3R_DB_DRIVER");
+    if env_driver.is_some() {
+        raw = string(env_driver.unwrap()).trim().lower();
+    }
+    if raw == "postgres" or raw == "postgresql" or raw == "pg" {
+        return "postgres";
+    }
+    if raw == "mysql" {
+        return "mysql";
+    }
+    if raw == "mariadb" {
+        return "mariadb";
+    }
+    return "sqlite";
+}
+
+/// Resolve the active SQLite database file path, separating runtime state under `app.paths.state_dir`.
+public fn resolve_sqlite_path() -> string {
+    let env_path = env("SPID3R_DB_PATH").unwrap_or("").trim();
+    if env_path != "" {
+        return env_path;
+    }
+    let env_state = env("SPID3R_STATE_DIR").unwrap_or("").trim();
+    if env_state != "" {
+        let base = trim_trailing_slash(env_state);
+        return "{base}/database/database.sqlite";
+    }
+    let cfg_state = trim_trailing_slash(
+        string(Config.get("app.paths.state_dir", "storage"))
+    );
+    if cfg_state == "" {
+        cfg_state = "storage";
+    }
+    let preferred = "{cfg_state}/database/database.sqlite";
+    if file_exists(preferred) {
+        return preferred;
+    }
+    if file_exists("database/database.sqlite") {
+        return "database/database.sqlite";
+    }
+    return preferred;
+}
+
+/// Central database connection manager resolving drivers from env and coordinating transactions/pools.
 public class DatabaseManager {
     public let db_handle;
     public let db_path;
@@ -13,135 +82,122 @@ public class DatabaseManager {
     public let conn_config;
     public let tx_depth;
     private let tx_lock;
+    private let pool;
 
-    fn new() {
+    fn new () {
         // Re-load .env here (idempotent: OS env wins) so every manager
         // instance — including the global singleton at import time — sees
         // the file's values for driver/connection resolution.
         let _env_reload = load_env_file(".env");
-        self.driver = self.resolve_driver();
+        self.driver = resolve_db_driver();
         self.db_path = "";
-        self.conn_config = {};
+        self.conn_config = {
+        };
         if self.driver == "sqlite" {
-            self.db_path = self.resolve_database_path();
+            self.db_path = resolve_sqlite_path();
         } else {
             self.conn_config = self.resolve_server_config();
         }
         self.db_handle = null;
         self.tx_depth = 0;
         self.tx_lock = mutex(true);
-    }
-
-    // Driver selection: SPID3R_DB_DRIVER env var (sqlite|postgres|mysql|mariadb).
-    // "postgresql" normalizes to "postgres"; "mariadb" keeps its own name but
-    // rides the MySQL wire protocol.
-    fn resolve_driver(self) -> string {
-        let raw = "";
-        let env_driver = env("SPID3R_DB_DRIVER");
-        if env_driver.is_some() {
-            raw = string(env_driver.unwrap()).trim().lower();
-        }
-        if raw == "postgres" or raw == "postgresql" or raw == "pg" {
-            return "postgres";
-        }
-        if raw == "mysql" {
-            return "mysql";
-        }
-        if raw == "mariadb" {
-            return "mariadb";
-        }
-        return "sqlite";
-    }
-
-    fn env_var_or(self, key: string, fallback: string) -> string {
-        let v = env(key);
-        if v.is_some() {
-            let val = string(v.unwrap());
-            if val != "" {
-                return val;
-            }
-        }
-        return fallback;
+        self.pool = null;
     }
 
     // Server connection settings from SPID3R_PG_* / SPID3R_MYSQL_* env vars.
-    fn resolve_server_config(self) {
+    fn resolve_server_config(self) -> map {
         let prefix = "SPID3R_PG";
         let default_port = "5432";
         if self.driver == "mysql" or self.driver == "mariadb" {
             prefix = "SPID3R_MYSQL";
             default_port = "3306";
         }
-        let host = self.env_var_or(prefix + "_HOST", "127.0.0.1");
-        let port = self.env_var_or(prefix + "_PORT", default_port);
-        return map(
-            "host", host,
-            "port", port,
-            "addr", host + ":" + port,
-            "user", self.env_var_or(prefix + "_USER", "spid3r"),
-            "password", self.env_var_or(prefix + "_PASSWORD", ""),
-            "database", self.env_var_or(prefix + "_DATABASE", "spid3r")
-        );
-    }
-
-    fn resolve_database_path(self) -> string {
-        let env_path = env("SPID3R_DB_PATH");
-        if env_path.is_some() {
-            let val = env_path.unwrap();
-            if string(val) != "" {
-                return string(val);
-            }
-        }
-        let candidates = [
-            "database/database.sqlite",
-            "examples/spid3r_web/database/database.sqlite"
-        ];
-        for p in candidates {
-            if file_exists(p) {
-                return p;
-            }
-        }
-        for p in candidates {
-            if p == "database/database.sqlite" and file_exists("database") {
-                return p;
-            }
-            if p == "examples/spid3r_web/database/database.sqlite" and file_exists("examples/spid3r_web/database") {
-                return p;
-            }
-        }
-        return "database/database.sqlite";
+        let host = db_env_or("{prefix}_HOST", "127.0.0.1");
+        let port = db_env_or("{prefix}_PORT", default_port);
+        return {
+            "host": host,
+            "port": port,
+            "addr": "{host}:{port}",
+            "user": db_env_or("{prefix}_USER", "spid3r"),
+            "password": db_env_or("{prefix}_PASSWORD", ""),
+            "database": db_env_or("{prefix}_DATABASE", "spid3r")
+        };
     }
 
     public fn driver_name(self) -> string {
         return self.driver;
     }
 
+    public fn create_connection(self) -> any {
+        if self.driver == "postgres" {
+            return new PgConnection(
+                self.conn_config["addr"],
+                self.conn_config["user"],
+                self.conn_config["password"],
+                self.conn_config["database"]
+            );
+        }
+        if self.driver == "mysql" or self.driver == "mariadb" {
+            return new MySqlConnection(
+                self.conn_config["addr"],
+                self.conn_config["user"],
+                self.conn_config["password"],
+                self.conn_config["database"]
+            );
+        }
+        return new SqliteConnection(self.db_path);
+    }
+
+    private fn ensure_pool(self) {
+        if self.pool == null {
+            let mgr = self;
+            let default_sz = if self.driver == "sqlite" {
+                1
+            } else {
+                4
+            };
+            let max_sz = int(
+                Config.get("database.connections." + self.driver + ".pool_size", default_sz)
+            );
+            self.pool = new ConnectionPool(fn() {
+                return mgr.create_connection();
+            }, max_sz);
+        }
+        return self.pool;
+    }
+
+    public fn pool_stats(self) -> map {
+        return self.ensure_pool().stats();
+    }
+
+    public fn with_connection(self, callback: any) -> any {
+        let p = self.ensure_pool();
+        let conn = p.acquire();
+        try {
+            return callback(conn);
+        } finally {
+            p.release(conn);
+        }
+    }
+
+    public fn ping(self) -> bool {
+        try {
+            return self.connection().ping();
+        } catch (_e) {
+            return false;
+        }
+    }
+
     // Lazily open the connection for the active driver. Every driver wrapper
     // exposes the same contract, so QueryBuilder/Auth code is driver-agnostic.
-    public fn connection(self) {
+    public fn connection(self) -> any {
         if self.db_handle == null {
-            if self.driver == "postgres" {
-                self.db_handle = new PgConnection(
-                    self.conn_config["addr"],
-                    self.conn_config["user"],
-                    self.conn_config["password"],
-                    self.conn_config["database"]
-                );
-            } elif self.driver == "mysql" or self.driver == "mariadb" {
-                self.db_handle = new MySqlConnection(
-                    self.conn_config["addr"],
-                    self.conn_config["user"],
-                    self.conn_config["password"],
-                    self.conn_config["database"]
-                );
-            } else {
-                self.db_handle = new SqliteConnection(self.db_path);
-            }
+            self.db_handle = self.create_connection();
         }
         return self.db_handle;
     }
 
-    public fn select(self, sql: string, params = null) {
+    public fn select(self, sql: string, params: any = null) -> list {
         if params == null {
             params = [];
         }
@@ -149,7 +205,7 @@ public class DatabaseManager {
         return conn.query(sql, params);
     }
 
-    public fn statement(self, sql: string, params = null) {
+    public fn statement(self, sql: string, params: any = null) -> any {
         if params == null {
             params = [];
         }
@@ -157,7 +213,7 @@ public class DatabaseManager {
         return conn.statement(sql, params);
     }
 
-    public fn table(self, table_name: string) {
+    public fn table(self, table_name: string) -> QueryBuilder {
         return new QueryBuilder(table_name, self);
     }
 
@@ -167,7 +223,7 @@ public class DatabaseManager {
     // is re-thrown; a failed ROLLBACK never masks that original error.
     // Guarded by tx_lock when starting a top-level transaction so concurrent
     // tasks never interleave BEGIN/COMMIT/ROLLBACK on the shared connection.
-    public fn transaction(self, callback) {
+    public fn transaction(self, callback: any) -> any {
         if self.tx_depth > 0 {
             return callback();
         }
@@ -176,28 +232,30 @@ public class DatabaseManager {
         let conn = null;
         try {
             conn = self.connection();
-            if self.driver == "sqlite" {
-                conn.exec("BEGIN IMMEDIATE");
-            } else {
-                conn.exec("BEGIN");
-            }
+            conn.set_in_transaction(true);
+            conn.exec(conn.begin_sql());
         } catch (begin_err) {
+            if conn != null {
+                conn.set_in_transaction(false);
+            }
             self.tx_depth = 0;
             self.tx_lock.unlock();
             throw begin_err;
         }
         try {
             let result = callback();
-            conn.exec("COMMIT");
+            conn.exec(conn.commit_sql());
+            conn.set_in_transaction(false);
             self.tx_depth = 0;
             self.tx_lock.unlock();
             return result;
         } catch (e) {
             try {
-                conn.exec("ROLLBACK");
+                conn.exec(conn.rollback_sql());
             } catch (_rb_err) {
                 // Rollback failure must not mask the original error.
             }
+            conn.set_in_transaction(false);
             self.tx_depth = 0;
             self.tx_lock.unlock();
             throw e;
@@ -215,9 +273,9 @@ public class DatabaseManager {
             return;
         }
         let candidates = [
-            self.db_path,
-            "database/database.sqlite",
-            "examples/spid3r_web/database/database.sqlite"
+        self.db_path,
+        "storage/database/database.sqlite",
+        "database/database.sqlite"
         ];
         for p in candidates {
             let shm_path = p + "-shm";
@@ -232,11 +290,18 @@ public class DatabaseManager {
     }
 
     public fn close(self) {
+        if self.pool != null {
+            self.pool.close_all();
+            self.pool = null;
+        }
         if self.db_handle != null {
             if self.driver == "sqlite" {
-                self.db_handle.exec("PRAGMA wal_checkpoint(TRUNCATE);");
+                try {
+                    self.db_handle.exec("PRAGMA wal_checkpoint(TRUNCATE);");
+                } catch (_e) {
+                }
                 self.db_handle.handle.close();
-            } elif self.driver != "mysql" {
+            } else {
                 self.db_handle.close();
             }
             self.db_handle = null;

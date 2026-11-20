@@ -1,11 +1,11 @@
 // app/Controllers/PaymentController.matrix
 // Phase 8 — payment HTTP layer.
 
-import "framework/Response";
+import "framework/Http/Response";
 import "framework/View/BD";
-import "framework/Resource";
-import "framework/Container/Container";
-import "framework/HttpException";
+import "framework/Http/Resource";
+import "framework/Foundation/Container";
+import "framework/Http/HttpException";
 import "framework/Database/DB";
 import "app/Services/PaymentService";
 import "app/Support/StoreChrome" as StoreChrome;

@@ -2,8 +2,8 @@
 // Phase 3 — authentication & authorization integration tests.
 // Drives the real Application kernel with direct request maps (no sockets).
 
-import "framework/Application";
-import "framework/Router";
+import "framework/Foundation/Application";
+import "framework/Http/Router";
 import "framework/Database/DB";
 import "framework/Auth/Hash";
 import "routes/web";

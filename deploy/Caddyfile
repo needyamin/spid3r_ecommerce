@@ -1,0 +1,19 @@
+# deploy/Caddyfile — Automatic HTTPS reverse proxy example for Spid3rWeb.
+# Set SPID3R_TRUSTED_PROXIES=127.0.0.1 (or the proxy container IP) so Spid3rWeb
+# honors X-Forwarded-For, X-Forwarded-Proto, and X-Forwarded-Host from Caddy.
+
+example.com {
+    encode gzip zstd
+
+    request_body {
+        max_size 10MB
+    }
+
+    reverse_proxy 127.0.0.1:8000 {
+        health_uri /health
+        health_interval 30s
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+        header_up X-Forwarded-Host {host}
+    }
+}

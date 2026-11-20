@@ -1,0 +1,274 @@
+# Tagged Release & Artifact Pipeline for Spid3rWeb.
+#
+# Triggers:
+#   - Tag push matching `v*.*.*` -> builds, verifies, pushes GHCR image, creates GitHub Release
+#   - `workflow_dispatch` -> dry-run build + verification artifacts without publishing a Release
+
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  packages: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  SPID3R_VERSION: "1.1.1"
+  SPID3R_PATH: .
+
+jobs:
+  verify:
+    name: Pre-Release Verification Gate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Install LLVM 23 runtime library (required by the prebuilt spid3r binary)
+        run: |
+          set -eu
+          wget -q https://apt.llvm.org/llvm.sh
+          chmod +x llvm.sh
+          sudo ./llvm.sh 23
+          sudo apt-get install -y --no-install-recommends libllvm23
+          echo "/usr/lib/llvm-23/lib" | sudo tee /etc/ld.so.conf.d/llvm-23.conf > /dev/null
+          sudo ldconfig
+
+      - name: Install pinned Spid3r v${{ env.SPID3R_VERSION }} (SHA-256 verified)
+        run: |
+          set -eu
+          asset="spid3r-x86_64-unknown-linux-gnu.tar.gz"
+          base="https://github.com/needyamin/spid3r/releases/download/v${SPID3R_VERSION}"
+          tmp="$(mktemp -d)"
+          trap 'rm -rf "$tmp"' EXIT
+          curl -fsSL "${base}/${asset}" -o "${tmp}/${asset}"
+          curl -fsSL "${base}/sha256sums.txt" -o "${tmp}/sha256sums.txt"
+          (cd "$tmp" && expected="$(awk -v a="${asset}" '$2 == a || $2 == "*" a {print $1; exit}' sha256sums.txt)" && test -n "${expected}" && echo "${expected}  ${asset}" | sha256sum -c -)
+          tar -xzf "${tmp}/${asset}" -C "$tmp"
+          mkdir -p "$HOME/.spid3r/bin"
+          install -m 0755 "$(find "$tmp" -type f -name spid3r | head -n 1)" "$HOME/.spid3r/bin/spid3r"
+          echo "$HOME/.spid3r/bin" >> "$GITHUB_PATH"
+
+      - name: Run full verification gate
+        run: |
+          set -eu
+          cp .env.example .env
+          chmod 0600 .env
+          spid3r magic fmt --check
+          spid3r magic lint
+          spid3r magic test
+          spid3r magic docs
+          spid3r magic docs --json
+          test -s docs/build/api.html
+          test -s docs/build/api.json
+
+      - name: Upload generated API docs
+        uses: actions/upload-artifact@v4
+        with:
+          name: spid3rweb-api-docs
+          path: |
+            docs/build/api.html
+            docs/build/api.json
+          retention-days: 7
+
+  build-binaries:
+    name: Build Release Bundle (${{ matrix.label }})
+    needs: verify
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: linux-x86_64
+            os: ubuntu-24.04
+          - label: windows-x86_64
+            os: windows-latest
+    runs-on: ${{ matrix.os }}
+    env:
+      REL_LABEL: ${{ matrix.label }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Install LLVM 23 & pinned Spid3r v${{ env.SPID3R_VERSION }} (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          set -eu
+          wget -q https://apt.llvm.org/llvm.sh
+          chmod +x llvm.sh
+          sudo ./llvm.sh 23
+          sudo apt-get install -y --no-install-recommends llvm-23-dev libllvm23 clang lld
+          echo "/usr/lib/llvm-23/lib" | sudo tee /etc/ld.so.conf.d/llvm-23.conf > /dev/null
+          sudo ldconfig
+          echo "LLVM_SYS_231_PREFIX=/usr/lib/llvm-23" >> "$GITHUB_ENV"
+          echo "SPID3R_LLVM_LIB_DIR=/usr/lib/llvm-23/lib" >> "$GITHUB_ENV"
+          echo "/usr/lib/llvm-23/bin" >> "$GITHUB_PATH"
+          target="x86_64-unknown-linux-gnu"
+          asset="spid3r-${target}.tar.gz"
+          rt_asset="spid3r-runtime-${SPID3R_VERSION}-${target}.tar.gz"
+          base="https://github.com/needyamin/spid3r/releases/download/v${SPID3R_VERSION}"
+          tmp="$(mktemp -d)"
+          trap 'rm -rf "$tmp"' EXIT
+          curl -fsSL "${base}/${asset}" -o "${tmp}/${asset}"
+          curl -fsSL "${base}/${rt_asset}" -o "${tmp}/${rt_asset}"
+          curl -fsSL "${base}/sha256sums.txt" -o "${tmp}/sha256sums.txt"
+          (cd "$tmp" && expected="$(awk -v a="${asset}" '$2 == a || $2 == "*" a {print $1; exit}' sha256sums.txt)" && test -n "${expected}" && echo "${expected}  ${asset}" | sha256sum -c -)
+          (cd "$tmp" && expected_rt="$(awk -v a="${rt_asset}" '$2 == a || $2 == "*" a {print $1; exit}' sha256sums.txt)" && test -n "${expected_rt}" && echo "${expected_rt}  ${rt_asset}" | sha256sum -c -)
+          tar -xzf "${tmp}/${asset}" -C "$tmp"
+          mkdir -p "$HOME/.spid3r/bin" "$HOME/.spid3r/lib" "${tmp}/rt"
+          install -m 0755 "$(find "$tmp" -maxdepth 2 -type f -name spid3r | head -n 1)" "$HOME/.spid3r/bin/spid3r"
+          self_bin="$(find "$tmp" -maxdepth 2 -type f -name spid3r-self | head -n 1 || true)"
+          if [ -n "$self_bin" ] && [ -f "$self_bin" ]; then
+            install -m 0755 "$self_bin" "$HOME/.spid3r/bin/spid3r-self"
+          fi
+          tar -xzf "${tmp}/${rt_asset}" -C "${tmp}/rt"
+          rt_lib="$(find "${tmp}/rt" -type f -name libspid3r_lang.a | head -n 1)"
+          test -n "$rt_lib"
+          install -m 0644 "$rt_lib" "$HOME/.spid3r/lib/libspid3r_lang.a"
+          echo "$HOME/.spid3r/bin" >> "$GITHUB_PATH"
+          echo "SPID3R_LIB_DIR=$HOME/.spid3r/lib" >> "$GITHUB_ENV"
+
+      - name: Install pinned Spid3r v${{ env.SPID3R_VERSION }} (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ver = $env:SPID3R_VERSION
+          $asset = "Spid3r-Setup-$ver.exe"
+          $base = "https://github.com/needyamin/spid3r/releases/download/v$ver"
+          $tmp = Join-Path $env:TEMP "spid3r-setup"
+          New-Item -ItemType Directory -Force -Path $tmp | Out-Null
+          $exe = Join-Path $tmp $asset
+          Invoke-WebRequest -UseBasicParsing -Uri "$base/$asset" -OutFile $exe
+          $hasSha = $false
+          try {
+            Invoke-WebRequest -UseBasicParsing -Uri "$base/sha256sums.txt" -OutFile "$exe.sums"
+            $hasSha = $true
+          } catch {
+            Write-Warning "No sha256sums.txt available for $asset"
+          }
+          if ($hasSha) {
+            $line = Get-Content "$exe.sums" | Where-Object { $_ -match ([regex]::Escape($asset) + '$') } | Select-Object -First 1
+            if (-not $line) { throw "No checksum entry for $asset in sha256sums.txt" }
+            $exp = $line.Split()[0].ToLower()
+            $act = (Get-FileHash -Algorithm SHA256 $exe).Hash.ToLower()
+            if ($exp -ne $act) { throw "SHA-256 mismatch for $asset ($act != $exp)" }
+          }
+          Start-Process -FilePath $exe -ArgumentList "/S" -Wait
+          $binDir = "$env:LOCALAPPDATA\Programs\Spid3r"
+          if (-not (Test-Path "$binDir\spid3r.exe")) { throw "spid3r.exe missing under $binDir" }
+          $binDir | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+
+      - name: Build AOT binary, bytecode & bundle archive (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          set -eu
+          mkdir -p dist/bundle
+          LD_LIBRARY_PATH="/usr/lib/llvm-23/lib:${LD_LIBRARY_PATH:-}" \
+            spid3r magic build --release --bundle -o dist/bundle/spid3rweb server.matrix
+          dist/bundle/spid3rweb --help
+          spid3r magic build --bytecode-only -o dist/bundle/server.matrixc server.matrix
+          spid3r magic docs -o dist/bundle/api.html
+          cp .env.example spid3r.ini.example README.md dist/bundle/
+          archive="dist/spid3rweb-${REL_LABEL}.tar.gz"
+          tar -czf "$archive" -C dist/bundle .
+          (cd dist && sha256sum "spid3rweb-${REL_LABEL}.tar.gz" > "spid3rweb-${REL_LABEL}.tar.gz.sha256")
+
+      - name: Build AOT binary, bytecode & bundle archive (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          New-Item -ItemType Directory -Force -Path dist/bundle | Out-Null
+          spid3r magic build --release --bundle -o dist/bundle/spid3rweb.exe server.matrix
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & dist/bundle/spid3rweb.exe --help
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          spid3r magic build --bytecode-only -o dist/bundle/server.matrixc server.matrix
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          spid3r magic docs -o dist/bundle/api.html
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Copy-Item .env.example, spid3r.ini.example, README.md dist/bundle/
+          $archive = "dist/spid3rweb-$($env:REL_LABEL).zip"
+          Compress-Archive -Path dist/bundle/* -DestinationPath $archive -Force
+          $hash = (Get-FileHash -Algorithm SHA256 $archive).Hash.ToLower()
+          "$hash  spid3rweb-$($env:REL_LABEL).zip" | Out-File -Encoding ascii "$archive.sha256"
+
+      - name: Upload release bundle artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: spid3rweb-bundle-${{ matrix.label }}
+          path: |
+            dist/spid3rweb-*.tar.gz
+            dist/spid3rweb-*.tar.gz.sha256
+            dist/spid3rweb-*.zip
+            dist/spid3rweb-*.zip.sha256
+          retention-days: 7
+
+  docker-release:
+    name: Build & Push Docker Image
+    needs: verify
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      REF_NAME: ${{ github.ref_name }}
+      REPO_NAME: ${{ github.repository }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Build & verify Docker image
+        run: |
+          set -eu
+          image="ghcr.io/$(printf '%s' "$REPO_NAME" | tr '[:upper:]' '[:lower:]')"
+          docker build -f deploy/Dockerfile -t "${image}:${REF_NAME}" -t "${image}:latest" .
+          test_key="hex:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+          docker run --rm -e APP_ENV=production -e APP_KEY="$test_key" -e SPID3R_INI=/var/www/app/spid3r.ini "${image}:${REF_NAME}" spid3r magic doctor --strict
+
+      - name: Push to GHCR on tagged release
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          set -eu
+          image="ghcr.io/$(printf '%s' "$REPO_NAME" | tr '[:upper:]' '[:lower:]')"
+          printf '%s' "$GITHUB_TOKEN" | docker login ghcr.io -u "${GITHUB_ACTOR}" --password-stdin
+          docker push "${image}:${REF_NAME}"
+          docker push "${image}:latest"
+
+  publish-release:
+    name: Publish GitHub Release
+    needs: [build-binaries, docker-release]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Download release artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-dist
+          merge-multiple: true
+
+      - name: Generate combined SHA256SUMS.txt
+        run: |
+          cd release-dist
+          cat ./*.sha256 > SHA256SUMS.txt
+          ls -la
+
+      - name: Attach assets to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            release-dist/spid3rweb-*.tar.gz
+            release-dist/spid3rweb-*.zip
+            release-dist/SHA256SUMS.txt
+            release-dist/api.html
+            release-dist/api.json

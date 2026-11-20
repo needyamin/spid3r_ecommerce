@@ -5,8 +5,8 @@
 //   loyalty points, referrals, gift cards, promotional campaigns,
 //   customer support, order tracking, multi-currency, multi-language.
 
-import "framework/Application";
-import "framework/Router";
+import "framework/Foundation/Application";
+import "framework/Http/Router";
 import "framework/Database/DB";
 import "routes/web";
 import "routes/queue";

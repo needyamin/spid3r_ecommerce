@@ -1,8 +1,8 @@
 // routes/checkout.matrix
 // Phase 7 — checkout, customer order pages, admin order management.
 
-import "framework/Router";
-import "framework/Response";
+import "framework/Http/Router";
+import "framework/Http/Response";
 import "app/Controllers/CheckoutController";
 import "app/Controllers/OrderController";
 

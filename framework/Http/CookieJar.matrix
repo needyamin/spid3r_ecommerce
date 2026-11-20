@@ -1,0 +1,154 @@
+// framework/Http/CookieJar.matrix
+// RFC 6265 Cookie Validation, Secure-Flag Resolution & Jar Management
+
+import "framework/Foundation/Config";
+
+const COOKIE_NAME_CHARS = "!#$%&'*+-.^_`|~0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+
+fn has_cookie_ctl(value: string) -> bool {
+    let i = 0;
+    while i < 32 {
+        if value.contains(chr(i)) {
+            return true;
+        }
+        i = i + 1;
+    }
+    return value.contains(chr(127));
+}
+
+public fn is_valid_cookie_name(name: string) -> bool {
+    let s = string(name);
+    if s.len() == 0 {
+        return false;
+    }
+    for ch in s.split("") {
+        if not COOKIE_NAME_CHARS.contains(ch) {
+            return false;
+        }
+    }
+    return true;
+}
+
+public fn is_valid_cookie_value(value: string) -> bool {
+    let s = string(value);
+    if has_cookie_ctl(s) or s.contains(";") {
+        return false;
+    }
+    return true;
+}
+
+public fn is_valid_cookie_path(path: string) -> bool {
+    let s = string(path);
+    if s == "" or not s.starts_with("/") {
+        return false;
+    }
+    return not has_cookie_ctl(s) and not s.contains(";");
+}
+
+// Single canonical Secure flag resolver:
+// explicit arg > HTTPS request context > config session.secure > SPID3R_COOKIE_SECURE=1 > production.
+public fn resolve_cookie_secure(explicit: any = null, is_https: bool = false) -> bool {
+    if explicit != null {
+        return explicit == true or explicit == 1 or string(explicit) == "1" or string(explicit) == "true";
+    }
+    if is_https {
+        return true;
+    }
+    if Config.get("session.secure", false) == true {
+        return true;
+    }
+    if env("SPID3R_COOKIE_SECURE").unwrap_or("0").trim() == "1" {
+        return true;
+    }
+    return is_production();
+}
+
+public fn format_cookie_header(
+    name: string,
+    value: string,
+    path: string = "/",
+    max_age: int = 86_400,
+    secure = null,
+    is_https: bool = false
+) -> string {
+    let cname = string(name);
+    let cval = string(value);
+    let cpath = string(path);
+    if not is_valid_cookie_name(cname) {
+        throw "CookieJar: invalid cookie name '{cname}' (RFC 6265 token required)";
+    }
+    if not is_valid_cookie_value(cval) {
+        throw "CookieJar: illegal character (CTL or ';') in cookie value for '{cname}'";
+    }
+    if not is_valid_cookie_path(cpath) {
+        throw "CookieJar: invalid cookie path '{cpath}'";
+    }
+    let secure_flag = resolve_cookie_secure(secure, is_https);
+    let cookie_str = "{cname}={cval}; Path={cpath}; Max-Age={max_age}";
+    if Config.get("session.httponly", true) == true {
+        cookie_str = "{cookie_str}; HttpOnly";
+    }
+    let same_site = Config.get("session.same_site", "Lax");
+    cookie_str = "{cookie_str}; SameSite={same_site}";
+    if secure_flag {
+        cookie_str = "{cookie_str}; Secure";
+    }
+    return cookie_str;
+}
+
+/// RFC 6265 cookie jar validating names/values/paths and unifying Secure/SameSite/HttpOnly defaults.
+public class CookieJar {
+    private let items;
+    private let is_https;
+
+    fn new (is_https: bool = false) {
+        self.items = [];
+        self.is_https = is_https;
+    }
+
+    public fn set_https(self, flag: bool) -> CookieJar {
+        self.is_https = flag;
+        return self;
+    }
+
+    public fn queue(
+        self,
+        name: string,
+        value: string,
+        path: string = "/",
+        max_age: int = 86_400,
+        secure: any = null
+    ) -> string {
+        let hdr = format_cookie_header(name, value, path, max_age, secure, self.is_https);
+        self.items.push(hdr);
+        return hdr;
+    }
+
+    public fn queue_signed(
+        self,
+        name: string,
+        value: string,
+        path: string = "/",
+        max_age: int = 86_400,
+        secure: any = null
+    ) -> string {
+        let sig = hmac_sha256(resolve_app_key(), "{name}={value}");
+        return self.queue(name, "{value}.{sig}", path, max_age, secure);
+    }
+
+    public fn forget(self, name: string, path: string = "/") -> string {
+        return self.queue(name, "", path, 0, null);
+    }
+
+    public fn all(self) -> list {
+        return self.items;
+    }
+
+    public fn count(self) -> int {
+        return self.items.len();
+    }
+
+    public fn clear(self) {
+        self.items = [];
+    }
+}

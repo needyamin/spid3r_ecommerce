@@ -1,0 +1,20 @@
+// bootstrap/app.matrix
+// Spid3rWeb Application Factory — wires providers, routes, and queue handlers.
+
+import "framework/Foundation/Application";
+import "app/Providers/AppServiceProvider";
+import "app/Middleware/StoreMiddleware";
+import "routes/web";
+import "routes/api";
+import "routes/queue";
+
+public fn create_application(base_path: string = ".") {
+    let app = new Application(base_path);
+    app.register(new AppServiceProvider());
+    // Store RBAC gates: "role:admin", "permission:catalog.manage", etc.
+    register_store_middleware(app);
+    register_web_routes();
+    register_api_routes();
+    register_queue_jobs();
+    return app;
+}

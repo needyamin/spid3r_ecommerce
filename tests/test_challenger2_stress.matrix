@@ -6,8 +6,8 @@
 // 3. Database completeness across all 8 modules (Overview, Orders, Products, Categories, Brands, Inventory, Customers, Settings)
 // 4. Pagination, filtering, and search behavior
 
-import "framework/Application";
-import "framework/Router";
+import "framework/Foundation/Application";
+import "framework/Http/Router";
 import "framework/Database/DB";
 import "routes/web";
 import "routes/queue";

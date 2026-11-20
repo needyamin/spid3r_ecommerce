@@ -4,17 +4,18 @@
 import "framework/Database/DB";
 import "framework/Auth/Hash";
 import "framework/Auth/Jwt";
-import "framework/Config/Config";
+import "framework/Foundation/Config";
 
+/// Request-scoped authentication and CSRF manager supporting DB sessions and stateless Bearer JWTs.
 public class AuthManager {
     public let current_user;
     public let current_token;
     // Per-session CSRF token (stored in the sessions.payload column). Only
-    // meaningful for cookie-based sessions — Bearer-token API clients are
+    // meaningful for cookie-based sessions â€” Bearer-token API clients are
     // not CSRF-attackable, so they never need it.
     public let csrf_token;
 
-    fn new() {
+    fn new () {
         self.current_user = null;
         self.current_token = "";
         self.csrf_token = "";
@@ -24,44 +25,58 @@ public class AuthManager {
         let clean = string(email).trim().lower();
         let table = string(Config.get("auth.guards.session.table", "users"));
         let username_col = string(Config.get("auth.guards.session.username_column", "email"));
+        let password_col = string(
+            Config.get("auth.guards.session.password_column", "password")
+        );
         let users = DB.table(table).where(username_col, "=", clean).limit(1).get();
         if users.len() == 0 {
             return false;
         }
 
         let user = users[0];
-        let hash_val = string(user["password"]);
+        let hash_val = string(user[password_col]);
 
         if Hash.check(password, hash_val) {
+            if Hash.needs_rehash(hash_val) {
+                try {
+                    let upgraded = Hash.make(password);
+                    DB.table(table).where(username_col, "=", clean).update({
+                        password_col: upgraded
+                    });
+                } catch (_e) {
+                }
+            }
             self.login(user);
             return true;
         }
         return false;
     }
 
-    // Mint a stateless JWT for a user map and mark the current AuthManager as logged in.
-    public fn jwt(self, user, ttl: int = 3600) -> string {
-        let safe_user = map();
-        for k in user.keys() {
-            if k != "password" {
-                safe_user[k] = user[k];
+    private fn sanitize_user(self, row: map) -> map {
+        let _ = self;
+        let safe = {
+        };
+        for (k, v) in row {
+            if k != "password" and k != "session_payload" {
+                safe[k] = v;
             }
         }
+        return safe;
+    }
+
+    // Mint a stateless JWT for a user map and mark the current AuthManager as logged in.
+    public fn jwt(self, user: map, ttl: int = 3600) -> string {
+        let safe_user = self.sanitize_user(user);
         let token = Jwt.sign(safe_user, ttl);
         self.current_user = safe_user;
         self.current_token = token;
         return token;
     }
 
-    public fn login(self, user) {
-        // Password hashes must never linger in auth state — views and API
+    public fn login(self, user: map) {
+        // Password hashes must never linger in auth state â€” views and API
         // responses render from this map.
-        let safe_user = map();
-        for k in user.keys() {
-            if k != "password" {
-                safe_user[k] = user[k];
-            }
-        }
+        let safe_user = self.sanitize_user(user);
         self.current_user = safe_user;
         // Unpredictable CSPRNG session token (192 bits)
         self.current_token = "sess_" + hex_encode(random_bytes(24).unwrap());
@@ -72,15 +87,23 @@ public class AuthManager {
         // column carries the CSRF token so authenticate_token() can verify
         // form submissions against it.
         try {
-            DB.statement("INSERT INTO " + self.sessions_table() + " (token, user_id, payload, last_activity) VALUES (?, ?, ?, ?)",
-                list(self.current_token, user["id"], self.csrf_token, unix_time()));
+            let tbl = self.sessions_table();
+            DB.statement(
+                "INSERT INTO {tbl} (token, user_id, payload, last_activity) VALUES (?, ?, ?, ?)",
+                [self.current_token,
+                user["id"],
+                self.csrf_token,
+                unix_time()]
+            );
         } catch (_e) {
             // sessions table optional
         }
     }
 
     public fn authenticate_token(self, token: string) -> bool {
-        if token == "" { return false; }
+        if token == "" {
+            return false;
+        }
 
         // Stateless JWT fast-path: if token has 3 dot-separated segments, verify HS256 JWT without DB hit
         if token.contains(".") and token.split(".").len() == 3 {
@@ -97,7 +120,12 @@ public class AuthManager {
             // Server-side session TTL: session.lifetime seconds of inactivity
             // expires a session (config/session.matrix).
             let cutoff = unix_time() - self.session_lifetime();
-            let rows = DB.select("SELECT u.*, s.payload AS session_payload FROM users u JOIN " + self.sessions_table() + " s ON u.id = s.user_id WHERE s.token = ? AND s.last_activity >= ?", list(token, cutoff));
+            let tbl = self.sessions_table();
+            let rows = DB.select(
+                "SELECT u.*, s.payload AS session_payload FROM users u JOIN {tbl} s ON u.id = s.user_id WHERE s.token = ? AND s.last_activity >= ?",
+                [token,
+                cutoff]
+            );
             if rows.len() > 0 {
                 let user_row = rows[0];
                 let session_payload = "";
@@ -105,28 +133,31 @@ public class AuthManager {
                     session_payload = string(user_row["session_payload"]);
                 }
                 // Never expose the password hash through auth state.
-                let safe_row = map();
-                for k in user_row.keys() {
-                    if k != "password" and k != "session_payload" {
-                        safe_row[k] = user_row[k];
-                    }
-                }
-                self.current_user = safe_row;
+                self.current_user = self.sanitize_user(user_row);
                 self.current_token = token;
                 if session_payload != "" {
                     self.csrf_token = session_payload;
                 }
                 // Sliding expiration: touch last_activity on use
                 try {
-                    DB.statement("UPDATE " + self.sessions_table() + " SET last_activity = ? WHERE token = ?", list(unix_time(), token));
-                } catch (_e2) {}
+                    DB.statement(
+                        "UPDATE {tbl} SET last_activity = ? WHERE token = ?",
+                        [unix_time(),
+                        token]
+                    );
+                } catch (_e2) {
+                }
                 return true;
             }
-            // Expired or unknown token — clean it up so dead sessions
+            // Expired or unknown token â€” clean it up so dead sessions
             // don't accumulate forever.
             try {
-                DB.statement("DELETE FROM " + self.sessions_table() + " WHERE token = ?", list(token));
-            } catch (_e3) {}
+                DB.statement(
+                    "DELETE FROM {tbl} WHERE token = ?",
+                    [token]
+                );
+            } catch (_e3) {
+            }
         } catch (_e) {
             // fallback
         }
@@ -136,8 +167,13 @@ public class AuthManager {
     public fn logout(self) {
         if self.current_token != "" and not self.current_token.contains(".") {
             try {
-                DB.statement("DELETE FROM " + self.sessions_table() + " WHERE token = ?", list(self.current_token));
-            } catch (_e) {}
+                let tbl = self.sessions_table();
+                DB.statement(
+                    "DELETE FROM {tbl} WHERE token = ?",
+                    [self.current_token]
+                );
+            } catch (_e) {
+            }
         }
         self.current_user = null;
         self.current_token = "";
@@ -147,7 +183,8 @@ public class AuthManager {
     // Config-driven knobs (config/auth.matrix + config/session.matrix)
     // SQL-identifier safety: config-sourced table names are interpolated
     // into raw SQL, so they are validated against [A-Za-z0-9_] before use.
-    fn safe_identifier(self, name: string, fallback: string) -> string {
+    private fn safe_identifier(self, name: string, fallback: string) -> string {
+        let _ = self;
         let allowed = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_";
         let s = string(name).trim();
         if s.len() == 0 {
@@ -156,19 +193,23 @@ public class AuthManager {
         let i = 0;
         while i < s.len() {
             if not allowed.contains(s.slice(i, i + 1)) {
-                throw "auth: invalid identifier '" + s + "' (allowed: A-Z a-z 0-9 _)";
+                throw "auth: invalid identifier '{s}' (allowed: A-Z a-z 0-9 _)";
             }
             i = i + 1;
         }
         return s;
     }
 
-    fn sessions_table(self) -> string {
-        return self.safe_identifier(string(Config.get("session.table", "sessions")), "sessions");
+    private fn sessions_table(self) -> string {
+        return self.safe_identifier(
+            string(Config.get("session.table", "sessions")),
+            "sessions"
+        );
     }
 
-    fn session_lifetime(self) -> int {
-        return int(Config.get("session.lifetime", 86400));
+    private fn session_lifetime(self) -> int {
+        let _ = self;
+        return int(Config.get("session.lifetime", 86_400));
     }
 
     public fn clear(self) {
@@ -185,11 +226,11 @@ public class AuthManager {
         return self.current_user == null;
     }
 
-    public fn user(self) {
+    public fn user(self) -> any {
         return self.current_user;
     }
 
-    public fn id(self) {
+    public fn id(self) -> any {
         if self.current_user != null and self.current_user.has("id") {
             return self.current_user["id"];
         }

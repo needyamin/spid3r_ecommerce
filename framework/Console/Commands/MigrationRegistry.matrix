@@ -1,0 +1,344 @@
+// framework/Console/Commands/MigrationRegistry.matrix
+// Auto-discovery, timestamp formatting, and storage-backed migration runner
+// registry supporting both Migration subclasses and up/down function modules.
+
+import "framework/Database/DB";
+import "framework/Console/TestRunner";
+
+public const DEFAULT_REGISTRY_PATH = "storage/framework/migrations.matrix";
+
+public fn ensure_parent_dirs(file_path: string) -> string {
+    let parts = string(file_path).replace("\\", "/").split("/");
+    let cur = "";
+    let i = 0;
+    while i < parts.len() - 1 {
+        let seg = parts[i];
+        if seg != "" {
+            if cur == "" {
+                cur = seg;
+            } else {
+                cur = "{cur}/{seg}";
+            }
+            if cur != "." and not file_exists(cur) {
+                dir_create(cur);
+            }
+        }
+        i = i + 1;
+    }
+    return cur;
+}
+
+fn pad2_num(n: int) -> string {
+    if n < 10 {
+        return "0{n}";
+    }
+    return "{n}";
+}
+
+// UTC timestamp formatted as YYYY_MM_DD_HHMMSS for Laravel-style filenames.
+public fn format_migration_timestamp(ts: int) -> string {
+    let secs = ts % 86_400;
+    let hh = secs / 3_600;
+    let mm = (secs % 3_600) / 60;
+    let ss = secs % 60;
+    let days = ts / 86_400;
+    let z = days + 719468;
+    let era = z / 146097;
+    let doe = z - era * 146097;
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 {
+        mp + 3
+    } else {
+        mp - 9
+    };
+    if m <= 2 {
+        y = y + 1;
+    }
+    let ms = pad2_num(m);
+    let ds = pad2_num(d);
+    let hs = pad2_num(hh);
+    let mins = pad2_num(mm);
+    let secs_s = pad2_num(ss);
+    return "{y}_{ms}_{ds}_{hs}{mins}{secs_s}";
+}
+
+public fn scan_migration_files(migrations_dir: string) -> list {
+    let out = [];
+    let res = list_dir(migrations_dir);
+    if res.is_err() {
+        return out;
+    }
+    for name in res.unwrap() {
+        let n = string(name);
+        if n.ends_with(".matrix") and n != "registry.matrix" {
+            out.push(n);
+        }
+    }
+    let i = 1;
+    while i < out.len() {
+        let cur = out[i];
+        let j = i - 1;
+        while j >= 0 and out[j] > cur {
+            out[j + 1] = out[j];
+            j = j - 1;
+        }
+        out[j + 1] = cur;
+        i = i + 1;
+    }
+    return out;
+}
+
+public fn extract_migration_class(content: string) -> string {
+    if not content.contains("extends Migration") {
+        return "";
+    }
+    let parts = content.split("public class ");
+    if parts.len() < 2 {
+        return "";
+    }
+    let words = parts[1].trim().split(" ");
+    if words.len() == 0 {
+        return "";
+    }
+    return words[0].trim();
+}
+
+public fn is_function_migration(content: string) -> bool {
+    if content.contains("extends Migration") {
+        return false;
+    }
+    return content.contains("public fn up") and content.contains("public fn down");
+}
+
+fn normalize_import_prefix(migrations_dir: string) -> string {
+    let p = string(migrations_dir).replace("\\", "/").trim();
+    while p.ends_with("/") and p.len() > 1 {
+        p = p.slice(0, p.len() - 1);
+    }
+    if p.starts_with("./") {
+        p = p.slice(2, p.len());
+    }
+    return p;
+}
+
+public fn sync_registry(
+    migrations_dir: string = "database/migrations",
+    target_path: string = "storage/framework/migrations.matrix",
+    verbose: bool = false,
+    force: bool = false
+) -> int {
+    let files = scan_migration_files(migrations_dir);
+    let import_prefix = normalize_import_prefix(migrations_dir);
+
+    let known = 0;
+    let stale = 0;
+    let digest_parts = [];
+    let entries = [];
+    for f in files {
+        let res = read_file("{migrations_dir}/{f}");
+        if res.is_err() {
+            continue;
+        }
+        let raw = string(res.unwrap());
+        let csum = sha256(raw);
+        let cls = extract_migration_class(raw);
+        let fn_mode = is_function_migration(raw);
+        if cls == "" and not fn_mode {
+            continue;
+        }
+        let stem = f.slice(0, f.len() - 7);
+        digest_parts.push("{stem}:{csum}");
+        entries.push({
+            "stem": stem,
+            "cls": cls,
+            "fn_mode": fn_mode,
+            "checksum": csum
+        });
+    }
+    let expected_digest = sha256(digest_parts.join("|"));
+
+    let existing_digest = "";
+    let has_runner = false;
+    if file_exists(target_path) {
+        let res = read_file(target_path);
+        if res.is_ok() {
+            let content = string(res.unwrap());
+            has_runner = content.contains("fn main()") and content.contains("MigrationRunner");
+            for f in files {
+                let mod_name = f.slice(0, f.len() - 7);
+                if content.contains("\"{import_prefix}/{mod_name}\"") {
+                    known = known + 1;
+                }
+            }
+            let prefix_tok = "import \"{import_prefix}/";
+            for line in content.split("\n") {
+                let t = line.trim();
+                if t.starts_with("// sync-digest:") {
+                    existing_digest = t.slice(15, t.len()).trim();
+                } elif t.starts_with(prefix_tok) {
+                    let ref_name = t.replace(prefix_tok, "").replace("\";", "");
+                    if not file_exists("{migrations_dir}/{ref_name}.matrix") {
+                        stale = stale + 1;
+                    }
+                }
+            }
+        }
+    }
+    let new_count = files.len() - known;
+    if not force and has_runner and new_count <= 0 and stale == 0 and existing_digest == expected_digest and file_exists(
+        target_path
+    ) {
+        return 0;
+    }
+
+    let imports = [];
+    let calls = [];
+    let idx = 0;
+    for ent in entries {
+        let stem = string(ent["stem"]);
+        let csum = string(ent["checksum"]);
+        if ent["fn_mode"] == true {
+            imports.push(
+                "import {\n    up as up_{idx}, down as down_{idx}\n} from \"{import_prefix}/{stem}\";"
+            );
+            calls.push(
+                "    kernel.register_migration(new FunctionMigration(\"{stem}\", up_{idx}, down_{idx}, \"{csum}\"));"
+            );
+        } else {
+            let cls = string(ent["cls"]);
+            imports.push("import \"{import_prefix}/{stem}\";");
+            calls.push("    let m_{idx} = new {cls}(\"{stem}\");");
+            calls.push("    m_{idx}.checksum = \"{csum}\";");
+            calls.push("    kernel.register_migration(m_{idx});");
+        }
+        idx = idx + 1;
+    }
+
+    let imp_block = imports.join("\n");
+    let call_block = calls.join("\n");
+    let header = "// {target_path}\n// AUTO-GENERATED by Spid3rWeb — do not edit by hand.\n// sync-digest: {expected_digest}";
+    let main_body = "\nfn main() {\n    let cli_args = args();\n    let action = \"migrate\";\n    let pretend = false;\n    let step = false;\n    for a in cli_args {\n        let s = string(a);\n        if s == \"--pretend\" {\n            pretend = true;\n        } elif s == \"--step\" {\n            step = true;\n        } else {\n            action = s;\n        }\n    }\n    let holder = new RegistryHolder();\n    register_all_migrations(holder);\n    let runner = new MigrationRunner();\n    if action == \"rollback\" {\n        runner.rollback(holder.items);\n    } elif action == \"reset\" {\n        runner.reset(holder.items);\n    } elif action == \"fresh\" {\n        runner.fresh(holder.items, pretend, step);\n    } elif action == \"wipe\" {\n        runner.wipe();\n    } elif action == \"status\" {\n        runner.status(holder.items);\n    } else {\n        runner.migrate(holder.items, pretend, step);\n    }\n    DB.close();\n    return 0;\n}\n";
+    let content = "{header}\n\nimport \"framework/Database/DB\";\nimport \"framework/Database/Migration\";\n{imp_block}\n\npublic fn register_all_migrations(kernel) {\n{call_block}\n}\n\nclass RegistryHolder {\n    public let items;\n    fn new () {\n        self.items = [];\n    }\n    public fn register_migration(self, m) {\n        self.items.push(m);\n    }\n}{main_body}";
+
+    ensure_parent_dirs(target_path);
+    let w = write_file_atomic(target_path, content);
+    if w.is_err() {
+        let err = string(w.unwrap_err());
+        println("[Magic Error] Failed to write migration registry '{target_path}': {err}");
+        return -1;
+    }
+    if verbose {
+        let count = entries.len();
+        println("[Magic] Migration registry synced — {count} migration(s) registered.");
+    }
+    return new_count;
+}
+
+public fn run_migration_action(
+    action: string,
+    migrations_dir: string = "database/migrations",
+    target_path: string = "storage/framework/migrations.matrix",
+    extra_args: any = null
+) -> int {
+    let synced = sync_registry(migrations_dir, target_path, false, false);
+    if synced < 0 {
+        return 1;
+    }
+    if env("SPID3R_PATH").unwrap_or("").trim() == "" {
+        env_set("SPID3R_PATH", ".");
+    }
+    let bin = find_spid3r_binary();
+    let run_args = ["run", target_path, action];
+    if extra_args != null {
+        for a in extra_args {
+            run_args.push(string(a));
+        }
+    }
+    let res = exec_capture(bin, run_args, null);
+    if res.is_err() {
+        let err = string(res.unwrap_err());
+        println("[Magic Error] Failed to execute '{target_path}': {err}");
+        return 1;
+    }
+    let out = res.unwrap();
+    let stdout_str = string(out["stdout"]);
+    let stderr_str = string(out["stderr"]);
+    if stdout_str != "" {
+        print(stdout_str);
+    }
+    if stderr_str != "" {
+        print(stderr_str);
+    }
+    return int(out["code"]);
+}
+
+fn is_legacy_numeric_name(filename: string) -> bool {
+    if filename.len() < 5 or not filename.ends_with(".matrix") {
+        return false;
+    }
+    if filename.slice(3, 4) != "_" {
+        return false;
+    }
+    let digits = "0123456789";
+    let i = 0;
+    while i < 3 {
+        if not digits.contains(filename.slice(i, i + 1)) {
+            return false;
+        }
+        i = i + 1;
+    }
+    return true;
+}
+
+public fn rename_legacy_migrations(
+    migrations_dir: string = "database/migrations",
+    target_path: string = "storage/framework/migrations.matrix"
+) -> int {
+    let files = scan_migration_files(migrations_dir);
+    let base_ts = int(unix_time());
+    let renamed = 0;
+
+    for f in files {
+        if not is_legacy_numeric_name(f) {
+            continue;
+        }
+        let old_stem = f.slice(0, f.len() - 7);
+        let tail = old_stem.slice(4, old_stem.len());
+        let stamp = format_migration_timestamp(base_ts + renamed);
+        let new_stem = "{stamp}_{tail}";
+        let old_path = "{migrations_dir}/{f}";
+        let new_path = "{migrations_dir}/{new_stem}.matrix";
+        let r = read_file(old_path);
+        if r.is_err() {
+            continue;
+        }
+        let body = string(r.unwrap()).replace(old_stem, new_stem);
+        if write_file(new_path, body).is_err() {
+            println("[Magic Error] Failed writing '{new_path}'.");
+            return 1;
+        }
+        file_delete(old_path);
+        try {
+            DB.statement(
+                "UPDATE migrations SET migration = ? WHERE migration = ?",
+                [new_stem,
+                old_stem]
+            );
+        } catch (_e) {
+        }
+        println("[Migrate] Renamed {old_stem} -> {new_stem}");
+        renamed = renamed + 1;
+    }
+
+    if renamed == 0 {
+        println("[Migrate] No legacy numeric migrations found.");
+    } else {
+        let _ = sync_registry(migrations_dir, target_path, true, true);
+    }
+    DB.close();
+    return 0;
+}

@@ -1,0 +1,208 @@
+// framework/Http/RouteMatcher.matrix
+// Segment/wildcard route matching and reverse URL building helpers.
+
+public fn match_segments(p_parts: list, a_parts: list) -> any {
+    let params = {
+    };
+    let i = 0;
+    let n = p_parts.len();
+    while i < n {
+        let p_seg = p_parts[i];
+        let a_seg = a_parts[i];
+
+        if p_seg.starts_with(":") {
+            let param_name = p_seg.slice(1, p_seg.len());
+            params[param_name] = a_seg;
+        } elif p_seg.starts_with("{") and p_seg.ends_with("}") {
+            let param_name = p_seg.slice(1, p_seg.len() - 1).trim();
+            params[param_name] = a_seg;
+        } elif p_seg != a_seg {
+            return null;
+        }
+        i += 1;
+    }
+    return params;
+}
+
+public fn match_wildcard_segments(p_parts: list, a_parts: list) -> any {
+    let p_len = p_parts.len();
+    let a_len = a_parts.len();
+    if a_len < p_len - 1 {
+        return null;
+    }
+    let params = {
+    };
+    let i = 0;
+    while i < p_len {
+        let p_seg = p_parts[i];
+        if p_seg.starts_with("*") {
+            let param_name = p_seg.slice(1, p_seg.len());
+            if param_name == "" {
+                param_name = "wildcard";
+            }
+            let rest = [];
+            let j = i;
+            while j < a_len {
+                rest.push(a_parts[j]);
+                j += 1;
+            }
+            params[param_name] = rest.join("/");
+            return params;
+        }
+        if i >= a_len {
+            return null;
+        }
+        let a_seg = a_parts[i];
+        if p_seg.starts_with(":") {
+            params[p_seg.slice(1, p_seg.len())] = a_seg;
+        } elif p_seg.starts_with("{") and p_seg.ends_with("}") {
+            params[p_seg.slice(1, p_seg.len() - 1).trim()] = a_seg;
+        } elif p_seg != a_seg {
+            return null;
+        }
+        i += 1;
+    }
+    return params;
+}
+
+public fn match_path(pattern: string, actual: string) -> any {
+    if pattern == actual {
+        return {
+        };
+    }
+    let p_parts = pattern.split("/");
+    let a_parts = actual.split("/");
+    if p_parts.len() > 0 and p_parts[p_parts.len() - 1].starts_with("*") {
+        return match_wildcard_segments(p_parts, a_parts);
+    }
+    if p_parts.len() != a_parts.len() {
+        return null;
+    }
+    return match_segments(p_parts, a_parts);
+}
+
+public fn match_dynamic_bucket(bucket: map, a_parts: list) -> any {
+    let a_len = a_parts.len();
+    if a_len > 2 {
+        let s12 = a_parts[1] + "/" + a_parts[2];
+        if bucket["second_seg"].has(s12) {
+            let c2 = bucket["second_seg"][s12];
+            let k = 0;
+            let kn = c2.len();
+            while k < kn {
+                let r2 = c2[k];
+                let p2 = match_segments(r2.segments, a_parts);
+                if p2 != null {
+                    return {
+                        "route": r2, "params": p2
+                    };
+                }
+                k += 1;
+            }
+        }
+    }
+    if a_len > 1 {
+        let s1 = a_parts[1];
+        if bucket["first_seg"].has(s1) {
+            let c1 = bucket["first_seg"][s1];
+            let i = 0;
+            let n = c1.len();
+            while i < n {
+                let route = c1[i];
+                let params = match_segments(route.segments, a_parts);
+                if params != null {
+                    return {
+                        "route": route, "params": params
+                    };
+                }
+                i += 1;
+            }
+        }
+    }
+    let pf = bucket["param_first"];
+    let j = 0;
+    let jn = pf.len();
+    while j < jn {
+        let route_pf = pf[j];
+        let params_pf = match_segments(route_pf.segments, a_parts);
+        if params_pf != null {
+            return {
+                "route": route_pf, "params": params_pf
+            };
+        }
+        j += 1;
+    }
+    return null;
+}
+
+public fn match_wildcard_list(w_list: list, a_parts: list) -> any {
+    let i = 0;
+    let n = w_list.len();
+    while i < n {
+        let route = w_list[i];
+        let params = match_wildcard_segments(route.segments, a_parts);
+        if params != null {
+            return {
+                "route": route, "params": params
+            };
+        }
+        i += 1;
+    }
+    return null;
+}
+
+public fn build_route_url(entry: any, name: string, params: any) -> string {
+    if params == null or type_of(params) != "map" {
+        return entry.path;
+    }
+
+    let used_keys = {
+    };
+    let out_segs = [];
+    for seg in entry.segments {
+        if seg.starts_with(":") {
+            let k = seg.slice(1, seg.len());
+            if not params.has(k) {
+                throw "Router: missing required parameter '{k}' for route '{name}'";
+            }
+            used_keys[k] = true;
+            out_segs.push(string(params[k]));
+        } elif seg.starts_with("{") and seg.ends_with("}") {
+            let k = seg.slice(1, seg.len() - 1).trim();
+            if not params.has(k) {
+                throw "Router: missing required parameter '{k}' for route '{name}'";
+            }
+            used_keys[k] = true;
+            out_segs.push(string(params[k]));
+        } elif seg.starts_with("*") {
+            let k = seg.slice(1, seg.len());
+            if k == "" {
+                k = "wildcard";
+            }
+            if params.has(k) {
+                used_keys[k] = true;
+                out_segs.push(string(params[k]));
+            }
+        } else {
+            out_segs.push(seg);
+        }
+    }
+
+    let built = out_segs.join("/");
+    if built == "" {
+        built = "/";
+    }
+
+    let qs_parts = [];
+    for (k, v) in params {
+        if not used_keys.has(k) and v != null {
+            let sk = string(k);
+            let sv = string(v);
+            qs_parts.push("{sk}={sv}");
+        }
+    }
+    if qs_parts.len() > 0 {
+        built = built + "?" + qs_parts.join("&");
+    }
+    return built;
+}

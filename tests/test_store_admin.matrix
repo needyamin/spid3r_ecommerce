@@ -1,8 +1,8 @@
 // tests/test_store_admin.matrix
 // Phase 9 — admin dashboard & management integration tests.
 
-import "framework/Application";
-import "framework/Router";
+import "framework/Foundation/Application";
+import "framework/Http/Router";
 import "framework/Database/DB";
 import "routes/web";
 import "routes/queue";
@@ -102,8 +102,8 @@ fn test_dashboard_pages(app, ids, adm) {
     assert(page_two["status"] == 200, "product list page parameter is handled");
     assert(products_html.contains("href=\"/admin/products\" aria-current=\"page\""), "products navigation is active");
     let inventory_html = string(call(app, "GET", "/admin/inventory", null, adm["cookie"])["body"]);
-    assert(inventory_html.contains("On hand") and inventory_html.contains("Available"), "inventory distinguishes on-hand from available stock");
-    assert(inventory_html.contains("/admin/api/products/" + string(ids["product"]) + "/inventory/set-form"), "inventory supports exact stock edits");
+    assert(inventory_html.contains("On Hand") and inventory_html.contains("Available"), "inventory distinguishes on-hand from available stock");
+    assert(inventory_html.contains("/admin/api/products/" + string(ids["product"]) + "/inventory/restock-form"), "inventory supports quick restock edits");
     assert(inventory_html.contains("href=\"/admin/products/" + string(ids["product"]) + "\""), "inventory links to product editor");
     assert(call(app, "GET", "/admin/dashboard", null, "")["status"] == 401, "anonymous admin blocked");
     println("  [PASS] test_dashboard_pages");

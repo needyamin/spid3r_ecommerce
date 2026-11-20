@@ -1,0 +1,408 @@
+// framework/Console/Commands/DevToolsCommands.matrix
+// Developer productivity CLI commands wrapping Spid3r toolchain checks,
+// canonical formatting checks, and API documentation generation:
+//   `spid3r magic lint`, `spid3r magic fmt [--check]`, `spid3r magic docs`
+
+import "MigrationRegistry";
+import "framework/Console/TestRunner";
+
+fn scan_matrix_tree(dir: string, out) {
+    let entries = list_dir(dir);
+    if entries.is_err() {
+        return;
+    }
+    let dirs = [];
+    let files = [];
+    for raw in entries.unwrap() {
+        let name = string(raw);
+        if name == "." or name == ".." or name == ".git" {
+            continue;
+        }
+        let full = "{dir}/{name}";
+        if is_dir(full) {
+            dirs.push(full);
+        } elif name.ends_with(".matrix") {
+            files.push(full);
+        }
+    }
+    for f in files {
+        out.push(f);
+    }
+    for sub in dirs {
+        scan_matrix_tree(sub, out);
+    }
+}
+
+public fn collect_project_matrix_files(root: string = "") -> list {
+    let out = [];
+    let scan_dirs = [
+    "app",
+    "bootstrap",
+    "config",
+    "framework",
+    "routes",
+    "database",
+    "tests",
+    "tools",
+    "benchmarks",
+    "examples"
+    ];
+    for d in scan_dirs {
+        let path = "{root}{d}";
+        if is_dir(path) {
+            scan_matrix_tree(path, out);
+        }
+    }
+    for entry in ["server.matrix", "magic"] {
+        let p = "{root}{entry}";
+        if file_exists(p) {
+            out.push(p);
+        }
+    }
+    return out;
+}
+
+fn ensure_spid3r_path(root: string) {
+    if env("SPID3R_PATH").unwrap_or("").trim() == "" {
+        let rp = if root == "" {
+            "."
+        } else {
+            root
+        };
+        env_set("SPID3R_PATH", rp);
+    }
+}
+
+/// CLI command: `spid3r magic lint` — validate ini files and run static checks.
+public class LintCommand {
+    public let name;
+    public let usage;
+    public let description;
+    private let kernel;
+
+    fn new (kernel) {
+        self.name = "lint";
+        self.usage = "lint [files...]";
+        self.description = "Validate ini config and run static checks across the project";
+        self.kernel = kernel;
+    }
+
+    public fn handle(self, cli_args: list) -> int {
+        let root = self.kernel.resolve_root();
+        ensure_spid3r_path(root);
+        let bin = find_spid3r_binary();
+        let failures = 0;
+
+        // Validate committed ini profiles
+        for ini in ["spid3r.ini", "spid3r.ini.example"] {
+            let p = "{root}{ini}";
+            if file_exists(p) {
+                env_set("SPID3R_INI", p);
+                let cres = exec_capture(bin, ["config", "validate"], null);
+                if cres.is_err() or int(cres.unwrap()["code"]) != 0 {
+                    println("[Lint FAIL] config validate failed for {p}");
+                    failures = failures + 1;
+                }
+            }
+        }
+        env_set("SPID3R_INI", "");
+
+        let targets = [];
+        let i = 1;
+        while i < cli_args.len() {
+            let a = string(cli_args[i]);
+            if not a.starts_with("-") {
+                if is_dir(a) {
+                    scan_matrix_tree(a, targets);
+                } else {
+                    targets.push(a);
+                }
+            }
+            i = i + 1;
+        }
+        if targets.len() == 0 {
+            targets = collect_project_matrix_files(root);
+        }
+
+        let checked = 0;
+        for f in targets {
+            checked = checked + 1;
+            let r = exec_capture(
+                bin,
+                [
+                "check",
+                "--deny-warnings",
+                "--allow",
+                "unused-import",
+                f
+                ],
+                null
+            );
+            if r.is_err() {
+                println("[Lint FAIL] {f}: unable to invoke check");
+                failures = failures + 1;
+                continue;
+            }
+            let info = r.unwrap();
+            if int(info["code"]) != 0 {
+                println("[Lint FAIL] {f}");
+                let out_s = string(info["stdout"]).trim();
+                let err_s = string(info["stderr"]).trim();
+                if out_s != "" {
+                    println(out_s);
+                }
+                if err_s != "" {
+                    println(err_s);
+                }
+                failures = failures + 1;
+            }
+        }
+
+        println("[Magic Lint] Checked {checked} file(s), {failures} failure(s).");
+        return if failures == 0 {
+            0
+        } else {
+            1
+        };
+    }
+}
+
+/// CLI command: `spid3r magic fmt [--check] [targets...]` — format or verify style.
+public class FmtCommand {
+    public let name;
+    public let usage;
+    public let description;
+    private let kernel;
+
+    fn new (kernel) {
+        self.name = "fmt";
+        self.usage = "fmt [--check] [targets...]";
+        self.description = "Format or verify canonical formatting with spid3r fmt";
+        self.kernel = kernel;
+    }
+
+    public fn handle(self, cli_args: list) -> int {
+        let root = self.kernel.resolve_root();
+        ensure_spid3r_path(root);
+        let bin = find_spid3r_binary();
+        let check_only = false;
+        let targets = [];
+        let i = 1;
+        while i < cli_args.len() {
+            let a = string(cli_args[i]);
+            if a == "--check" {
+                check_only = true;
+            } elif not a.starts_with("-") {
+                targets.push(a);
+            }
+            i = i + 1;
+        }
+        if targets.len() == 0 {
+            targets = collect_project_matrix_files(root);
+        }
+
+        let failures = 0;
+        let total = 0;
+        for f in targets {
+            total = total + 1;
+            let args = ["fmt"];
+            if check_only {
+                args.push("--check");
+            }
+            args.push(f);
+            let r = exec_capture(bin, args, null);
+            if r.is_err() or int(r.unwrap()["code"]) != 0 {
+                failures = failures + 1;
+                let msg = if check_only {
+                    "needs formatting"
+                } else {
+                    "fmt failed"
+                };
+                println("[Fmt FAIL] {f}: {msg}");
+            }
+        }
+        let mode = if check_only {
+            "fmt --check"
+        } else {
+            "fmt"
+        };
+        println("[Magic {mode}] Processed {total} file(s), {failures} issue(s).");
+        return if failures == 0 {
+            0
+        } else {
+            1
+        };
+    }
+}
+
+/// CLI command: `spid3r magic docs` — generate API docs under docs/build/.
+public class DocsCommand {
+    public let name;
+    public let usage;
+    public let description;
+    private let kernel;
+
+    fn new (kernel) {
+        self.name = "docs";
+        self.usage = "docs [--json] [-o PATH] [target]";
+        self.description = "Generate API documentation via spid3r doc";
+        self.kernel = kernel;
+    }
+
+    public fn handle(self, cli_args: list) -> int {
+        let root = self.kernel.resolve_root();
+        ensure_spid3r_path(root);
+        let bin = find_spid3r_binary();
+        let as_json = false;
+        let include_priv = false;
+        let out_path = "";
+        let target = "framework";
+        let i = 1;
+        while i < cli_args.len() {
+            let a = string(cli_args[i]);
+            if a == "--json" {
+                as_json = true;
+            } elif a == "--private" {
+                include_priv = true;
+            } elif (a == "-o" or a == "--out") and i + 1 < cli_args.len() {
+                i = i + 1;
+                out_path = string(cli_args[i]);
+            } elif a.starts_with("--out=") {
+                out_path = a.slice(6, a.len());
+            } elif not a.starts_with("-") {
+                target = a;
+            }
+            i = i + 1;
+        }
+        if out_path == "" {
+            out_path = if as_json {
+                "{root}docs/build/api.json"
+            } else {
+                "{root}docs/build/api.html"
+            };
+        }
+        ensure_parent_dirs(out_path);
+
+        let args = ["doc"];
+        if as_json {
+            args.push("--json");
+        }
+        if include_priv {
+            args.push("--private");
+        }
+        args.push(target);
+        args.push("-o");
+        args.push(out_path);
+
+        let r = exec_capture(bin, args, null);
+        if r.is_err() {
+            let err = string(r.unwrap_err());
+            println("[Magic Docs] Failed to run spid3r doc: {err}");
+            return 1;
+        }
+        let info = r.unwrap();
+        let code = int(info["code"]);
+        if code != 0 {
+            let err_s = string(info["stderr"]).trim();
+            if err_s != "" {
+                println(err_s);
+            }
+            return code;
+        }
+        println("[Magic Docs] Generated API documentation at {out_path}");
+        return 0;
+    }
+}
+
+/// CLI command: `spid3r magic bench [--gate] [--runs=N]` — run micro-benchmarks and regression gate.
+public class BenchCommand {
+    public let name;
+    public let usage;
+    public let description;
+    private let kernel;
+
+    fn new (kernel) {
+        self.name = "bench";
+        self.usage = "bench [--gate] [--runs=N]";
+        self.description = "Run micro-benchmarks and optional regression perf gate";
+        self.kernel = kernel;
+    }
+
+    public fn handle(self, cli_args: list) -> int {
+        let root = self.kernel.resolve_root();
+        ensure_spid3r_path(root);
+        let bin = find_spid3r_binary();
+        let gate = false;
+        let runs = 1;
+        let target = "{root}benchmarks/bench.matrix";
+        let i = 1;
+        while i < cli_args.len() {
+            let a = string(cli_args[i]);
+            if a == "--gate" {
+                gate = true;
+            } elif a.starts_with("--runs=") {
+                runs = int(a.slice(7, a.len()));
+            } elif a == "--runs" and i + 1 < cli_args.len() {
+                i = i + 1;
+                runs = int(cli_args[i]);
+            } elif not a.starts_with("-") {
+                target = a;
+            }
+            i = i + 1;
+        }
+        if runs < 1 {
+            runs = 1;
+        }
+
+        let b_args = ["bench", "--runs", string(runs)];
+        if gate {
+            b_args.push("--gate");
+        }
+        b_args.push(target);
+        let r = exec_capture(bin, b_args, null);
+        if r.is_err() {
+            let err = string(r.unwrap_err());
+            println("[Magic Bench] Failed to invoke spid3r bench: {err}");
+            return 1;
+        }
+        let info = r.unwrap();
+        let out_s = string(info["stdout"]).trim();
+        let err_s = string(info["stderr"]).trim();
+        if out_s != "" {
+            println(out_s);
+        }
+        if err_s != "" {
+            println(err_s);
+        }
+        if int(info["code"]) != 0 {
+            return int(info["code"]);
+        }
+
+        if gate {
+            let prev = env("SPID3R_BENCH_GATE").unwrap_or("");
+            env_set("SPID3R_BENCH_GATE", "1");
+            try {
+                let gr = exec_capture(bin, ["run", target], null);
+                if gr.is_err() {
+                    println("[Magic Bench FAIL] Unable to execute benchmark perf gate.");
+                    return 1;
+                }
+                let ginfo = gr.unwrap();
+                let gout = string(ginfo["stdout"]).trim();
+                let gerr = string(ginfo["stderr"]).trim();
+                if gout != "" {
+                    println(gout);
+                }
+                if gerr != "" {
+                    println(gerr);
+                }
+                if int(ginfo["code"]) != 0 {
+                    return int(ginfo["code"]);
+                }
+            } finally {
+                env_set("SPID3R_BENCH_GATE", prev);
+            }
+        }
+        return 0;
+    }
+}

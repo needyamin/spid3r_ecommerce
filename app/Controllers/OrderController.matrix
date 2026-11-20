@@ -1,11 +1,11 @@
 // app/Controllers/OrderController.matrix
 // Phase 7 — customer order pages + admin status management.
 
-import "framework/Response";
+import "framework/Http/Response";
 import "framework/View/BD";
-import "framework/Container/Container";
-import "framework/HttpException";
-import "framework/Resource";
+import "framework/Foundation/Container";
+import "framework/Http/HttpException";
+import "framework/Http/Resource";
 import "app/Support/Money" as Money;
 import "app/Services/OrderService";
 import "app/Support/StoreChrome" as StoreChrome;

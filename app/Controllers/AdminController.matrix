@@ -1,11 +1,11 @@
 // app/Controllers/AdminController.matrix
 // Phase 9 — administration panel (thin HTTP layer).
 
-import "framework/Response";
+import "framework/Http/Response";
 import "framework/View/BD";
-import "framework/Resource";
-import "framework/Container/Container";
-import "framework/HttpException";
+import "framework/Http/Resource";
+import "framework/Foundation/Container";
+import "framework/Http/HttpException";
 import "framework/Database/DB";
 import "app/Services/AdminService";
 import "app/Services/OrderService";

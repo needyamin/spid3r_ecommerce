@@ -1,0 +1,18 @@
+// app/Providers/AppServiceProvider.matrix
+// Default application ServiceProvider registered in bootstrap/app.matrix.
+
+import "framework/Foundation/ServiceProvider";
+
+public class AppServiceProvider extends ServiceProvider {
+    fn new () {
+        let _ = self;
+    }
+
+    public fn register(self, _container: any) {
+        let _ = self;
+    }
+
+    public fn boot(self, _container: any) {
+        let _ = self;
+    }
+}

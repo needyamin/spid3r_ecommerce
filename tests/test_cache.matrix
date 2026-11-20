@@ -9,7 +9,10 @@ import "framework/Database/DB";
 fn exercise_store(s, label: string) {
     // 1. Miss on empty
     assert(s.get("missing_key") == null, label + ": missing key returns null");
-    assert(s.get("missing_key", "fallback") == "fallback", label + ": missing key returns default");
+    assert(
+        s.get("missing_key", "fallback") == "fallback",
+        label + ": missing key returns default"
+    );
     assert(s.has("missing_key") == false, label + ": has() false on empty");
 
     // 2. Put + get (string)
@@ -18,7 +21,9 @@ fn exercise_store(s, label: string) {
     assert(s.has("greeting") == true, label + ": has() true after put");
 
     // 3. Structured values round-trip (JSON-based stores)
-    s.put("profile", map("name", "ada", "age", 36, "tags", ["math", "code"]), 60);
+    s.put("profile", {
+        "name": "ada", "age": 36, "tags": ["math", "code"]
+    }, 60);
     let p = s.get("profile");
     assert(p["name"] == "ada", label + ": map value round-trip (name)");
     assert(int(p["age"]) == 36, label + ": map value round-trip (age)");
@@ -50,7 +55,10 @@ fn exercise_store(s, label: string) {
     s.put("flush_a", 1, 60);
     s.put("flush_b", 2, 60);
     s.flush();
-    assert(s.get("flush_a") == null and s.get("flush_b") == null, label + ": flush clears everything");
+    assert(
+        s.get("flush_a") == null and s.get("flush_b") == null,
+        label + ": flush clears everything"
+    );
 }
 
 fn test_memory_store() {
@@ -63,6 +71,9 @@ fn test_file_store() {
     // Clean the test directory afterwards
     let s = new FileCacheStore("storage/framework/cache_test");
     s.flush();
+    if file_exists("storage/framework/cache_test") {
+        let _ = dir_remove("storage/framework/cache_test");
+    }
     println("  [PASS] test_file_store");
 }
 
@@ -74,8 +85,13 @@ fn test_database_store() {
 // ---------------------------------------------------------------------------
 
 fn test_facade_defaults_and_selection() {
-    // Default driver resolution: memory, unless the environment overrides it
-    let expected_default = "memory";
+    // Default driver resolution: memory (or file in production), unless env overrides it
+    let app_env = env("APP_ENV").unwrap_or("production").trim().lower();
+    let expected_default = if app_env == "production" {
+        "file"
+    } else {
+        "memory"
+    };
     let d = env("SPID3R_CACHE_DRIVER");
     if d.is_some() {
         let raw = string(d.unwrap()).trim().lower();
@@ -83,6 +99,8 @@ fn test_facade_defaults_and_selection() {
             expected_default = "file";
         } elif raw == "database" or raw == "db" {
             expected_default = "database";
+        } elif raw == "memory" {
+            expected_default = "memory";
         }
     }
     assert(Cache.driver_name() == expected_default, "default driver resolution");
@@ -121,10 +139,11 @@ fn test_facade_remember_and_add() {
     let s = Cache.store();
     s.flush();
 
-    let calls = 0;
     let computer = fn() {
         // Closures can't mutate outer locals portably; use a sentinel map
-        return map("computed", true, "stamp", string(unix_time()));
+        return {
+            "computed": true, "stamp": string(unix_time())
+        };
     };
 
     // remember: computes and stores on miss

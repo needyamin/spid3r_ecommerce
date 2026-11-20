@@ -1,0 +1,24 @@
+%% Spid3r Store — HTTP request lifecycle
+sequenceDiagram
+    autonumber
+    participant B as Browser
+    participant S as server.matrix (main)
+    participant A as Application (Foundation)
+    participant G as Global Pipeline
+    participant R as Router (Http)
+    participant RM as Route Middleware
+    participant C as Controller
+    participant V as View (SpiderBD)
+
+    B->>S: HTTP request
+    S->>A: create_application() then handle_request()
+    A->>G: CorsMiddleware → SecurityHeaders → RequestId
+    G->>R: dispatch method + path
+    alt route matched
+        R->>RM: resolve aliases (throttle:5,60 · role:admin · permission:*)
+        RM->>C: handler(req) — req.auth, req.session, CSRF checked
+        C->>V: view("admin/table", ctx) or json(...)
+        V-->>B: HTML / JSON Response (+ Set-Cookie, CSP, nosniff)
+    else no match
+        R-->>B: 404 ErrorRenderer page (security headers intact)
+    end

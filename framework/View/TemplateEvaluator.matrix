@@ -1,0 +1,353 @@
+// framework/View/TemplateEvaluator.matrix
+// Runtime expression evaluation, property traversal, conditionals, and escaping
+// extracted from BD.matrix.
+
+public fn tpl_html_escape(value: any) -> string {
+    if value == null {
+        return "";
+    }
+    return string(value)
+    .replace("&", "&amp;")
+    .replace("<", "&lt;")
+    .replace(">", "&gt;")
+    .replace("\"", "&quot;")
+    .replace("'", "&#039;");
+}
+
+public fn resolve_property(obj: any, prop: string) -> any {
+    if obj == null {
+        return null;
+    }
+    let t = type_of(obj);
+    if t == "map" {
+        if obj.has(prop) {
+            return obj[prop];
+        }
+        return null;
+    }
+    if t == "instance" {
+        try {
+            let val = obj.get(prop);
+            if val != null {
+                return val;
+            }
+        } catch (_e1) {
+        }
+        try {
+            let attrs = obj.attributes;
+            if attrs != null and type_of(attrs) == "map" and attrs.has(prop) {
+                return attrs[prop];
+            }
+        } catch (_e2) {
+        }
+        return null;
+    }
+    if t == "list" {
+        try {
+            let idx = int(prop);
+            if idx >= 0 and idx < obj.len() {
+                return obj[idx];
+            }
+        } catch (_e5) {
+        }
+        return null;
+    }
+    return null;
+}
+
+public fn resolve_dot_path(path: string, data: any) -> any {
+    if path == "" or data == null {
+        return null;
+    }
+    if type_of(data) == "map" and data.has(path) {
+        return data[path];
+    }
+    let parts = path.split(".");
+    let first = parts[0].trim();
+    if type_of(data) != "map" or not data.has(first) {
+        return null;
+    }
+    let curr = data[first];
+    let i = 1;
+    while i < parts.len() {
+        let seg = parts[i].trim();
+        if curr == null {
+            return null;
+        }
+        curr = resolve_property(curr, seg);
+        i = i + 1;
+    }
+    return curr;
+}
+
+public fn resolve_expression(raw_expr: string, data: any) -> any {
+    let expr = raw_expr.trim();
+    if expr.starts_with("$") {
+        expr = expr.slice(1, expr.len()).trim();
+    }
+    if expr == "" {
+        return null;
+    }
+    return resolve_dot_path(expr, data);
+}
+
+public fn resolve_condition_operand(raw_token: string, data: any) -> any {
+    let tok = raw_token.trim();
+    if tok == "" {
+        return null;
+    }
+    if (tok.starts_with("'") and tok.ends_with("'")) or (
+        tok.starts_with("\"") and tok.ends_with("\"")
+    ) {
+        return tok.slice(1, tok.len() - 1);
+    }
+    if tok == "true" {
+        return true;
+    }
+    if tok == "false" {
+        return false;
+    }
+    if tok == "null" or tok == "nil" {
+        return null;
+    }
+    let first_ch = tok.slice(0, 1);
+    if "0123456789-".contains(first_ch) {
+        if tok.contains(".") {
+            try {
+                return float(tok);
+            } catch (_e) {
+            }
+        } else {
+            try {
+                return int(tok);
+            } catch (_e2) {
+            }
+        }
+    }
+    return resolve_expression(tok, data);
+}
+
+public fn compare_values(left: any, op: string, right: any) -> bool {
+    if op == "==" {
+        if left == null and right == null {
+            return true;
+        }
+        if left == null or right == null {
+            return false;
+        }
+        return string(left) == string(right);
+    }
+    if op == "!=" {
+        if left == null and right == null {
+            return false;
+        }
+        if left == null or right == null {
+            return true;
+        }
+        return string(left) != string(right);
+    }
+    if left == null or right == null {
+        return false;
+    }
+    try {
+        let lf = float(string(left));
+        let rf = float(string(right));
+        if op == ">=" {
+            return lf >= rf;
+        }
+        if op == "<=" {
+            return lf <= rf;
+        }
+        if op == ">" {
+            return lf > rf;
+        }
+        if op == "<" {
+            return lf < rf;
+        }
+    } catch (_e) {
+        let ls = string(left);
+        let rs = string(right);
+        if op == ">=" {
+            return ls >= rs;
+        }
+        if op == "<=" {
+            return ls <= rs;
+        }
+        if op == ">" {
+            return ls > rs;
+        }
+        if op == "<" {
+            return ls < rs;
+        }
+    }
+    return false;
+}
+
+public fn evaluate_truthiness(cond_expr: string, data: any) -> bool {
+    let effective = string(cond_expr).trim();
+    if effective == "" {
+        return false;
+    }
+    if effective.contains(" or ") {
+        for part in effective.split(" or ") {
+            if evaluate_truthiness(part, data) {
+                return true;
+            }
+        }
+        return false;
+    }
+    if effective.contains(" || ") {
+        for part in effective.split(" || ") {
+            if evaluate_truthiness(part, data) {
+                return true;
+            }
+        }
+        return false;
+    }
+    if effective.contains(" and ") {
+        for part in effective.split(" and ") {
+            if not evaluate_truthiness(part, data) {
+                return false;
+            }
+        }
+        return true;
+    }
+    if effective.contains(" && ") {
+        for part in effective.split(" && ") {
+            if not evaluate_truthiness(part, data) {
+                return false;
+            }
+        }
+        return true;
+    }
+    if effective.starts_with("not ") {
+        return not evaluate_truthiness(
+            effective.slice(4, effective.len()).trim(),
+            data
+        );
+    }
+    if effective.starts_with("!") and not effective.starts_with("!=") {
+        return not evaluate_truthiness(
+            effective.slice(1, effective.len()).trim(),
+            data
+        );
+    }
+
+    for op in ["==", "!=", ">=", "<=", ">", "<"] {
+        let op_idx = effective.index_of(op);
+        if op_idx > 0 {
+            let lhs_val = resolve_condition_operand(
+                effective.slice(0, op_idx).trim(),
+                data
+            );
+            let rhs_val = resolve_condition_operand(
+                effective.slice(op_idx + op.len(), effective.len()).trim(),
+                data
+            );
+            return compare_values(lhs_val, op, rhs_val);
+        }
+    }
+
+    let val = resolve_condition_operand(effective, data);
+    if val == null {
+        return false;
+    }
+    let t = type_of(val);
+    if t == "bool" {
+        return val == true;
+    }
+    if t == "string" {
+        return val != "" and val != "0" and val != "false";
+    }
+    if t == "int" {
+        return val > 0;
+    }
+    if t == "float" {
+        return val > 0.0;
+    }
+    if t == "list" or t == "map" {
+        return val.len() > 0;
+    }
+    return true;
+}
+
+public fn expand_inline_conditionals(text: string, data: any) -> string {
+    let cur = text;
+    let guard = 0;
+    while cur.contains("@if(") and cur.contains("@endif") and guard < 10 {
+        guard += 1;
+        let start = cur.index_of("@if(");
+        let after_if = cur.slice(start + 4, cur.len());
+        let close_paren = after_if.index_of(")");
+        let endif_rel = after_if.index_of("@endif");
+        if close_paren < 0 or endif_rel < 0 or close_paren > endif_rel {
+            break;
+        }
+        let cond_str = after_if.slice(0, close_paren).trim();
+        let body_str = after_if.slice(close_paren + 1, endif_rel);
+        let true_str = body_str;
+        let false_str = "";
+        let else_idx = body_str.index_of("@else");
+        if else_idx >= 0 {
+            true_str = body_str.slice(0, else_idx);
+            false_str = body_str.slice(else_idx + 5, body_str.len());
+        }
+        let chosen = false_str;
+        if evaluate_truthiness(cond_str, data) {
+            chosen = true_str;
+        }
+        let prefix = cur.slice(0, start);
+        let suffix = after_if.slice(endif_rel + 6, after_if.len());
+        cur = "{prefix}{chosen}{suffix}";
+    }
+    return cur;
+}
+
+public fn evaluate_variables(text: string, data: any) -> string {
+    let result = "";
+    let remaining = text;
+
+    while true {
+        let raw_idx = remaining.index_of("{!!");
+        let esc_idx = remaining.index_of("{{");
+        if raw_idx < 0 and esc_idx < 0 {
+            result = result + remaining;
+            break;
+        }
+        let is_raw = raw_idx >= 0 and (esc_idx < 0 or raw_idx < esc_idx);
+        let start_idx = esc_idx;
+        let open_len = 2;
+        let close_tag = "}}";
+        if is_raw {
+            start_idx = raw_idx;
+            open_len = 3;
+            close_tag = "!!}";
+        }
+        result = result + remaining.slice(0, start_idx);
+        let after_open = remaining.slice(start_idx + open_len, remaining.len());
+        let end_idx = after_open.index_of(close_tag);
+        if end_idx < 0 {
+            let open_str = "{{";
+            if is_raw {
+                open_str = "{!!";
+            }
+            result = result + open_str + after_open;
+            break;
+        }
+        let expr = after_open.slice(0, end_idx).trim();
+        remaining = after_open.slice(end_idx + close_tag.len(), after_open.len());
+
+        let val = resolve_expression(expr, data);
+        let s_val = "";
+        if val != null {
+            s_val = string(val);
+        }
+        if is_raw {
+            result = result + s_val;
+        } else {
+            result = result + tpl_html_escape(s_val);
+        }
+    }
+
+    return result;
+}

@@ -1,0 +1,66 @@
+// config/upload.matrix
+// Spid3rWeb Multipart File Upload Limits & Allow-Lists
+//
+// Consumed by framework/Http/RequestParser.matrix.
+
+fn _upload_env_int(key: string, fallback: int) -> int {
+    let v = env(key);
+    if v.is_some() {
+        let s = string(v.unwrap()).trim();
+        if s != "" {
+            try {
+                let parsed = int(s);
+                if parsed > 0 {
+                    return parsed;
+                }
+            } catch (_e) {
+            }
+        }
+    }
+    return fallback;
+}
+
+public let config_upload = {
+    "max_bytes": _upload_env_int("SPID3R_UPLOAD_MAX_BYTES", 5_242_880),
+    "max_files": _upload_env_int("SPID3R_UPLOAD_MAX_FILES", 10),
+    "allowed_extensions": [
+    "jpg",
+    "jpeg",
+    "png",
+    "gif",
+    "webp",
+    "pdf",
+    "txt",
+    "csv",
+    "json",
+    "zip"
+    ],
+    "blocked_extensions": [
+    "html",
+    "htm",
+    "svg",
+    "js",
+    "mjs",
+    "xhtml",
+    "php",
+    "exe",
+    "sh",
+    "bat",
+    "cmd",
+    "ps1",
+    "dll"
+    ],
+    "allowed_mimes": [
+    "image/jpeg",
+    "image/png",
+    "image/gif",
+    "image/webp",
+    "application/pdf",
+    "text/plain",
+    "text/csv",
+    "application/json",
+    "application/zip",
+    "application/octet-stream"
+    ],
+    "randomize_filenames": true
+};

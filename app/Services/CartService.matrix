@@ -3,7 +3,7 @@
 // Takes a plain identity map (user_id + guest cookie key), never a req.
 
 import "framework/Database/DB";
-import "framework/HttpException";
+import "framework/Http/HttpException";
 import "app/Repositories/CartRepository";
 import "app/Repositories/ProductRepository";
 import "app/Repositories/InventoryRepository";

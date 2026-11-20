@@ -1,0 +1,72 @@
+// framework/Database/Driver.matrix
+// Database Driver Interface & Portable SQL Dialect Helpers
+
+/// Uniform database driver contract implemented by SQLite, PostgreSQL, and MySQL connections.
+public interface Driver {
+    fn driver_name(self) -> string;
+    fn quote_identifier(self, ident: string) -> string;
+    fn placeholder(self, index: int) -> string;
+    fn limit_sql(self, limit: int, offset: int) -> string;
+    fn begin_sql(self) -> string;
+    fn commit_sql(self) -> string;
+    fn rollback_sql(self) -> string;
+    fn set_in_transaction(self, active: bool);
+    fn ping(self) -> bool;
+    fn query(self, sql: string, params);
+    fn run(self, sql: string, params);
+    fn exec(self, sql: string);
+    fn statement(self, sql: string, params);
+    fn close(self);
+}
+
+public fn quote_sql_identifier(ident: string, driver_name: string) -> string {
+    let s = string(ident).trim();
+    if s == "" {
+        throw "quote_sql_identifier: identifier must not be empty";
+    }
+    let q = if driver_name == "mysql" or driver_name == "mariadb" {
+        "`"
+    } else {
+        "\""
+    };
+    let out = [];
+    for tok in s.split(" ") {
+        let t = tok.trim();
+        if t == "" {
+            continue;
+        }
+        if t.lower() == "as" {
+            out.push("AS");
+            continue;
+        }
+        let segs = t.split(".");
+        let qsegs = [];
+        for seg in segs {
+            let clean = seg.replace(q, "");
+            if clean == "*" {
+                qsegs.push("*");
+            } else {
+                qsegs.push("{q}{clean}{q}");
+            }
+        }
+        out.push(qsegs.join("."));
+    }
+    return out.join(" ");
+}
+
+public fn format_limit_sql(driver_name: string, limit_val: int, offset_val: int) -> string {
+    if limit_val >= 0 {
+        let clause = " LIMIT {limit_val}";
+        if offset_val > 0 {
+            clause = "{clause} OFFSET {offset_val}";
+        }
+        return clause;
+    }
+    if offset_val > 0 {
+        if driver_name == "sqlite" {
+            return " LIMIT -1 OFFSET {offset_val}";
+        }
+        return " OFFSET {offset_val}";
+    }
+    return "";
+}

@@ -3,7 +3,7 @@
 // return a sanitized HTTP exception to the client (no SQL/schema leaks).
 
 import "framework/Log/Log";
-import "framework/HttpException";
+import "framework/Http/HttpException";
 
 public fn sanitize(label: string, error) {
     Log.error("db failure: " + label, {"error": string(error)});

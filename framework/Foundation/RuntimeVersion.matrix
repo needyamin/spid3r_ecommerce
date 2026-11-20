@@ -1,0 +1,125 @@
+// framework/Foundation/RuntimeVersion.matrix
+// Framework & minimum Spid3r runtime version policy and boot verification.
+
+/// Current Spid3rWeb framework release version.
+public const SPID3RWEB_VERSION = "1.1.1";
+
+/// Minimum required Spid3r language runtime version.
+public const MIN_SPID3R_VERSION = "1.1.1";
+
+/// Parse the first X.Y.Z semver triple found in runtime or manifest text.
+public fn parse_semver(ver_text: string) -> list {
+    let normalized = string(ver_text)
+    .replace("\r", " ")
+    .replace("\n", " ")
+    .replace("\t", " ")
+    .trim();
+    let nums = [];
+    for tok in normalized.split(" ") {
+        let t = tok.trim();
+        if t.starts_with("v") and t.len() > 1 {
+            t = t.slice(1, t.len());
+        }
+        let segs = t.split(".");
+        if segs.len() >= 3 {
+            try {
+                let maj = int(segs[0]);
+                let min = int(segs[1]);
+                let pat_str = segs[2].split("-")[0].split("+")[0];
+                let pat = int(pat_str);
+                nums = [maj, min, pat];
+                break;
+            } catch (_e) {
+            }
+        }
+    }
+    return nums;
+}
+
+/// Return true when a parsed [major, minor, patch] triple meets the minimum version.
+public fn version_at_least(nums: list, req_maj: int, req_min: int, req_pat: int) -> bool {
+    if nums.len() < 3 {
+        return false;
+    }
+    if int(nums[0]) != req_maj {
+        return int(nums[0]) > req_maj;
+    }
+    if int(nums[1]) != req_min {
+        return int(nums[1]) > req_min;
+    }
+    return int(nums[2]) >= req_pat;
+}
+
+fn resolve_runtime_bin(explicit_bin: string = "") -> string {
+    if explicit_bin.trim() != "" {
+        return explicit_bin.trim();
+    }
+    for env_key in ["SPID3R_BIN", "SPID3R_EXE"] {
+        let v = env(env_key).unwrap_or("").trim();
+        if v != "" {
+            return v;
+        }
+    }
+    try {
+        let cur = exe_path();
+        if cur.is_ok() {
+            let p = string(cur.unwrap()).trim();
+            let base = p.replace("\\", "/").split("/").pop().lower();
+            if base == "spid3r" or base == "spid3r.exe" or base == "spid3r-self" {
+                return p;
+            }
+        }
+    } catch (_e) {
+    }
+    return "spid3r";
+}
+
+/// Verify the active Spid3r runtime meets MIN_SPID3R_VERSION when queryable.
+public fn check_min_runtime_version(spid3r_bin: string = "") -> map {
+    let bin = resolve_runtime_bin(spid3r_bin);
+    let parsed = [];
+    let raw_out = "";
+    try {
+        let res = exec_capture(bin, ["--version"], null);
+        if res.is_ok() {
+            let info = res.unwrap();
+            if int(info["code"]) == 0 {
+                raw_out = string(info["stdout"]).trim();
+                parsed = parse_semver(raw_out);
+            }
+        }
+    } catch (_e) {
+        return {
+            "checked": false,
+            "ok": true,
+            "version": "",
+            "required": MIN_SPID3R_VERSION
+        };
+    }
+    if parsed.len() < 3 {
+        return {
+            "checked": false,
+            "ok": true,
+            "version": raw_out,
+            "required": MIN_SPID3R_VERSION
+        };
+    }
+    let ver_str = string(parsed[0]) + "." + string(parsed[1]) + "." + string(parsed[2]);
+    let ok = version_at_least(parsed, 1, 1, 1);
+    return {
+        "checked": true,
+        "ok": ok,
+        "version": ver_str,
+        "required": MIN_SPID3R_VERSION
+    };
+}
+
+/// Fail closed at boot if an installed Spid3r runtime is older than MIN_SPID3R_VERSION.
+public fn assert_min_runtime_version(spid3r_bin: string = "") {
+    let check = check_min_runtime_version(spid3r_bin);
+    if check["checked"] == true and check["ok"] != true {
+        let found = string(check["version"]);
+        let req = string(check["required"]);
+        throw "Runtime version error: Spid3r {found} is older than required minimum {req}.";
+    }
+}

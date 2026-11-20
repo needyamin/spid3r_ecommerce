@@ -2,9 +2,9 @@
 // Spid3rWeb Third-Party Services Configuration
 //
 // Convention: every credential is read from the environment at use time via
-// a "*_env" key — real secrets never live in config files. Resolve with:
+// a "*_env" key â€” real secrets never live in config files. Resolve with:
 //
-//   import "framework/Env";
+//   import "framework/Foundation/Env";
 //   let key_env = Config.get("services.stripe.secret_env");
 //   if env(key_env).is_some() { ... use env(key_env).unwrap() ... }
 //
@@ -16,26 +16,30 @@ public let config_services = {
         "default": "log",
         "gateways": {
             "log": {
-                "driver": "log"          // logs SMS text instead of sending
-            },
+                "driver": "log"  // logs SMS text instead of sending
+            }
+            ,
             "http": {
                 "driver": "http",
                 "endpoint_env": "SPID3R_SMS_ENDPOINT",
                 "api_key_env": "SPID3R_SMS_API_KEY"
             }
         }
-    },
+    }
+    ,
     "payments": {
         "sslcommerz": {
             "store_id_env": "SPID3R_SSLCZ_STORE_ID",
             "store_password_env": "SPID3R_SSLCZ_STORE_PASSWORD",
             "sandbox": true
-        },
+        }
+        ,
         "stripe": {
             "key_env": "SPID3R_STRIPE_KEY",
             "secret_env": "SPID3R_STRIPE_SECRET"
         }
-    },
+    }
+    ,
     "oauth": {
         "google": {
             "client_id_env": "SPID3R_GOOGLE_CLIENT_ID",

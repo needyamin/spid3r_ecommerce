@@ -27,7 +27,7 @@ public fn register_queue_jobs() {
         return Mail.send(data);
     });
 
-    // Phase 3 — account emails. queued, never inline: no SMTP dependency
+    // Store — account emails. Queued, never inline: no SMTP dependency
     // in the request path, and the log driver records them for verification.
     Queue.job("store.password_reset", fn(data) {
         let link = "/reset-password?token=" + string(data["token"]);
@@ -47,7 +47,7 @@ public fn register_queue_jobs() {
         );
     });
 
-    // Phase 10 — order confirmation email. Queued, never inline: the
+    // Store — order confirmation email. Queued, never inline: the
     // request path must not depend on an SMTP round trip.
     Queue.job("store.order_confirmation", fn(data) {
         return Mail.to(
@@ -58,7 +58,7 @@ public fn register_queue_jobs() {
         );
     });
 
-    // Phase 10 — customer support acknowledgement.
+    // Store — customer support acknowledgement.
     Queue.job("store.support_ticket", fn(data) {
         return Mail.to(
             string(data["email"]),
@@ -68,7 +68,7 @@ public fn register_queue_jobs() {
         );
     });
 
-    // Phase 10 — SMS notifications. The gateway fails fast when it is not
+    // Store — SMS notifications. The gateway fails fast when it is not
     // configured; it never reports a message as sent when it was not.
     Queue.job("store.sms_notification", fn(data) {
         let gateway = new SmsGateway();

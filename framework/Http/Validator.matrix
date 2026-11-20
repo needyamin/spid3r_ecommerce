@@ -1,0 +1,167 @@
+// framework/Http/Validator.matrix
+// Spid3rWeb Declarative Validation & Type-Coercion Engine.
+
+import "framework/Http/ValidatorRules";
+
+/// Declarative rule validator and type coercion engine (`required`, `int`, `email`, `unique`, etc.).
+public class Validator {
+    public let errors;
+    public let failed;
+    public let validated_data;
+
+    fn new () {
+        self.errors = {
+        };
+        self.failed = false;
+        self.validated_data = {
+        };
+    }
+
+    public fn add_error(self, field: string, message: string) {
+        self.failed = true;
+        if not self.errors.has(field) {
+            self.errors[field] = [];
+        }
+        self.errors[field].push(message);
+    }
+
+    public fn fails(self) -> bool {
+        return self.failed;
+    }
+
+    public fn passes(self) -> bool {
+        return not self.failed;
+    }
+
+    public fn validated(self) -> map {
+        return self.validated_data;
+    }
+
+    public fn error_messages(self) -> map {
+        return self.errors;
+    }
+
+    public fn first_error(self, field: string) -> any {
+        if self.errors.has(field) and self.errors[field].len() > 0 {
+            return self.errors[field][0];
+        }
+        return "";
+    }
+
+    public fn first(self) -> string {
+        for (_f, list_err) in self.errors {
+            if list_err != null and list_err.len() > 0 {
+                return string(list_err[0]);
+            }
+        }
+        return "";
+    }
+
+    public fn all_errors(self) -> list {
+        let all = [];
+        for (_f, list_err) in self.errors {
+            if list_err != null {
+                for msg in list_err {
+                    all.push(string(msg));
+                }
+            }
+        }
+        return all;
+    }
+
+    public fn error_summary(self, sep: string = " ") -> string {
+        let all = self.all_errors();
+        if all.len() == 0 {
+            return "";
+        }
+        return all.join(sep);
+    }
+
+    public fn check(self, req: any, rules: map) -> Validator {
+        let _ = self;
+        let validator = new Validator();
+
+        for (field, raw_rule) in rules {
+            let field_rules = string(raw_rule).split("|");
+            let val = req.input(field, null);
+            let val_str = "";
+            if val != null {
+                val_str = string(val).trim();
+            }
+
+            let skip_if_empty = false;
+            let coerce_to = "";
+            for nr in field_rules {
+                let nrt = nr.trim();
+                if nrt == "nullable" {
+                    skip_if_empty = true;
+                } elif nrt == "integer" or nrt == "int" {
+                    coerce_to = "int";
+                } elif nrt == "numeric" or nrt == "float" {
+                    if coerce_to == "" {
+                        coerce_to = "float";
+                    }
+                } elif nrt == "boolean" or nrt == "bool" {
+                    coerce_to = "bool";
+                } elif nrt == "array" or nrt == "list" {
+                    coerce_to = "list";
+                } elif nrt == "map" {
+                    coerce_to = "map";
+                }
+            }
+            if skip_if_empty and (val == null or val_str == "") {
+                validator.validated_data[field] = null;
+                continue;
+            }
+
+            let field_had_error = false;
+            for r in field_rules {
+                let r_trimmed = r.trim();
+                let rule_name = r_trimmed;
+                let rule_arg = "";
+                let colon_idx = r_trimmed.index_of(":");
+                if colon_idx >= 0 {
+                    rule_name = r_trimmed.slice(0, colon_idx).trim();
+                    rule_arg = r_trimmed.slice(colon_idx + 1).trim();
+                }
+                if evaluate_rule(
+                    req,
+                    validator,
+                    field,
+                    val,
+                    val_str,
+                    coerce_to,
+                    rule_name,
+                    rule_arg
+                ) {
+                    field_had_error = true;
+                }
+            }
+
+            if not field_had_error and val != null {
+                if coerce_to == "int" and val_str != "" {
+                    try {
+                        validator.validated_data[field] = int(val_str);
+                    } catch (_e) {
+                        validator.validated_data[field] = val;
+                    }
+                } elif coerce_to == "float" and val_str != "" {
+                    try {
+                        validator.validated_data[field] = float(val_str);
+                    } catch (_e) {
+                        validator.validated_data[field] = val;
+                    }
+                } elif coerce_to == "bool" and val_str != "" {
+                    let bl = val_str.lower();
+                    validator.validated_data[field] = (bl == "true" or bl == "1" or bl == "yes");
+                } elif type_of(val) == "string" {
+                    validator.validated_data[field] = val_str;
+                } else {
+                    validator.validated_data[field] = val;
+                }
+            }
+        }
+
+        return validator;
+    }
+}

@@ -1,0 +1,399 @@
+// framework/Database/ServerConnections.matrix
+// PostgreSQL & MySQL/MariaDB Drivers with Auth Diagnostics & 1-Shot Reconnect
+
+import "framework/Database/Driver";
+import "framework/Database/Connection";
+
+public class PgConnection implements Driver {
+    public let handle;
+    public let conn_info;
+    public let in_transaction;
+    private let addr;
+    private let user;
+    private let password;
+    private let database;
+
+    fn new (addr: string, user: string, password: string, database: string) {
+        self.addr = addr;
+        self.user = user;
+        self.password = password;
+        self.database = database;
+        self.conn_info = addr;
+        self.in_transaction = false;
+        self.handle = null;
+        self.connect();
+    }
+
+    private fn connect(self) {
+        try {
+            self.handle = pg_connect(self.addr, self.user, self.password, self.database);
+        } catch (e) {
+            let msg = enhance_db_auth_error("postgres", string(e));
+            throw "pg connect failed: {msg}";
+        }
+        let r = pg_exec(self.handle, "SET standard_conforming_strings = on");
+        if r.is_err() {
+            let err = enhance_db_auth_error("postgres", string(r.unwrap_err()));
+            throw "pg session setup failed: {err}";
+        }
+        pg_exec(self.handle, "SET statement_timeout = 30000");
+        pg_exec(self.handle, "SET lock_timeout = 10000");
+    }
+
+    public fn reconnect(self) {
+        try {
+            if self.handle != null {
+                pg_close(self.handle);
+            }
+        } catch (_e) {
+        }
+        self.connect();
+    }
+
+    public fn driver_name(self) -> string {
+        let _ = self;
+        return "postgres";
+    }
+
+    public fn quote_identifier(self, ident: string) -> string {
+        let _ = self;
+        return quote_sql_identifier(ident, "postgres");
+    }
+
+    public fn placeholder(self, index: int) -> string {
+        let _ = self;
+        return "$" + string(index);
+    }
+
+    public fn limit_sql(self, limit: int, offset: int) -> string {
+        let _ = self;
+        return format_limit_sql("postgres", limit, offset);
+    }
+
+    public fn begin_sql(self) -> string {
+        let _ = self;
+        return "BEGIN";
+    }
+
+    public fn commit_sql(self) -> string {
+        let _ = self;
+        return "COMMIT";
+    }
+
+    public fn rollback_sql(self) -> string {
+        let _ = self;
+        return "ROLLBACK";
+    }
+
+    public fn set_in_transaction(self, active: bool) {
+        self.in_transaction = active;
+    }
+
+    public fn ping(self) -> bool {
+        try {
+            let res = pg_query(self.handle, "SELECT 1 AS ok");
+            return res.is_ok();
+        } catch (_e) {
+            return false;
+        }
+    }
+
+    private fn exec_query_once(self, final_sql: string) {
+        let res = pg_query(self.handle, final_sql);
+        if res.is_err() {
+            let err = string(res.unwrap_err());
+            if not self.in_transaction and is_transient_db_error(err) {
+                self.reconnect();
+                let res2 = pg_query(self.handle, final_sql);
+                if res2.is_ok() {
+                    return res2.unwrap();
+                }
+                err = string(res2.unwrap_err());
+            }
+            throw "pg_query failed: {err}";
+        }
+        return res.unwrap();
+    }
+
+    public fn query(self, sql: string, params: any = null) -> list {
+        let final_sql = sql_interpolate(sql, params, "postgres");
+        return self.exec_query_once(final_sql);
+    }
+
+    public fn run(self, sql: string, params: any = null) -> map {
+        let final_sql = sql_interpolate(sql, params, "postgres");
+        let upper = final_sql.trim().upper();
+
+        if upper.starts_with("INSERT") {
+            let res = pg_query(self.handle, final_sql + " RETURNING id");
+            if res.is_ok() {
+                let rows = res.unwrap();
+                let lid = 0;
+                if rows.len() > 0 and rows[0].has("id") and rows[0]["id"] != null {
+                    lid = int(rows[0]["id"]);
+                }
+                return {
+                    "last_id": lid, "changes": 1
+                };
+            }
+            if not self.in_transaction and is_transient_db_error(string(res.unwrap_err())) {
+                self.reconnect();
+                let res_retry = pg_query(self.handle, final_sql + " RETURNING id");
+                if res_retry.is_ok() {
+                    let rows = res_retry.unwrap();
+                    let lid = 0;
+                    if rows.len() > 0 and rows[0].has("id") and rows[0]["id"] != null {
+                        lid = int(rows[0]["id"]);
+                    }
+                    return {
+                        "last_id": lid, "changes": 1
+                    };
+                }
+            }
+            let r2 = pg_exec(self.handle, final_sql);
+            if r2.is_err() {
+                let err = string(r2.unwrap_err());
+                throw "pg_insert failed: {err}";
+            }
+            return {
+                "last_id": 0, "changes": 1
+            };
+        }
+
+        if upper.starts_with("UPDATE") or upper.starts_with("DELETE") {
+            let res = pg_query(self.handle, final_sql + " RETURNING 1");
+            if res.is_ok() {
+                let rows = res.unwrap();
+                return {
+                    "last_id": 0, "changes": rows.len()
+                };
+            }
+            let r2 = self.exec(final_sql);
+            if r2.is_err() {
+                let err = string(r2.unwrap_err());
+                throw "pg_statement failed: {err}";
+            }
+            return {
+                "last_id": 0, "changes": 0
+            };
+        }
+
+        let r3 = self.exec(final_sql);
+        if r3.is_err() {
+            let err = string(r3.unwrap_err());
+            throw "pg_statement failed: {err}";
+        }
+        return {
+            "last_id": 0, "changes": 0
+        };
+    }
+
+    public fn exec(self, sql: string) -> any {
+        let res = pg_exec(self.handle, sql);
+        if res.is_err() {
+            let err = string(res.unwrap_err());
+            if not self.in_transaction and is_transient_db_error(err) {
+                self.reconnect();
+                let res2 = pg_exec(self.handle, sql);
+                if res2.is_ok() {
+                    return res2;
+                }
+                err = string(res2.unwrap_err());
+            }
+            throw "pg_exec failed: {err}";
+        }
+        return res;
+    }
+
+    public fn statement(self, sql: string, params: any = null) -> any {
+        return self.exec(sql_interpolate(sql, params, "postgres"));
+    }
+
+    public fn close(self) {
+        if self.handle != null {
+            pg_close(self.handle);
+        }
+    }
+}
+
+public class MySqlConnection implements Driver {
+    public let handle;
+    public let conn_info;
+    public let in_transaction;
+    private let addr;
+    private let user;
+    private let password;
+    private let database;
+
+    fn new (addr: string, user: string, password: string, database: string) {
+        self.addr = addr;
+        self.user = user;
+        self.password = password;
+        self.database = database;
+        self.conn_info = addr;
+        self.in_transaction = false;
+        self.handle = null;
+        self.connect();
+    }
+
+    private fn connect(self) {
+        try {
+            self.handle = mysql_connect(
+                self.addr,
+                self.user,
+                self.password,
+                self.database
+            );
+        } catch (e) {
+            let msg = enhance_db_auth_error("mysql", string(e));
+            throw "mysql connect failed: {msg}";
+        }
+        let mode_sql = "SET SESSION sql_mode = REPLACE(REPLACE(REPLACE(COALESCE(@@SESSION.sql_mode, ''), 'NO_BACKSLASH_ESCAPES,', ''), ',NO_BACKSLASH_ESCAPES', ''), 'NO_BACKSLASH_ESCAPES', '')";
+        let r = mysql_exec(self.handle, mode_sql);
+        if r.is_err() {
+            let err = enhance_db_auth_error("mysql", string(r.unwrap_err()));
+            throw "mysql session setup failed: {err}";
+        }
+        mysql_exec(self.handle, "SET SESSION max_execution_time = 30000");
+    }
+
+    public fn reconnect(self) {
+        try {
+            if self.handle != null {
+                mysql_close(self.handle);
+            }
+        } catch (_e) {
+        }
+        self.connect();
+    }
+
+    public fn driver_name(self) -> string {
+        let _ = self;
+        return "mysql";
+    }
+
+    public fn quote_identifier(self, ident: string) -> string {
+        let _ = self;
+        return quote_sql_identifier(ident, "mysql");
+    }
+
+    public fn placeholder(self, _index: int) -> string {
+        let _ = self;
+        return "?";
+    }
+
+    public fn limit_sql(self, limit: int, offset: int) -> string {
+        let _ = self;
+        return format_limit_sql("mysql", limit, offset);
+    }
+
+    public fn begin_sql(self) -> string {
+        let _ = self;
+        return "BEGIN";
+    }
+
+    public fn commit_sql(self) -> string {
+        let _ = self;
+        return "COMMIT";
+    }
+
+    public fn rollback_sql(self) -> string {
+        let _ = self;
+        return "ROLLBACK";
+    }
+
+    public fn set_in_transaction(self, active: bool) {
+        self.in_transaction = active;
+    }
+
+    public fn ping(self) -> bool {
+        try {
+            let res = mysql_query(self.handle, "SELECT 1 AS ok");
+            return res.is_ok();
+        } catch (_e) {
+            return false;
+        }
+    }
+
+    public fn query(self, sql: string, params: any = null) -> list {
+        let final_sql = sql_interpolate(sql, params, "mysql");
+        let res = mysql_query(self.handle, final_sql);
+        if res.is_err() {
+            let err = string(res.unwrap_err());
+            if not self.in_transaction and is_transient_db_error(err) {
+                self.reconnect();
+                let res2 = mysql_query(self.handle, final_sql);
+                if res2.is_ok() {
+                    return res2.unwrap();
+                }
+                err = string(res2.unwrap_err());
+            }
+            throw "mysql_query failed: {err}";
+        }
+        return res.unwrap();
+    }
+
+    public fn run(self, sql: string, params: any = null) -> map {
+        let final_sql = sql_interpolate(sql, params, "mysql");
+        let upper = final_sql.trim().upper();
+        let res = self.exec(final_sql);
+
+        if upper.starts_with("INSERT") {
+            let lid = 0;
+            let res2 = mysql_query(self.handle, "SELECT LAST_INSERT_ID() AS id");
+            if res2.is_ok() {
+                let rows = res2.unwrap();
+                if rows.len() > 0 and rows[0].has("id") and rows[0]["id"] != null {
+                    lid = int(rows[0]["id"]);
+                }
+            }
+            return {
+                "last_id": lid, "changes": 1
+            };
+        }
+
+        if upper.starts_with("UPDATE") or upper.starts_with("DELETE") {
+            let changes = 0;
+            if res.is_ok() {
+                let val = res.unwrap();
+                if val != null {
+                    changes = int(val);
+                }
+            }
+            return {
+                "last_id": 0, "changes": changes
+            };
+        }
+
+        return {
+            "last_id": 0, "changes": 0
+        };
+    }
+
+    public fn exec(self, sql: string) -> any {
+        let res = mysql_exec(self.handle, sql);
+        if res.is_err() {
+            let err = string(res.unwrap_err());
+            if not self.in_transaction and is_transient_db_error(err) {
+                self.reconnect();
+                let res2 = mysql_exec(self.handle, sql);
+                if res2.is_ok() {
+                    return res2;
+                }
+                err = string(res2.unwrap_err());
+            }
+            throw "mysql_exec failed: {err}";
+        }
+        return res;
+    }
+
+    public fn statement(self, sql: string, params: any = null) -> any {
+        return self.exec(sql_interpolate(sql, params, "mysql"));
+    }
+
+    public fn close(self) {
+        if self.handle != null {
+            mysql_close(self.handle);
+        }
+    }
+}

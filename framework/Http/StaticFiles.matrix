@@ -1,0 +1,405 @@
+// framework/Http/StaticFiles.matrix
+// Static asset resolution, traversal guards, streaming, weak ETag, and MIME lookup.
+
+import "framework/Http/Response";
+import "framework/Foundation/Config";
+
+public const MIME_TYPES = {
+    "css": "text/css; charset=utf-8",
+    "js": "application/javascript; charset=utf-8",
+    "mjs": "application/javascript; charset=utf-8",
+    "html": "text/html; charset=utf-8",
+    "htm": "text/html; charset=utf-8",
+    "json": "application/json; charset=utf-8",
+    "txt": "text/plain; charset=utf-8",
+    "png": "image/png",
+    "jpg": "image/jpeg",
+    "jpeg": "image/jpeg",
+    "gif": "image/gif",
+    "webp": "image/webp",
+    "svg": "image/svg+xml",
+    "ico": "image/x-icon",
+    "woff": "font/woff",
+    "woff2": "font/woff2",
+    "ttf": "font/ttf",
+    "otf": "font/otf",
+    "pdf": "application/pdf",
+    "map": "application/json; charset=utf-8",
+    "xml": "application/xml; charset=utf-8",
+    "webmanifest": "application/manifest+json",
+    "mp4": "video/mp4",
+    "webm": "video/webm",
+    "mp3": "audio/mpeg",
+    "wasm": "application/wasm",
+    "zip": "application/zip"
+};
+
+const ASCII_LETTERS = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
+
+// Reject parent-directory segments (".."), backslashes, NULs, encoded slashes,
+// and leading Windows drive letters while permitting harmless dots/colons inside
+// single filenames (e.g., "app..min.js", "v1:2.css").
+/// Check whether a URL path attempts segment traversal (`..`), backslash escape, or Windows drive access.
+public fn is_unsafe_path(path: string) -> bool {
+    let raw = string(path);
+    let lower = raw.lower();
+    if raw.contains("\\") or raw.contains(chr(0))
+    or lower.contains("%5c") or lower.contains("%00") or lower.contains("%2f") {
+        return true;
+    }
+    let seg_idx = 0;
+    for seg in raw.split("/") {
+        if seg == "" {
+            continue;
+        }
+        let seg_lower = seg.lower().replace("%2e", ".");
+        if seg_lower == ".." {
+            return true;
+        }
+        if seg_idx == 0 {
+            let norm = seg.lower().replace("%3a", ":");
+            if norm.len() == 2 and ASCII_LETTERS.contains(norm.slice(0, 1)) and norm.slice(1, 2) == ":" {
+                return true;
+            }
+        }
+        seg_idx = seg_idx + 1;
+    }
+    return false;
+}
+
+public fn content_type_for(path: string) -> string {
+    let slash_parts = string(path).lower().split("/");
+    let filename = slash_parts[slash_parts.len() - 1];
+    let dot_parts = filename.split(".");
+    if dot_parts.len() < 2 {
+        return "application/octet-stream";
+    }
+    let ext = dot_parts[dot_parts.len() - 1];
+    if MIME_TYPES.has(ext) {
+        return MIME_TYPES[ext];
+    }
+    return "application/octet-stream";
+}
+
+public fn is_text_content_type(ct: string) -> bool {
+    let lower = string(ct).lower();
+    return lower.starts_with("text/")
+    or lower.contains("application/json")
+    or lower.contains("application/javascript")
+    or lower.contains("application/xml")
+    or lower.contains("application/manifest+json")
+    or lower.contains("image/svg+xml");
+}
+
+// URL prefixes served as static assets from public/
+public fn is_static_prefix(path: string) -> bool {
+    let prefixes = [
+    "/css/",
+    "/js/",
+    "/assets/",
+    "/images/",
+    "/fonts/",
+    "/vendor/",
+    "/uploads/"
+    ];
+    for p in prefixes {
+        if path.starts_with(p) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// Root-level static files commonly served from public/
+public fn is_root_static_file(path: string) -> bool {
+    return path == "/robots.txt" or path == "/sitemap.xml" or path == "/favicon.ico" or path == "/manifest.json" or path == "/site.webmanifest";
+}
+
+fn parse_nonneg_int(s: string) -> int {
+    let t = string(s).trim();
+    if t.len() == 0 {
+        return -1;
+    }
+    let digits = "0123456789";
+    let i = 0;
+    while i < t.len() {
+        if not digits.contains(t.slice(i, i + 1)) {
+            return -1;
+        }
+        i = i + 1;
+    }
+    try {
+        return int(t);
+    } catch (_e) {
+        return -1;
+    }
+}
+
+/// Parse an HTTP single-byte `Range` header (`bytes=start-end`, `bytes=start-`, `bytes=-suffix`).
+public fn parse_byte_range(header_val: string, total_size: int) -> map {
+    let bad = {
+        "valid": false, "start": 0, "end": -1
+    };
+    if total_size <= 0 {
+        return bad;
+    }
+    let raw = string(header_val).trim().lower();
+    if not raw.starts_with("bytes=") {
+        return bad;
+    }
+    let spec = raw.slice(6, raw.len()).trim();
+    if spec == "" or spec.contains(",") {
+        return bad;
+    }
+    let parts = spec.split("-");
+    if parts.len() != 2 {
+        return bad;
+    }
+    let s_str = parts[0].trim();
+    let e_str = parts[1].trim();
+    if s_str == "" and e_str == "" {
+        return bad;
+    }
+    if s_str == "" {
+        let suf = parse_nonneg_int(e_str);
+        if suf <= 0 {
+            return bad;
+        }
+        let st = total_size - suf;
+        if st < 0 {
+            st = 0;
+        }
+        return {
+            "valid": true, "start": st, "end": total_size - 1
+        };
+    }
+    let st = parse_nonneg_int(s_str);
+    if st < 0 or st >= total_size {
+        return bad;
+    }
+    if e_str == "" {
+        return {
+            "valid": true, "start": st, "end": total_size - 1
+        };
+    }
+    let en = parse_nonneg_int(e_str);
+    if en < st {
+        return bad;
+    }
+    if en >= total_size {
+        en = total_size - 1;
+    }
+    return {
+        "valid": true, "start": st, "end": en
+    };
+}
+
+/// Lazy byte-range file stream compatible with `http_stream`.
+public fn make_file_range_stream(
+    file_path: string,
+    start: int,
+    length: int,
+    chunk_size: int = 65_536
+) -> any {
+    let st = {
+        "fh": null, "remaining": length, "done": length <= 0
+    };
+    return fn() {
+        if st["done"] {
+            return null;
+        }
+        if st["fh"] == null {
+            let open_res = file_open(file_path, "rb");
+            if open_res.is_err() {
+                st["done"] = true;
+                return null;
+            }
+            let fh = open_res.unwrap();
+            if start > 0 {
+                let sk = file_seek(fh, start, 0);
+                if sk.is_err() {
+                    file_close(fh);
+                    st["done"] = true;
+                    return null;
+                }
+            }
+            st["fh"] = fh;
+        }
+        let rem = int(st["remaining"]);
+        if rem <= 0 {
+            file_close(st["fh"]);
+            st["fh"] = null;
+            st["done"] = true;
+            return null;
+        }
+        let to_read = if rem < chunk_size {
+            rem
+        } else {
+            chunk_size
+        };
+        let r = file_read(st["fh"], to_read);
+        if r.is_err() {
+            file_close(st["fh"]);
+            st["fh"] = null;
+            st["done"] = true;
+            return null;
+        }
+        let chunk = r.unwrap();
+        if chunk == null or len(chunk) == 0 {
+            file_close(st["fh"]);
+            st["fh"] = null;
+            st["done"] = true;
+            return null;
+        }
+        let got = len(chunk);
+        st["remaining"] = rem - got;
+        if int(st["remaining"]) <= 0 or got < to_read {
+            file_close(st["fh"]);
+            st["fh"] = null;
+            st["done"] = true;
+        }
+        return chunk;
+    };
+}
+
+// Lazy chunked binary file stream compatible with stdlib `http_stream`.
+// Never opens the descriptor until the first body chunk is pulled (zero FD leak on HEAD).
+public fn make_file_stream(file_path: string, chunk_size: int = 65_536) -> any {
+    let st = {
+        "fh": null, "done": false
+    };
+    return fn() {
+        if st["done"] {
+            return null;
+        }
+        if st["fh"] == null {
+            let open_res = file_open(file_path, "rb");
+            if open_res.is_err() {
+                st["done"] = true;
+                return null;
+            }
+            st["fh"] = open_res.unwrap();
+        }
+        let r = file_read(st["fh"], chunk_size);
+        if r.is_err() {
+            file_close(st["fh"]);
+            st["fh"] = null;
+            st["done"] = true;
+            return null;
+        }
+        let chunk = r.unwrap();
+        if chunk == null or len(chunk) == 0 {
+            file_close(st["fh"]);
+            st["fh"] = null;
+            st["done"] = true;
+            return null;
+        }
+        return chunk;
+    };
+}
+
+public fn try_serve_static(path: string, req: any = null, debug: bool = false) -> any {
+    if is_unsafe_path(path) {
+        return null;
+    }
+    let clean = path;
+    if clean.starts_with("/") {
+        clean = clean.slice(1, clean.len());
+    }
+
+    let public_root = string(Config.get("app.paths.public", "public")).replace("\\", "/").trim();
+    while public_root.ends_with("/") and public_root.len() > 1 {
+        public_root = public_root.slice(0, public_root.len() - 1);
+    }
+    if public_root == "" {
+        public_root = "public";
+    }
+    let p = "{public_root}/{clean}";
+    if not file_exists(p) or not is_file(p) {
+        return null;
+    }
+
+    let etag_val = "";
+    let file_bytes = -1;
+    let sz_res = file_size(p);
+    let mt_res = file_mtime(p);
+    if sz_res.is_ok() {
+        file_bytes = int(sz_res.unwrap());
+    }
+    let range_hdr = if req != null {
+        string(req.header("range", "")).trim()
+    } else {
+        ""
+    };
+    if sz_res.is_ok() and mt_res.is_ok() {
+        let mt = mt_res.unwrap();
+        etag_val = "W/\"{file_bytes}-{mt}\"";
+        if req != null and range_hdr == "" {
+            let inm = req.header("if-none-match", "");
+            if inm != "" and inm == etag_val {
+                let not_mod = response("", 304);
+                not_mod.header("etag", etag_val);
+                return not_mod;
+            }
+        }
+    }
+
+    let ct = content_type_for(p);
+    let resp = null;
+    if range_hdr != "" and file_bytes >= 0 {
+        let parsed = parse_byte_range(range_hdr, file_bytes);
+        if parsed["valid"] != true {
+            let unsat = response("", 416);
+            unsat.header("content-range", "bytes */{file_bytes}");
+            unsat.header("accept-ranges", "bytes");
+            return unsat;
+        }
+        let r_start = int(parsed["start"]);
+        let r_end = int(parsed["end"]);
+        let r_len = r_end - r_start + 1;
+        resp = response("", 206);
+        resp.stream(make_file_range_stream(p, r_start, r_len), ct, 206);
+        resp.header("content-range", "bytes {r_start}-{r_end}/{file_bytes}");
+    } elif req != null and req.method != "HEAD" and string(
+        req.header("accept-encoding", "")
+    ).lower().contains("gzip") and is_text_content_type(ct) and file_bytes >= 1_024 and file_bytes <= 2_097_152 {
+        let res = read_file(p);
+        if res.is_err() {
+            return null;
+        }
+        let gz = gzip_compress(string(res.unwrap()));
+        resp = response("", 200);
+        resp.stream([gz], ct, 200);
+        resp.header("content-encoding", "gzip");
+        resp.header("vary", "Accept-Encoding");
+    } elif file_bytes > 65_536 or not is_text_content_type(ct) {
+        resp = response("", 200);
+        resp.stream(make_file_stream(p), ct);
+    } else {
+        let res = read_file(p);
+        if res.is_err() {
+            return null;
+        }
+        resp = response(res.unwrap(), 200);
+        resp.header("content-type", ct);
+    }
+
+    resp.header("accept-ranges", "bytes");
+    if etag_val != "" {
+        resp.header("etag", etag_val);
+    }
+    if debug {
+        resp.header("cache-control", "no-cache");
+    } else {
+        resp.header("cache-control", "public, max-age=3600");
+    }
+    if clean.starts_with("uploads/") {
+        resp.header("content-disposition", "attachment");
+        resp.header("x-content-type-options", "nosniff");
+        resp.header(
+            "content-security-policy",
+            string(Config.get("security.uploads_csp", "default-src 'none'; sandbox"))
+        );
+    }
+    return resp;
+}

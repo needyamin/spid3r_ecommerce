@@ -1,0 +1,448 @@
+// tests/test_phase4_runtime.matrix
+// Phase 4 Runtime, Storage, Network & Database Hardening Suite:
+//   B5 (is_unsafe_path segment rules + streaming static + upload CSP),
+//   B6 (atomic puts + stream storage + cache gc + log prune),
+//   S8 (WsServer max_clients, max_message_bytes, allowed_origins),
+//   Network max_body 413 load test over serve_listener,
+//   Database Driver interface, SQLite synchronous=NORMAL & ConnectionPool.
+
+import "http";
+import "framework/Foundation/Application";
+import "framework/Http/StaticFiles";
+import "framework/Filesystem/Storage";
+import "framework/Cache/Cache";
+import "framework/Cache/CacheStore";
+import "framework/Log/Log";
+import "framework/WebSocket/WsServer";
+import "framework/Database/DB";
+import "framework/Database/Driver";
+import "framework/Database/Connection";
+
+fn assert_eq(actual, expected, label: string) {
+    let a = string(actual);
+    let e = string(expected);
+    if a != e {
+        throw "FAIL [{label}]: expected '{e}', got '{a}'";
+    }
+}
+
+fn assert_true(cond: bool, label: string) {
+    if not cond {
+        throw "FAIL [{label}]: expected true, got false";
+    }
+}
+
+fn wait_until(cond_fn, timeout_ms: int) -> bool {
+    let waited = 0;
+    while waited < timeout_ms {
+        if cond_fn() {
+            return true;
+        }
+        sleep_ms(20);
+        waited = waited + 20;
+    }
+    return cond_fn();
+}
+
+fn test_static_streaming_and_path_rules() {
+    assert_true(not is_unsafe_path("/js/app..min.js"), "dots inside filename allowed");
+    assert_true(not is_unsafe_path("/css/v1:2.css"), "colon inside non-drive filename allowed");
+    assert_true(is_unsafe_path("/css/../.env"), ".. traversal segment blocked");
+    assert_true(is_unsafe_path("/%2e%2e/.env"), "percent-encoded .. blocked");
+    assert_true(is_unsafe_path("/C:/Users/x/.env"), "Windows drive prefix blocked");
+    assert_true(is_unsafe_path("/css/a%00.css"), "NUL byte blocked");
+
+    let large_path = "public/assets/__p4_large.txt";
+    let upload_path = "public/uploads/__p4_doc.txt";
+    let large_payload = "0123456789abcdef".repeat(4500);  // 72,000 bytes (> 64 KiB stream threshold)
+    if not is_dir("public/assets") {
+        dir_create("public/assets");
+    }
+    if not is_dir("public/uploads") {
+        dir_create("public/uploads");
+    }
+    assert_true(
+        write_file(large_path, large_payload).is_ok(),
+        "large static fixture written"
+    );
+    assert_true(
+        write_file(upload_path, "attachment body").is_ok(),
+        "upload fixture written"
+    );
+
+    try {
+        let app = new Application();
+        let client = app.test_client();
+
+        // /uploads/ must set attachment + nosniff + sandbox CSP
+        let ures = client.get("/uploads/__p4_doc.txt").assert_ok();
+        ures.assert_header("content-disposition", "attachment");
+        ures.assert_header("x-content-type-options", "nosniff");
+        assert_true(
+            ures.header("content-security-policy").contains("sandbox"),
+            "uploads get sandbox CSP"
+        );
+
+        // HEAD on large asset returns 200 without leaking FDs
+        let hres = client.request("HEAD", "/assets/__p4_large.txt", "").assert_ok();
+        hres.assert_header("etag");
+
+        // Real HTTP/1.1 TCP streaming over serve_listener
+        let lr = tcp_listen("127.0.0.1:0");
+        assert_true(lr.is_ok(), "static wire tcp_listen ok");
+        let listener = lr.unwrap();
+        let addr = string(tcp_local_addr(listener).unwrap());
+        let app_ref = app;
+        let srv_stats = {
+            "served": -1
+        };
+        spawn fn() {
+            srv_stats["served"] = serve_listener(listener, fn(raw_req) {
+                return app_ref.handle_request(raw_req);
+            }, {
+                "watch_signals": false, "access_log": false, "keep_alive": false
+            }, 1);
+            return 0;
+        };
+        let fr = http_fetch("GET", "http://{addr}/assets/__p4_large.txt");
+        assert_true(fr.is_ok(), "http_fetch streamed large file");
+        let fresp = fr.unwrap();
+        assert_eq(fresp["status"], 200, "streamed static asset returns 200");
+        assert_eq(
+            len(fresp["body"]),
+            72_000,
+            "streamed static asset delivers exact 72000 bytes"
+        );
+        assert_true(wait_until(fn() {
+            return srv_stats["served"] == 1;
+        }, 2000), "static server exited cleanly");
+        tcp_close(listener);
+    } finally {
+        if file_exists(large_path) {
+            let _ = file_delete(large_path);
+        }
+        if file_exists(upload_path) {
+            let _ = file_delete(upload_path);
+        }
+    }
+    println("  [PASS] test_static_streaming_and_path_rules");
+}
+
+fn test_atomic_storage_cache_and_log_housekeeping() {
+    let d = Storage.disk("local");
+    let rel = "__p4_stream/item.txt";
+    try {
+        assert_true(
+            d.put_stream(rel, ["alpha-", "beta-", "gamma"]),
+            "Storage put_stream ok"
+        );
+        let stream_fn = d.get_stream(rel, 5);
+        assert_true(stream_fn != null, "Storage get_stream returns closure");
+        let chunk_count = 0;
+        let total = 0;
+        while true {
+            let c = stream_fn();
+            if c == null or len(c) == 0 {
+                break;
+            }
+            chunk_count = chunk_count + 1;
+            total = total + len(c);
+        }
+        assert_eq(total, 16, "Storage get_stream read all 16 bytes");
+        assert_true(chunk_count >= 3, "Storage get_stream chunked reads");
+    } finally {
+        d.delete(rel);
+        if is_dir("storage/app/__p4_stream") {
+            let _ = dir_remove("storage/app/__p4_stream");
+        }
+    }
+
+    // Cache FileStore atomic put + gc
+    let dir = "storage/framework/__p4_cache_gc";
+    let fc = new FileCacheStore(dir);
+    try {
+        assert_true(fc.put("expired_k", "v1", -10), "atomic cache put ok");
+        assert_true(fc.put("live_k", "v2", 60), "live cache put ok");
+        assert_eq(fc.gc(), 1, "FileCacheStore.gc pruned 1 expired entry");
+        assert_eq(fc.get("live_k"), "v2", "live cache entry retained");
+        fc.flush();
+    } finally {
+        if is_dir(dir) {
+            let _ = dir_remove(dir);
+        }
+    }
+
+    // Cache database store gc
+    Cache.store("database").put("__p4_db_exp", 123, -5);
+    assert_true(Cache.gc("database") >= 1, "DatabaseCacheStore.gc removed expired row");
+    DB.close();
+
+    // Log prune cleans empty temp log dir without error
+    assert_eq(
+        Log.prune(14, "storage/logs/__p4_nonexistent"),
+        0,
+        "Log.prune missing dir is 0"
+    );
+    let tp = Storage.temp_path("p4_");
+    assert_true(tp.starts_with("_tmp/p4_"), "Storage.temp_path generates _tmp key");
+    let _ = Storage.prune_temp(0);
+    println("  [PASS] test_atomic_storage_cache_and_log_housekeeping");
+}
+
+fn test_websocket_limits() {
+    let srv = new WsServer();
+    srv.opts["max_clients"] = 1;
+    srv.opts["max_message_bytes"] = 16;
+    srv.opts["allowed_origins"] = ["https://app.test"];
+    assert_true(srv.is_origin_allowed("https://app.test"), "allowed origin matches");
+    assert_true(not srv.is_origin_allowed("https://evil.test"), "disallowed origin rejected");
+
+    let srv_ref = srv;
+    let outcome = {
+        "oversize_rejected": false
+    };
+    let out_ref = outcome;
+    srv.on_connection(fn(h) {
+        while true {
+            let r = srv_ref.recv(h);
+            if r.is_err() {
+                if string(r.unwrap_err()).contains("max_message_bytes") {
+                    out_ref["oversize_rejected"] = true;
+                }
+                break;
+            }
+            let msg = r.unwrap();
+            if msg == null {
+                break;
+            }
+            ws_send(h, "ok:" + string(msg));
+        }
+    });
+
+    let addr = srv.bind("127.0.0.1:0");
+    let stats = {
+        "served": -1
+    };
+    spawn fn() {
+        stats["served"] = srv.serve(2);
+        return 0;
+    };
+
+    // 1. First client holds the single slot
+    let c1r = ws_connect("ws://" + addr);
+    assert_true(c1r.is_ok(), "first WS client connected");
+    let c1 = c1r.unwrap();
+    assert_true(wait_until(fn() {
+        return srv.client_count() == 1;
+    }, 2000), "client_count reached 1");
+
+    // 2. Second concurrent client hits max_clients=1 and is rejected
+    let rejected = false;
+    try {
+        let c2r = ws_connect("ws://" + addr);
+        if c2r.is_err() {
+            rejected = true;
+        } else {
+            let c2 = c2r.unwrap();
+            let probe = ws_recv(c2);
+            rejected = probe.is_err() or probe.unwrap() == null;
+            ws_close(c2);
+        }
+    } catch (_e) {
+        rejected = true;
+    }
+    assert_true(rejected, "2nd client rejected while at cap");
+
+    // 3. First client sends small frame then oversized (>16 bytes) frame
+    assert_true(ws_send(c1, "hi").is_ok(), "small WS message sent");
+    assert_eq(ws_recv(c1).unwrap(), "ok:hi", "small WS message echoed");
+    ws_send(c1, "0123456789abcdefghijklmnopqrstuvwxyz");
+    assert_true(wait_until(fn() {
+        return out_ref["oversize_rejected"];
+    }, 2000), "oversized WS frame rejected by WsServer.recv");
+    ws_close(c1);
+    wait_until(fn() {
+        return stats["served"] == 2;
+    }, 2000);
+    println("  [PASS] test_websocket_limits");
+}
+
+fn test_network_max_body_413_load() {
+    let app = new Application();
+    app.router.clear();
+    app.post("/ingest", (req, res) => {
+        return res.json({
+            "bytes": len(req.body)
+        });
+    });
+
+    let lr = tcp_listen("127.0.0.1:0");
+    assert_true(lr.is_ok(), "413 load test tcp_listen ok");
+    let listener = lr.unwrap();
+    let addr = string(tcp_local_addr(listener).unwrap());
+    let app_ref = app;
+    let total_reqs = 6;
+    let srv_stats = {
+        "served": -1
+    };
+    spawn fn() {
+        srv_stats["served"] = serve_listener(listener, fn(raw_req) {
+            return app_ref.handle_request(raw_req);
+        }, {
+            "watch_signals": false, "access_log": false, "keep_alive": false, "max_body_bytes": 1024
+        }, total_reqs);
+        return 0;
+    };
+
+    let ch = channel(total_reqs);
+    let small_body = "a".repeat(200);
+    let big_body = "b".repeat(2048);
+    let i = 0;
+    while i < total_reqs {
+        let is_big = (i % 2) == 1;
+        let payload = if is_big {
+            big_body
+        } else {
+            small_body
+        };
+        let target_url = "http://{addr}/ingest";
+        let out_ch = ch;
+        spawn fn() {
+            let r = http_fetch("POST", target_url, {
+                "content-type": "text/plain"
+            }, payload);
+            let status = if r.is_ok() {
+                int(r.unwrap()["status"])
+            } else {
+                -1
+            };
+            let body = if r.is_ok() {
+                string(r.unwrap()["body"])
+            } else {
+                ""
+            };
+            out_ch.send({
+                "big": is_big, "status": status, "body": body
+            });
+            return 0;
+        };
+        i = i + 1;
+    }
+
+    let ok_200 = 0;
+    let got_413 = 0;
+    let j = 0;
+    while j < total_reqs {
+        let item = ch.recv();
+        if item["big"] {
+            assert_eq(item["status"], 413, "oversized POST returns HTTP 413");
+            assert_true(
+                item["body"].contains("payload too large"),
+                "413 body identifies limit error"
+            );
+            got_413 = got_413 + 1;
+        } else {
+            assert_eq(item["status"], 200, "under-limit POST returns HTTP 200");
+            ok_200 = ok_200 + 1;
+        }
+        j = j + 1;
+    }
+    assert_eq(ok_200, 3, "3 under-limit requests succeeded");
+    assert_eq(got_413, 3, "3 oversized requests returned 413");
+    assert_true(wait_until(fn() {
+        return srv_stats["served"] == total_reqs;
+    }, 3000), "load server exited cleanly");
+    tcp_close(listener);
+    println("  [PASS] test_network_max_body_413_load");
+}
+
+fn test_database_driver_pool_and_pragmas() {
+    assert_eq(
+        quote_sql_identifier("users.id AS uid", "sqlite"),
+        "\"users\".\"id\" AS \"uid\"",
+        "sqlite quoted ident"
+    );
+    assert_eq(
+        quote_sql_identifier("users.id", "mysql"),
+        "`users`.`id`",
+        "mysql backtick ident"
+    );
+    assert_eq(
+        format_limit_sql("sqlite", -1, 10),
+        " LIMIT -1 OFFSET 10",
+        "sqlite limit-free offset SQL"
+    );
+    assert_eq(
+        format_limit_sql("postgres", 5, 10),
+        " LIMIT 5 OFFSET 10",
+        "postgres limit/offset SQL"
+    );
+
+    assert_true(
+        is_transient_db_error("server closed the connection: broken pipe"),
+        "transient broken pipe detected"
+    );
+    assert_true(
+        not is_transient_db_error("syntax error near SELECT"),
+        "syntax error is not transient"
+    );
+    assert_true(
+        enhance_db_auth_error("postgres", "SCRAM auth failed").contains("md5"),
+        "PG auth note mentions md5"
+    );
+    assert_true(
+        enhance_db_auth_error("mysql", "caching_sha2_password error").contains("mysql_native_password"),
+        "MySQL auth note mentions mysql_native_password"
+    );
+
+    let conn = DB.connection();
+    let active_drv = DB.driver_name();
+    assert_true(conn.ping(), "active DB connection ping returns true");
+    let expected_begin = if active_drv == "sqlite" {
+        "BEGIN IMMEDIATE"
+    } else {
+        "BEGIN"
+    };
+    assert_eq(conn.begin_sql(), expected_begin, "active driver begin_sql");
+    assert_eq(conn.limit_sql(5, 10), " LIMIT 5 OFFSET 10", "Driver.limit_sql matches");
+
+    if active_drv == "sqlite" {
+        let sync_rows = DB.select("PRAGMA synchronous;");
+        assert_true(sync_rows.len() > 0, "PRAGMA synchronous query returns row");
+        assert_eq(
+            string(sync_rows[0]["synchronous"]),
+            "1",
+            "SQLite synchronous=NORMAL (1)"
+        );
+    } else {
+        let sq = new SqliteConnection(":memory:");
+        assert_true(sq.ping(), "SqliteConnection(:memory:).ping returns true");
+        assert_eq(sq.begin_sql(), "BEGIN IMMEDIATE", "sqlite begin_sql");
+        let sq_sync = sq.query("PRAGMA synchronous;", []);
+        assert_true(sq_sync.len() > 0, "SQLite PRAGMA synchronous query returns row");
+        sq.close();
+    }
+
+    let pooled_ok = DB.with_connection(fn(c) {
+        return c.ping();
+    });
+    assert_true(pooled_ok, "DB.with_connection executed ping on pooled connection");
+    let st = DB.pool_stats();
+    assert_true(
+        int(st["acquired"]) >= 1 and int(st["released"]) >= 1 and int(st["idle"]) >= 1,
+        "pool stats recorded"
+    );
+    DB.close();
+    println("  [PASS] test_database_driver_pool_and_pragmas");
+}
+
+fn main() {
+    println("\n=== Running Phase 4 Runtime Hardening Suite ===");
+    test_static_streaming_and_path_rules();
+    test_atomic_storage_cache_and_log_housekeeping();
+    test_websocket_limits();
+    test_network_max_body_413_load();
+    test_database_driver_pool_and_pragmas();
+    println("=== All Phase 4 Runtime Hardening Tests Passed! ===\n");
+    return 0;
+}

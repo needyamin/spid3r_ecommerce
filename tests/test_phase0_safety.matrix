@@ -1,0 +1,370 @@
+// tests/test_phase0_safety.matrix
+// Regression suite for Phase 0 (Safety) fixes:
+//   B1 - Multiple Set-Cookie headers emitted individually (never comma-joined)
+//   B2 - Queue optimistic CAS reclaims stale reserved_at jobs after retry_after
+//   S1 - APP_ENV defaults to "production" with debug=false; APP_DEBUG overrides
+//   S2 - Unified APP_KEY / SPID3R_APP_KEY resolution; fail-closed in production
+
+import "http";
+import "framework/Web";
+import "framework/Foundation/Application";
+import "framework/Http/Request";
+import "framework/Http/Response";
+import "framework/Foundation/Config";
+import "framework/Database/DB";
+import "framework/Queue/Queue";
+import "framework/Auth/Jwt";
+
+fn assert_eq(actual, expected, label: string) {
+    let act = string(actual);
+    let exp = string(expected);
+    if act != exp {
+        throw "FAIL [{label}]: expected '{exp}', got '{act}'";
+    }
+}
+
+fn assert_true(cond: bool, label: string) {
+    if not cond {
+        throw "FAIL [" + label + "]: expected true, got false";
+    }
+}
+
+fn wait_until(cond_fn, timeout_ms: int) -> bool {
+    let waited = 0;
+    while waited < timeout_ms {
+        if cond_fn() {
+            return true;
+        }
+        sleep_ms(20);
+        waited = waited + 20;
+    }
+    return cond_fn();
+}
+
+fn read_opt_env(name: string) -> string {
+    let v = env(name);
+    if v.is_some() {
+        return string(v.unwrap());
+    }
+    return "";
+}
+
+fn test_multi_cookie_headers_and_wire() {
+    let app = web();
+    app.router.clear();
+
+    app.get("/two-cookies", (req, res) => {
+        let _ = req;
+        return res.cookie("c1", "v1").cookie("c2", "v2").json({
+            "ok": true
+        });
+    });
+
+    app.get("/cookie-and-session", (req, res) => {
+        req.session().put("x", 42);
+        return res.cookie("theme", "dark").json({
+            "saved": true
+        });
+    });
+
+    app.get("/wire-cookies", (req, res) => {
+        let _ = req;
+        return res.cookie("w1", "one").cookie("w2", "two").text("wire-ok");
+    });
+
+    let client = app.test_client();
+
+    // 1. Response.cookie() x2 produces two distinct Set-Cookie headers and preserves CORS on JSON
+    let r1 = client.get("/two-cookies").assert_ok();
+    let sc1 = r1.header_values("set-cookie");
+    assert_eq(sc1.len(), 2, "two-cookies emits 2 set-cookie headers");
+    assert_true(sc1[0].starts_with("c1=v1;"), "first set-cookie is c1=v1");
+    assert_true(sc1[1].starts_with("c2=v2;"), "second set-cookie is c2=v2");
+    assert_true(not sc1[0].contains(", c2="), "first set-cookie is not comma-joined");
+    r1.assert_header("access-control-allow-origin", "*");
+
+    // 2. Response cookie + SessionStore cookie emit two distinct Set-Cookie headers
+    let r2 = client.get("/cookie-and-session").assert_ok();
+    let sc2 = r2.header_values("set-cookie");
+    assert_eq(sc2.len(), 2, "cookie + session emits 2 set-cookie headers");
+    let has_theme = false;
+    let has_sid = false;
+    for h in sc2 {
+        if h.starts_with("theme=dark;") {
+            has_theme = true;
+        }
+        if h.starts_with("spid3r_sid=sid_") {
+            has_sid = true;
+        }
+        assert_true(not h.contains(", spid3r_sid="), "session cookie is not comma-joined");
+    }
+    assert_true(has_theme, "theme=dark Set-Cookie present");
+    assert_true(has_sid, "spid3r_sid Set-Cookie present");
+
+    // 3. Real TCP HTTP/1.1 wire test: verify two separate "Set-Cookie:" lines on the socket
+    let lr = tcp_listen("127.0.0.1:0");
+    assert_true(lr.is_ok(), "tcp_listen binds ephemeral port");
+    let listener = lr.unwrap();
+    let addr = string(tcp_local_addr(listener).unwrap());
+    let wire_app = app;
+    let srv_stats = {
+        "served": -1
+    };
+    spawn fn() {
+        srv_stats["served"] = serve_listener(listener, fn(raw_req) {
+            return wire_app.handle_request(raw_req);
+        }, {
+            "watch_signals": false, "access_log": false, "keep_alive": false
+        }, 1);
+        return 0;
+    };
+
+    let cr = tcp_connect(addr);
+    assert_true(cr.is_ok(), "tcp_connect connects to server");
+    let conn = cr.unwrap();
+    tcp_set_timeout(conn, 5000);
+    let wr = tcp_write(
+        conn,
+        "GET /wire-cookies HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n"
+    );
+    assert_true(wr.is_ok(), "tcp_write sends HTTP request");
+
+    let raw_resp = "";
+    while true {
+        let rr = tcp_read(conn, 4096);
+        if rr.is_err() {
+            break;
+        }
+        let chunk = string(rr.unwrap());
+        if chunk == "" {
+            break;
+        }
+        raw_resp = raw_resp + chunk;
+    }
+    tcp_close(conn);
+    assert_true(wait_until(fn() {
+        return srv_stats["served"] == 1;
+    }, 3000), "wire server served 1 connection");
+    tcp_close(listener);
+
+    let sc_lines = [];
+    for line in raw_resp.split("\r\n") {
+        if line.lower().starts_with("set-cookie:") {
+            sc_lines.push(line);
+        }
+    }
+    assert_eq(sc_lines.len(), 2, "HTTP/1.1 wire response contains 2 Set-Cookie header lines");
+    assert_true(sc_lines[0].contains("w1=one;"), "wire line 1 has w1=one");
+    assert_true(sc_lines[1].contains("w2=two;"), "wire line 2 has w2=two");
+    assert_true(raw_resp.contains("wire-ok"), "wire body received");
+
+    println("  [PASS] test_multi_cookie_headers_and_wire");
+}
+
+fn test_queue_stale_reservation_reclaim() {
+    let q = "phase0-queue-test";
+    DB.table("jobs").where("queue", "=", q).delete();
+
+    Queue.push("log.message", {
+        "message": "stale test"
+    }, q);
+    assert_eq(Queue.size(q), 1, "initial queue size is 1");
+
+    let first = Queue.pop(q);
+    assert_true(first != null, "first pop reserves job");
+    assert_eq(int(first["attempts"]), 1, "first pop increments attempts to 1");
+    assert_true(Queue.pop(q) == null, "active reserved job is not immediately re-popped");
+    assert_eq(Queue.size(q), 0, "reserved job does not count in available size");
+
+    // Simulate worker crash: backdate reserved_at well past retry_after (default 90s)
+    let stale_ts = int(unix_time()) - 300;
+    DB.table("jobs").where("id", "=", first["id"]).update({
+        "reserved_at": stale_ts
+    });
+
+    assert_eq(Queue.size(q), 1, "stale reserved job counts as available again");
+    let reclaimed = Queue.pop(q);
+    assert_true(reclaimed != null, "stale reserved job is reclaimed by pop()");
+    assert_eq(int(reclaimed["id"]), int(first["id"]), "reclaimed job has same id");
+    assert_eq(int(reclaimed["attempts"]), 2, "reclaimed job increments attempts to 2");
+    assert_true(Queue.pop(q) == null, "reclaimed job cannot be double-popped immediately");
+
+    DB.table("jobs").where("queue", "=", q).delete();
+    println("  [PASS] test_queue_stale_reservation_reclaim");
+}
+
+fn test_production_defaults_and_app_key() {
+    let orig_env = read_opt_env("APP_ENV");
+    let orig_debug = read_opt_env("APP_DEBUG");
+    let orig_key = read_opt_env("APP_KEY");
+    let orig_spid3r_key = read_opt_env("SPID3R_APP_KEY");
+    let orig_jwt = read_opt_env("JWT_SECRET");
+    let orig_cfg_env = Config.get("app.env", "");
+    let orig_cfg_key = Config.get("app.key", "");
+
+    try {
+        // S1: Unset APP_ENV/APP_DEBUG defaults to production with debug=false
+        env_set("APP_ENV", "");
+        env_set("APP_DEBUG", "");
+        Config.set("app.env", "");
+        assert_eq(resolve_app_env(), "production", "unset APP_ENV defaults to production");
+        assert_true(is_production(), "is_production() true by default");
+        assert_true(not resolve_app_debug(), "debug defaults to false in production");
+        let prod_app = new Application();
+        assert_eq(prod_app.env, "production", "Application.env defaults to production");
+        assert_true(not prod_app.debug, "Application.debug defaults to false");
+
+        // Development env turns debug=true unless APP_DEBUG overrides
+        env_set("APP_ENV", "development");
+        assert_true(resolve_app_debug(), "debug true in development");
+        assert_true(new Application().debug, "Application.debug true in development");
+        env_set("APP_DEBUG", "false");
+        assert_true(not resolve_app_debug(), "APP_DEBUG=false overrides development");
+        env_set("APP_ENV", "production");
+        env_set("APP_DEBUG", "true");
+        assert_true(resolve_app_debug(), "APP_DEBUG=true overrides production");
+        env_set("APP_DEBUG", "");
+
+        // S2: Production requires strong non-default APP_KEY / SPID3R_APP_KEY
+        env_set("APP_ENV", "production");
+        env_set("APP_KEY", "");
+        env_set("SPID3R_APP_KEY", "");
+        env_set("JWT_SECRET", "");
+        Config.set("app.key", "");
+
+        let threw_cfg = false;
+        try {
+            assert_app_key_configured();
+        } catch (_e) {
+            threw_cfg = true;
+        }
+        assert_true(threw_cfg, "assert_app_key_configured throws without key in production");
+
+        let threw_app = false;
+        try {
+            prod_app.check_production_ready();
+        } catch (_e) {
+            threw_app = true;
+        }
+        assert_true(
+            threw_app,
+            "Application.check_production_ready throws without key in production"
+        );
+
+        let threw_cookie = false;
+        try {
+            response("").signed_cookie("k", "v");
+        } catch (_e) {
+            threw_cookie = true;
+        }
+        assert_true(threw_cookie, "signed_cookie throws without key in production");
+
+        let threw_jwt = false;
+        try {
+            Jwt.sign({
+                "id": 1
+            });
+        } catch (_e) {
+            threw_jwt = true;
+        }
+        assert_true(threw_jwt, "Jwt.sign throws without key in production");
+
+        // Known placeholder or short key must be rejected in production
+        for bad_key in ["spid3rweb-default-cookie-secret-key", "short"] {
+            env_set("APP_KEY", bad_key);
+            let rejected = false;
+            try {
+                assert_app_key_configured();
+            } catch (_e) {
+                rejected = true;
+            }
+            assert_true(rejected, "production rejects insecure key: " + bad_key);
+        }
+
+        // Legacy SPID3R_APP_KEY alias works seamlessly across cookies & JWT in production
+        env_set("APP_KEY", "");
+        env_set("SPID3R_APP_KEY", "hex:0123456789abcdef0123456789abcdef");
+        assert_app_key_configured();
+        prod_app.check_production_ready();
+
+        let res_sc = response("").signed_cookie("prefs", "v_prod");
+        let http_sc = res_sc.to_http();
+        let raw_pair = string(http_sc["headers"]["set-cookie"]).split(";")[0];
+        let signed_val = raw_pair.replace("prefs=", "");
+        let probe_req = new Request({
+            "method": "GET", "path": "/", "headers": {
+                "cookie": "prefs=" + signed_val
+            }
+            , "body": ""
+        });
+        assert_eq(
+            probe_req.signed_cookie("prefs", ""),
+            "v_prod",
+            "signed_cookie verifies with SPID3R_APP_KEY in production"
+        );
+
+        let tok = Jwt.sign({
+            "id": 99
+        });
+        let claims = Jwt.verify(tok);
+        assert_true(
+            claims != null and int(claims["id"]) == 99,
+            "JWT round-trips with SPID3R_APP_KEY in production"
+        );
+
+        // Testing mode uses ephemeral random key (never the old hardcoded string)
+        env_set("APP_ENV", "testing");
+        env_set("APP_KEY", "");
+        env_set("SPID3R_APP_KEY", "");
+        let eph = resolve_app_key();
+        assert_true(
+            eph != "" and eph != "spid3rweb-default-cookie-secret-key",
+            "ephemeral dev/test key is non-empty and not hardcoded"
+        );
+        let eph_res = response("").signed_cookie("dev", "ok").to_http();
+        let eph_val = string(eph_res["headers"]["set-cookie"]).split(";")[0].replace("dev=", "");
+        let eph_req = new Request({
+            "method": "GET", "path": "/", "headers": {
+                "cookie": "dev=" + eph_val
+            }
+            , "body": ""
+        });
+        assert_eq(
+            eph_req.signed_cookie("dev", ""),
+            "ok",
+            "ephemeral key round-trips signed cookies in testing"
+        );
+        let eph_tok = Jwt.sign({
+            "sub": "tester"
+        });
+        let eph_claims = Jwt.verify(eph_tok);
+        assert_true(
+            eph_claims != null and eph_claims["sub"] == "tester",
+            "ephemeral key round-trips JWT in testing"
+        );
+    } finally {
+        env_set("APP_ENV", orig_env);
+        env_set("APP_DEBUG", orig_debug);
+        env_set("APP_KEY", orig_key);
+        env_set("SPID3R_APP_KEY", orig_spid3r_key);
+        env_set("JWT_SECRET", orig_jwt);
+        Config.set("app.env", orig_cfg_env);
+        Config.set("app.key", orig_cfg_key);
+    }
+
+    println("  [PASS] test_production_defaults_and_app_key");
+}
+
+fn main() {
+    let app_env = env("APP_ENV");
+    if app_env.is_none() or string(app_env.unwrap()).trim() == "" {
+        env_set("APP_ENV", "testing");
+    }
+    println("\n=== Running Phase 0 Safety Regression Suite ===");
+    test_multi_cookie_headers_and_wire();
+    test_queue_stale_reservation_reclaim();
+    test_production_defaults_and_app_key();
+    DB.close();
+    println("=== All Phase 0 Safety Tests Passed! ===\n");
+    return 0;
+}

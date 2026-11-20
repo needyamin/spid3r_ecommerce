@@ -7,10 +7,10 @@
 // register_web_routes() directly. Boot is guarded: registering routes
 // twice must not double-register listeners or bindings.
 
-import "framework/Router";
-import "framework/Response";
+import "framework/Http/Router";
+import "framework/Http/Response";
 import "framework/View/BD";
-import "framework/Container/Container";
+import "framework/Foundation/Container";
 import "framework/Events/Event";
 import "app/Providers/StoreServiceProvider";
 import "app/Controllers/StorefrontController";

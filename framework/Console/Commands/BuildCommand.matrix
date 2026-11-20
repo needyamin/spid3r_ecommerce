@@ -1,0 +1,223 @@
+// framework/Console/Commands/BuildCommand.matrix
+// Native AOT binary build command (syncs migration registry before building).
+
+import "framework/Database/DB";
+import "framework/Console/TestRunner";
+import "MigrationRegistry";
+
+fn copy_tree_recursive(src: string, dst: string) {
+    if not file_exists(src) {
+        return;
+    }
+    let entries_r = list_dir(src);
+    if entries_r.is_err() {
+        copy_file(src, dst);
+        return;
+    }
+    if not file_exists(dst) {
+        dir_create(dst);
+    }
+    let entries = entries_r.unwrap();
+    let i = 0;
+    while i < entries.len() {
+        let name = string(entries[i]);
+        if name != "." and name != ".." {
+            let s_child = "{src}/{name}";
+            let d_child = "{dst}/{name}";
+            let sub = list_dir(s_child);
+            if sub.is_ok() {
+                copy_tree_recursive(s_child, d_child);
+            } else {
+                copy_file(s_child, d_child);
+            }
+        }
+        i = i + 1;
+    }
+}
+
+fn dir_of_path(out_path: string) -> string {
+    let parts = out_path.replace("\\", "/").split("/");
+    if parts.len() <= 1 {
+        return ".";
+    }
+    parts.pop();
+    let d = parts.join("/");
+    if d == "" {
+        return "/";
+    }
+    return d;
+}
+
+public class BuildCommand {
+    public let name;
+    public let usage;
+    public let description;
+    private let kernel;
+
+    fn new (kernel) {
+        self.name = "build";
+        self.usage = "build [--release|--bytecode-only] [-o OUT]";
+        self.description = "Compile AOT native binary or .matrixc bytecode";
+        self.kernel = kernel;
+    }
+
+    private fn run_capture_logged(self, bin: string, args: list) -> int {
+        let _ = self;
+        let res = exec_capture(bin, args, null);
+        if res.is_err() {
+            let err = string(res.unwrap_err());
+            println("[Magic] Build subprocess failed to launch: {err}");
+            return 1;
+        }
+        let info = res.unwrap();
+        if info.has("stdout") and string(info["stdout"]).trim() != "" {
+            println(string(info["stdout"]).trim());
+        }
+        if info.has("stderr") and string(info["stderr"]).trim() != "" {
+            println(string(info["stderr"]).trim());
+        }
+        return int(info["code"]);
+    }
+
+    public fn handle(self, cli_args: list) -> int {
+        let release = false;
+        let bundle = false;
+        let use_bytecode = false;
+        let bytecode_only = false;
+        let bundle_runtime = false;
+        let embeds = [];
+        let product_name = "";
+        let ver_str = "";
+        let out_path = "";
+        let entry = "server.matrix";
+        let i = 1;
+        while i < cli_args.len() {
+            let a = string(cli_args[i]);
+            if a == "--release" {
+                release = true;
+            } elif a == "--bundle" {
+                bundle = true;
+            } elif a == "--bytecode" {
+                use_bytecode = true;
+            } elif a == "--bytecode-only" {
+                bytecode_only = true;
+            } elif a == "--bundle-runtime" {
+                bundle_runtime = true;
+            } elif a == "--embed" and i + 1 < cli_args.len() {
+                i = i + 1;
+                embeds.push(string(cli_args[i]));
+            } elif a == "--product-name" and i + 1 < cli_args.len() {
+                i = i + 1;
+                product_name = string(cli_args[i]);
+            } elif a == "--version" and i + 1 < cli_args.len() {
+                i = i + 1;
+                ver_str = string(cli_args[i]);
+            } elif a == "-o" and i + 1 < cli_args.len() {
+                i = i + 1;
+                out_path = string(cli_args[i]);
+            } elif a.starts_with("--out=") {
+                out_path = a.slice(6, a.len());
+            } elif not a.starts_with("-") {
+                entry = a;
+            }
+            i = i + 1;
+        }
+
+        if self.kernel.sync_migration_registry(false, false) < 0 {
+            DB.close();
+            return 1;
+        }
+
+        let spid3r_bin = find_spid3r_binary();
+        if bytecode_only {
+            let bc_out = if out_path != "" {
+                out_path
+            } else {
+                "dist/server.matrixc"
+            };
+            ensure_parent_dirs(bc_out);
+            println("[Magic] Compiling bytecode module {entry} -> {bc_out}...");
+            let code = self.run_capture_logged(spid3r_bin, ["compile", entry, "-o", bc_out]);
+            if code == 0 {
+                println("[Magic] Ready — run: spid3r exec {bc_out}");
+            }
+            DB.close();
+            return code;
+        }
+
+        let tmp_bc = "";
+        let build_args = ["build"];
+        if release {
+            build_args.push("--release");
+        }
+        build_args.push(entry);
+
+        if use_bytecode {
+            tmp_bc = "storage/framework/build_tmp.matrixc";
+            ensure_parent_dirs(tmp_bc);
+            println("[Magic] Pre-compiling bytecode payload from {entry}...");
+            let comp_code = self.run_capture_logged(
+                spid3r_bin,
+                ["compile",
+                entry,
+                "-o",
+                tmp_bc]
+            );
+            if comp_code != 0 {
+                DB.close();
+                return comp_code;
+            }
+            build_args.push("--bytecode");
+            build_args.push(tmp_bc);
+        }
+        if bundle_runtime {
+            if embeds.len() == 0 {
+                println(
+                    "[Magic Note] --bundle-runtime uses `spid3r gui --payload` (expects an --embed HTML UI); for headless HTTP servers use --release or --bytecode-only."
+                );
+            }
+            build_args.push("--bundle-runtime");
+        }
+        for emb in embeds {
+            build_args.push("--embed");
+            build_args.push(emb);
+        }
+        if product_name != "" {
+            build_args.push("--product-name");
+            build_args.push(product_name);
+        }
+        if ver_str != "" {
+            build_args.push("--version");
+            build_args.push(ver_str);
+        }
+        if out_path != "" {
+            ensure_parent_dirs(out_path);
+            build_args.push("-o");
+            build_args.push(out_path);
+        }
+
+        println("[Magic] Building native binary from {entry}...");
+        let code = self.run_capture_logged(spid3r_bin, build_args);
+        if tmp_bc != "" and file_exists(tmp_bc) {
+            let _rm = file_delete(tmp_bc);
+        }
+        if code == 0 and bundle and out_path != "" {
+            let out_dir = dir_of_path(out_path);
+            if out_dir != "." and out_dir != "" {
+                println(
+                    "[Magic] Bundling runtime assets (public/, resources/, .env.example) into {out_dir}/ ..."
+                );
+                copy_tree_recursive("public", "{out_dir}/public");
+                copy_tree_recursive("resources", "{out_dir}/resources");
+                if file_exists(".env.example") {
+                    copy_tree_recursive(".env.example", "{out_dir}/.env.example");
+                }
+            }
+        }
+        if code == 0 and out_path != "" {
+            println("[Magic] Ready — run: {out_path} 8000");
+        }
+        DB.close();
+        return code;
+    }
+}

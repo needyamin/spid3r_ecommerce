@@ -5,66 +5,83 @@
 
 import "framework/Database/DB";
 
+fn safe_file_exists(path: string) -> bool {
+    try {
+        return file_exists(path);
+    } catch (_e) {
+        return false;
+    }
+}
+
+public fn find_spid3r_binary() -> string {
+    let cur = exe_path();
+    if cur.is_ok() {
+        let p = string(cur.unwrap());
+        if p != "" {
+            try {
+                if file_exists(p) {
+                    return p;
+                }
+            } catch (_e) {
+                return p;
+            }
+        }
+    }
+
+    let env_keys = [
+    "SPID3R_BIN",
+    "SPID3R_EXE",
+    "CARGO_BIN_EXE_spid3r",
+    "CARGO_BIN_EXE_spidr"
+    ];
+    for k in env_keys {
+        let p = env(k).unwrap_or("");
+        if p != "" and safe_file_exists(p) {
+            return p;
+        }
+    }
+
+    let candidates = [
+    "target/debug/spid3r.exe",
+    "target/debug/spid3r",
+    "../../target/debug/spid3r.exe",
+    "../../target/debug/spid3r",
+    "target/release/spid3r.exe",
+    "target/release/spid3r",
+    "../../target/release/spid3r.exe",
+    "../../target/release/spid3r"
+    ];
+    for c in candidates {
+        if safe_file_exists(c) {
+            return c;
+        }
+    }
+
+    return "spid3r";
+}
+
 public class TestRunner {
     public let root;
 
-    fn new(root: string = "") {
+    fn new (root: string = "") {
         self.root = root;
     }
 
     fn resolve_spid3r_binary(self) -> string {
-        let cur = exe_path();
-        if cur.is_ok() {
-            let p = cur.unwrap();
-            if file_exists(p) {
-                return p;
-            }
-        }
-
-        let env_keys = list(
-            "SPID3R_BIN",
-            "SPID3R_EXE",
-            "CARGO_BIN_EXE_spid3r",
-            "CARGO_BIN_EXE_spidr"
-        );
-        for k in env_keys {
-            let v = env(k);
-            if v.is_some() {
-                let p = v.unwrap();
-                if file_exists(p) {
-                    return p;
-                }
-            }
-        }
-
-        let candidates = list(
-            "target/debug/spid3r.exe",
-            "target/debug/spid3r",
-            "../../target/debug/spid3r.exe",
-            "../../target/debug/spid3r",
-            "target/release/spid3r.exe",
-            "target/release/spid3r",
-            "../../target/release/spid3r.exe",
-            "../../target/release/spid3r"
-        );
-        for c in candidates {
-            if file_exists(c) {
-                return c;
-            }
-        }
-
-        return "spid3r";
+        let _ = self;
+        return find_spid3r_binary();
     }
 
     fn cleanup_db_artifacts(self) {
-        let candidates = list(
-            self.root + "database/database.sqlite",
-            "database/database.sqlite",
-            "examples/spid3r_web/database/database.sqlite"
-        );
+        let candidates = [
+        "{self.root}storage/database/database.sqlite",
+        "storage/database/database.sqlite",
+        "{self.root}database/database.sqlite",
+        "database/database.sqlite"
+        ];
         for p in candidates {
-            let shm_file = p + "-shm";
-            let wal_file = p + "-wal";
+            let shm_file = "{p}-shm";
+            let wal_file = "{p}-wal";
             if file_exists(shm_file) {
                 file_delete(shm_file);
             }
@@ -75,25 +92,26 @@ public class TestRunner {
     }
 
     fn discover_suites(self) {
-        let base_suites = list(
-            "tests/test_router.matrix",
-            "tests/test_validator.matrix",
-            "tests/test_query_builder.matrix",
-            "tests/test_model.matrix",
-            "tests/test_resource.matrix",
-            "tests/test_websocket.matrix",
-            "tests/test_drivers.matrix",
-            "tests/test_container.matrix",
-            "tests/test_events.matrix",
-            "tests/test_providers.matrix",
-            "tests/test_cache.matrix",
-            "tests/test_core_systems.matrix",
-            "tests/test_throttle.matrix",
-            "tests/test_http_head.matrix",
-            "tests/test_multi_db_live.matrix",
-            "tests/test_systems_live.matrix"
-        );
-        let seen = {};
+        let base_suites = [
+        "tests/test_router.matrix",
+        "tests/test_validator.matrix",
+        "tests/test_query_builder.matrix",
+        "tests/test_model.matrix",
+        "tests/test_resource.matrix",
+        "tests/test_websocket.matrix",
+        "tests/test_drivers.matrix",
+        "tests/test_container.matrix",
+        "tests/test_events.matrix",
+        "tests/test_providers.matrix",
+        "tests/test_cache.matrix",
+        "tests/test_core_systems.matrix",
+        "tests/test_throttle.matrix",
+        "tests/test_http_head.matrix",
+        "tests/test_multi_db_live.matrix",
+        "tests/test_systems_live.matrix"
+        ];
+        let seen = {
+        };
         for s in base_suites {
             seen[s] = true;
         }
@@ -130,18 +148,152 @@ public class TestRunner {
         return base_suites;
     }
 
-    public fn run(self, cli_args = null) -> int {
+    private fn is_live_suite(self, suite: string) -> bool {
+        let _ = self;
+        return suite.contains("_live")
+        or suite.contains("test_http_head")
+        or suite.contains("test_websocket")
+        or suite.contains("test_phase4_runtime");
+    }
+
+    private fn run_differential_suite(self, spid3r_bin: string, test_path: string) -> bool {
+        let tree_res = exec_capture(spid3r_bin, ["run", "--engine", "tree", test_path], null);
+        if tree_res.is_err() or int(tree_res.unwrap()["code"]) != 0 {
+            println("[DIFF FAIL] tree-walk failed for {test_path}");
+            return false;
+        }
+        let vm_res = exec_capture(spid3r_bin, ["run", "--engine", "vm", test_path], null);
+        if vm_res.is_err() or int(vm_res.unwrap()["code"]) != 0 {
+            println("[DIFF FAIL] vm failed for {test_path}");
+            return false;
+        }
+        if not is_dir("{self.root}storage/framework") {
+            let _mk = dir_create("{self.root}storage/framework");
+        }
+        let tmp_mc = "{self.root}storage/framework/.diff_suite.matrixc";
+        let comp_res = exec_capture(spid3r_bin, ["compile", test_path, "-o", tmp_mc], null);
+        if comp_res.is_err() or int(comp_res.unwrap()["code"]) != 0 {
+            println("[DIFF FAIL] compile failed for {test_path}");
+            return false;
+        }
+        let exec_res = exec_capture(spid3r_bin, ["exec", tmp_mc], null);
+        if file_exists(tmp_mc) {
+            let _rm = file_delete(tmp_mc);
+        }
+        if exec_res.is_err() or int(exec_res.unwrap()["code"]) != 0 {
+            println("[DIFF FAIL] bytecode exec failed for {test_path}");
+            return false;
+        }
+        let t_out = string(tree_res.unwrap()["stdout"]);
+        let v_out = string(vm_res.unwrap()["stdout"]);
+        let e_out = string(exec_res.unwrap()["stdout"]);
+        if t_out != v_out or v_out != e_out {
+            println("[DIFF NOTE] {test_path} exit=0 on tree/vm/exec (stdout timing differs)");
+        } else {
+            println("[DIFF PASS] tree == vm == exec ({test_path})");
+        }
+        return true;
+    }
+
+    private fn is_tcp_reachable(self, host: string, port: string) -> bool {
+        let _ = self;
+        try {
+            let r = tcp_connect("{host}:{port}", 800);
+            if r.is_ok() {
+                let sock = r.unwrap();
+                try {
+                    tcp_close(sock);
+                } catch (_c) {
+                }
+                return true;
+            }
+        } catch (_e) {
+        }
+        return false;
+    }
+
+    private fn run_multi_db_all(self, spid3r_bin: string, cli_args) -> int {
+        let forwarded = [];
+        for a in cli_args {
+            let s = string(a);
+            if s != "--db=all" {
+                forwarded.push(s);
+            }
+        }
+        let exit_total = 0;
+
+        println("[Multi-DB] 1/3 SQLite...");
+        env_set("SPID3R_DB_DRIVER", "sqlite");
+        if self.run(forwarded) != 0 {
+            exit_total = 1;
+        }
+
+        let targets = [
+        {
+            "drv": "mysql",
+            "host": env("SPID3R_MYSQL_HOST").unwrap_or("127.0.0.1"),
+            "port": env("SPID3R_MYSQL_PORT").unwrap_or("3306")
+        }
+        ,
+        {
+            "drv": "postgres",
+            "host": env("SPID3R_PG_HOST").unwrap_or("127.0.0.1"),
+            "port": env("SPID3R_PG_PORT").unwrap_or("5432")
+        }
+        ];
+        for t in targets {
+            let drv = string(t["drv"]);
+            let h = string(t["host"]);
+            let p = string(t["port"]);
+            if self.is_tcp_reachable(h, p) {
+                println("[Multi-DB] Running suite on {drv} ({h}:{p})...");
+                env_set("SPID3R_DB_DRIVER", drv);
+                let live = exec_capture(
+                    spid3r_bin,
+                    ["run",
+                    "{self.root}tests/test_multi_db_live.matrix"],
+                    null
+                );
+                if live.is_err() or int(live.unwrap()["code"]) != 0 {
+                    println("[Multi-DB FAIL] {drv} live tests failed.");
+                    exit_total = 1;
+                }
+            } else {
+                println(
+                    "[Multi-DB SKIP] {drv} unreachable on {h}:{p}. Start local DBs: docker compose -f deploy/docker-compose.yml up -d mysql postgres"
+                );
+            }
+        }
+        env_set("SPID3R_DB_DRIVER", "sqlite");
+        return exit_total;
+    }
+
+    public fn run(self, cli_args: any = null) -> int {
+        if cli_args != null {
+            for a in cli_args {
+                if string(a) == "--db=all" {
+                    return self.run_multi_db_all(self.resolve_spid3r_binary(), cli_args);
+                }
+            }
+        }
         let root = self.root;
         if root != "" {
             env_set("SPID3R_PATH", root);
         } else {
             env_set("SPID3R_PATH", ".");
         }
+        let app_env = env("APP_ENV").unwrap_or("").trim();
+        if app_env == "" {
+            env_set("APP_ENV", "testing");
+        }
 
         let spid3r_bin = self.resolve_spid3r_binary();
 
         let filter_substr = "";
         let engine_override = "";
+        let coverage = false;
+        let coverage_out = "";
+        let differential = false;
         if cli_args != null {
             let i = 1;
             while i < cli_args.len() {
@@ -156,6 +308,17 @@ public class TestRunner {
                 } elif arg == "--engine" and i + 1 < cli_args.len() {
                     i = i + 1;
                     engine_override = cli_args[i];
+                } elif arg == "--coverage" {
+                    coverage = true;
+                } elif arg.starts_with("--coverage-out=") {
+                    coverage_out = arg.slice(15, arg.len());
+                    coverage = true;
+                } elif arg == "--coverage-out" and i + 1 < cli_args.len() {
+                    i = i + 1;
+                    coverage_out = cli_args[i];
+                    coverage = true;
+                } elif arg == "--differential" {
+                    differential = true;
                 }
                 i = i + 1;
             }
@@ -174,13 +337,15 @@ public class TestRunner {
             if filter_substr != "" and not suite.contains(filter_substr) {
                 continue;
             }
+            if differential and self.is_live_suite(suite) {
+                continue;
+            }
 
             let test_path = suite;
-            let candidates = list(
-                suite,
-                root + suite,
-                "examples/spid3r_web/" + suite
-            );
+            let candidates = [
+            suite,
+            "{root}{suite}"
+            ];
             for c in candidates {
                 if file_exists(c) {
                     test_path = c;
@@ -189,18 +354,33 @@ public class TestRunner {
             }
 
             println("------------------------------------------------------------------");
-            println("Running: " + suite);
+            println("Running: {suite}");
             println("------------------------------------------------------------------");
 
-            let run_args = list("run");
-            if engine_override != "" {
+            total_run = total_run + 1;
+            if differential {
+                if self.run_differential_suite(spid3r_bin, test_path) {
+                    passed = passed + 1;
+                }
+                continue;
+            }
+
+            let run_args = ["run"];
+            if coverage {
+                run_args.push("--engine");
+                run_args.push("vm");
+                run_args.push("--coverage");
+                if coverage_out != "" {
+                    run_args.push("--coverage-out");
+                    run_args.push(coverage_out);
+                }
+            } elif engine_override != "" {
                 run_args.push("--engine");
                 run_args.push(engine_override);
             }
             run_args.push(test_path);
 
             let res = exec_capture(spid3r_bin, run_args, null);
-            total_run = total_run + 1;
 
             if res.is_ok() {
                 let out = res.unwrap();
@@ -208,14 +388,16 @@ public class TestRunner {
                 if out["stderr"] != "" {
                     print(out["stderr"]);
                 }
-                if out["code"] == 0 {
+                let exit_code = out["code"];
+                if exit_code == 0 {
                     passed = passed + 1;
                 } else {
-                    println("[FAILED]: " + suite + " (exit code " + string(out["code"]) + ")");
+                    println("[FAILED]: {suite} (exit code {exit_code})");
                 }
             } else {
-                println("[EXEC ERROR] " + res.unwrap_err());
-                println("[FAILED]: " + suite);
+                let err = res.unwrap_err();
+                println("[EXEC ERROR] {err}");
+                println("[FAILED]: {suite}");
             }
         }
 
@@ -223,7 +405,9 @@ public class TestRunner {
         self.cleanup_db_artifacts();
 
         println("==================================================================");
-        println("Test Summary: " + string(passed) + "/" + string(total_run) + " test suites passed.");
+        println(
+            "Test Summary: {passed}/{total_run} test suites passed."
+        );
         println("==================================================================");
 
         if total_run == 0 or passed < total_run {

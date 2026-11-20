@@ -1,0 +1,469 @@
+// framework/Foundation/Application.matrix
+// Spid3rWeb Application Kernel & HTTP Request Coordinator
+
+import "framework/Http/Request";
+import "framework/Http/Response";
+import "framework/Http/Router";
+import "framework/Http/Middleware";
+import "framework/Http/StaticFiles";
+import "framework/Http/Csrf";
+import "framework/Http/ErrorRenderer";
+import "framework/Http/HttpException";
+import "framework/Auth/Auth";
+import "framework/Foundation/Container";
+import "framework/Foundation/Config";
+import "framework/Foundation/RuntimeVersion";
+import "framework/Foundation/Server";
+import "framework/Events/Event";
+import "framework/Testing/TestClient";
+
+/// Core Spid3rWeb HTTP application kernel coordinating routing, middleware, CSRF, static files, and providers.
+public class Application {
+    public let router;
+    public let global_middleware;
+    public let base_path;
+    public let name;
+    public let env;
+    public let debug;
+    public let middleware_registry;
+    public let container;
+    public let providers;
+    private let booted;
+
+    fn new (base_path: string = ".") {
+        self.base_path = base_path;
+        self.router = Route;
+        self.global_middleware = [new CorsMiddleware()];
+        self.name = "Spid3rWeb";
+        self.env = resolve_app_env();
+        self.debug = resolve_app_debug();
+        self.container = new ServiceContainer();
+        self.providers = [];
+        self.booted = false;
+        let me = self;
+        self.container.instance("app", me);
+        self.container.singleton("router", fn(_c) {
+            return me.router;
+        });
+        self.container.singleton("events", fn(_c) {
+            return Event;
+        });
+        self.middleware_registry = {
+        };
+        self.middleware_registry["auth"] = fn(_args) {
+            return new AuthMiddleware();
+        };
+        self.middleware_registry["guest"] = fn(_args) {
+            return new GuestMiddleware();
+        };
+        self.middleware_registry["cors"] = fn(_args) {
+            return new CorsMiddleware();
+        };
+        self.middleware_registry["logger"] = fn(_args) {
+            return new LoggerMiddleware();
+        };
+        self.middleware_registry["etag"] = fn(_args) {
+            return new EtagMiddleware();
+        };
+        self.middleware_registry["request_id"] = fn(_args) {
+            return new RequestIdMiddleware();
+        };
+        self.middleware_registry["throttle"] = fn(args) {
+            let max_attempts = 60;
+            let decay_seconds = 60;
+            if args.len() > 0 {
+                max_attempts = int(args[0]);
+            }
+            if args.len() > 1 {
+                decay_seconds = int(args[1]);
+            }
+            return new ThrottleMiddleware(max_attempts, decay_seconds);
+        };
+    }
+
+    // ------------------------------------------------------------------------
+    // Express / Fastify-Style Direct Routing Helpers
+    // ------------------------------------------------------------------------
+
+    public fn get(self, path: string, handler: any) -> PendingRoute {
+        return self.router.get(path, handler);
+    }
+
+    public fn post(self, path: string, handler: any) -> PendingRoute {
+        return self.router.post(path, handler);
+    }
+
+    public fn put(self, path: string, handler: any) -> PendingRoute {
+        return self.router.put(path, handler);
+    }
+
+    public fn patch(self, path: string, handler: any) -> PendingRoute {
+        return self.router.patch(path, handler);
+    }
+
+    public fn delete(self, path: string, handler: any) -> PendingRoute {
+        return self.router.delete(path, handler);
+    }
+
+    public fn options(self, path: string, handler: any) -> PendingRoute {
+        return self.router.options(path, handler);
+    }
+
+    public fn any(self, path: string, handler: any) -> PendingRoute {
+        return self.router.any(path, handler);
+    }
+
+    public fn match_any(self, methods: list, path: string, handler: any) -> PendingRoute {
+        return self.router.match_any(methods, path, handler);
+    }
+
+    public fn group(self, options: map, callback: any) -> Router {
+        return self.router.group(options, callback);
+    }
+
+    public fn resource(self, path: string, controller: any) -> Router {
+        return self.router.resource(path, controller);
+    }
+
+    public fn bind(self, param: string, resolver: any) -> Application {
+        self.router.bind(param, resolver);
+        return self;
+    }
+
+    public fn fallback(self, handler: any) -> Router {
+        return self.router.fallback(handler);
+    }
+
+    public fn mount(self, prefix: string, sub_router: Router) -> Application {
+        self.router.mount(prefix, sub_router);
+        return self;
+    }
+
+    public fn test_client(self) -> TestClient {
+        return new TestClient(self);
+    }
+
+    public fn middleware(self, name: string, factory: any) -> Application {
+        self.middleware_registry[string(name).trim().lower()] = factory;
+        return self;
+    }
+
+    // ------------------------------------------------------------------------
+    // Service Provider Lifecycle
+    // ------------------------------------------------------------------------
+
+    public fn register(self, provider: any) -> Application {
+        provider.register(self.container);
+        self.providers.push(provider);
+        return self;
+    }
+
+    public fn boot(self) -> Application {
+        if self.booted {
+            return self;
+        }
+        // NOTE: `for x in list` iterates over COPIES in Spid3r — boot by index.
+        let i = 0;
+        let count = self.providers.len();
+        while i < count {
+            self.providers[i].boot(self.container);
+            i += 1;
+        }
+        self.booted = true;
+        Event.dispatch("app.booted", self);
+        return self;
+    }
+
+    public fn use(self, mw: any) -> Application {
+        self.global_middleware.push(mw);
+        return self;
+    }
+
+    // ------------------------------------------------------------------------
+    // HTTP Request Handler
+    // ------------------------------------------------------------------------
+
+    public fn handle_request(self, raw_req: any) -> map {
+        self.boot();
+        let req = new Request();
+        req.app = self;
+        req.res = new Response();
+        try {
+            if raw_req != null {
+                req.init_from_raw(raw_req);
+            }
+            req.res.set_https(req.is_secure());
+        } catch (parse_err) {
+            if is_http_exception(parse_err) {
+                return self.finalize_http_response(
+                    req,
+                    ErrorRenderer.http_error(req, parse_err)
+                );
+            }
+            return ErrorRenderer.server_error(req, parse_err);
+        }
+
+        let auth = new AuthManager();
+        req.auth = auth;
+        if req.session_id != "" {
+            auth.authenticate_token(req.session_id);
+        }
+        if auth.check() {
+            req.user_data = auth.user();
+        }
+
+        if req.method == "POST" or req.method == "PUT" or req.method == "PATCH" or req.method == "DELETE" {
+            let origin = req.header("origin", "");
+            if origin != "" and not is_same_origin(req, origin) {
+                let plain = response("403 Forbidden — cross-origin request rejected", 403);
+                plain.header("content-type", "text/plain");
+                return plain.to_http();
+            }
+            if not csrf_valid(req) {
+                return ErrorRenderer.csrf_timeout(req);
+            }
+        }
+
+        if (req.method == "GET" or req.method == "HEAD") and is_static_prefix(req.path) {
+            let static_res = try_serve_static(req.path, req, self.debug);
+            if static_res != null {
+                return static_res.to_http();
+            }
+            if is_unsafe_path(req.path) {
+                return ErrorRenderer.not_found(req);
+            }
+        }
+
+        let global_pipeline = new Pipeline();
+        let final_response = null;
+        try {
+            final_response = global_pipeline.send(req).through(self.global_middleware).then(fn(r) {
+                let match_result = self.router.match_route(r.method, r.path);
+                if match_result == null {
+                    if (r.method == "GET" or r.method == "HEAD") and is_root_static_file(r.path) {
+                        let root_static = try_serve_static(r.path, r, self.debug);
+                        if root_static != null {
+                            return root_static;
+                        }
+                    }
+                    if r.path == "/favicon.ico" {
+                        let icon = response("", 204);
+                        icon.header("content-type", "image/x-icon");
+                        return icon;
+                    }
+                    let allowed = self.router.allowed_methods(r.path);
+                    if allowed.len() > 0 {
+                        return text_405(allowed.join(", "));
+                    }
+                    if self.router.fallback_handler != null {
+                        let fb_res = self.router.fallback_handler(r);
+                        return self.coerce_handler_output(fb_res);
+                    }
+                    return ErrorRenderer.not_found(r);
+                }
+                let route_entry = match_result["route"];
+                r.params = match_result["params"];
+                r.bound_params = self.router.resolve_bindings(r.params);
+                let mw_instances = self.resolve_middleware(route_entry.middleware_list);
+                let route_pipeline = new Pipeline();
+                route_pipeline.send(r).through(mw_instances);
+                return route_pipeline.then(fn(inner_req) {
+                    try {
+                        let raw_out = self.router.dispatch(route_entry.handler, inner_req);
+                        return self.coerce_handler_output(raw_out);
+                    } catch (e) {
+                        if is_http_exception(e) {
+                            return ErrorRenderer.http_error(inner_req, e);
+                        }
+                        return ErrorRenderer.server_error(inner_req, e);
+                    }
+                });
+            });
+        } catch (e) {
+            if is_http_exception(e) {
+                return ErrorRenderer.http_error(req, e);
+            }
+            return ErrorRenderer.server_error(req, e);
+        }
+
+        if final_response == null {
+            let empty = response("", 200);
+            empty.header("content-type", "text/plain");
+            return self.finalize_http_response(req, empty.to_http());
+        }
+
+        return self.finalize_http_response(req, self.normalize_response(final_response));
+    }
+
+    fn coerce_handler_output(self, res: any) -> any {
+        let _ = self;
+        if res == null {
+            let empty = response("", 200);
+            empty.header("content-type", "text/plain");
+            return empty;
+        }
+        let t = type_of(res);
+        if t == "instance" {
+            return res;
+        }
+        if t == "map" {
+            if res.has("status") and res.has("headers") and res.has("body") {
+                return res;
+            }
+            return json(res, 200);
+        }
+        if t == "list" {
+            return json(res, 200);
+        }
+        if t == "string" {
+            return html(res, 200);
+        }
+        let txt = response(string(res), 200);
+        txt.header("content-type", "text/plain; charset=utf-8");
+        return txt;
+    }
+
+    fn normalize_response(self, res) {
+        let coerced = self.coerce_handler_output(res);
+        let out = null;
+        if type_of(coerced) == "map" and coerced.has("status") and coerced.has("headers") {
+            out = coerced;
+        } else {
+            out = coerced.to_http();
+        }
+        if out.has("headers") and out["headers"] != null {
+            let hdrs = out["headers"];
+            let ht = type_of(hdrs);
+            let has_acao = false;
+            let ct = "";
+            if ht == "map" {
+                for (hk, hv) in hdrs {
+                    let lk = string(hk).lower();
+                    if lk == "access-control-allow-origin" {
+                        has_acao = true;
+                    } elif lk == "content-type" {
+                        ct = string(hv);
+                    }
+                }
+            } elif ht == "list" {
+                for entry in hdrs {
+                    if type_of(entry) == "map" and entry.has("name") and entry.has("value") {
+                        let lk = string(entry["name"]).lower();
+                        if lk == "access-control-allow-origin" {
+                            has_acao = true;
+                        } elif lk == "content-type" {
+                            ct = string(entry["value"]);
+                        }
+                    }
+                }
+            }
+            if (ht == "map" or ht == "list") and not has_acao and ct.contains("application/json") {
+                append_http_header(out, "access-control-allow-origin", "*");
+                append_http_header(
+                    out,
+                    "access-control-allow-methods",
+                    "GET, POST, PUT, DELETE, PATCH, OPTIONS"
+                );
+                append_http_header(
+                    out,
+                    "access-control-allow-headers",
+                    "content-type, authorization, x-requested-with"
+                );
+            }
+        }
+        return out;
+    }
+
+    fn finalize_http_response(self, req: Request, http_map: map) -> map {
+        let _ = self;
+        let secure_req = req.is_secure();
+        if req.session_store != null and req.session_store.is_dirty() {
+            req.session_store.commit_to_http(http_map, secure_req);
+        }
+        if is_production() and secure_req and Config.get("security.hsts.auto_production_tls", true) == true {
+            if type_of(http_map) == "map" and http_map.has("headers") {
+                let hdrs = http_map["headers"];
+                let has_hsts = false;
+                if type_of(hdrs) == "map" {
+                    for (hk, _hv) in hdrs {
+                        if string(hk).lower() == "strict-transport-security" {
+                            has_hsts = true;
+                            break;
+                        }
+                    }
+                } elif type_of(hdrs) == "list" {
+                    for entry in hdrs {
+                        if type_of(entry) == "map" and entry.has("name") {
+                            if string(entry["name"]).lower() == "strict-transport-security" {
+                                has_hsts = true;
+                                break;
+                            }
+                        }
+                    }
+                }
+                if not has_hsts {
+                    append_http_header(
+                        http_map,
+                        "strict-transport-security",
+                        hsts_header_value()
+                    );
+                }
+            }
+        }
+        return http_map;
+    }
+
+    private fn resolve_middleware(self, mw_names) {
+        let resolved = [];
+        for name in mw_names {
+            if type_of(name) == "function" or type_of(name) == "instance" {
+                resolved.push(name);
+                continue;
+            }
+            let raw = string(name).trim().lower();
+            if raw == "" {
+                continue;
+            }
+            let base = raw;
+            let args = [];
+            let colon = raw.index_of(":");
+            if colon > 0 {
+                base = raw.slice(0, colon).trim();
+                let arg_str = raw.slice(colon + 1, raw.len()).trim();
+                if arg_str != "" {
+                    for a in arg_str.split(",") {
+                        args.push(a.trim());
+                    }
+                }
+            }
+            if self.middleware_registry.has(base) {
+                let factory = self.middleware_registry[base];
+                resolved.push(factory(args));
+            } else {
+                throw "Unknown middleware alias '{raw}'. Register it via app.middleware(\"{base}\", factory).";
+            }
+        }
+        return resolved;
+    }
+
+    public fn check_production_ready(self) {
+        let _ = self;
+        assert_app_key_configured();
+        assert_min_runtime_version();
+    }
+
+    public fn listen(self, port: int = 8000, host: string = "", server_opts: any = null) {
+        listen_http(self, port, host, server_opts);
+    }
+
+    public fn listen_tls(
+        self,
+        port: int,
+        cert_path: string,
+        key_path: string,
+        host: string = "",
+        server_opts: any = null
+    ) {
+        listen_https(self, port, cert_path, key_path, host, server_opts);
+    }
+}

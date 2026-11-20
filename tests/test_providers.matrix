@@ -2,22 +2,22 @@
 // Unit tests for the Spid3rWeb service provider lifecycle, Application
 // container wiring, and the guest middleware.
 
-import "framework/Application";
-import "framework/Providers/ServiceProvider";
-import "framework/Container/Container";
+import "framework/Foundation/Application";
+import "framework/Foundation/ServiceProvider";
+import "framework/Foundation/Container";
 import "framework/Events/Event";
-import "framework/Request";
-import "framework/Router";
-import "framework/Middleware";
+import "framework/Http/Request";
+import "framework/Http/Router";
+import "framework/Http/Middleware";
 import "framework/Auth/Auth";
-import "framework/Response";
+import "framework/Http/Response";
 
 // Shared provider implementations (class declarations are top-level only).
 class ProbeProvider extends ServiceProvider {
     public let boot_calls;
     public let register_calls;
 
-    fn new() {
+    fn new () {
         self.boot_calls = 0;
         self.register_calls = 0;
     }
@@ -25,7 +25,9 @@ class ProbeProvider extends ServiceProvider {
     public fn register(self, container) {
         self.register_calls = self.register_calls + 1;
         container.singleton("probe.service", fn(_c) {
-            return map("kind", "probe");
+            return {
+                "kind": "probe"
+            };
         });
     }
 
@@ -58,9 +60,18 @@ fn test_register_phase_bindings() {
 
     // Core bindings the Application itself registers.
     assert(app.container.bound("app"), "container exposes the application as 'app'");
-    assert(app.container.resolve("app") == app, "'app' binding returns the Application instance");
-    assert(app.container.resolve("router") == app.router, "'router' binding returns the app router");
-    assert(app.container.resolve("events") == Event, "'events' binding returns the event dispatcher");
+    assert(
+        app.container.resolve("app") == app,
+        "'app' binding returns the Application instance"
+    );
+    assert(
+        app.container.resolve("router") == app.router,
+        "'router' binding returns the app router"
+    );
+    assert(
+        app.container.resolve("events") == Event,
+        "'events' binding returns the event dispatcher"
+    );
     println("  [PASS] test_register_phase_bindings");
 }
 
@@ -71,7 +82,10 @@ fn test_boot_phase_idempotent() {
 
     assert(app.boot() != null, "boot() returns the app for chaining");
     assert(p.boot_calls == 1, "boot() runs the provider's boot exactly once");
-    assert(app.container.resolve("probe.booted") == true, "boot phase can seed the container");
+    assert(
+        app.container.resolve("probe.booted") == true,
+        "boot phase can seed the container"
+    );
 
     // Idempotent: a second boot must not re-run providers.
     app.boot();
@@ -81,9 +95,9 @@ fn test_boot_phase_idempotent() {
 
 fn test_booted_event_dispatched() {
     let app = new Application();
-    let fired = list();
+    let fired = [];
     let sink = fired;
-    Event.listen("app.booted", fn(payload, name) {
+    Event.listen("app.booted", fn(_payload, name) {
         sink.push(name);
         return null;
     });
@@ -101,27 +115,33 @@ fn test_lazy_boot_on_first_request() {
     app.register(p);
     assert(p.boot_calls == 0, "not booted before any request");
 
-    let captured = map("app", null, "booted_during", false);
+    let captured = {
+        "app": null, "booted_during": false
+    };
     let watch_booted = fn() {
         return captured["booted_during"];
     };
     // A probe route lets us inspect the request-facing application handle.
     Route.get("/__providers_probe__", fn(r) {
         captured["app"] = r.app;
-        return json(map("ok", true));
+        return json({
+            "ok": true
+        });
     });
 
-    let res = app.handle_request(
-        map("method", "GET", "path", "/__providers_probe__", "headers", map())
-    );
+    let res = app.handle_request({
+        "method": "GET", "path": "/__providers_probe__", "headers": {
+        }
+    });
     assert(res["status"] == 200, "probe route answers 200");
     assert(p.boot_calls == 1, "first request lazy-boots the providers");
     assert(captured["app"] == app, "handlers receive the application via req.app");
 
     // Unknown paths still 404 cleanly with providers booted.
-    let missing = app.handle_request(
-        map("method", "GET", "path", "/__no_such_route__", "headers", map())
-    );
+    let missing = app.handle_request({
+        "method": "GET", "path": "/__no_such_route__", "headers": {
+        }
+    });
     assert(missing["status"] == 404, "unmatched route answers 404");
     assert(p.boot_calls == 1, "boot stayed single-shot across requests");
 
@@ -138,7 +158,9 @@ fn test_guest_middleware() {
     assert(gm.handle(req) == null, "guest passes through guest middleware");
 
     // Authenticated: redirected away from the guest-only page.
-    req.auth.current_user = map("id", 1, "email", "a@b.c");
+    req.auth.current_user = {
+        "id": 1, "email": "a@b.c"
+    };
     let res = gm.handle(req);
     assert(res != null, "authenticated user is short-circuited");
     assert(res.status_code == 302, "authenticated guest-route visit redirects (302)");
@@ -155,16 +177,17 @@ fn test_middleware_alias_resolution() {
     // Built-in aliases resolve to instances with .handle(req).
     for alias in ["auth", "guest", "cors", "logger"] {
         assert(app.middleware_registry.has(alias), "alias registered: " + alias);
-        let mw = app.middleware_registry[alias](list());
+        let mw = app.middleware_registry[alias]([]);
         assert(mw != null, "alias factory returns a middleware: " + alias);
     }
     // Unknown aliases must fail loudly (defensive contract, re-checked here).
     let threw = false;
     try {
-        app.handle_request(
-            map("method", "GET", "path", "/__no_such_route__", "headers", map())
-        );
-    } catch (e) {
+        app.handle_request({
+            "method": "GET", "path": "/__no_such_route__", "headers": {
+            }
+        });
+    } catch (_e) {
         threw = true;
     }
     assert(not threw, "clean request path never throws");

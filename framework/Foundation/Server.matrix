@@ -1,0 +1,98 @@
+// framework/Foundation/Server.matrix
+// HTTP & TLS TCP listener bootstrap extracted from Application.matrix.
+
+import "http";
+import "framework/Foundation/Config";
+
+public fn resolve_bind_host(host: string) -> string {
+    let bind_host = string(host).trim();
+    if bind_host != "" {
+        return bind_host;
+    }
+    let env_host = env("SPID3R_HOST").unwrap_or("").trim();
+    if env_host != "" {
+        return env_host;
+    }
+    return "127.0.0.1";
+}
+
+public fn build_server_opts(server_opts: any, is_tls: bool) -> map {
+    let drain_ms = int(Config.get("http.drain_ms", 2_000));
+    let opts = {
+        "access_log": false, "keep_alive": true, "drain_ms": drain_ms
+    };
+    let max_body = int(Config.get("http.max_body_bytes", 0));
+    if max_body > 0 {
+        opts["max_body_bytes"] = max_body;
+    }
+    let max_hdrs = int(Config.get("http.max_headers", 0));
+    if max_hdrs > 0 {
+        opts["max_headers"] = max_hdrs;
+    }
+    let timeout_ms = int(Config.get("http.timeout_ms", 0));
+    if timeout_ms > 0 {
+        opts["timeout_ms"] = timeout_ms;
+    }
+    let keepalive_ms = int(Config.get("http.keepalive_ms", 0));
+    if keepalive_ms > 0 {
+        opts["idle_timeout_ms"] = keepalive_ms;
+    }
+    if is_tls {
+        opts["tls"] = true;
+    }
+    if server_opts != null and type_of(server_opts) == "map" {
+        for (k, v) in server_opts {
+            opts[string(k)] = v;
+        }
+    }
+    return opts;
+}
+
+/// Bind and run an HTTP/1.1 TCP listener for `app` with configured limits and graceful drain.
+public fn listen_http(app: any, port: int = 8000, host: string = "", server_opts: any = null) {
+    app.check_production_ready();
+    let bind_host = resolve_bind_host(host);
+    app.boot();
+    let r = tcp_listen("{bind_host}:{port}");
+    if r.is_err() {
+        throw r.unwrap_err();
+    }
+    let listener = r.unwrap();
+    let real_addr = tcp_local_addr(listener).unwrap();
+    let app_ref = app;
+    let opts = build_server_opts(server_opts, false);
+    println("[Spid3rWeb] Server ({app.env}) running on http://{real_addr}");
+    println("[Spid3rWeb] Press Ctrl+C to stop the server\n");
+
+    let _count = serve_listener(listener, fn(raw_req) {
+        return app_ref.handle_request(raw_req);
+    }, opts, -1);
+}
+
+/// Bind and run a native TLS HTTPS listener for `app` using `cert_path` and `key_path`.
+public fn listen_https(
+    app: any,
+    port: int,
+    cert_path: string,
+    key_path: string,
+    host: string = "",
+    server_opts: any = null
+) {
+    app.check_production_ready();
+    let bind_host = resolve_bind_host(host);
+    app.boot();
+    let r = tls_listen(cert_path, key_path, "{bind_host}:{port}");
+    if r.is_err() {
+        throw r.unwrap_err();
+    }
+    let listener = r.unwrap();
+    let real_addr = tcp_local_addr(listener).unwrap();
+    let app_ref = app;
+    let opts = build_server_opts(server_opts, true);
+    println("[Spid3rWeb] HTTPS server running on https://{real_addr}");
+    println("[Spid3rWeb] Press Ctrl+C to stop the server\n");
+
+    let _count = serve_listener(listener, fn(raw_req) {
+        return app_ref.handle_request(raw_req);
+    }, opts, -1);
+}

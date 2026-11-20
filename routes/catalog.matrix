@@ -3,7 +3,7 @@
 // Every route is permission-gated; state-changing calls additionally pass
 // through the framework's CSRF layers (include _csrf for cookie sessions).
 
-import "framework/Router";
+import "framework/Http/Router";
 import "app/Controllers/AdminCatalogController";
 
 public fn register_catalog_routes() {

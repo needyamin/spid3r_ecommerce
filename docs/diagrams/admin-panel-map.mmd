@@ -1,0 +1,33 @@
+%% Spid3r Store — admin panel module map
+flowchart TB
+    subgraph ADMIN["Admin Panel (role:admin / permission:* gates)"]
+        SH["admin shell layout<br/>resources/views/admin/shell.bd.html + admin_nav"]
+        DASH["/admin/dashboard<br/>KPIs: revenue, orders, low stock"]
+        subgraph CATALOG["Catalog (AdminCatalogController)"]
+            PROD["Products — CRUD, gallery, variants, SEO"]
+            CAT["Categories — tree, safe delete"]
+            BRAND["Brands — CRUD"]
+            INV["Inventory — restock, set stock, low-stock filter"]
+        end
+        subgraph OPS["Operations"]
+            ORD["Orders — status pipeline, invoice"]
+            CUST["Customers — suspend/activate"]
+            STAFF["Staff + Roles — RBAC assignment"]
+            SHIP["Shipping — zones, rates"]
+            PAYM["Payments — gateway lab, refunds"]
+        end
+        subgraph MISC["Extras"]
+            CPN["Coupons"]
+            AUD["Audit log"]
+            REP["Reports + export"]
+            SET["Settings — key/value (general, shipping, payment)"]
+        end
+        API["JSON APIs /admin/api/*<br/>Accept: application/json + _csrf"]
+    end
+    SH --> DASH
+    DASH --> CATALOG
+    DASH --> OPS
+    DASH --> MISC
+    CATALOG --> API
+    OPS --> API
+    MISC --> API

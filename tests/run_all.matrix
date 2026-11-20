@@ -5,12 +5,7 @@ import "framework/Console/TestRunner";
 
 fn main() {
     let root = "";
-    if file_exists("framework") {
-        env_set("SPID3R_PATH", ".");
-    } elif file_exists("examples/spid3r_web/framework") {
-        env_set("SPID3R_PATH", "examples/spid3r_web");
-        root = "examples/spid3r_web/";
-    }
+    env_set("SPID3R_PATH", ".");
 
     let runner = new TestRunner(root);
     return runner.run(args());

@@ -2,11 +2,11 @@
 // Phase 3 — HTTP layer for accounts. No business logic here: everything
 // delegates to AuthService, AuthValidators or AccessPolicy.
 
-import "framework/Response";
-import "framework/Config/Config";
-import "framework/HttpException";
+import "framework/Http/Response";
+import "framework/Foundation/Config";
+import "framework/Http/HttpException";
 import "framework/View/BD";
-import "framework/Container/Container";
+import "framework/Foundation/Container";
 import "framework/Database/DB";
 import "app/Services/AuthService";
 import "app/Services/AdvancedStoreService";

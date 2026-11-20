@@ -1,0 +1,162 @@
+// framework/Database/QueryCompiler.matrix
+// Stateless SQL compilation helpers extracted from QueryBuilder.matrix.
+
+import "Driver";
+import "Connection";
+
+// Allowed SQL comparison operators — unknown operators fall back to "=".
+public fn check_sql_op(op: string) -> string {
+    let allowed = ["=", "!=", "<>", "<", ">", "<=", ">=", "LIKE", "NOT LIKE", "IN", "NOT IN"];
+    let candidate = string(op).trim().upper();
+    for a in allowed {
+        if candidate == a {
+            return candidate;
+        }
+    }
+    return "=";
+}
+
+public fn compile_condition(w: map, params: list) -> string {
+    let op = w["op"];
+    if op == "GROUP" {
+        let sub_wheres = w["val"];
+        if sub_wheres == null or sub_wheres.len() == 0 {
+            return "1 = 1";
+        }
+        let inner = "";
+        let first = true;
+        for sw in sub_wheres {
+            if not first {
+                let b = sw["bool"];
+                inner = "{inner} {b} ";
+            }
+            inner = inner + compile_condition(sw, params);
+            first = false;
+        }
+        return "({inner})";
+    }
+    let col = w["col"];
+    if op == "IN" or op == "NOT IN" {
+        let vals = w["val"];
+        if vals == null or vals.len() == 0 {
+            if op == "IN" {
+                return "1 = 0";
+            }
+            return "1 = 1";
+        }
+        let placeholders = [];
+        for v in vals {
+            placeholders.push("?");
+            params.push(v);
+        }
+        let ph = placeholders.join(", ");
+        return "{col} {op} ({ph})";
+    }
+    if op == "IS NULL" or op == "IS NOT NULL" {
+        return "{col} {op}";
+    }
+    params.push(w["val"]);
+    return "{col} {op} ?";
+}
+
+public fn compile_where_clause(wheres: list, params: list) -> string {
+    if wheres.len() == 0 {
+        return "";
+    }
+    let sql = " WHERE ";
+    let first = true;
+    for w in wheres {
+        if not first {
+            let b = w["bool"];
+            sql = "{sql} {b} ";
+        }
+        sql = sql + compile_condition(w, params);
+        first = false;
+    }
+    return sql;
+}
+
+public fn compile_head(head_sql: string, table_name: string, joins: list, wheres: list) -> map {
+    let sql = "{head_sql} FROM {table_name}";
+    let params = [];
+
+    if joins.len() > 0 {
+        for j in joins {
+            let j_type = j["type"];
+            let j_table = j["table"];
+            if j_type == "CROSS" {
+                sql = "{sql} CROSS JOIN {j_table}";
+            } else {
+                let j_first = j["first"];
+                let j_op = j["op"];
+                let j_sec = j["second"];
+                sql = "{sql} {j_type} JOIN {j_table} ON {j_first} {j_op} {j_sec}";
+            }
+        }
+    }
+
+    sql = sql + compile_where_clause(wheres, params);
+    return {
+        "sql": sql, "params": params
+    };
+}
+
+public fn compile_select_sql(
+    table_name: string,
+    select_cols: list,
+    joins: list,
+    wheres: list,
+    order_col: string,
+    order_dir: string,
+    limit_override: int,
+    offset_override: int,
+    driver_name: string
+) -> map {
+    let cols_sql = select_cols.join(", ");
+    let head = compile_head("SELECT {cols_sql}", table_name, joins, wheres);
+    let sql = head["sql"];
+    let params = head["params"];
+
+    if order_col != "" {
+        sql = "{sql} ORDER BY {order_col} {order_dir}";
+    }
+
+    sql = sql + format_limit_sql(driver_name, limit_override, offset_override);
+
+    return {
+        "sql": sql, "params": params
+    };
+}
+
+public fn compile_insert_sql(table_name: string, data: map) -> map {
+    let keys = [];
+    let placeholders = [];
+    let params = [];
+    for (k, v) in data {
+        keys.push(sql_check_identifier(k));
+        placeholders.push("?");
+        params.push(v);
+    }
+    let key_sql = keys.join(", ");
+    let ph_sql = placeholders.join(", ");
+    return {
+        "sql": "INSERT INTO {table_name} ({key_sql}) VALUES ({ph_sql})",
+        "params": params
+    };
+}
+
+public fn compile_update_sql(table_name: string, data: map, wheres: list) -> map {
+    let set_clauses = [];
+    let params = [];
+    for (k, v) in data {
+        let col = sql_check_identifier(k);
+        set_clauses.push("{col} = ?");
+        params.push(v);
+    }
+    let set_sql = set_clauses.join(", ");
+    let where_sql = compile_where_clause(wheres, params);
+    return {
+        "sql": "UPDATE {table_name} SET {set_sql}{where_sql}",
+        "params": params
+    };
+}

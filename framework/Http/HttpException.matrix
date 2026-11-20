@@ -1,0 +1,90 @@
+// framework/HttpException.matrix
+// Spid3rWeb Typed HTTP Exceptions
+//
+// Handlers, middleware, and resources can abort request processing with a
+// meaningful status code instead of a generic 500:
+//
+//   import "framework/Http/HttpException";
+//
+//   let post = DB.table("posts").find(id);
+//   if post == null {
+//       throw not_found("Post not found.");
+//   }
+//   throw validation_failed(map("email", "The email has already been taken."));
+//
+// Application.handle_request catches these centrally and renders them
+// through ErrorRenderer.http_error: JSON payloads for /api/* paths and
+// Accept: application/json clients, HTML error cards otherwise. Anything
+// thrown that is NOT an http exception still becomes a 500 with a generic
+// message â€” internal details never leak.
+//
+// Exceptions are plain maps carrying a marker key (Spid3r's type_of cannot
+// tell class instances apart), built exclusively by the helpers below.
+
+// The one true constructor â€” helpers feed it; is_http_exception() checks it.
+public fn make_http_exception(status: int, message: string, errors: any = null) -> map {
+    let e = {
+        "__spid3rweb_exception": true,
+        "status": status,
+        "message": message
+    };
+    if errors != null {
+        e["errors"] = errors;
+    }
+    return e;
+}
+
+public fn is_http_exception(e: any) -> bool {
+    return type_of(e) == "map" and e.has("__spid3rweb_exception") and e["__spid3rweb_exception"] == true;
+}
+
+// Immediately abort request processing with an HTTP status code and message.
+/// Throw a typed HTTP exception map with status code and optional validation error map.
+public fn abort_http(status: int, message: string = "", errors: any = null) {
+    let msg = message;
+    if msg == "" {
+        msg = match (status) {
+            400 => "Bad Request.",
+            401 => "Authentication required.",
+            403 => "This action is unauthorized.",
+            404 => "Not Found.",
+            413 => "Payload Too Large.",
+            415 => "Unsupported Media Type.",
+            422 => "The given data was invalid.",
+            429 => "Too Many Requests.",
+            _ => "HTTP Error {status}"
+        };
+    }
+    throw make_http_exception(status, msg, errors);
+}
+
+// 400 â€” malformed request syntax.
+public fn bad_request(message: string = "Bad Request.") -> map {
+    return make_http_exception(400, message);
+}
+
+// 401 — unauthenticated (who are you?).
+public fn unauthorized(message: string = "Authentication required.") -> map {
+    return make_http_exception(401, message);
+}
+
+// 403 — authenticated but not allowed (I know who you are; no).
+public fn forbidden(message: string = "This action is unauthorized.") -> map {
+    return make_http_exception(403, message);
+}
+
+// 404 — resource does not exist.
+public fn not_found(message: string = "Not Found.") -> map {
+    return make_http_exception(404, message);
+}
+
+// 422 — request parsed but semantically invalid; `errors` maps field names
+// to their messages (validated with the framework Validator or by hand).
+public fn validation_failed(errors: any, message: string = "The given data was invalid.") -> map {
+    return make_http_exception(422, message, errors);
+}
+
+// 429 — rate limit exceeded.
+public fn too_many_requests(message: string = "Too Many Requests.") -> map {
+    return make_http_exception(429, message);
+}

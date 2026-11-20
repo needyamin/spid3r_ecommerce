@@ -5,7 +5,7 @@
 // page (it was a settings table stub in Phase 9). Same-origin POSTs are
 // CSRF-protected for signed-in staff by the framework.
 
-import "framework/Router";
+import "framework/Http/Router";
 import "app/Controllers/ShippingController";
 
 public fn register_shipping_routes() {

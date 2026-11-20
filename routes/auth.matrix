@@ -3,8 +3,8 @@
 // Login POST is rate-limited via the framework's cache-backed throttle
 // alias (5 attempts / 60 s per client). Admin area uses role:admin.
 
-import "framework/Router";
-import "framework/Response";
+import "framework/Http/Router";
+import "framework/Http/Response";
 import "framework/View/BD";
 import "app/Controllers/AuthController";
 import "app/Controllers/AdminController";

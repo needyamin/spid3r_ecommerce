@@ -33,38 +33,41 @@
 //   - Dispatch is safe from any task; there is no shared mutable state
 //     beyond the listener registry itself.
 
+/// Synchronous event pub/sub bus supporting exact names, trailing `*` wildcards, `once`, and subscribers.
 public class EventDispatcher {
     private let listeners;  // name-or-pattern -> list of map("id", int, "handler", fn, "once", bool)
-    private let next_id;    // monotonically increasing registration id
+    private let next_id;  // monotonically increasing registration id
 
-    fn new() {
-        self.listeners = map();
+    fn new () {
+        self.listeners = {
+        };
         self.next_id = 1;
     }
 
-    public fn listen(self, name: string, handler) {
+    public fn listen(self, name: string, handler: any) -> EventDispatcher {
         self.register(name, handler, false);
         return self;
     }
 
-    public fn once(self, name: string, handler) {
+    public fn once(self, name: string, handler: any) -> EventDispatcher {
         self.register(name, handler, true);
         return self;
     }
 
-    fn register(self, name: string, handler, once_flag: bool) {
+    fn register(self, name: string, handler: any, once_flag: bool) {
         if not self.listeners.has(name) {
-            self.listeners[name] = list();
+            self.listeners[name] = [];
         }
-        self.listeners[name].push(
-            map("id", self.next_id, "handler", handler, "once", once_flag)
-        );
+        self.listeners[name].push({
+            "id": self.next_id, "handler": handler, "once": once_flag
+        });
         self.next_id += 1;
     }
 
     // Does a registered pattern cover this event name? Exact keys match
     // trivially; patterns must end in "*".
     fn pattern_matches(self, pattern: string, name: string) -> bool {
+        let _ = self;
         if pattern == name {
             return true;
         }
@@ -77,15 +80,15 @@ public class EventDispatcher {
 
     // Collect the listeners that would fire, in firing order.
     fn matching(self, name: string) {
-        let matched = list();
+        let matched = [];
         if self.listeners.has(name) {
             for h in self.listeners[name] {
                 matched.push(h);
             }
         }
-        for pattern in self.listeners.keys() {
+        for (pattern, pat_list) in self.listeners {
             if pattern != name and self.pattern_matches(pattern, name) {
-                for h in self.listeners[pattern] {
+                for h in pat_list {
                     matched.push(h);
                 }
             }
@@ -95,10 +98,10 @@ public class EventDispatcher {
 
     // Fire all matching listeners. Returns a list with one entry per
     // listener: its return value (null when the handler returns nothing).
-    public fn dispatch(self, name: string, payload = null) {
+    public fn dispatch(self, name: string, payload: any = null) -> list {
         let matched = self.matching(name);
-        let results = list();
-        let spent = list();  // ids of once-listeners that fired
+        let results = [];
+        let spent = [];  // ids of once-listeners that fired
         for h in matched {
             let f = h["handler"];
             results.push(f(payload, name));
@@ -113,9 +116,9 @@ public class EventDispatcher {
     }
 
     fn remove_id(self, id: int) {
-        for key in self.listeners.keys() {
-            let kept = list();
-            for h in self.listeners[key] {
+        for (key, entries) in self.listeners {
+            let kept = [];
+            for h in entries {
                 if h["id"] != id {
                     kept.push(h);
                 }
@@ -132,7 +135,7 @@ public class EventDispatcher {
         if self.listeners.has(name) {
             return true;
         }
-        for pattern in self.listeners.keys() {
+        for (pattern, _entries) in self.listeners {
             if pattern != name and self.pattern_matches(pattern, name) {
                 return true;
             }
@@ -145,7 +148,7 @@ public class EventDispatcher {
     }
 
     // Remove every listener registered under exactly this name or pattern.
-    public fn forget(self, name: string) {
+    public fn forget(self, name: string) -> EventDispatcher {
         if self.listeners.has(name) {
             self.listeners.remove(name);
         }
@@ -164,13 +167,14 @@ public class EventDispatcher {
     //       }
     //   }
     //   Event.subscribe(new UserSubscriber());
-    public fn subscribe(self, subscriber) {
+    public fn subscribe(self, subscriber: any) -> EventDispatcher {
         subscriber.subscribe(self);
         return self;
     }
 
-    public fn flush(self) {
-        self.listeners = map();
+    public fn flush(self) -> EventDispatcher {
+        self.listeners = {
+        };
         self.next_id = 1;
         return self;
     }

@@ -1,0 +1,53 @@
+# Spid3rWeb production runtime guardrails for Spid3r v1.1.1+
+# Copy to `spid3r.ini` in the project root (or manage live via `spid3r-control`).
+# Every key below is verified against `spid3r config list` / `spid3r config validate`.
+
+[spid3r]
+# Bytecode VM is the default engine in v1.1.1+ ("vm" | "tree")
+engine = vm
+# Worker thread pool ceiling and shared ready-queue cap
+max_workers = 256
+queue_cap = 65536
+# Graceful shutdown drain window in milliseconds
+task_drain_ms = 2000
+
+[net]
+# HTTP/1.1 keep-alive idle timeout in milliseconds
+keepalive_ms = 5000
+# Per-request read/write socket framing deadline in milliseconds
+timeout_ms = 30000
+# Max HTTP request body size (10 MiB; 413 above)
+max_body = 10485760
+# Max number of HTTP headers per request (431 above)
+max_headers = 64
+# Note: connection limits are bounded by spid3r.max_workers / reverse proxy.
+# Database driver timeouts live in framework/Database/Connection.matrix
+# (SQLite busy_timeout=5000, PostgreSQL statement_timeout=30000).
+
+[runtime]
+# Soft memory limit in MiB for the script-value heap (0 = unlimited)
+memory_limit_mb = 512
+# Fatal execution deadline in ms per run (0 = unlimited)
+wall_clock_limit_ms = 0
+timezone = UTC
+
+[errors]
+level = info
+display = false
+
+[modules]
+# Ensure project-relative framework/*, config/*, and routes/* imports resolve
+path = .
+# Disable untrusted host/WASM dynamic plugins unless explicitly required
+allow_wasm = false
+allow_host = false
+# Block unused network/desktop stdlib modules in production servers
+disable = ssh, ftp, gui
+
+[security]
+# Open-basedir allowlist for file-taking natives (S4): confines runtime I/O
+# to static assets, storage, database, templates, and config directories.
+basedir = ./public, ./storage, ./database, ./resources, ./config
+# For dedicated `spid3r run server.matrix` deployments (without `magic migrate`
+# child spawns), also disable OS process execution natives:
+; disable_natives = spawn_process, exec_capture, run_payload, run_payload_strict

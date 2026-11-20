@@ -1,0 +1,23 @@
+%% Spid3r Store — authentication & RBAC flow
+sequenceDiagram
+    autonumber
+    participant U as User
+    participant AC as AuthController
+    participant AS as AuthService
+    participant DB as Database
+    participant MW as role:/permission: middleware
+
+    U->>AC: POST /register (throttle:5,60)
+    AC->>AS: register() — bcrypt hash via framework/Auth/Hash
+    AS->>DB: users row + customer role
+    U->>AC: POST /login (throttle:5,60)
+    AC->>AS: login() — verify hash, create session (sess_ token)
+    AS-->>U: Set-Cookie spid3r_session (HttpOnly, SameSite=Lax, Secure opt-in)
+    U->>MW: GET /admin (role:admin)
+    MW->>DB: AccessPolicy.is_admin(user_id) via user_roles
+    alt authorized
+        MW->>MW: next(req)
+    else not authorized
+        MW-->>U: 401 / 403 (unauthorized()/forbidden())
+    end
+    Note over AS,DB: CSRF: every state-changing POST/PUT/DELETE requires _csrf (419 on mismatch)

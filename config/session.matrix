@@ -10,12 +10,12 @@ public let config_session = {
     "driver": "database",
     "table": "sessions",
     // Seconds of inactivity before a session expires server-side
-    "lifetime": 86400,
+    "lifetime": 86_400,
     // Browser cookie settings (name overridable via env)
     "cookie_env": "SPID3R_SESSION_COOKIE",
     "cookie": "spid3r_session",
     "path": "/",
-    "secure": false,          // true behind HTTPS
+    "secure": false,  // true behind HTTPS
     "httponly": true,
     "same_site": "Lax",
     // 1-in-N requests opportunistically purge expired session rows

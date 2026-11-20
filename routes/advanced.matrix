@@ -6,7 +6,7 @@
 // JSON clients add format=json; browsers keep working with plain forms
 // (progressive enhancement — no JavaScript required).
 
-import "framework/Router";
+import "framework/Http/Router";
 import "app/Controllers/AdvancedController";
 
 public fn register_advanced_routes() {

@@ -7,8 +7,8 @@
 // 5. CSRF token enforcement and unauthenticated request rejection
 // 6. Verification of no unhandled 500 crashes and proper JSON error responses
 
-import "framework/Application";
-import "framework/Router";
+import "framework/Foundation/Application";
+import "framework/Http/Router";
 import "framework/Database/DB";
 import "routes/web";
 import "routes/queue";

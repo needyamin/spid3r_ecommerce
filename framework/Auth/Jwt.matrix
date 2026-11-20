@@ -5,7 +5,7 @@
 // Uses Spid3r native `hmac_sha256`, `base64_encode`, `base64_decode`,
 // and `secure_compare` for constant-time signature verification.
 
-import "framework/Config/Config";
+import "framework/Foundation/Config";
 
 fn b64url_encode(input: string) -> string {
     let b64 = base64_encode(input).replace("+", "-").replace("/", "_");
@@ -52,25 +52,28 @@ fn resolve_jwt_secret(custom_secret: string = "") -> string {
         return custom_secret;
     }
     let env_jwt = env("JWT_SECRET");
-    if env_jwt.is_some() and string(env_jwt.unwrap()).trim() != "" {
-        return string(env_jwt.unwrap()).trim();
+    if env_jwt.is_some() {
+        let s = string(env_jwt.unwrap()).trim();
+        if s != "" {
+            if is_production() and is_insecure_app_key(s) {
+                throw "Security error: JWT_SECRET must be at least 16 characters and not a default placeholder in production.";
+            }
+            return s;
+        }
     }
-    let app_key = string(Config.get("app.key", ""));
-    if app_key != "" {
-        return app_key;
-    }
-    let env_key = env("APP_KEY");
-    if env_key.is_some() and string(env_key.unwrap()).trim() != "" {
-        return string(env_key.unwrap()).trim();
-    }
-    return "spid3rweb-default-jwt-secret-key-change-in-prod";
+    return resolve_app_key();
 }
 
+/// Stateless HS256 JWT signer and constant-time verifier with expiration validation.
 public class JwtEngine {
-    public fn sign(self, payload, ttl: int = 3600, secret: string = "") -> string {
+    public fn sign(self, payload: any, ttl: int = 3600, secret: string = "") -> string {
+        let _ = self;
         let key = resolve_jwt_secret(secret);
-        let header_json = json_write({"alg": "HS256", "typ": "JWT"});
-        let claims = {};
+        let header_json = json_write({
+            "alg": "HS256", "typ": "JWT"
+        });
+        let claims = {
+        };
         if type_of(payload) == "map" {
             for (k, v) in payload {
                 if k != "password" {
@@ -92,7 +95,8 @@ public class JwtEngine {
         return signing_input + "." + sig;
     }
 
-    public fn verify(self, token: string, secret: string = "") {
+    public fn verify(self, token: string, secret: string = "") -> any {
+        let _ = self;
         if token == "" {
             return null;
         }
@@ -143,7 +147,8 @@ public class JwtEngine {
         return claims;
     }
 
-    public fn decode_unverified(self, token: string) {
+    public fn decode_unverified(self, token: string) -> any {
+        let _ = self;
         let parts = token.split(".");
         if parts.len() != 3 {
             return null;

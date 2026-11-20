@@ -1,0 +1,26 @@
+// app/Controllers/HomeController.matrix
+// Default web entry controller handling /, /health, and /info.
+
+import "framework/Http/Controller";
+import "framework/Http/Response";
+
+public class HomeController extends Controller {
+    fn new () {
+        let _ = self;
+    }
+
+    public fn index(self, _req: any) -> Response {
+        return self.view("welcome");
+    }
+
+    public fn health(self, _req: any) -> Response {
+        return self.ok({
+            "status": "ok"
+        });
+    }
+
+    public fn info(self, _req: any) -> Response {
+        let _ = self;
+        return html(string(spid3rinfo()));
+    }
+}

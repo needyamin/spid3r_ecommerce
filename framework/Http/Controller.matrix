@@ -1,0 +1,118 @@
+// framework/Http/Controller.matrix
+// Spid3rWeb Base Controller — the "C" of the MVC triad.
+// Every application controller extends this class and inherits fluent
+// response/view helpers plus shared view context (auth state, CSRF token).
+
+import "framework/Http/Response";
+import "framework/View/BD";
+import "framework/Auth/Auth";
+
+/// Base MVC controller providing JSON/view helpers, validation shortcuts, and shared template context.
+public class Controller {
+    fn new () {
+        let _ = self;
+    }
+
+    public fn json(self, data: any, status: int = 200) -> Response {
+        let _ = self;
+        return json(data, status);
+    }
+
+    public fn ok(self, data: any) -> Response {
+        let _ = self;
+        return json(data, 200);
+    }
+
+    public fn created(self, data: any) -> Response {
+        let _ = self;
+        return json(data, 201);
+    }
+
+    public fn no_content(self) -> Response {
+        let _ = self;
+        return response("", 204);
+    }
+
+    public fn view(self, view_name: string, data: any = null) -> Response {
+        let _ = self;
+        return view(view_name, data ?? {
+        });
+    }
+
+    // Preferred way to render a page: shared data (auth state, user, csrf_token)
+    // is merged automatically. Controllers just write:
+    //   return self.render(req, "posts.index", {"posts": posts});
+    public fn render(self, req: any, view_name: string, data: any = null) -> Response {
+        return self.view(view_name, self.shared(data ?? {
+        }, req));
+    }
+
+    // Raw body response with an explicit content type — for XML feeds,
+    // plain text, downloads.
+    public fn respond(self, body: string, content_type: string, status: int = 200) -> Response {
+        let _ = self;
+        let res = response(body, status);
+        res.header("content-type", content_type);
+        return res;
+    }
+
+    public fn redirect(self, url: string, status: int = 302) -> Response {
+        let _ = self;
+        return redirect(url, status);
+    }
+
+    public fn back(self, req: any, fallback: string = "/") -> Response {
+        let _ = self;
+        let referer = "";
+        if req != null {
+            referer = string(req.header("referer", fallback));
+        }
+        if referer == "" {
+            referer = fallback;
+        }
+        return redirect(referer, 302);
+    }
+
+    public fn validate(self, req: any, rules: map) -> any {
+        let _ = self;
+        return req.validate(rules);
+    }
+
+    public fn validate_or_fail(self, req: any, rules: map) -> map {
+        let _ = self;
+        return req.validate_or_fail(rules);
+    }
+
+    // Prefer the request-scoped AuthManager (safe under concurrent requests).
+    public fn auth(self, req: any = null) -> any {
+        let _ = self;
+        return req ?. auth ?? Auth;
+    }
+
+    // Merges caller data with auth-state variables (`is_auth`, `user`, `user_name`,
+    // `csrf_token`, `is_admin`).
+    public fn shared(self, data: any = null, req: any = null) -> map {
+        let out = data ?? {
+        };
+        let auth = self.auth(req);
+        out["is_auth"] = auth.check();
+
+        let user_name = "";
+        let user = auth.user();
+        out["user"] = user;
+        if user != null and user.has("name") {
+            user_name = string(user["name"]);
+        }
+        out["user_name"] = user_name;
+        out["csrf_token"] = auth.csrf();
+
+        out["is_admin"] = false;
+        if user != null and user.has("is_admin") and user["is_admin"] != null {
+            let adm = string(user["is_admin"]).lower();
+            if adm == "1" or adm == "true" {
+                out["is_admin"] = true;
+            }
+        }
+        return out;
+    }
+}

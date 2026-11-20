@@ -13,19 +13,25 @@ public let config_filesystems = {
             "driver": "local",
             "root": "storage/app",
             "visibility": "private",
-            "url": ""
-        },
+            "url": "",
+            "max_bytes": 52_428_800
+        }
+        ,
         "public": {
             "driver": "local",
             "root": "public/uploads",
             "visibility": "public",
-            "url": "/uploads"
-        },
+            "url": "/uploads",
+            "max_bytes": 52_428_800,
+            "blocked_extensions": ["html", "htm", "svg", "js", "mjs", "xhtml"]
+        }
+        ,
         "logs": {
             "driver": "local",
             "root": "storage/logs",
             "visibility": "private",
-            "url": ""
+            "url": "",
+            "max_bytes": 0
         }
     }
 };

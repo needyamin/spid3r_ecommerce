@@ -1,0 +1,469 @@
+// framework/Http/Router.matrix
+// Spid3rWeb High-Performance Pattern Router & Controller Dispatcher
+
+import "framework/Http/RouteMatcher";
+
+/// Registered route metadata binding an HTTP method, path pattern, handler, middleware, and name.
+public class RouteEntry {
+    public let method;
+    public let path;
+    public let handler;
+    public let middleware_list;
+    public let route_name;
+    public let segments;
+    public let is_static;
+    public let has_wildcard;
+    private let router_ref;
+
+    fn new (method: string, path: string, handler, router_ref = null) {
+        self.method = string(method).upper();
+        self.path = path;
+        self.handler = handler;
+        self.middleware_list = [];
+        self.route_name = "";
+        self.router_ref = router_ref;
+        self.segments = path.split("/");
+        self.is_static = true;
+        self.has_wildcard = false;
+
+        let i = 0;
+        let n = self.segments.len();
+        while i < n {
+            let seg = self.segments[i];
+            if seg.starts_with(":") or (seg.starts_with("{") and seg.ends_with("}")) {
+                self.is_static = false;
+            } elif seg.starts_with("*") {
+                self.is_static = false;
+                self.has_wildcard = true;
+            }
+            i += 1;
+        }
+    }
+
+    public fn middleware(self, mw: any) -> RouteEntry {
+        if type_of(mw) == "list" {
+            for m in mw {
+                self.middleware_list.push(m);
+            }
+        } else {
+            self.middleware_list.push(mw);
+        }
+        return self;
+    }
+
+    public fn name(self, n: string) -> RouteEntry {
+        if self.router_ref != null {
+            self.router_ref.register_named_route(self, n);
+        } else {
+            self.route_name = n;
+        }
+        return self;
+    }
+}
+
+/// O(1) static and prefix-bucketed dynamic pattern router with groups, resource routes, and mounting.
+public class Router {
+    private let routes_list;
+    private let static_routes;
+    private let dynamic_by_len;
+    private let wildcard_routes;
+    private let named_routes;
+    private let group_prefix;
+    private let group_name_prefix;
+    private let group_middleware;
+    private let param_binders;
+    public let fallback_handler;
+
+    public fn register_named_route(self, entry: RouteEntry, n: string) {
+        if self.group_name_prefix != "" {
+            entry.route_name = "{self.group_name_prefix}{n}";
+        } else {
+            entry.route_name = n;
+        }
+        if entry.route_name != "" {
+            self.named_routes[entry.route_name] = entry;
+        }
+    }
+
+    fn new () {
+        self.routes_list = [];
+        self.static_routes = {
+        };
+        self.dynamic_by_len = {
+        };
+        self.wildcard_routes = {
+        };
+        self.named_routes = {
+        };
+        self.group_prefix = "";
+        self.group_name_prefix = "";
+        self.group_middleware = [];
+        self.param_binders = {
+        };
+        self.fallback_handler = null;
+    }
+
+    public fn clear(self) -> Router {
+        self.routes_list = [];
+        self.static_routes = {
+        };
+        self.dynamic_by_len = {
+        };
+        self.wildcard_routes = {
+        };
+        self.named_routes = {
+        };
+        self.group_prefix = "";
+        self.group_name_prefix = "";
+        self.group_middleware = [];
+        self.param_binders = {
+        };
+        self.fallback_handler = null;
+        return self;
+    }
+
+    /// Register a route parameter resolver for model binding (`Route.bind("user", ...)`).
+    public fn bind(self, param: string, resolver: any) -> Router {
+        self.param_binders[string(param)] = resolver;
+        return self;
+    }
+
+    /// Resolve any bound route parameters into their hydrated domain objects.
+    public fn resolve_bindings(self, params: any) -> map {
+        let bound = {
+        };
+        if params == null or type_of(params) != "map" {
+            return bound;
+        }
+        for (k, v) in params {
+            let pk = string(k);
+            if self.param_binders.has(pk) {
+                let resolver = self.param_binders[pk];
+                bound[pk] = resolver(v);
+            }
+        }
+        return bound;
+    }
+
+    public fn fallback(self, handler: any) -> Router {
+        self.fallback_handler = handler;
+        return self;
+    }
+
+    public fn match_any(self, methods: list, path: string, handler: any) -> RouteEntry {
+        let entry = null;
+        for m in methods {
+            entry = self.add(m, path, handler);
+        }
+        return entry;
+    }
+
+    public fn any(self, path: string, handler: any) -> RouteEntry {
+        return self.match_any(
+            ["GET",
+            "POST",
+            "PUT",
+            "PATCH",
+            "DELETE",
+            "OPTIONS"],
+            path,
+            handler
+        );
+    }
+
+    public fn add(self, method: string, path: string, handler: any) -> RouteEntry {
+        let m = string(method).upper();
+        let full_path = self.group_prefix + path;
+        if full_path.len() > 1 and full_path.ends_with("/") {
+            full_path = full_path.slice(0, full_path.len() - 1);
+        }
+        if not full_path.starts_with("/") {
+            full_path = "/{full_path}";
+        }
+        while full_path.contains("//") {
+            full_path = full_path.replace("//", "/");
+        }
+
+        let entry = new RouteEntry(m, full_path, handler, self);
+        for mw in self.group_middleware {
+            entry.middleware(mw);
+        }
+        self.routes_list.push(entry);
+
+        if entry.is_static {
+            if not self.static_routes.has(m) {
+                self.static_routes[m] = {
+                };
+            }
+            if not self.static_routes[m].has(full_path) {
+                self.static_routes[m][full_path] = entry;
+            }
+        } elif entry.has_wildcard {
+            if not self.wildcard_routes.has(m) {
+                self.wildcard_routes[m] = [];
+            }
+            self.wildcard_routes[m].push(entry);
+        } else {
+            if not self.dynamic_by_len.has(m) {
+                self.dynamic_by_len[m] = {
+                };
+            }
+            let seg_key = string(entry.segments.len());
+            if not self.dynamic_by_len[m].has(seg_key) {
+                self.dynamic_by_len[m][seg_key] = {
+                    "all": [],
+                    "first_seg": {
+                    }
+                    ,
+                    "second_seg": {
+                    }
+                    ,
+                    "param_first": []
+                };
+            }
+            let bucket = self.dynamic_by_len[m][seg_key];
+            bucket["all"].push(entry);
+
+            let s1 = "";
+            if entry.segments.len() > 1 {
+                s1 = entry.segments[1];
+            }
+            if s1 == "" or s1.starts_with(":") or s1.starts_with("{") {
+                bucket["param_first"].push(entry);
+            } else {
+                if not bucket["first_seg"].has(s1) {
+                    bucket["first_seg"][s1] = [];
+                }
+                bucket["first_seg"][s1].push(entry);
+
+                if entry.segments.len() > 2 {
+                    let s2 = entry.segments[2];
+                    if not s2.starts_with(":") and not s2.starts_with("{") {
+                        let s12 = "{s1}/{s2}";
+                        if not bucket["second_seg"].has(s12) {
+                            bucket["second_seg"][s12] = [];
+                        }
+                        bucket["second_seg"][s12].push(entry);
+                    }
+                }
+            }
+        }
+
+        return entry;
+    }
+
+    public fn get(self, path: string, handler: any) -> RouteEntry {
+        return self.add("GET", path, handler);
+    }
+
+    public fn post(self, path: string, handler: any) -> RouteEntry {
+        return self.add("POST", path, handler);
+    }
+
+    public fn put(self, path: string, handler: any) -> RouteEntry {
+        return self.add("PUT", path, handler);
+    }
+
+    public fn delete(self, path: string, handler: any) -> RouteEntry {
+        return self.add("DELETE", path, handler);
+    }
+
+    public fn patch(self, path: string, handler: any) -> RouteEntry {
+        return self.add("PATCH", path, handler);
+    }
+
+    public fn options(self, path: string, handler: any) -> RouteEntry {
+        return self.add("OPTIONS", path, handler);
+    }
+
+    // Register standard RESTful controller endpoints under `path`:
+    // GET /, POST /, GET /:id, PUT /:id, PATCH /:id, DELETE /:id
+    public fn resource(self, path: string, controller: any) -> Router {
+        let base = path;
+        if base.len() > 1 and base.ends_with("/") {
+            base = base.slice(0, base.len() - 1);
+        }
+        let ctl = controller;
+        self.get(base, fn(req) {
+            return ctl.index(req);
+        });
+        self.post(base, fn(req) {
+            return ctl.store(req);
+        });
+        self.get("{base}/:id", fn(req) {
+            return ctl.show(req);
+        });
+        self.put("{base}/:id", fn(req) {
+            return ctl.update(req);
+        });
+        self.patch("{base}/:id", fn(req) {
+            return ctl.update(req);
+        });
+        self.delete("{base}/:id", fn(req) {
+            return ctl.destroy(req);
+        });
+        return self;
+    }
+
+    public fn mount(self, prefix: string, sub_router: Router) -> Router {
+        let sub_routes = sub_router.routes();
+        let i = 0;
+        while i < sub_routes.len() {
+            let r = sub_routes[i];
+            let entry = self.add(r.method, prefix + r.path, r.handler);
+            for mw in r.middleware_list {
+                entry.middleware(mw);
+            }
+            if r.route_name != "" {
+                entry.name(r.route_name);
+            }
+            i += 1;
+        }
+        return self;
+    }
+
+    public fn group(self, options: map, callback: any) -> Router {
+        let prev_prefix = self.group_prefix;
+        let prev_name_prefix = self.group_name_prefix;
+        let prev_mw = [];
+        for m in self.group_middleware {
+            prev_mw.push(m);
+        }
+
+        if options.has("prefix") {
+            let pfx = string(options["prefix"]);
+            self.group_prefix = "{self.group_prefix}{pfx}";
+        }
+        if options.has("name") {
+            let npfx = string(options["name"]);
+            self.group_name_prefix = "{self.group_name_prefix}{npfx}";
+        }
+        if options.has("middleware") {
+            let mw = options["middleware"];
+            if type_of(mw) == "list" {
+                for m in mw {
+                    self.group_middleware.push(m);
+                }
+            } else {
+                self.group_middleware.push(mw);
+            }
+        }
+
+        callback();
+
+        self.group_prefix = prev_prefix;
+        self.group_name_prefix = prev_name_prefix;
+        self.group_middleware = prev_mw;
+        return self;
+    }
+
+    public fn url(self, name: string, params: any = null) -> string {
+        let entry = null;
+        if self.named_routes.has(name) {
+            entry = self.named_routes[name];
+        } else {
+            for r in self.routes_list {
+                if r.route_name == name {
+                    entry = r;
+                    break;
+                }
+            }
+        }
+        if entry == null {
+            throw "Router: named route '{name}' is not defined";
+        }
+        return build_route_url(entry, name, params);
+    }
+
+    public fn match_route(self, method: string, request_path: string) -> any {
+        let m = string(method).upper();
+        let target_path = request_path;
+        if target_path.len() > 1 and target_path.ends_with("/") {
+            target_path = target_path.slice(0, target_path.len() - 1);
+        }
+
+        let matched = self.match_route_exact(m, target_path);
+        if matched == null and m == "HEAD" {
+            matched = self.match_route_exact("GET", target_path);
+        }
+        return matched;
+    }
+
+    private fn match_route_exact(self, m: string, target_path: string) {
+        if self.static_routes.has(m) {
+            let m_statics = self.static_routes[m];
+            if m_statics.has(target_path) {
+                return {
+                    "route": m_statics[target_path], "params": {
+                    }
+                };
+            }
+        }
+
+        let a_parts = null;
+
+        if self.dynamic_by_len.has(m) {
+            a_parts = target_path.split("/");
+            let seg_key = string(a_parts.len());
+            let m_dyn = self.dynamic_by_len[m];
+            if m_dyn.has(seg_key) {
+                let hit = match_dynamic_bucket(m_dyn[seg_key], a_parts);
+                if hit != null {
+                    return hit;
+                }
+            }
+        }
+
+        if self.wildcard_routes.has(m) {
+            if a_parts == null {
+                a_parts = target_path.split("/");
+            }
+            return match_wildcard_list(self.wildcard_routes[m], a_parts);
+        }
+
+        return null;
+    }
+
+    public fn allowed_methods(self, request_path: string) -> list {
+        let target_path = request_path;
+        if target_path.len() > 1 and target_path.ends_with("/") {
+            target_path = target_path.slice(0, target_path.len() - 1);
+        }
+        let found = [];
+        for route in self.routes_list {
+            if match_path(route.path, target_path) != null and not found.contains(route.method) {
+                found.push(route.method);
+            }
+        }
+        return found;
+    }
+
+    public fn dispatch(self, handler: any, req: any) -> any {
+        let _ = self;
+        try {
+            return handler(req);
+        } catch (e) {
+            let msg = string(e).lower();
+            if (
+                msg.contains("argument") or msg.contains("arity") or msg.contains("parameter")
+            ) and req.res != null {
+                let out = handler(req, req.res);
+                if out == null {
+                    return req.res;
+                }
+                return out;
+            }
+            throw e;
+        }
+    }
+
+    public fn routes(self) -> list {
+        return self.routes_list;
+    }
+}
+
+public let Route = new Router();
+
+public fn route_url(name: string, params: any = null) -> string {
+    return Route.url(name, params);
+}

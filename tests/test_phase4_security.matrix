@@ -1,0 +1,338 @@
+// tests/test_phase4_security.matrix
+// Phase 4 Security Regression Suite:
+//   S5 (upload limits + randomized names), S6 (config security headers + CSP + auto-HSTS),
+//   S7 (Argon2id/Bcrypt + rehash-on-login), S9 (CookieJar RFC 6265 validation),
+//   Trusted-proxy forwarding guards (X-Forwarded-For/Proto/Host).
+
+import "framework/Foundation/Application";
+import "framework/Foundation/Config";
+import "framework/Http/Request";
+import "framework/Http/RequestParser";
+import "framework/Http/Response";
+import "framework/Http/CookieJar";
+import "framework/Auth/Auth";
+import "framework/Auth/Hash";
+import "framework/Filesystem/Storage";
+import "framework/Database/DB";
+
+fn assert_eq(actual, expected, label: string) {
+    let a = string(actual);
+    let e = string(expected);
+    if a != e {
+        throw "FAIL [{label}]: expected '{e}', got '{a}'";
+    }
+}
+
+fn assert_true(cond: bool, label: string) {
+    if not cond {
+        throw "FAIL [{label}]: expected true, got false";
+    }
+}
+
+fn build_multipart_file(
+    boundary: string,
+    field: string,
+    filename: string,
+    mime: string,
+    body: string
+) -> string {
+    return "--{boundary}\r\n"
+    +"Content-Disposition: form-data; name=\"{field}\"; filename=\"{filename}\"\r\n"
+    +"Content-Type: {mime}\r\n\r\n"
+    +"{body}\r\n"
+    +"--{boundary}--\r\n";
+}
+
+fn test_security_headers_and_auto_hsts() {
+    let r = response("<h1>Hi</h1>");
+    let csp = string(r.headers["content-security-policy"]);
+    assert_true(
+        csp.contains("default-src 'self'"),
+        "default CSP restricts default-src to self"
+    );
+    assert_true(not csp.contains("unsafe-inline"), "default CSP omits unsafe-inline");
+
+    r.csp("default-src 'none'");
+    assert_eq(
+        r.headers["content-security-policy"],
+        "default-src 'none'",
+        "per-route CSP override works"
+    );
+    r.security_headers({
+        "x-frame-options": "DENY"
+    });
+    assert_eq(r.headers["x-frame-options"], "DENY", "security_headers override works");
+
+    let prev_env = env("APP_ENV").unwrap_or("");
+    let prev_key = env("APP_KEY").unwrap_or("");
+    let prev_tp = env("SPID3R_TRUSTED_PROXIES").unwrap_or("");
+    try {
+        env_set("APP_ENV", "production");
+        env_set("APP_KEY", "0123456789abcdef0123456789abcdef");
+        env_set("SPID3R_TRUSTED_PROXIES", "10.0.0.0/8");
+
+        let app = new Application();
+        app.router.clear();
+        app.get("/tls-check", (_req, res) => {
+            return res.text("ok");
+        });
+
+        // Trusted proxy forwarding HTTPS -> auto HSTS attached in production
+        let raw_https = app.handle_request({
+            "method": "GET",
+            "path": "/tls-check",
+            "remote": "10.0.0.4:50000",
+            "headers": {
+                "host": "app.test", "x-forwarded-proto": "https"
+            }
+            ,
+            "body": ""
+        });
+        assert_true(
+            raw_https["headers"].has("strict-transport-security"),
+            "production auto-HSTS enabled behind trusted TLS proxy"
+        );
+
+        // Plain HTTP -> no HSTS
+        let raw_http = app.handle_request({
+            "method": "GET",
+            "path": "/tls-check",
+            "remote": "198.51.100.7:50000",
+            "headers": {
+                "host": "app.test", "x-forwarded-proto": "https"
+            }
+            ,
+            "body": ""
+        });
+        assert_true(
+            not raw_http["headers"].has("strict-transport-security"),
+            "untrusted x-forwarded-proto does not trigger HSTS"
+        );
+    } finally {
+        env_set("APP_ENV", prev_env);
+        env_set("APP_KEY", prev_key);
+        env_set("SPID3R_TRUSTED_PROXIES", prev_tp);
+    }
+    println("  [PASS] test_security_headers_and_auto_hsts");
+}
+
+fn test_cookie_jar_validation() {
+    assert_true(is_valid_cookie_name("spid3r_sid"), "valid token cookie name accepted");
+    assert_true(not is_valid_cookie_name(""), "empty cookie name rejected");
+    assert_true(not is_valid_cookie_name("bad name"), "space in cookie name rejected");
+    assert_true(not is_valid_cookie_name("bad;name"), "semicolon in cookie name rejected");
+    assert_true(not is_valid_cookie_name("bad=name"), "equals in cookie name rejected");
+    assert_true(not is_valid_cookie_value("abc;foo"), "semicolon in cookie value rejected");
+    assert_true(not is_valid_cookie_path("relative"), "relative cookie path rejected");
+
+    let threw_bad = false;
+    try {
+        let _ = response("").cookie("bad name", "ok");
+    } catch (_e) {
+        threw_bad = true;
+    }
+    assert_true(threw_bad, "Response.cookie throws on invalid cookie name");
+
+    assert_true(resolve_cookie_secure(true, false), "explicit true sets Secure");
+    assert_true(not resolve_cookie_secure(false, true), "explicit false overrides HTTPS");
+    assert_true(resolve_cookie_secure(null, true), "HTTPS request sets Secure when null");
+
+    let jar = new CookieJar(true);
+    let hdr = jar.queue("sid", "abc");
+    assert_true(hdr.contains("; Secure"), "CookieJar appends Secure when is_https=true");
+    assert_true(hdr.contains("; HttpOnly"), "CookieJar appends HttpOnly");
+    println("  [PASS] test_cookie_jar_validation");
+}
+
+fn test_trusted_proxies() {
+    assert_eq(strip_ip_port("203.0.113.5:54321"), "203.0.113.5", "IPv4 port stripped");
+    assert_eq(strip_ip_port("[::1]:54321"), "::1", "IPv6 bracket port stripped");
+
+    let prev_tp = env("SPID3R_TRUSTED_PROXIES").unwrap_or("");
+    let prev_leg = env("SPID3R_TRUST_PROXY").unwrap_or("");
+    try {
+        env_set("SPID3R_TRUST_PROXY", "");
+        env_set("SPID3R_TRUSTED_PROXIES", "10.0.0.0/8,loopback");
+
+        // Spoofed headers from untrusted remote must be ignored
+        let untrusted = new Request({
+            "method": "GET",
+            "path": "/",
+            "remote": "198.51.100.42:4000",
+            "headers": {
+                "host": "real.example",
+                "x-forwarded-for": "1.2.3.4",
+                "x-forwarded-proto": "https",
+                "x-forwarded-host": "evil.example"
+            }
+            ,
+            "body": ""
+        });
+        assert_eq(untrusted.ip(), "198.51.100.42", "untrusted peer ignores x-forwarded-for");
+        assert_eq(untrusted.scheme(), "http", "untrusted peer ignores x-forwarded-proto");
+        assert_eq(untrusted.host(), "real.example", "untrusted peer ignores x-forwarded-host");
+
+        // Trusted proxy headers must be honored
+        let trusted = new Request({
+            "method": "GET",
+            "path": "/",
+            "remote": "10.1.2.3:4000",
+            "headers": {
+                "host": "internal:8000",
+                "x-forwarded-for": "203.0.113.99, 10.1.2.3",
+                "x-forwarded-proto": "https",
+                "x-forwarded-host": "app.example.com"
+            }
+            ,
+            "body": ""
+        });
+        assert_eq(trusted.peer_ip(), "10.1.2.3", "peer_ip returns socket remote");
+        assert_eq(trusted.ip(), "203.0.113.99", "trusted proxy honors x-forwarded-for");
+        assert_eq(trusted.scheme(), "https", "trusted proxy honors x-forwarded-proto");
+        assert_true(trusted.is_secure(), "is_secure true behind HTTPS proxy");
+        assert_eq(trusted.host(), "app.example.com", "trusted proxy honors x-forwarded-host");
+    } finally {
+        env_set("SPID3R_TRUSTED_PROXIES", prev_tp);
+        env_set("SPID3R_TRUST_PROXY", prev_leg);
+    }
+    println("  [PASS] test_trusted_proxies");
+}
+
+fn test_hash_argon2_bcrypt_and_rehash_on_login() {
+    let arg_hash = Hash.make("s3cr3t-pass");
+    assert_true(arg_hash.starts_with("$argon2id$"), "Hash.make defaults to argon2id PHC");
+    assert_true(Hash.check("s3cr3t-pass", arg_hash), "argon2id hash verifies");
+    assert_true(not Hash.check("wrong-pass", arg_hash), "argon2id rejects wrong password");
+    assert_true(not Hash.needs_rehash(arg_hash), "fresh default hash needs no rehash");
+
+    let bc_hash = Hash.make("s3cr3t-pass", {
+        "driver": "bcrypt", "rounds": 6
+    });
+    assert_true(bc_hash.starts_with("$2b$06$"), "bcrypt respects custom rounds");
+    assert_true(Hash.check("s3cr3t-pass", bc_hash), "bcrypt hash verifies");
+    assert_true(Hash.needs_rehash(bc_hash), "bcrypt hash needs rehash under argon2id default");
+    assert_true(Hash.needs_rehash(arg_hash, {
+        "time_cost": 3
+    }), "time_cost change triggers needs_rehash");
+
+    // Rehash-on-login against SQLite users table
+    let email = "__p4_rehash@example.test";
+    DB.statement("DELETE FROM users WHERE email = ?", [email]);
+    DB.statement(
+        "INSERT INTO users (name, email, password) VALUES (?, ?, ?)",
+        ["P4 User",
+        email,
+        bc_hash]
+    );
+    try {
+        assert_true(Auth.attempt(email, "s3cr3t-pass"), "Auth.attempt succeeds with bcrypt");
+        let rows = DB.select("SELECT password FROM users WHERE email = ?", [email]);
+        assert_true(rows.len() == 1, "rehashed user row exists");
+        let updated = string(rows[0]["password"]);
+        assert_true(
+            updated.starts_with("$argon2id$"),
+            "Auth.attempt auto-upgraded bcrypt -> argon2id"
+        );
+        assert_true(Hash.check("s3cr3t-pass", updated), "upgraded hash verifies password");
+        Auth.logout();
+    } finally {
+        DB.statement("DELETE FROM users WHERE email = ?", [email]);
+        DB.close();
+    }
+    println("  [PASS] test_hash_argon2_bcrypt_and_rehash_on_login");
+}
+
+fn test_upload_limits_and_public_disk_filters() {
+    let app = new Application();
+    app.router.clear();
+    app.post("/api/p4-upload", req => {
+        let saved = req.store_file("doc", "__p4_up", "public");
+        return {
+            "saved": saved
+        };
+    });
+
+    let orig_max = Config.get("upload.max_bytes", 5_242_880);
+    let orig_files = Config.get("upload.max_files", 10);
+    let saved_path = "";
+    try {
+        Config.set("upload.max_bytes", 64);
+        Config.set("upload.max_files", 1);
+        let client = app.test_client();
+
+        // 1. Oversized multipart file returns 413
+        let big_body = build_multipart_file(
+            "B4",
+            "doc",
+            "big.txt",
+            "text/plain",
+            "x".repeat(120)
+        );
+        client.request("POST", "/api/p4-upload", big_body, {
+            "content-type": "multipart/form-data; boundary=B4", "accept": "application/json"
+        }).assert_status(413);
+
+        // 2. Excess file count returns 413
+        let two_body = "--B4\r\nContent-Disposition: form-data; name=\"f1\"; filename=\"a.txt\"\r\nContent-Type: text/plain\r\n\r\nhi\r\n"
+        + "--B4\r\nContent-Disposition: form-data; name=\"f2\"; filename=\"b.txt\"\r\nContent-Type: text/plain\r\n\r\nhi\r\n--B4--\r\n";
+        client.request("POST", "/api/p4-upload", two_body, {
+            "content-type": "multipart/form-data; boundary=B4", "accept": "application/json"
+        }).assert_status(413);
+
+        // 3. Blocked executable/XSS extension returns 415
+        let bad_ext = build_multipart_file("B4", "doc", "xss.html", "text/html", "<b>hi</b>");
+        client.request("POST", "/api/p4-upload", bad_ext, {
+            "content-type": "multipart/form-data; boundary=B4", "accept": "application/json"
+        }).assert_status(415);
+
+        // 4. Valid file uses server-generated hex filename
+        let ok_body = build_multipart_file(
+            "B4",
+            "doc",
+            "my-secret-name.txt",
+            "text/plain",
+            "hello-ok"
+        );
+        let ok_res = client.request("POST", "/api/p4-upload", ok_body, {
+            "content-type": "multipart/form-data; boundary=B4", "accept": "application/json"
+        }).assert_ok();
+        let data = ok_res.json();
+        saved_path = string(data["saved"]);
+        assert_true(
+            not saved_path.contains("my-secret-name"),
+            "client filename replaced by random hex"
+        );
+        assert_true(saved_path.ends_with(".txt"), "safe extension preserved");
+
+        // 5. Storage public disk blocks .svg/.html/.js directly
+        let pub = Storage.disk("public");
+        let blocked_pub = false;
+        try {
+            pub.put("__p4_up/xss.svg", "<svg/>");
+        } catch (_e) {
+            blocked_pub = true;
+        }
+        assert_true(blocked_pub, "public Storage disk blocks .svg uploads");
+    } finally {
+        Config.set("upload.max_bytes", orig_max);
+        Config.set("upload.max_files", orig_files);
+        if saved_path != "" {
+            let _ = Storage.disk("public").delete(saved_path);
+        }
+        if is_dir("public/uploads/__p4_up") {
+            let _ = dir_remove("public/uploads/__p4_up");
+        }
+    }
+    println("  [PASS] test_upload_limits_and_public_disk_filters");
+}
+
+fn main() {
+    println("\n=== Running Phase 4 Security Hardening Suite ===");
+    test_security_headers_and_auto_hsts();
+    test_cookie_jar_validation();
+    test_trusted_proxies();
+    test_hash_argon2_bcrypt_and_rehash_on_login();
+    test_upload_limits_and_public_disk_filters();
+    println("=== All Phase 4 Security Hardening Tests Passed! ===\n");
+    return 0;
+}

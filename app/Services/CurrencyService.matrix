@@ -11,7 +11,7 @@
 // cookie can never produce a nonsense price.
 
 import "framework/Database/DB";
-import "framework/HttpException";
+import "framework/Http/HttpException";
 import "app/Support/Fx" as Fx;
 import "app/Support/Money" as Money;
 import "app/Support/CartIdentity" as CartIdentity;

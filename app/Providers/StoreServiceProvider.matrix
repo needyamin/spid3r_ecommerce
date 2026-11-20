@@ -6,8 +6,8 @@
 // boot():     register event listeners / queue-facing wiring that may
 //             touch other services. Runs once, after registration.
 
-import "framework/Providers/ServiceProvider";
-import "framework/Config/Config";
+import "framework/Foundation/ServiceProvider";
+import "framework/Foundation/Config";
 
 public class StoreServiceProvider extends ServiceProvider {
     public fn register(self, container) {

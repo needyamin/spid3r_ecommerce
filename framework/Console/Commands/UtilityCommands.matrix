@@ -1,0 +1,231 @@
+// framework/Console/Commands/UtilityCommands.matrix
+// Core developer CLI commands: test, route:list, db:seed, queue:work,
+// cache:clear, and key:generate.
+
+import "framework/Http/Router";
+import "framework/Database/DB";
+import "framework/Queue/Queue";
+import "framework/Cache/Cache";
+import "framework/Console/TestRunner";
+
+public class TestCommand {
+    public let name;
+    public let usage;
+    public let description;
+    private let kernel;
+
+    fn new (kernel) {
+        self.name = "test";
+        self.usage = "test [options]";
+        self.description = "Run the Spid3rWeb automated test suite";
+        self.kernel = kernel;
+    }
+
+    public fn handle(self, cli_args: list) -> int {
+        if env("SPID3R_MAGIC_TEST_GUARD").is_some() {
+            return 0;
+        }
+        env_set("SPID3R_MAGIC_TEST_GUARD", "1");
+        let runner = new TestRunner(self.kernel.resolve_root());
+        return runner.run(cli_args);
+    }
+}
+
+public class RouteListCommand {
+    public let name;
+    public let usage;
+    public let description;
+
+    fn new () {
+        self.name = "route:list";
+        self.usage = "route:list";
+        self.description = "List all registered application routes";
+    }
+
+    public fn handle(self, _cli_args: list) -> int {
+        let _ = self;
+        let routes = Route.routes();
+        println("\n+--------+------------------------------------+--------------------------------+");
+        println("| Method | URI                                | Action / Name                  |");
+        println("+--------+------------------------------------+--------------------------------+");
+
+        for r in routes {
+            let m_pad = r.method;
+            while m_pad.len() < 6 {
+                m_pad = "{m_pad} ";
+            }
+            let path_pad = r.path;
+            while path_pad.len() < 34 {
+                path_pad = "{path_pad} ";
+            }
+            let action_str = "Closure";
+            if type_of(r.handler) == "string" {
+                action_str = r.handler;
+            } elif r.route_name != "" {
+                let rn = r.route_name;
+                action_str = "Closure [{rn}]";
+            }
+            let a_pad = action_str;
+            while a_pad.len() < 30 {
+                a_pad = "{a_pad} ";
+            }
+            println("| {m_pad} | {path_pad} | {a_pad} |");
+        }
+        println("+--------+------------------------------------+--------------------------------+\n");
+        return 0;
+    }
+}
+
+public class DbSeedCommand {
+    public let name;
+    public let usage;
+    public let description;
+    private let kernel;
+
+    fn new (kernel) {
+        self.name = "db:seed";
+        self.usage = "db:seed";
+        self.description = "Seed the database with records";
+        self.kernel = kernel;
+    }
+
+    public fn handle(self, _cli_args: list) -> int {
+        println("[Database Seeder] Seeding database...");
+        let count = 0;
+        for seeder in self.kernel.seeders() {
+            seeder();
+            count = count + 1;
+        }
+        println("[Database Seeder] Complete. Executed {count} seeders.");
+        DB.close();
+        return 0;
+    }
+}
+
+public class QueueWorkCommand {
+    public let name;
+    public let usage;
+    public let description;
+
+    fn new () {
+        self.name = "queue:work";
+        self.usage = "queue:work [--once|--daemon] [--sleep=MS]";
+        self.description = "Process queued jobs";
+    }
+
+    public fn handle(self, cli_args: list) -> int {
+        let _ = self;
+        let once = false;
+        let daemon = false;
+        let sleep_ms_val = 500;
+        let queue = "";
+        let i = 0;
+        while i < cli_args.len() {
+            let a = string(cli_args[i]);
+            if a == "--once" {
+                once = true;
+            } elif a == "--daemon" {
+                daemon = true;
+            } elif a.starts_with("--sleep=") {
+                sleep_ms_val = int(a.slice(8, a.len()));
+            } elif a.starts_with("--queue=") {
+                queue = a.slice(8, a.len());
+            }
+            i = i + 1;
+        }
+
+        let label = queue;
+        if label == "" {
+            label = "default";
+        }
+        let pending = Queue.size(queue);
+        println("[Queue] worker on queue '{label}' — {pending} job(s) pending");
+
+        let processed = 0;
+        if once {
+            if Queue.run_next(queue) {
+                processed = processed + 1;
+            }
+        } elif daemon {
+            println("[Queue] daemon mode active (poll {sleep_ms_val} ms, Ctrl+C to stop)");
+            processed = Queue.work_daemon(sleep_ms_val, queue);
+        } else {
+            processed = Queue.work(0, queue);
+        }
+
+        println("[Queue] processed {processed} job(s) — done");
+        DB.close();
+        return 0;
+    }
+}
+
+public class CacheClearCommand {
+    public let name;
+    public let usage;
+    public let description;
+
+    fn new () {
+        self.name = "cache:clear";
+        self.usage = "cache:clear";
+        self.description = "Flush the application cache store";
+    }
+
+    public fn handle(self, _cli_args: list) -> int {
+        let _ = self;
+        Cache.flush();
+        println("[Magic] Application cache cleared.");
+        return 0;
+    }
+}
+
+public class KeyGenerateCommand {
+    public let name;
+    public let usage;
+    public let description;
+    private let kernel;
+
+    fn new (kernel) {
+        self.name = "key:generate";
+        self.usage = "key:generate";
+        self.description = "Generate a random 256-bit APP_KEY in .env";
+        self.kernel = kernel;
+    }
+
+    public fn handle(self, _cli_args: list) -> int {
+        let hex_str = hex_encode(random_bytes(32).unwrap());
+        let new_key = "hex:{hex_str}";
+        let root = self.kernel.resolve_root();
+        let env_path = "{root}.env";
+        let content = "";
+        if file_exists(env_path) {
+            let r = read_file(env_path);
+            if r.is_ok() {
+                content = string(r.unwrap());
+            }
+        }
+        if content.contains("APP_KEY=") {
+            let out_lines = [];
+            for line in content.split("\n") {
+                if line.trim().starts_with("APP_KEY=") {
+                    out_lines.push("APP_KEY={new_key}");
+                } else {
+                    out_lines.push(line);
+                }
+            }
+            content = out_lines.join("\n");
+        } else {
+            if content != "" and not content.ends_with("\n") {
+                content = "{content}\n";
+            }
+            content = "{content}APP_KEY={new_key}\n";
+        }
+        let w = write_file_atomic(env_path, content);
+        if w.is_err() {
+            let err = string(w.unwrap_err());
+            println("[Magic Error] {err}");
+            return 1;
+        }
+        println("[Magic] Application key set successfully in {env_path}");
+        return 0;
+    }
+}

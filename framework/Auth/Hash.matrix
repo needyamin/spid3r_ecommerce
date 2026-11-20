@@ -1,19 +1,246 @@
 // framework/Auth/Hash.matrix
-// Spid3rWeb Password Hashing Facade using Spid3r Stdlib Bcrypt
+// Spid3rWeb Password Hashing Facade (Argon2id + Bcrypt with Rehash Support)
 
+import "framework/Foundation/Config";
+
+const ARGON2_DEFAULT_MEM = 19_456;
+const ARGON2_DEFAULT_TIME = 2;
+const ARGON2_DEFAULT_LANES = 1;
+const ARGON2_DEFAULT_LEN = 32;
+const BCRYPT_DEFAULT_ROUNDS = 10;
+
+fn parse_int_or(text: string, fallback: int) -> int {
+    try {
+        return int(string(text).trim());
+    } catch (_e) {
+        return fallback;
+    }
+}
+
+/// Password hashing facade supporting Argon2id (default), Bcrypt, and transparent rehash checks.
 public class HashManager {
-    fn new() {}
+    fn new () {
+        let _ = self;
+    }
 
-    public fn make(self, plain_text: string) -> string {
-        return bcrypt_hash(plain_text);
+    private fn resolve_options(self, opts: any = null) -> map {
+        let _ = self;
+        let driver = string(Config.get("auth.hashing.driver", "argon2id")).trim().lower();
+        let env_drv = env("SPID3R_HASH_DRIVER");
+        if env_drv.is_some() and string(env_drv.unwrap()).trim() != "" {
+            driver = string(env_drv.unwrap()).trim().lower();
+        }
+        let variant = string(Config.get("auth.hashing.argon2.variant", "id")).trim().lower();
+        let time_cost = int(Config.get("auth.hashing.argon2.time_cost", ARGON2_DEFAULT_TIME));
+        let memory_cost = int(
+            Config.get("auth.hashing.argon2.memory_cost", ARGON2_DEFAULT_MEM)
+        );
+        let parallelism = int(
+            Config.get("auth.hashing.argon2.parallelism", ARGON2_DEFAULT_LANES)
+        );
+        let key_len = int(Config.get("auth.hashing.argon2.key_len", ARGON2_DEFAULT_LEN));
+        let rounds = int(Config.get("auth.hashing.bcrypt.rounds", BCRYPT_DEFAULT_ROUNDS));
+
+        if opts != null and type_of(opts) == "map" {
+            if opts.has("driver") {
+                driver = string(opts["driver"]).trim().lower();
+            }
+            if opts.has("variant") {
+                variant = string(opts["variant"]).trim().lower();
+            }
+            if opts.has("time_cost") {
+                time_cost = int(opts["time_cost"]);
+            }
+            if opts.has("memory_cost") {
+                memory_cost = int(opts["memory_cost"]);
+            }
+            if opts.has("parallelism") {
+                parallelism = int(opts["parallelism"]);
+            }
+            if opts.has("key_len") {
+                key_len = int(opts["key_len"]);
+            }
+            if opts.has("rounds") {
+                rounds = int(opts["rounds"]);
+            }
+        }
+        if driver == "argon2i" {
+            variant = "i";
+            driver = "argon2id";
+        } elif driver == "argon2d" {
+            variant = "d";
+            driver = "argon2id";
+        } elif driver == "argon2" {
+            driver = "argon2id";
+        }
+        if variant != "i" and variant != "d" and variant != "id" {
+            variant = "id";
+        }
+        if rounds < 4 {
+            rounds = 4;
+        } elif rounds > 31 {
+            rounds = 31;
+        }
+        return {
+            "driver": driver,
+            "variant": variant,
+            "time_cost": time_cost,
+            "memory_cost": memory_cost,
+            "parallelism": parallelism,
+            "key_len": key_len,
+            "rounds": rounds
+        };
+    }
+
+    public fn make(self, plain_text: string, opts: any = null) -> string {
+        let cfg = self.resolve_options(opts);
+        if cfg["driver"] == "bcrypt" {
+            return bcrypt_hash(plain_text, int(cfg["rounds"]));
+        }
+        let salt = random_bytes(16).unwrap();
+        let salt_hex = hex_encode(salt);
+        let variant = cfg["variant"];
+        let m = int(cfg["memory_cost"]);
+        let t = int(cfg["time_cost"]);
+        let p = int(cfg["parallelism"]);
+        let kl = int(cfg["key_len"]);
+        let digest = argon2(plain_text, salt, t, m, p, variant, kl);
+        let prefix = "$argon2" + variant + "$v=19$m=" + string(m) + ",t=" + string(t) + ",p=" + string(p);
+        return prefix + "$" + salt_hex + "$" + digest;
+    }
+
+    public fn info(self, hashed: string) -> map {
+        let _ = self;
+        let h = string(hashed);
+        if h.starts_with("$argon2") {
+            let parts = h.split("$");
+            if parts.len() == 6 {
+                let algo_name = parts[1];
+                let variant = algo_name.replace("argon2", "");
+                let mem = ARGON2_DEFAULT_MEM;
+                let time = ARGON2_DEFAULT_TIME;
+                let lanes = ARGON2_DEFAULT_LANES;
+                for kv in parts[3].split(",") {
+                    if kv.starts_with("m=") {
+                        mem = parse_int_or(kv.slice(2, kv.len()), mem);
+                    } elif kv.starts_with("t=") {
+                        time = parse_int_or(kv.slice(2, kv.len()), time);
+                    } elif kv.starts_with("p=") {
+                        lanes = parse_int_or(kv.slice(2, kv.len()), lanes);
+                    }
+                }
+                let kl = parts[5].len() / 2;
+                if kl <= 0 {
+                    kl = ARGON2_DEFAULT_LEN;
+                }
+                return {
+                    "algo": algo_name,
+                    "options": {
+                        "variant": variant,
+                        "memory_cost": mem,
+                        "time_cost": time,
+                        "parallelism": lanes,
+                        "key_len": kl
+                    }
+                };
+            }
+        }
+        if h.starts_with("$2a$") or h.starts_with("$2b$") or h.starts_with("$2y$") {
+            let bparts = h.split("$");
+            let rounds = BCRYPT_DEFAULT_ROUNDS;
+            if bparts.len() >= 4 {
+                rounds = parse_int_or(bparts[2], rounds);
+            }
+            return {
+                "algo": "bcrypt",
+                "options": {
+                    "rounds": rounds
+                }
+            };
+        }
+        return {
+            "algo": "unknown",
+            "options": {
+            }
+        };
     }
 
     public fn check(self, plain_text: string, hashed: string) -> bool {
+        let h = string(hashed);
+        if h.starts_with("$argon2") {
+            try {
+                let parts = h.split("$");
+                if parts.len() != 6 {
+                    return false;
+                }
+                let meta = self.info(h);
+                let opts = meta["options"];
+                let salt = hex_decode(parts[4]);
+                let computed = argon2(
+                    plain_text,
+                    salt,
+                    int(opts["time_cost"]),
+                    int(opts["memory_cost"]),
+                    int(opts["parallelism"]),
+                    string(opts["variant"]),
+                    int(opts["key_len"])
+                );
+                return secure_compare(computed, parts[5]);
+            } catch (_e) {
+                return false;
+            }
+        }
         try {
-            return bcrypt_verify(plain_text, hashed);
+            return bcrypt_verify(plain_text, h);
         } catch (_e) {
             return false;
         }
+    }
+
+    public fn needs_rehash(self, hashed: string, opts: any = null) -> bool {
+        let target = self.resolve_options(opts);
+        let parsed = self.info(hashed);
+        let algo = parsed["algo"];
+        let cur = parsed["options"];
+        if target["driver"] == "bcrypt" {
+            if algo != "bcrypt" {
+                return true;
+            }
+            let cur_rounds = if cur.has("rounds") {
+                int(cur["rounds"])
+            } else {
+                0
+            };
+            return cur_rounds != int(target["rounds"]);
+        }
+        let target_algo = "argon2" + string(target["variant"]);
+        if algo != target_algo {
+            return true;
+        }
+        let cur_m = if cur.has("memory_cost") {
+            int(cur["memory_cost"])
+        } else {
+            0
+        };
+        let cur_t = if cur.has("time_cost") {
+            int(cur["time_cost"])
+        } else {
+            0
+        };
+        let cur_p = if cur.has("parallelism") {
+            int(cur["parallelism"])
+        } else {
+            0
+        };
+        let cur_kl = if cur.has("key_len") {
+            int(cur["key_len"])
+        } else {
+            0
+        };
+        return cur_m != int(target["memory_cost"])
+        or cur_t != int(target["time_cost"])
+        or cur_p != int(target["parallelism"])
+        or cur_kl != int(target["key_len"]);
     }
 }
 

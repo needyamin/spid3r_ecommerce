@@ -1,0 +1,21 @@
+%% Spid3r Store — deployment topologies
+flowchart TB
+    subgraph DEV["Development"]
+        DEVSP["spid3r run server.matrix --port 8000"]
+        DEVDB[("SQLite<br/>database/database.sqlite")]
+        TEST["Tests<br/>APP_ENV=testing SPID3R_PATH=."]
+        DEVSP --> DEVDB
+        DEVSP --> TEST
+    end
+    subgraph PROD["Production"]
+        EXE["dist/server.exe<br/>(spid3r magic build, AOT)"]
+        MY["MySQL 8 container<br/>spid3rweb-mysql:3306"]
+        PROXY["Caddyfile / nginx.conf<br/>TLS termination"]
+        DC["deploy/docker-compose.yml"]
+        APPKEY["APP_KEY required<br/>spid3r magic key:generate"]
+        EXE --> MY
+        PROXY --> EXE
+        DC --> EXE
+        DC --> MY
+    end
+    DEV -. "magic build" .-> EXE

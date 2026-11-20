@@ -3,7 +3,7 @@
 // Order matters: static paths (/catalog, /sitemap.xml ...) precede :slug
 // routes so the parameter matcher never shadows them.
 
-import "framework/Router";
+import "framework/Http/Router";
 import "app/Controllers/StorefrontController";
 
 public fn register_storefront_routes() {
