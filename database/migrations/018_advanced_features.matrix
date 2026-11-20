@@ -115,6 +115,37 @@ public class AdvancedFeatureTables extends Migration {
             table.unique_columns(["locale", "namespace", "translation_key"]);
         });
 
+        // ---------------------------------------------------------------
+        // Default UI translations (English + Bengali nav) — structural
+        // seed data. LocaleService resolves strings from this table; a
+        // fresh install needs at least two locales for the language
+        // switcher to be meaningful.
+        // ---------------------------------------------------------------
+        let nav_translations = [
+            ["en", "nav", "account", "Account"],
+            ["en", "nav", "cart", "Cart"],
+            ["en", "nav", "catalog", "Catalog"],
+            ["en", "nav", "support", "Support"],
+            ["en", "nav", "track", "Track order"],
+            ["en", "nav", "wishlist", "Wishlist"],
+            ["bn", "nav", "account", "অ্যাকাউন্ট"],
+            ["bn", "nav", "cart", "কার্ট"],
+            ["bn", "nav", "catalog", "ক্যাটালগ"],
+            ["bn", "nav", "support", "সাপোর্ট"],
+            ["bn", "nav", "track", "অর্ডার ট্র্যাক করুন"],
+            ["bn", "nav", "wishlist", "ইচ্ছেতালিকা"]
+        ];
+        let ti = 0;
+        while ti < nav_translations.len() {
+            DB.table("translations").insert({
+                "locale": nav_translations[ti][0],
+                "namespace": nav_translations[ti][1],
+                "translation_key": nav_translations[ti][2],
+                "value": nav_translations[ti][3]
+            });
+            ti += 1;
+        }
+
         Schema.create("currencies", table => {
             table.id();
             table.string("code", 8).unique();
@@ -125,6 +156,32 @@ public class AdvancedFeatureTables extends Migration {
             table.integer("is_default").default(0);
             table.integer("rate_to_base_bps").default(10000);
             table.timestamps();
+        });
+
+        // ---------------------------------------------------------------
+        // Default currencies — structural seed data. CurrencyService builds
+        // the display-rate table from active rows; without a seeded BDT
+        // base + alternates the storefront currency switcher and the
+        // multi-currency tests have nothing to resolve.
+        // ---------------------------------------------------------------
+        let now = string(unix_time());
+        DB.table("currencies").insert({
+            "code": "BDT", "name": "Bangladeshi Taka", "symbol": "৳",
+            "minor_digits": 2, "is_active": 1, "is_default": 1,
+            "rate_to_base_bps": 10000,
+            "created_at": now, "updated_at": now
+        });
+        DB.table("currencies").insert({
+            "code": "USD", "name": "US Dollar", "symbol": "$",
+            "minor_digits": 2, "is_active": 1, "is_default": 0,
+            "rate_to_base_bps": 12100,
+            "created_at": now, "updated_at": now
+        });
+        DB.table("currencies").insert({
+            "code": "EUR", "name": "Euro", "symbol": "€",
+            "minor_digits": 2, "is_active": 1, "is_default": 0,
+            "rate_to_base_bps": 13900,
+            "created_at": now, "updated_at": now
         });
     }
 

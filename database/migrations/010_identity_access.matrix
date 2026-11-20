@@ -76,6 +76,53 @@ public class IdentityAccessTables extends Migration {
             table.foreign("user_id", "users", "id", "CASCADE", "CASCADE");
             table.index("idx_addresses_user", ["user_id"]);
         });
+
+        // ---------------------------------------------------------------
+        // Default RBAC rows — structural seed data. A fresh install MUST
+        // have them: AuthService registration assigns the "customer" role
+        // by slug (silently skipped when missing), admin sessions look up
+        // the "admin"/"staff" roles, and permission gates resolve through
+        // role_permissions. Seed here (not in a seeder) so every freshly
+        // migrated database is correctly provisioned.
+        // ---------------------------------------------------------------
+        let now = string(unix_time());
+        let customer_role = DB.table("roles").insert({
+            "name": "Customer", "slug": "customer",
+            "description": "Default storefront account",
+            "created_at": now, "updated_at": now
+        });
+        let staff_role = DB.table("roles").insert({
+            "name": "Staff", "slug": "staff",
+            "description": "Store staff — scoped permissions",
+            "created_at": now, "updated_at": now
+        });
+        let admin_role = DB.table("roles").insert({
+            "name": "Administrator", "slug": "admin",
+            "description": "Full store administration",
+            "created_at": now, "updated_at": now
+        });
+
+        let perm_slugs = ["catalog.manage", "orders.manage", "customers.manage",
+                          "settings.manage", "reports.view", "payments.manage"];
+        let perm_ids = {};
+        let pi = 0;
+        while pi < perm_slugs.len() {
+            let slug = perm_slugs[pi];
+            perm_ids[slug] = DB.table("permissions").insert({
+                "name": slug, "slug": slug,
+                "description": "Manage " + slug.replace(".", " "),
+                "created_at": now, "updated_at": now
+            });
+            pi += 1;
+        }
+
+        // Administrator gets every permission (AccessPolicy.can() also
+        // short-circuits for admins — this keeps the audit trail explicit).
+        for slug in perm_slugs {
+            DB.table("role_permissions").insert({
+                "role_id": admin_role, "permission_id": perm_ids[slug]
+            });
+        }
     }
 
     public fn down(self) {

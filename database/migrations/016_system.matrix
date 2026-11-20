@@ -35,6 +35,38 @@ public class SystemTables extends Migration {
             table.string("setting_group", 48).default("general");
             table.timestamps();
         });
+
+        // ---------------------------------------------------------------
+        // Default store settings — structural seed data. A fresh install
+        // MUST have them: CurrencyService pins the base currency from
+        // store.currency, checkout/shipping/promotions read their defaults
+        // from here, and payment webhooks verify against the shared secret.
+        // Values mirror a fresh production-grade install; admins override
+        // via the Settings panel at runtime.
+        // ---------------------------------------------------------------
+        let now = string(unix_time());
+        let defaults = [
+            ["store.name", "Spid3r Store", "general"],
+            ["store.currency", "BDT", "general"],
+            ["store.tax_rate_bps", "0", "tax"],
+            ["shipping.flat_minor", "6000", "shipping"],
+            ["shipping.express_minor", "12000", "shipping"],
+            ["shipping.free_threshold_minor", "200000", "shipping"],
+            ["returns.window_days", "14", "shipping"],
+            ["cart.discount_bps", "500", "promotions"],
+            ["cart.discount_threshold_minor", "100000", "promotions"],
+            ["payments.webhook_secret", "dev-webhook-secret-change-me", "payments"]
+        ];
+        let si = 0;
+        while si < defaults.len() {
+            DB.table("settings").insert({
+                "setting_key": defaults[si][0],
+                "value": defaults[si][1],
+                "setting_group": defaults[si][2],
+                "created_at": now, "updated_at": now
+            });
+            si += 1;
+        }
     }
 
     public fn down(self) {
