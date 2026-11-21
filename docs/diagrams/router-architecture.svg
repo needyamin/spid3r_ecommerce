@@ -1,0 +1,94 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 580" width="100%" height="100%" style="background:#ffffff;border-radius:12px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+  <defs>
+    <filter id="rShadow" x="-2%" y="-2%" width="104%" height="106%" filterUnits="userSpaceOnUse">
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#0f172a" flood-opacity="0.08"/>
+    </filter>
+    <linearGradient id="routerHeaderGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#065f46"/>
+      <stop offset="100%" stop-color="#047857"/>
+    </linearGradient>
+    <marker id="rArrow" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 1 L 8 5 L 0 9 z" fill="#047857"/>
+    </marker>
+    <marker id="subArrow" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 1 L 8 5 L 0 9 z" fill="#64748b"/>
+    </marker>
+  </defs>
+
+  <!-- Title Banner -->
+  <rect x="20" y="18" width="920" height="60" rx="10" fill="url(#routerHeaderGrad)"/>
+  <text x="45" y="54" fill="#a7f3d0" font-size="22" font-weight="800">🛣️ O(1) &amp; Prefix-Indexed Router Architecture</text>
+  <text x="556" y="54" fill="#ecfdf5" font-size="14" font-weight="500">153,846 ops/sec on VM · 200,000 on AOT</text>
+
+  <!-- Input Path Box -->
+  <rect x="50" y="100" width="860" height="48" rx="8" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1.5"/>
+  <text x="70" y="130" fill="#334155" font-size="14" font-weight="700">Incoming Request:</text>
+  <rect x="210" y="110" width="80" height="28" rx="5" fill="#dbeafe"/>
+  <text x="250" y="129" fill="#1d4ed8" font-size="12" font-weight="800" text-anchor="middle">GET</text>
+  <text x="310" y="131" fill="#0f172a" font-size="15" font-family="monospace" font-weight="700">/api/v1/posts/42</text>
+  <text x="620" y="130" fill="#64748b" font-size="12">Pre-split segments: ["api", "v1", "posts", "42"] (len = 4)</text>
+
+  <!-- Downward Arrow -->
+  <line x1="480" y1="148" x2="480" y2="175" stroke="#047857" stroke-width="2.5" marker-end="url(#rArrow)"/>
+
+  <!-- Stage 1: Static Route Lookup -->
+  <g filter="url(#rShadow)">
+    <rect x="50" y="180" width="260" height="180" rx="10" fill="#ffffff" stroke="#93c5fd" stroke-width="1.5"/>
+    <rect x="50" y="180" width="260" height="34" rx="10" fill="#eff6ff"/>
+    <text x="65" y="202" fill="#1d4ed8" font-size="13" font-weight="800">STAGE 1: Static O(1) Map</text>
+    <text x="65" y="235" fill="#334155" font-size="12">• Hash map lookup:</text>
+    <text x="75" y="255" fill="#2563eb" font-size="11" font-family="monospace">static_routes[method][path]</text>
+    <text x="65" y="280" fill="#64748b" font-size="11.5">• Cost: <tspan font-weight="700">O(1)</tspan> Instantaneous</text>
+    <text x="65" y="302" fill="#64748b" font-size="11.5">• Matches exact routes like:</text>
+    <text x="75" y="322" fill="#475569" font-size="11" font-family="monospace">/api/login, /health, /</text>
+    <text x="65" y="348" fill="#dc2626" font-size="11">Miss? Fall through to Stage 2 ➔</text>
+  </g>
+
+  <!-- Flow 1 -> 2 -->
+  <line x1="310" y1="270" x2="346" y2="270" stroke="#047857" stroke-width="2" marker-end="url(#rArrow)"/>
+
+  <!-- Stage 2: Prefix-Indexed Dynamic Buckets -->
+  <g filter="url(#rShadow)">
+    <rect x="350" y="180" width="310" height="260" rx="10" fill="#f0fdf4" stroke="#86efac" stroke-width="2"/>
+    <rect x="350" y="180" width="310" height="34" rx="10" fill="#dcfce7"/>
+    <text x="365" y="202" fill="#15803d" font-size="13" font-weight="800">STAGE 2: Prefix Buckets</text>
+    <text x="365" y="235" fill="#334155" font-size="12">1. Segment Count Filter:</text>
+    <text x="375" y="255" fill="#166534" font-size="11" font-family="monospace">dynamic_by_len[method][4]</text>
+    <text x="365" y="280" fill="#334155" font-size="12">2. Two-Level Literal Prefix Key:</text>
+    <text x="375" y="300" fill="#166534" font-size="11" font-family="monospace">bucket_key = "api/v1"</text>
+    <text x="365" y="325" fill="#334155" font-size="12">3. One-Level Fallback Key:</text>
+    <text x="375" y="345" fill="#166534" font-size="11" font-family="monospace">bucket_key = "api"</text>
+    <text x="365" y="372" fill="#334155" font-size="12">4. Param Extraction:</text>
+    <text x="375" y="392" fill="#15803d" font-size="11.5" font-weight="700">params["id"] = "42"</text>
+    <text x="365" y="422" fill="#15803d" font-size="12" font-weight="800">MATCH! Dispatches to Handler ✓</text>
+  </g>
+
+  <!-- Flow 2 -> 3 -->
+  <line x1="660" y1="270" x2="696" y2="270" stroke="#047857" stroke-width="2" marker-end="url(#rArrow)"/>
+
+  <!-- Stage 3 & 4: Wildcard & Fallback -->
+  <g filter="url(#rShadow)">
+    <rect x="700" y="180" width="220" height="260" rx="10" fill="#ffffff" stroke="#fde68a" stroke-width="1.5"/>
+    <rect x="700" y="180" width="220" height="34" rx="10" fill="#fef3c7"/>
+    <text x="715" y="202" fill="#b45309" font-size="13" font-weight="800">STAGE 3 &amp; 4: Fallbacks</text>
+
+    <text x="715" y="235" fill="#334155" font-size="12" font-weight="700">Stage 3: Wildcards</text>
+    <text x="725" y="255" fill="#92400e" font-size="11" font-family="monospace">*filepath catch-alls</text>
+    <text x="725" y="275" fill="#64748b" font-size="11">SPAs, doc proxies</text>
+
+    <text x="715" y="305" fill="#334155" font-size="12" font-weight="700">Stage 4: Root Statics</text>
+    <text x="725" y="325" fill="#475569" font-size="11">robots.txt, favicon.ico</text>
+
+    <text x="715" y="355" fill="#dc2626" font-size="12" font-weight="700">Stage 5: Errors</text>
+    <text x="725" y="375" fill="#b91c1c" font-size="11">• 405 Method Not Allowed</text>
+    <text x="735" y="392" fill="#64748b" font-size="10">(Allow: GET, POST)</text>
+    <text x="725" y="412" fill="#b91c1c" font-size="11">• 404 Not Found</text>
+  </g>
+
+  <!-- Performance Summary Bar -->
+  <rect x="50" y="470" width="870" height="80" rx="10" fill="#f8fafc" stroke="#e2e8f0"/>
+  <text x="75" y="500" fill="#0f172a" font-size="13" font-weight="800">Why prefix indexing beats linear matching:</text>
+  <text x="75" y="522" fill="#475569" font-size="12">• Bypasses hundreds of candidate regex patterns by segment count and 2-level literal prefix hashing.</text>
+  <text x="75" y="539" fill="#475569" font-size="12">• Pre-split segment tokens eliminate per-request path parsing overhead and string allocations.</text>
+</svg>
+

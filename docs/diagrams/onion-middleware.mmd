@@ -1,0 +1,25 @@
+sequenceDiagram
+    autonumber
+    actor Client
+    participant L1 as Layer 1: CORS & Security
+    participant L2 as Layer 2: Request ID & Logger
+    participant L3 as Layer 3: Rate Limiter (Throttle)
+    participant L4 as Layer 4: Auth & Guards
+    participant Handler as Route Handler / Controller
+
+    Note over Client, Handler: Inbound Pass: Down the Onion Layers
+    Client->>L1: HTTP Request
+    L1->>L2: next(req)
+    L2->>L3: next(req) [start timer]
+    L3->>L4: next(req) [check quota]
+    L4->>Handler: next(req) [req.user verified]
+
+    Note over Handler: Execute Controller logic & query models
+    Handler-->>L4: return Response(200 / 201)
+
+    Note over Handler, Client: Outbound Pass: Up through the Onion Layers
+    L4-->>L3: return res
+    L3-->>L2: res.header("X-RateLimit-Remaining", N)
+    L2-->>L1: log_request(status, duration_ms)
+    L1-->>Client: res.header("Access-Control-*") -> Send to Client
+

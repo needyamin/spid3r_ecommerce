@@ -127,3 +127,4 @@ shellcheck.exe
 
 # Compiled AOT distribution binaries
 dist/
+.mimosa/

@@ -1,0 +1,90 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 580" width="100%" height="100%" style="background:#ffffff;border-radius:12px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+  <defs>
+    <filter id="aShadow" x="-2%" y="-2%" width="104%" height="106%" filterUnits="userSpaceOnUse">
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#0f172a" flood-opacity="0.08"/>
+    </filter>
+    <linearGradient id="authHeaderGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#431407"/>
+      <stop offset="100%" stop-color="#9a3412"/>
+    </linearGradient>
+    <marker id="jwtArrow" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 1 L 8 5 L 0 9 z" fill="#15803d"/>
+    </marker>
+    <marker id="sessArrow" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 1 L 8 5 L 0 9 z" fill="#2563eb"/>
+    </marker>
+  </defs>
+
+  <!-- Title Banner -->
+  <rect x="20" y="18" width="940" height="60" rx="10" fill="url(#authHeaderGrad)"/>
+  <text x="45" y="54" fill="#fed7aa" font-size="22" font-weight="800">🔐 Dual Authentication Architecture</text>
+  <text x="450" y="54" fill="#ffedd5" font-size="14" font-weight="500">Stateless JWT (Zero DB Hits) vs Stateful Sessions &amp; CSRF</text>
+
+  <!-- Incoming Request Detection Box -->
+  <g filter="url(#aShadow)">
+    <rect x="50" y="98" width="880" height="74" rx="8" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1.5"/>
+    <text x="70" y="128" fill="#0f172a" font-size="14" font-weight="700">Request Inspection:</text>
+    <text x="220" y="128" fill="#475569" font-size="13">Check <tspan font-family="Cascadia Code, Consolas, monospace" font-size="10.5" font-weight="600">Authorization: Bearer &lt;token&gt;</tspan> header vs <tspan font-family="Cascadia Code, Consolas, monospace" font-size="10.5" font-weight="600">Cookie: spid3r_session=&lt;id&gt;</tspan></text>
+    <text x="70" y="154" fill="#64748b" font-size="12">Request-scoped <tspan font-family="Cascadia Code, Consolas, monospace" font-size="10.5" font-weight="600">req.auth = new AuthManager()</tspan> guarantees thread isolation across worker threads.</text>
+  </g>
+
+  <!-- Flow Branches -->
+  <!-- Left Branch: Stateless Bearer JWT -->
+  <path d="M 280 172 L 280 205" fill="none" stroke="#15803d" stroke-width="2.5" marker-end="url(#jwtArrow)"/>
+  <text x="170" y="195" fill="#15803d" font-size="11.5" font-weight="700">Bearer Token Present</text>
+
+  <!-- Right Branch: Stateful Session Cookie -->
+  <path d="M 700 172 L 700 205" fill="none" stroke="#2563eb" stroke-width="2.5" marker-end="url(#sessArrow)"/>
+  <text x="710" y="195" fill="#2563eb" font-size="11.5" font-weight="700">Cookie Present (Browser)</text>
+
+  <!-- Left Container: Stateless JWT (0 DB Queries) -->
+  <g filter="url(#aShadow)">
+    <rect x="50" y="210" width="415" height="340" rx="10" fill="#f0fdf4" stroke="#86efac" stroke-width="2"/>
+    <rect x="50" y="210" width="415" height="36" rx="10" fill="#dcfce7"/>
+    <text x="70" y="234" fill="#14532d" font-size="13.5" font-weight="800">PATH A: STATELESS HS256 JWT (API)</text>
+    <rect x="330" y="216" width="125" height="24" rx="12" fill="#16a34a"/>
+    <text x="392" y="232" fill="#ffffff" font-size="11" font-weight="700" text-anchor="middle">0 DB QUERIES</text>
+
+    <text x="70" y="270" fill="#0f172a" font-size="12.5" font-weight="700">1. Structure Check:</text>
+    <text x="70" y="288" fill="#475569" font-size="12">Token split into 3 parts: header . payload . signature</text>
+
+    <text x="70" y="318" fill="#0f172a" font-size="12.5" font-weight="700">2. Cryptographic Signature Verification:</text>
+    <text x="70" y="338" fill="#15803d" font-size="11.5" font-family="monospace">expected = hmac_sha256(data, secret)</text>
+    <text x="70" y="358" fill="#15803d" font-size="11.5" font-family="monospace">secure_compare(sig, expected)</text>
+    <text x="70" y="378" fill="#64748b" font-size="11">• Constant-time comparison prevents timing attacks.</text>
+
+    <text x="70" y="408" fill="#0f172a" font-size="12.5" font-weight="700">3. Expiration &amp; Claims Validation:</text>
+    <text x="70" y="428" fill="#475569" font-size="12">• Verifies <tspan font-family="Cascadia Code, Consolas, monospace" font-size="10.5" font-weight="600">exp &gt; current_time()</tspan></text>
+    <text x="70" y="446" fill="#475569" font-size="12">• Extracts payload: <tspan font-family="Cascadia Code, Consolas, monospace" font-size="10.5" font-weight="600">sub</tspan>, <tspan font-family="Cascadia Code, Consolas, monospace" font-size="10.5" font-weight="600">role</tspan>, custom claims</text>
+
+    <rect x="70" y="470" width="375" height="60" rx="8" fill="#ffffff" stroke="#bbf7d0" stroke-width="1.5"/>
+    <text x="85" y="494" fill="#15803d" font-size="12" font-weight="700">Result: <tspan font-family="Cascadia Code, Consolas, monospace" font-size="10.5" font-weight="600">req.auth.user()</tspan> populated instantly</text>
+    <text x="85" y="514" fill="#64748b" font-size="11">Zero latency overhead, perfect for microservices &amp; mobile.</text>
+  </g>
+
+  <!-- Right Container: Stateful Session & CSRF -->
+  <g filter="url(#aShadow)">
+    <rect x="515" y="210" width="415" height="340" rx="10" fill="#eff6ff" stroke="#bfdbfe" stroke-width="2"/>
+    <rect x="515" y="210" width="415" height="36" rx="10" fill="#dbeafe"/>
+    <text x="535" y="234" fill="#1e40af" font-size="13.5" font-weight="800">PATH B: STATEFUL SESSIONS (WEB)</text>
+    <rect x="800" y="216" width="120" height="24" rx="12" fill="#2563eb"/>
+    <text x="860" y="232" fill="#ffffff" font-size="11" font-weight="700" text-anchor="middle">SESSION + CSRF</text>
+
+    <text x="535" y="270" fill="#0f172a" font-size="12.5" font-weight="700">1. Session Store Lookup:</text>
+    <text x="535" y="288" fill="#475569" font-size="12">Find session ID in Database or Memory cache</text>
+
+    <text x="535" y="318" fill="#0f172a" font-size="12.5" font-weight="700">2. Dual-Layer CSRF Guard:</text>
+    <text x="535" y="338" fill="#475569" font-size="11.5">• <tspan font-weight="700">Layer 1:</tspan> Validates <tspan font-family="Cascadia Code, Consolas, monospace" font-size="10.5" font-weight="600">Origin</tspan> header vs <tspan font-family="Cascadia Code, Consolas, monospace" font-size="10.5" font-weight="600">Host</tspan></text>
+    <text x="535" y="358" fill="#475569" font-size="11.5">• <tspan font-weight="700">Layer 2:</tspan> Verifies per-session <tspan font-family="Cascadia Code, Consolas, monospace" font-size="10.5" font-weight="600">_csrf</tspan> token</text>
+    <text x="535" y="378" fill="#dc2626" font-size="11">• Aborts with 403 Forbidden if mismatched</text>
+
+    <text x="535" y="408" fill="#0f172a" font-size="12.5" font-weight="700">3. Session Storage &amp; Flash Messages:</text>
+    <text x="535" y="428" fill="#475569" font-size="12">• <tspan font-family="Cascadia Code, Consolas, monospace" font-size="10.5" font-weight="600">req.session().put(k, v)</tspan> / <tspan font-family="Cascadia Code, Consolas, monospace" font-size="10.5" font-weight="600">get(k)</tspan></text>
+    <text x="535" y="446" fill="#475569" font-size="12">• <tspan font-family="Cascadia Code, Consolas, monospace" font-size="10.5" font-weight="600">req.session().flash("msg", "Saved!")</tspan> (cleared next req)</text>
+
+    <rect x="535" y="470" width="375" height="60" rx="8" fill="#ffffff" stroke="#93c5fd" stroke-width="1.5"/>
+    <text x="550" y="494" fill="#1e40af" font-size="12" font-weight="700">Result: Auto-committed upon response</text>
+    <text x="550" y="514" fill="#64748b" font-size="11">Emits signed <tspan font-family="Cascadia Code, Consolas, monospace" font-size="10.5" font-weight="600">Set-Cookie: spid3r_session=...; HttpOnly; SameSite</tspan></text>
+  </g>
+</svg>
+

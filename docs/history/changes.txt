@@ -1,0 +1,353 @@
+================================================================================
+SPID3R_WEB v2.0 — AI AGENT CHANGELOG & MIGRATION GUIDE (changes.txt)
+================================================================================
+Repository : https://github.com/needyamin/spid3r_web
+Commit     : 514791a (feat: evolve Spid3rWeb to v2 Modern MVC framework)
+Target     : AI Coding Agents & Developers upgrading downstream Spid3rWeb apps
+Engine     : Spid3r Tree-Walk Interpreter & Bytecode VM (`--engine vm`)
+================================================================================
+
+1. EXECUTIVE SUMMARY FOR AI AGENTS
+--------------------------------------------------------------------------------
+Spid3rWeb has evolved into a v2 Modern MVC & Express/Fastify-style framework.
+All changes are 100% BACKWARDS-COMPATIBLE with existing v1 routes, controllers,
+middleware, models, and views, while introducing major syntax simplifications,
+new subsystems (JWT, Sessions/Flash, File Uploads, Signed Cookies, TestClient),
+SpiderBD v2 template directives, thread-safety mutexes, and a 153x faster router
+(133,333 ops/sec on `--engine vm`).
+
+When updating an existing application that uses Spid3rWeb, read Section 3
+(New APIs & Syntax) and Section 4 (Step-by-Step Upgrade Instructions).
+
+================================================================================
+2. FILE & MODULE INVENTORY (WHAT CHANGED IN THE FRAMEWORK)
+================================================================================
+
+NEW FILES ADDED:
+- `framework/Web.matrix`
+  Single-import barrel module exporting `web()`, `router()`, `model()`,
+  `route()`, `abort()`, `abort_if()`, `db()`, `schema()`, `cache()`, `auth()`,
+  `jwt()`, `views()`, `validate()`, `json_out()`, `html_out()`, `text_out()`,
+  `redirect_to()`, `test_client()`.
+- `framework/Auth/Jwt.matrix`
+  Zero-dependency RFC 7519 HS256 JWT implementation (`Jwt.sign`, `Jwt.verify`,
+  `Jwt.decode_unverified`) using constant-time `crypto_equals`.
+- `framework/Session/Session.matrix`
+  Cookie-backed (`spid3r_sid`) `SessionStore` with key-value persistence
+  (`get`, `put`, `forget`, `flush`, `regenerate`) and one-time flash messages
+  (`flash`, `get_flash`).
+- `framework/Testing/TestClient.matrix`
+  In-memory HTTP integration testing client (`TestClient`) + `TestResponse`
+  fluent assertions (`assert_status`, `assert_ok`, `assert_created`,
+  `assert_not_found`, `assert_unprocessable`, `assert_json_path`,
+  `assert_header`, `assert_see`).
+- `tests/test_modern_mvc.matrix`
+  End-to-end test suite verifying all v2 MVC features.
+
+MODIFIED FILES:
+- `framework/Router.matrix`          (O(1) static + 2-level indexed dynamic router, `:param`, `*wildcard`, `mount()`, `url()`)
+- `framework/Application.matrix`     (Direct routing `app.get/post/put/patch/delete/group/mount/fallback`, auto-coercion, `(req, res)` handlers, static ETag `304`)
+- `framework/Middleware.matrix`      (True Onion `(req, next)` pipeline, closure middleware, `etag`, `request_id`, `throttle` rate-limit headers)
+- `framework/Request.matrix`         (`_method` spoofing, cookies, `signed_cookie`, multipart `file`/`has_file`/`store_file`, `only`/`except`/`bool`/`float`/`page`/`per_page`, `validate_or_fail`, `session`/`flash`)
+- `framework/Response.matrix`        (Fluent `.status().json()/.html()/.text()/.send()/.redirect()`, `signed_cookie`, `clear_cookie`, cached HSTS)
+- `framework/Validator.matrix`       (`.validated()` type coercion, `url`, `uuid`, `regex`, `between`, `list`, `map`, `unique:table,col`, `exists:table,col`)
+- `framework/Database/Model.matrix`  (`define_model` / `ModelRepository`, `casts`, `hidden`, `is_dirty()`, `get_dirty()`, `find_or_fail`, `first_or_fail`)
+- `framework/Database/QueryBuilder.matrix` (`find_or_fail`, `first_or_fail`, `latest`, `oldest`)
+- `framework/Database/DatabaseManager.matrix` (Mutex-serialized `transaction()`)
+- `framework/Auth/Auth.matrix`       (Automatic stateless JWT `Bearer` verification fallback + `issue_jwt()`)
+- `framework/View/BD.matrix`         (SpiderBD v2: `file_mtime` cache, `@if` operators `== != >= <= > < and or not`, `@elif`, inline `@if`, `@foreach` `loop`, `@csrf`, `@method`, `share()`)
+- `framework/Cache/CacheStore.matrix` & `Cache.matrix` (Mutex thread-safety, 10k max-entry eviction, atomic `add`/`increment`/`decrement`)
+- `framework/Log/Log.matrix`         (Fixed file append bug via `append_file`, added mutex, cached log level)
+- `framework/HttpException.matrix`   (Added `errors` field for 422 validation exceptions + `ValidationException()`)
+- `framework/Controller.matrix`      (Cleaned imports, added `created()`, `no_content()`, `paginate()`)
+- `framework/Console/ConsoleKernel.matrix` & `TestRunner.matrix` (Updated `make:controller`, `make:model`, `make:middleware`, `make:test` generators to v2 syntax)
+
+DELETED FILES:
+- `docs/history/PROJECT.md`          (Removed obsolete storefront history)
+
+================================================================================
+3. DETAILED API CHANGES & NEW CAPABILITIES
+================================================================================
+
+--------------------------------------------------------------------------------
+3.1 Single-Import Barrel (`framework/Web`)
+--------------------------------------------------------------------------------
+BEFORE (v1):
+```spid3r
+import "framework/Application";
+import "framework/Router";
+import "framework/Response";
+import "framework/Database/DatabaseManager";
+import "framework/Database/Model";
+import "framework/Validator";
+```
+
+NOW (v2):
+```spid3r
+import "framework/Web";
+
+let app = web(); // Bootstraps Application + ServiceProviders (or empty app if no config/app.matrix)
+```
+
+Exported helper functions from `import "framework/Web"`:
+- `web(base_path = "")`         -> Returns bootstrapped `Application` instance
+- `router()`                    -> Returns new `Router` instance (for sub-routers)
+- `model(table, options = {})`  -> Defines a zero-boilerplate `ModelRepository`
+- `route(name, params = {})`    -> Generates URL for a named route
+- `abort(status, message = "")` -> Throws `HttpException(status, message)`
+- `abort_if(cond, status, msg)` -> Conditionally throws `HttpException`
+- `db()` / `schema()`           -> Returns `DatabaseManager` / `Schema` builder
+- `cache()` / `auth()` / `jwt()` / `views()` -> Returns core singletons
+- `validate(data, rules)`       -> Runs validator and returns coerced map or throws 422
+- `test_client(app = nil)`      -> Returns `TestClient` for integration testing
+
+--------------------------------------------------------------------------------
+3.2 Application Direct Routing, Sub-Routers & Return Auto-Coercion
+--------------------------------------------------------------------------------
+1. Direct Routing on `app`:
+   - `app.get(path, handler)`
+   - `app.post(path, handler)`
+   - `app.put(path, handler)`
+   - `app.patch(path, handler)`
+   - `app.delete(path, handler)`
+   - `app.any(path, handler)`
+   - `app.group(prefix_or_attrs, callback)`
+   - `app.mount(prefix, sub_router)`
+   - `app.fallback(handler)`
+   - `app.use(middleware)`
+   - `app.listen(port = 8000, host = "0.0.0.0")` (alias for `app.serve()`)
+
+2. Route Parameter Syntaxes (All 3 supported):
+   - Express-style `:param`:   `app.get("/users/:id/posts/:post_id", ...)`
+   - Brace-style `{param}`:    `app.get("/users/{id}/posts/{post_id}", ...)`
+   - Catch-all `*wildcard`:    `app.get("/files/*filepath", req => req.param("filepath"))`
+
+3. Reverse Routing (URL Generation):
+   ```spid3r
+   app.get("/users/:id", handler).name("users.show");
+   let url = route("users.show", {"id": 42, "tab": "profile"});
+   // -> "/users/42?tab=profile"
+   ```
+
+4. Handler Signatures & Return Auto-Coercion:
+   - 1-arg `req => ...` OR 2-arg `(req, res) => ...`
+   - Returning a `map` or `list` automatically serializes to `200 application/json`.
+   - Returning a `string` automatically wraps in `200 text/html; charset=utf-8`.
+   - Returning a `Response` object uses it directly.
+
+   ```spid3r
+   // Auto-coerced 200 JSON:
+   app.get("/api/ping", req => {"ok": true});
+
+   // Express-style 2-arg handler with custom status:
+   app.post("/api/items", (req, res) => {
+       return res.status(201).json({"created": true});
+   });
+   ```
+
+--------------------------------------------------------------------------------
+3.3 True Onion Middleware Pipeline
+--------------------------------------------------------------------------------
+Middleware now supports full before- AND after-response interception via `next`:
+
+1. Closure Middleware:
+   ```spid3r
+   app.use((req, next) => {
+       let res = next(req);
+       return res.header("X-Powered-By", "Spid3rWeb");
+   });
+   ```
+
+2. Class Middleware (2-arg `handle(req, next)` or legacy 1-arg `handle(req)`):
+   ```spid3r
+   class TimingMiddleware {
+       fn handle(req, next) {
+           let t0 = clock_ms();
+           let res = next(req);
+           return res.header("X-Response-Time", to_string(clock_ms() - t0) + "ms");
+       }
+   }
+   ```
+
+3. Built-in Named Middleware Aliases:
+   - `"auth"`             -> Verifies session token OR stateless JWT (`Bearer <token>`)
+   - `"guest"`            -> Rejects authenticated requests
+   - `"cors"`             -> Injects CORS headers & handles `OPTIONS` preflight
+   - `"logger"`           -> Structured HTTP request log
+   - `"etag"`             -> Computes weak ETag (`W/"<sha256>"`) and returns `304 Not Modified` on `If-None-Match`
+   - `"request_id"`       -> Propagates or generates `X-Request-Id` UUID v4 on `req.id` and response header
+   - `"throttle:max,win"` -> Atomic rate limiter; attaches `X-RateLimit-Limit`, `X-RateLimit-Remaining`, and `Retry-After` headers
+
+--------------------------------------------------------------------------------
+3.4 Request Helpers, Validation, Cookies & Multipart File Uploads
+--------------------------------------------------------------------------------
+New methods on `Request` (`req`):
+- `req.validate_or_fail(rules_map)`
+  Validates input against rules, returns type-coerced map of validated fields,
+  or automatically throws 422 `HttpException` with `{"error": "Unprocessable Entity", "errors": {...}}`.
+- `req.only(["name", "email"])`  -> Subset map of present keys
+- `req.except(["password"])`     -> All input keys except listed keys
+- `req.bool(key, default = false)` -> Coerces `"true"`, `"1"`, `"yes"`, `"on"` to `true`
+- `req.float(key, default = 0.0)`  -> Safe float conversion
+- `req.page()`                     -> Current page (`>= 1`, default `1`)
+- `req.per_page(default = 15, max_limit = 100)` -> Clamped per-page limit
+- `req.bearer_token()`             -> Extracts token from `Authorization: Bearer ...`
+- `req.cookies()` / `req.cookie(name, default = nil)` -> Parsed request cookies
+- `req.signed_cookie(name, default = nil)` -> Verifies HMAC-SHA256 signed cookie (`val.sig`) using `APP_KEY`
+- `req.has_file(field)` / `req.file(field)` -> Multipart file upload metadata `{"name", "filename", "content_type", "content", "size"}`
+- `req.store_file(field, subdir = "uploads")` -> Sanitizes filename and stores via `Storage`
+- `req.session()`                  -> Lazy-loaded `SessionStore`
+- `req.flash(key, value)` / `req.get_flash(key, default = nil)` -> One-time flash messages
+- HTML Form Method Spoofing: `POST` requests with `_method=PUT|PATCH|DELETE` or `X-HTTP-Method-Override` header automatically route as `PUT`/`PATCH`/`DELETE`.
+
+--------------------------------------------------------------------------------
+3.5 Response Fluent Chainable API
+--------------------------------------------------------------------------------
+New/updated methods on `Response` (`res`):
+- `res.status(code)`               -> Sets HTTP status and returns `self`
+- `res.json(data)`                 -> Sets JSON body + `application/json` content-type
+- `res.html(html_str)`             -> Sets HTML body + `text/html; charset=utf-8`
+- `res.text(text_str)`             -> Sets plain text body + `text/plain; charset=utf-8`
+- `res.send(payload)`              -> Auto-detects `map`/`list` (JSON) vs `string` (HTML)
+- `res.redirect(url, status = 302)`-> Redirects to `url`
+- `res.cookie(key, value, options = {})` -> Supports `path`, `max_age`, `domain`, `http_only`, `secure`, `same_site` (also backwards-compatible if 3rd arg is a path string)
+- `res.signed_cookie(key, value, options = {})` -> Signs value with HMAC-SHA256 using `APP_KEY`
+- `res.clear_cookie(key, path = "/")` -> Expires cookie immediately (`Max-Age=0`)
+
+--------------------------------------------------------------------------------
+3.6 Validator v2 Rules & Type Coercion
+--------------------------------------------------------------------------------
+`Validator.make(data, rules)` now supports:
+- `v.validated()` -> Returns ONLY declared rule keys, with `"int"`/`"integer"` coerced to `int`, `"float"`/`"numeric"` coerced to `float`, and `"bool"`/`"boolean"` coerced to `bool`.
+- New rules:
+  - `"nullable"` (skips validation when empty/nil)
+  - `"float"` / `"boolean"` / `"list"` / `"map"`
+  - `"url"` (http/https URL)
+  - `"uuid"` (UUID format)
+  - `"regex:pattern"` (PCRE/regex match)
+  - `"between:min,max"` (numeric value or string length between min and max)
+  - `"unique:table,column"` or `"unique:table,column,ignore_id"` (DB uniqueness check)
+  - `"exists:table,column"` (DB foreign key existence check)
+
+--------------------------------------------------------------------------------
+3.7 Zero-Boilerplate ORM (`model()` / `ModelRepository`)
+--------------------------------------------------------------------------------
+Define models in 1 line without writing a class, or subclass `Model`:
+
+```spid3r
+let Post = model("posts", {
+    "primary_key": "id",
+    "fillable": ["title", "body", "published", "meta", "secret_hash"],
+    "hidden": ["secret_hash"],
+    "casts": {
+        "published": "bool",
+        "meta": "json"
+    }
+});
+```
+
+Available methods on `Post` (`ModelRepository`):
+- `Post.query()`
+- `Post.all()`
+- `Post.find(id)` / `Post.find_or_fail(id)` (throws 404 `HttpException` if missing)
+- `Post.where(col, val)` / `Post.where_op(col, op, val)` / `Post.where_in(col, list)`
+- `Post.first()` / `Post.first_or_fail()`
+- `Post.latest(col = "id")` / `Post.oldest(col = "id")`
+- `Post.create(data_map)`
+- `Post.update_or_create(match_map, values_map)`
+- `Post.paginate(page = 1, per_page = 15)`
+- `Post.count()`
+- `Post.load_has_many(records, rel_name, ForeignRepo, foreign_key, local_key = "id")`
+- `Post.load_belongs_to(records, rel_name, OwnerRepo, foreign_key, owner_key = "id")`
+
+Instance features on `Model` records:
+- `record.to_map()` / `record.to_json()` -> Automatically applies `casts` (`int`, `float`, `bool`, `string`, `json`) and strips `hidden` attributes!
+- `record.is_dirty(key = nil)` / `record.get_dirty()` -> Tracks modified fields since load/save so `save()` only updates changed columns.
+
+--------------------------------------------------------------------------------
+3.8 Stateless JWT (`Jwt`) & Hybrid `Auth`
+--------------------------------------------------------------------------------
+1. `Jwt` (`framework/Auth/Jwt.matrix` or `jwt()` from `framework/Web`):
+   ```spid3r
+   let token = jwt().sign({"sub": 42, "role": "admin"}, 3600); // 1h TTL
+   let res = jwt().verify(token); // Result (is_ok / is_err)
+   let claims = unwrap(res);
+   ```
+2. `Auth` (`auth()`):
+   - `auth().issue_jwt(user_map, ttl_seconds = 86400)` -> Issues a signed JWT for the user.
+   - `auth().user(req)` / `"auth"` middleware -> Automatically checks DB `sessions` table first, and falls back to verifying stateless HS256 JWT tokens (`eyJ...`) with zero DB queries.
+
+--------------------------------------------------------------------------------
+3.9 SpiderBD v2 Template Engine (`framework/View/BD.matrix`)
+--------------------------------------------------------------------------------
+New SpiderBD v2 capabilities:
+- Rich `@if` / `@elif` / `@else` expressions:
+  Supports `==`, `!=`, `>=`, `<=`, `>`, `<`, `and`, `or`, `not`, string/number/boolean literals, and dot paths (`@if(user.role == 'admin' and user.points >= 100)`).
+- Inline `@if(cond) ... @else ... @endif` on a single line.
+- `@foreach(items as item)` injects `loop` metadata:
+  - `{{ loop.index }}` (0-based)
+  - `{{ loop.iteration }}` (1-based)
+  - `{{ loop.first }}` (`true` on first item)
+  - `{{ loop.last }}` (`true` on last item)
+  - `{{ loop.count }}` (total items)
+- `@csrf` -> Renders `<input type="hidden" name="_csrf" value="...">`
+- `@method('PUT')` -> Renders `<input type="hidden" name="_method" value="PUT">`
+- Global shared variables: `views().share("app_name", "MyApp")`
+- `file_mtime` template line cache so templates are not re-read from disk on every request unless modified.
+
+--------------------------------------------------------------------------------
+3.10 Integration Testing (`TestClient`)
+--------------------------------------------------------------------------------
+Test routes, middleware, auth, sessions, and JSON responses in-memory without starting a socket server:
+
+```spid3r
+import "framework/Web";
+
+let client = app.test_client();
+client.acting_as({"id": 1, "name": "Alice", "role": "admin"})
+      .post_json("/api/tasks", {"title": "Ship v2"})
+      .assert_created()
+      .assert_json_path("title", "Ship v2");
+```
+
+================================================================================
+4. STEP-BY-STEP UPGRADE INSTRUCTIONS FOR DOWNSTREAM APPLICATIONS
+================================================================================
+If you are an AI agent updating another project that depends on `spid3r_web`:
+
+1. COPY UPDATED FRAMEWORK DIRECTORY:
+   Replace the downstream project's `framework/` folder with the `framework/`
+   folder from this repository.
+
+2. SIMPLIFY IMPORTS (OPTIONAL BUT RECOMMENDED):
+   Replace multi-line `import "framework/..."` blocks in entrypoints, controllers,
+   and tests with:
+   ```spid3r
+   import "framework/Web";
+   ```
+
+3. UPGRADE MIDDLEWARE CLASSES (IF CUSTOM MIDDLEWARE EXISTS):
+   Existing 1-arg `fn handle(req)` middleware continues to work without changes.
+   To inspect or modify the response in custom middleware, update the signature
+   to `fn handle(req, next)` and call `let res = next(req);`.
+
+4. UPGRADE VALIDATION BOILERPLATE IN CONTROLLERS/ROUTES:
+   Replace manual `Validator.make(...)` + `if v.fails() { return Response.json(..., 422); }`
+   blocks with:
+   ```spid3r
+   let data = req.validate_or_fail({
+       "field": "required|..."
+   });
+   ```
+
+5. UPGRADE MODEL BOILERPLATE:
+   Replace repetitive model subclasses with `model("table_name", {"fillable": [...], "casts": {...}, "hidden": [...]})`
+   and replace manual `find` + `if nil return 404` checks with `Model.find_or_fail(id)`.
+
+6. RUN VERIFICATION:
+   Execute both test runners from the application root:
+   ```bash
+   SPID3R_DB_DRIVER=sqlite spid3r magic test
+   SPID3R_DB_DRIVER=sqlite spid3r magic test --engine=vm
+   ```
+================================================================================

@@ -1,0 +1,889 @@
+================================================================================
+SPID3RWEB NEXT-GEN ARCHITECTURE & EVOLUTION MASTER PLAN (plan.txt)
+================================================================================
+Target Repository: c:\Users\needyamin\OneDrive\Desktop\spid3r_web
+Language Runtime:  Spid3r v1.0.0 (Bytecode VM + Tree Interpreter + LLVM AOT)
+Objective:         Evolve Spid3rWeb into an ultra-lightweight, high-performance,
+                   developer-friendly MVC framework with Express/Fastify/AdonisJS
+                   ergonomics while respecting 100% of Spid3r's actual grammar,
+                   memory semantics, and zero-dependency philosophy.
+
+================================================================================
+SECTION 0: SPID3R LANGUAGE CAPABILITIES & CONSTRAINTS (GROUND TRUTH)
+================================================================================
+Before modifying any code, any coding agent MUST adhere to the verified grammar,
+type system, and runtime rules of Spid3r v1.0.0:
+
+1. SUPPORTED STRENGTHS TO LEVERAGE:
+   - Arrow Closures: `req => ...`, `(req, res) => ...`, `() => ...`
+   - Default Parameters: `fn paginate(self, page: int = 1, per_page: int = 15)`
+     (including fresh mutable literal defaults `items = []` and `opts = {}`)
+   - Map & List Literals: `{"key": val}` and `[1, 2, 3]` (vastly cleaner than
+     verbose `map("key", val)` and `list(1, 2, 3)` calls).
+   - Null Safety Operators: Null-coalescing `??` and optional chaining `?.`
+     (`req.user?.name ?? "Guest"`).
+   - String Interpolation: `"{var}"` and `"{obj.field}"` (NO spaces inside `{}`).
+   - Algebraic Enums & Pattern Matching: `enum` + `match (val) { ... }`.
+   - Destructuring: `let (a, b) = [1, 2];`, `for (k, v) in my_map { ... }`.
+   - Native Data Structures: `trie()`, `ring_buffer(cap)`, `deque()`, `queue()`,
+     `heap("min")`, `set()`, `bytes()`, `vector()`, `matrix()`.
+   - True M:N Concurrency (No GIL): `spawn fn() { ... }`, `async fn`, `await`,
+     `channel()`, `mutex(val)`.
+   - Built-in Crypto & Codecs: `sha256`, `hmac_sha256`, `pbkdf2_sha256`,
+     `bcrypt_hash`, `bcrypt_verify`, `argon2`, `secure_compare`, `base64_encode`,
+     `base64_decode`, `hex_encode`, `hex_decode`, `random_bytes`.
+   - Built-in Formats & Compression: `json_parse`, `json_write`, `gzip_compress`,
+     `gunzip`, `regex_match`, `regex_find_all`, `datetime_parts`, `format_datetime`.
+   - Embedded 29 Stdlib Modules: `http`, `web`, `session`, `middleware`,
+     `multipart`, `uuid`, `toml`, `yaml`, `xml`, `tz`, `decimal`, `event`, etc.
+
+2. HARD LANGUAGE CONSTRAINTS & GOTCHAS (NEVER VIOLATE):
+   - `for x in list` iterates over COPIES of elements. Mutating `x` inside a
+     list loop mutates a throwaway copy! Always use indexed iteration
+     (`let i = 0; while i < len(items) { items[i].mutate(); i += 1; }`) when
+     mutating elements in place.
+   - Closures can READ outer local variables, but CANNOT REASSIGN outer scalar
+     locals. To mutate state from inside a closure, mutate a captured container
+     (e.g., `let state = {"count": 0}; fn() { state["count"] += 1; }`).
+   - Classes are TOP-LEVEL ONLY (`class` inside a `fn` body is a parser error).
+   - Default class member visibility is `private` unless marked `public`.
+   - Instance methods MUST declare `self` as their first parameter:
+     `public fn method(self, arg)`.
+   - Static methods MUST declare `public static fn name(args)` and include
+     `let _ = self;` if `self` is implicitly injected by the compiler.
+   - `type_of(instance)` returns `"instance"` for ALL classes (no runtime class
+     name reflection). Differentiate domain types using marker fields or methods.
+   - Reserved keywords (40 total) CANNOT be used as identifiers or method names:
+     Specifically avoid `match` (use `match_any`), `in`, `as`, `new` (except
+     constructor `fn new`), `from` (soft keyword in imports), `async`, `await`,
+     `spawn`, `yield`, `public`, `private`, `interface`, `abstract`.
+   - Imports are compile-time string literals (`import "path";`). Class symbols
+     are NOT transitive across imports — every file instantiating a class must
+     import the module that defines it.
+   - `{identifier}` inside double-quoted strings interpolates variables! Use
+     `\{` and `\}` or raw strings `r"..."` when writing literal braces without
+     spaces.
+
+================================================================================
+SECTION 1: SYNTAX IMPROVEMENTS (MODERN, CONCISE, NODE.JS-INSPIRED DX)
+================================================================================
+Current Pain Points:
+- Verbose `map("a", 1, "b", 2)` and `list(1, 2)` calls clutter userland code.
+- Routing requires importing `Route`, `Response`, `BD`, etc. separately, and
+  only binds to the global `Route` singleton rather than directly on `app`.
+- Handlers only support `fn(req)` returning a `Response`, lacking the familiar
+  Node.js/Express `(req, res) => res.json(...)` or `(ctx) => ...` ergonomics,
+  while forcing extra imports for `json()`, `view()`, `redirect()`.
+- Defining a `Model` subclass requires 35+ lines of repetitive static boilerplate
+  (`find`, `create`, `all`) because Spid3r static methods don't inherit dynamic
+  subclass constructors.
+- Route middleware requires manual closure wrapping for controllers:
+  `Route.get("/tasks", fn(req) { return ctl.index(req); })`.
+
+Actionable Syntax Evolution:
+
+1.1. Direct App Routing & Express/Fastify Dual Handler Signatures
+   Allow registering routes directly on `app` (`app.get`, `app.post`, `app.put`,
+   `app.patch`, `app.delete`, `app.group`, `app.use`) in addition to `Route.*`.
+   Support BOTH 1-argument (return-based, Fastify/Hono style) and 2-argument
+   (Express `(req, res)` style) handlers seamlessly, plus auto-serialization of
+   returned maps/lists/strings!
+
+   BEFORE (Current Syntax):
+   ```spid3r
+   import "framework/Application";
+   import "framework/Router";
+   import "framework/Response";
+
+   let app = new Application();
+   Route.get("/api/ping", fn(req) {
+       return json(map("ok", true, "ip", req.client_ip()), 200);
+   });
+   app.listen(8000);
+   ```
+
+   AFTER (New Ergonomic Syntax — Option A: Return Value Auto-Serialization):
+   ```spid3r
+   import "framework/Web";
+
+   let app = web();
+   app.get("/api/ping", req => ({"ok": true, "ip": req.ip}));
+   app.listen(8000);
+   ```
+
+   AFTER (New Ergonomic Syntax — Option B: Express `(req, res)` Style):
+   ```spid3r
+   import "framework/Web";
+
+   let app = web();
+   app.post("/api/users", (req, res) => {
+       let data = req.validate({"name": "required|min:2", "email": "required|email"});
+       return res.status(201).json({"created": data});
+   });
+   app.listen(8000);
+   ```
+
+1.2. Single Barrel Import (`framework/Web` or `framework/Core`)
+   Create `framework/Web.matrix` that re-exports public factory functions and
+   facades (`web()`, `db()`, `model()`, `schema()`, `cache()`, `auth()`, `log()`,
+   `queue()`, `mail()`, `storage()`, `event()`, `res`, `abort()`) so an entire
+   app or microservice can be written with ONE import line:
+   `import "framework/Web";`
+
+1.3. Zero-Boilerplate Model Definition (`Model.define` / Repository Pattern)
+   Eliminate the 35-line static method duplication in `app/Models/*.matrix`.
+   Introduce a `ModelSchema` / `Repository` factory `model("table", opts)` alongside
+   the `Model` base class:
+
+   BEFORE (Current 38-line Model Scaffold):
+   ```spid3r
+   public class Post extends Model {
+       fn new(attrs = null) { super("posts", ["title", "body"], attrs); }
+       public static fn find(id) { ... }
+       public static fn create(attrs) { ... }
+       public static fn all() { ... }
+   }
+   ```
+
+   AFTER (New Concise Model Definition — 1 to 5 lines):
+   ```spid3r
+   // Ultra-concise schema/repository definition:
+   public let Post = model("posts", {
+       "fillable": ["title", "slug", "body", "published"],
+       "hidden": ["secret_token"],
+       "casts": {"published": "bool", "views": "int"}
+   });
+
+   // Usage in controllers/handlers:
+   let post = Post.find_or_fail(req.param("id"));
+   let recent = Post.where("published", true).latest().paginate(req.page());
+   let created = Post.create({"title": "Hello", "body": "World"});
+   ```
+   (Still 100% compatible with `class Post extends Model` for custom domain methods!)
+
+1.4. First-Class Controller Action Binding
+   Add `controller.action("method_name")` helper on `Controller` base class or
+   pass closures cleanly `req => ctl.index(req)` without boilerplate.
+
+1.5. Native Map `{}` and List `[]` Literal Adoption Across Framework & Generators
+   Replace all `map("k", v)` and `list(a, b)` in scaffolds, docs, examples, and
+   config files with `{ "k": v }` and `[a, b]`. Keep `for (k, v) in m` instead
+   of `for k in m.keys()`.
+
+1.6. Expressive Request & Response Shortcuts
+   - Properties & short getters on `Request`:
+     - `req.ip` (cached property alongside `req.client_ip()`)
+     - `req.query` / `req.params` / `req.body` / `req.headers` / `req.cookies`
+     - `req.user` (shortcut for `req.auth.user()`)
+     - `req.is_json()`, `req.wants_json()`, `req.bearer()`
+     - `req.only(["name", "email"])`, `req.except(["password"])`
+     - `req.bool("active", false)`, `req.float("price", 0.0)`, `req.page()`, `req.per_page(15)`
+     - `req.validate_or_fail(rules)` (validates and automatically throws
+       `validation_failed` 422 if validation fails, returning the clean map of
+       validated & type-coerced values!).
+   - Fluent `Response` (`res`) methods:
+     - `res.status(201).json({"ok": true})`
+     - `res.html("<h1>Hi</h1>")`
+     - `res.text("plain")`
+     - `res.send(any_val)` (auto-detects map/list -> JSON, string -> HTML/text, bytes -> binary)
+     - `res.view("welcome", {"title": "Home"})`
+     - `res.redirect("/login")` / `res.back(req, "/")`
+     - `res.download(file_path, filename)`
+     - `res.clear_cookie(name)`
+
+================================================================================
+SECTION 2: MVC ARCHITECTURE DESIGN (CLEAN, MODULAR, MAINTAINABLE)
+================================================================================
+Current State Analysis:
+- `Controller.matrix` is polluted with legacy storefront demo-login logic
+  (`demo_mode()`, `demo_accounts()`, `SPID3R_SHOW_DEMO_LOGINS`, `is_admin` navbar
+  flags). A core framework base controller must NEVER contain app-specific
+  e-commerce/demo logic.
+- `Model.matrix` mixes Active Record instance state with module-level eager
+  loading functions (`load_has_many`, `load_belongs_to`), lacks attribute casting,
+  lacks `hidden` attribute filtering on serialization (`to_map()`), lacks query
+  scopes, and requires subclass boilerplate for static queries.
+- `BD.matrix` (View engine) is 625 lines of line-by-line string splitting that
+  re-parses `@extends`, `@section`, `@include`, `@if`, and `@foreach` on EVERY
+  render call (`template_cache` only caches raw file text, not parsed blocks),
+  and `@if` only supports single-variable truthiness (no `==`, `!=`, `>`, `<`,
+  `and`, `or`), plus no `@elseif` / `@elif`, `@csrf`, or `@method` directives.
+
+Target MVC Architecture:
+
+2.1. Directory & Layer Structure
+   ```
+   spid3r_web/
+   ├── app/
+   │   ├── Controllers/       # Thin HTTP/WebSocket coordinators extending Controller
+   │   ├── Models/            # Domain models & repositories (model() or extends Model)
+   │   ├── Middleware/        # Custom request/response middleware
+   │   ├── Services/          # Business logic & domain services (optional layer)
+   │   ├── Providers/         # Application ServiceProviders (bootstrapping/DI/events)
+   │   └── Validators/        # Reusable validation rule schemas (optional)
+   ├── config/                # Declarative map-literal config files
+   ├── database/
+   │   ├── migrations/        # Auto-discovered schema migrations + registry.matrix
+   │   └── seeders/           # Database seeders
+   ├── framework/             # Core engine (strictly decoupled from app domain)
+   │   ├── Web.matrix         # Single-import barrel module & factory functions
+   │   ├── Application.matrix # HTTP Kernel, DI container host, lifecycle manager
+   │   ├── Context.matrix     # Unified Request/Response context (optional Hono-style)
+   │   ├── Router.matrix      # Radix/Trie + Static-Map high-speed router
+   │   ├── Request.matrix     # HTTP Request parser, input sanitizer, cookie/file reader
+   │   ├── Response.matrix    # Fluent Response builder, streaming/gzip/etag helpers
+   │   ├── Controller.matrix  # Clean base controller (view shared state, helpers)
+   │   ├── Middleware.matrix  # TRUE Onion Pipeline (before & after hooks) + built-ins
+   │   ├── Validator.matrix   # Rule engine + coercion + custom rules + validate_or_fail
+   │   ├── HttpException.matrix # Typed HTTP aborts (abort(404, msg), not_found, etc.)
+   │   ├── ErrorRenderer.matrix # Content-negotiated error rendering (JSON/HTML)
+   │   ├── Resource.matrix    # API DTO / Transformer envelopes
+   │   ├── Support/           # Helper utilities (Str, Arr, Time, Crypto, Env)
+   │   ├── Auth/              # AuthManager, Guard drivers (Session, Bearer/API, JWT), Hash
+   │   ├── Session/           # SessionStore (Memory, File, Database, Cookie-Signed) + Flash
+   │   ├── Cache/             # CacheManager + Memory (LRU), File, Database stores
+   │   ├── Config/            # ConfigRepository
+   │   ├── Container/         # ServiceContainer (DI)
+   │   ├── Database/          # DB, DatabaseManager (Connection Pool), Connection,
+   │   │                      # QueryBuilder, Model, ModelRepository, Schema, Migration
+   │   ├── Events/            # EventDispatcher
+   │   ├── Filesystem/        # StorageManager + LocalDisk
+   │   ├── Log/               # LogManager (Buffered/Structured/Daily)
+   │   ├── Mail/              # Mailer (Log + SMTP stdlib adapter)
+   │   ├── Providers/         # ServiceProvider base
+   │   ├── Queue/             # QueueManager (Sync, Database, Async Task Worker)
+   │   ├── View/              # SpiderBD v2 Template Engine (AST-compiled + cached)
+   │   ├── WebSocket/         # WsServer
+   │   └── Console/           # ConsoleKernel (Magic CLI) + TestRunner
+   ├── public/                # Static web root
+   ├── resources/views/       # SpiderBD templates (.bd.html)
+   ├── routes/                # web.matrix, api.matrix, queue.matrix
+   ├── storage/               # logs, cache, app uploads, sessions
+   └── tests/                 # Automated unit & integration test suites
+   ```
+
+2.2. Model Layer ("M") Evolution
+   - **Dual-Mode Models:**
+     1. `ModelRepository` created via `model("users", {"fillable": [...], "hidden": ["password"], "casts": {...}})`:
+        Provides instant static-like query methods without writing a class:
+        `User.query()`, `User.all()`, `User.find(id)`, `User.find_or_fail(id)`,
+        `User.where(col, op, val)`, `User.first_where(col, val)`, `User.create(map)`,
+        `User.update_or_create(match_map, val_map)`, `User.destroy(id)`,
+        `User.paginate(page, per_page)`, `User.with(["posts", "profile"])`.
+     2. `Model` instance returned by `User.find(id)` or `new User(attrs)`:
+        - **Attribute Casting (`casts`):** Automatically cast columns on read/write
+          (`"int"`, `"float"`, `"bool"`, `"string"`, `"json"` -> auto `json_parse`/`json_write`).
+        - **Hidden Attributes (`hidden`):** `to_map()` and `to_json()` automatically
+          strip keys listed in `hidden` (e.g. `["password", "remember_token"]`),
+          preventing accidental credential leaks even without a Resource transformer.
+        - **Dirty Tracking (`original` vs `attributes`):** Track `self.original` on
+          hydration; `save()` on an existing model ONLY issues an `UPDATE` for columns
+          that actually changed (`is_dirty()`, `dirty_attributes()`). If nothing
+          changed (and timestamps aren't forced), skip the SQL query entirely!
+        - **Fluent Eager Loading (`.with()`):** Allow `Post.with("comments").get()`
+          or `DB.table("posts").get()` piped into `load_has_many` / `load_belongs_to`
+          declaratively via relation definitions on the `ModelRepository`.
+
+2.3. View Layer ("V") Evolution — SpiderBD v2
+   - **Pre-Compiled AST / Token Caching:** Instead of splitting strings by `\n` and
+     scanning for `@if`/`@foreach` on every render, compile a `.bd.html` template
+     once into an in-memory instruction/node list (`[{"type": "text", ...}, {"type": "var", "escaped": true, "path": ["user", "name"]}, {"type": "if", ...}, {"type": "foreach", ...}]`)
+     keyed by file path + mtime (in dev) or permanent (in prod).
+   - **Richer Expressions in `@if` and `@elif` / `@elseif`:**
+     Support comparison operators (`==`, `!=`, `>`, `<`, `>=`, `<=`) and boolean
+     combinators (`and`, `or`, `not`) against literals and dot-paths!
+     Example: `@if(user.role == "admin" and user.active)` ... `@elif(user.role == "editor")` ... `@else` ... `@endif`.
+   - **Built-in Helper Directives:**
+     - `@csrf` -> emits `<input type="hidden" name="_csrf" value="{{csrf_token}}">`
+     - `@method("PUT")` / `@method("DELETE")` -> emits `<input type="hidden" name="_method" value="PUT">`
+     - `@json(data)` -> emits safe JSON for inline script hydration
+     - `@empty` support inside `@foreach` (or `@forelse` / `@empty`)
+     - Loop metadata variable `loop` inside `@foreach`: `loop.index`, `loop.iteration`,
+       `loop.first`, `loop.last`, `loop.count`.
+   - **View Composers / Shared Globals:** `BD.share("app_name", Config.get("app.name"))`
+     so global template variables are available across all views without manual merging.
+
+2.4. Controller Layer ("C") Evolution
+   - **Purge Storefront Leftovers:** Remove `demo_mode()`, `demo_accounts()`, and
+     `SPID3R_DEMO_*` from `framework/Controller.matrix`.
+   - **Clean Shared Context:** `Controller.shared(data, req)` injects `auth` user,
+     `is_auth`, `csrf_token`, `flash` messages, and `errors` (from session flash)
+     cleanly.
+   - **Ergonomic Helpers:** `self.validate(req, rules)` (delegates to `req.validate_or_fail`),
+     `self.ok(data)`, `self.created(data)`, `self.no_content()`, `self.paginate(query, req, transformer)`.
+
+================================================================================
+SECTION 3: DEVELOPER EXPERIENCE (NODE.JS-STYLE CONVENIENCE & ERGONOMICS)
+================================================================================
+
+3.1. True Onion Middleware Pipeline (`next(req)` Support)
+   Current Flaw: `Pipeline.matrix` runs `for pipe in self.pipes { let res = pipe.handle(req); if res != null { return res; } } return destination(req);`.
+   This is a flat pre-filter list, NOT an onion pipeline! Middleware cannot inspect
+   or mutate the outgoing `Response`, measure request duration, compress response
+   bodies, attach post-handler headers (like `X-Response-Time`, `ETag`, `Set-Cookie`),
+   or catch downstream exceptions.
+
+   Design Fix:
+   Support BOTH the legacy 1-arg `handle(self, req)` (returns `null` to continue,
+   or `Response` to short-circuit) AND the standard 2-arg Onion signature
+   `handle(self, req, next)` (or closure `(req, next) => { ... }`):
+   ```spid3r
+   // Function/Closure Middleware (Express/Koa/Hono style):
+   app.use((req, next) => {
+       let start = now_ms();
+       let res = next(req);
+       res.header("x-response-time", "{now_ms() - start}ms");
+       return res;
+   });
+   ```
+   Implementation in `Pipeline.matrix`:
+   Build a recursive or indexed dispatch chain from the tail (`destination`) back
+   to the first middleware. Check if a pipe is a `"function"` (closure) or an
+   `"instance"` (class with `.handle`). If `.handle` or the closure accepts `(req, next)`,
+   pass the `next` closure; for backward compatibility with existing 1-arg middleware
+   classes (`CorsMiddleware`, `AuthMiddleware`, `ThrottleMiddleware`), upgrade all
+   built-in middleware to accept `(self, req, next = null)` and call `return next(req);`
+   when `next != null`!
+
+3.2. Automatic Handler Return Normalization
+   In `Application.handle_request` / `Router.dispatch`:
+   When a route handler returns:
+   - `Response` instance -> call `.to_http()`
+   - Raw HTTP response map (has `"status"` and `"headers"` and `"body"`) -> pass through
+   - Plain `map` or `list` -> automatically wrap in `json(ret, 200)`!
+   - `string` -> automatically wrap in `html(ret, 200)` (or `text` if plain)
+   - `null` -> `response("", 204)` (No Content)
+   This allows writing `app.get("/users", req => User.all());` with zero boilerplate!
+
+3.3. HTML Form Method Spoofing (`_method`)
+   HTML forms only support `GET` and `POST`. In `Request.init_from_raw`, if
+   `self.method == "POST"`, check `self.data["_method"]` or `self.headers["x-http-method-override"]`.
+   If it is `"PUT"`, `"PATCH"`, or `"DELETE"`, set `self.method` to that verb
+   before route matching!
+
+3.4. Validation Engine Upgrades (`framework/Validator.matrix`)
+   - **`req.validate_or_fail(rules)` / `req.validated(rules)`:**
+     Validates against `rules`; if `v.fails()`, automatically throws
+     `validation_failed(v.error_messages())` (which renders 422 JSON for APIs or
+     redirects back with flashed errors for web forms). If it passes, returns a
+     clean `map` containing ONLY the validated fields, with automatic type coercion
+     for `"int"`/`"integer"`, `"numeric"`/`"float"`, `"bool"`/`"boolean"` rules!
+   - **New Essential Rules:**
+     - `url` (http:// or https:// valid host)
+     - `uuid` (valid UUID v4 format)
+     - `regex:pattern` (uses native `regex_match`)
+     - `between:min,max` (numeric value or string length)
+     - `array` / `list` and `map` (type checks for nested JSON payloads)
+     - `unique:table,column,ignore_id` (checks `DB.table(table).where(col, val).exists()`)
+     - `exists:table,column` (checks foreign key existence in DB)
+     - `date` / `after:field` / `before:field`
+     - Custom closure rules: allow `rules[field]` to be a `list` of rule strings
+       and/or custom validation closures `fn(val, req) -> string?`.
+
+3.5. General-Purpose Sessions & Flash Messaging (`framework/Session/Session.matrix`)
+   Current Flaw: `Auth.matrix` only creates a session row in the `sessions` table
+   when a user logs in (`user_id` is required), and `sessions.payload` only stores
+   a raw CSRF token string. Anonymous visitors have no session, and there is no
+   general key-value session storage (`req.session.get("cart")`) or flash messaging
+   (`req.flash("success", "Saved!")`) for web apps!
+   - Build `SessionManager` (`req.session`) integrated with Spid3r's `session`
+     concepts and `config/session.matrix`:
+     - Stores serialized JSON in `sessions.payload`:
+       `{"_csrf": "...", "data": {...}, "flash_old": {...}, "flash_new": {...}}`.
+     - Lazy creation: Only touches the DB / cookie if session data or CSRF is
+       written or if a session cookie already exists on the request!
+     - API on `req`:
+       - `req.session.get(key, default)`
+       - `req.session.put(key, val)` / `req.session.forget(key)`
+       - `req.session.flash(key, val)` (persists for next request only, then auto-sweeps)
+       - `req.session.get_flash(key, default)`
+       - `req.session.regenerate()` (mitigates session fixation on login!)
+
+3.6. Multi-Guard Authentication (Session + Stateless API Tokens / JWT)
+   - Keep cookie-session auth (`AuthManager`) for stateful web apps.
+   - Add **Stateless HMAC-Signed JWT / API Token Guard** (`framework/Auth/Jwt.matrix`)
+     using Spid3r's built-in `hmac_sha256`, `base64_encode`, `base64_decode`, and
+     `secure_compare` (mirroring stdlib `web.matrix` JWT capabilities):
+     - `Jwt.sign(payload_map, ttl_seconds = 3600)` -> `"eyJ..."`
+     - `Jwt.verify(token_str)` -> `payload_map` or `null`
+     - When `Authorization: Bearer <token>` is sent: if `<token>` starts with
+       `"sess_"`, check the DB session table; if it is a 3-part JWT (`a.b.c`),
+       verify the HMAC-SHA256 signature in-memory with ZERO database queries!
+
+3.7. Multipart File Uploads (`req.file("avatar")`)
+   Current Flaw: `Request.parse_multipart` explicitly skips file uploads
+   (`if part_headers.contains("filename=") { continue; }`).
+   - Fix `Request.parse_multipart` (or delegate to stdlib `multipart`) to extract
+     uploaded files into `self.files[field_name]`:
+     ```spid3r
+     // UploadedFile map/object:
+     {
+         "name": original_filename,
+         "type": content_type,
+         "size": len(content),
+         "content": content,
+         "ext": path_ext(original_filename)
+     }
+     ```
+   - Add `req.file(key)`, `req.has_file(key)`, and `req.store_file(key, dir, disk = "public")`
+     which sanitizes filenames, generates a UUID/random safe name, and writes to `Storage.disk(disk)`.
+
+================================================================================
+SECTION 4: PERFORMANCE & MEMORY OPTIMIZATION
+================================================================================
+
+4.1. O(1) Static Map + Prefix Radix Trie Router (`framework/Router.matrix`)
+   Current Bottleneck: `benchmarks/RESULTS.md` identifies route matching as the
+   weakest benchmark (539 ops/sec on tree-walk, 871 ops/sec on VM for 200 routes)
+   because `match_route_exact` performs an O(N) linear scan over `self.routes_list`
+   and calls `pattern.split("/")` and `actual.split("/")` on every non-matching
+   route!
+   Optimization Plan:
+   - **Tier 1 — O(1) Static Route Map:**
+     Store routes without `:param` or `{param}` in `self.static_routes[method][path] = route_entry`.
+     Matching a static route (e.g. `GET /`, `GET /api/v1/status`, `POST /login`)
+     becomes a single O(1) hash map lookup (`self.static_routes[m][target_path]`)
+     with ZERO string splitting or loop iterations!
+   - **Tier 2 — Method-Bucketed Segment Tree / Pre-Split Dynamic Routes:**
+     For dynamic routes with `:param` or `*wildcard`:
+     1. Bucket by HTTP method (`self.dynamic_routes[method]`) and by segment count
+        (`self.dynamic_by_len[method][seg_count]`), or organize into a segment-level
+        Radix/Trie node map.
+     2. Pre-split `route.segments = full_path.split("/")` ONCE at route registration
+        time (`router.add()`), NEVER inside `match_path()` on every request!
+     3. Split `target_path.split("/")` ONCE per request in `match_route_exact`,
+        then only inspect routes in `self.dynamic_by_len[m][a_parts.len()]`.
+   - **Expected Impact:** 10x–50x speedup on route matching (from ~870 ops/sec to
+     15,000+ ops/sec on VM), with drastically fewer temporary list allocations per
+     request (reducing GC pressure).
+
+4.2. SpiderBD Template Pre-Compilation & Caching (`framework/View/BD.matrix`)
+   Current Bottleneck: `BD.render()` re-splits the template by `\n`, scans for
+   `@extends`, parses `@section` blocks, resolves `@include` files, and walks lines
+   on every single request.
+   Optimization Plan:
+   - Cache the **merged & include-expanded token/line tree** in `self.compiled_cache[view_name]`.
+   - In development (`APP_ENV != "production"`), check `file_mtime(file_path)` to
+     auto-invalidate when a `.bd.html` file is edited on disk (hot reload without
+     restarting the server!).
+   - In production (`APP_ENV == "production"` or `SPID3R_VIEW_CACHE=1`), skip even
+     `file_exists` / `file_mtime` checks after first compile.
+   - Replace `while line.contains("@yield(")` and repeated string concatenations
+     `result = result + ...` in `evaluate_variables` with `list` chunk accumulation
+     followed by a single `.join("")`.
+
+4.3. Response Header & Security Header Pre-Allocation (`framework/Response.matrix`)
+   Current Bottleneck: `new Response()` constructs a 9-entry security header map
+   and calls `env("SPID3R_HSTS")` on every single instantiation (even for JSON API
+   responses where CSP `style-src` / `frame-ancestors` for HTML documents are
+   redundant, and `env()` is a syscall/environment lookup per response).
+   Optimization Plan:
+   - Cache `HSTS_ENABLED`, `COOKIE_SECURE_DEFAULT`, `SESSION_HTTPONLY`, and
+     `SESSION_SAMESITE` at module load / boot time (updated on config reload)
+     instead of calling `env()` and `Config.get()` on every response/cookie!
+   - Separate lightweight default headers for `json()` responses (`content-type`,
+     `x-content-type-options: nosniff`) from full HTML document CSP headers in
+     `html()` / `view()`.
+
+4.4. Bounded LRU Memory Cache & Periodic Expired-Session Pruning
+   Current Memory Risk:
+   - `MemoryCacheStore` (`framework/Cache/CacheStore.matrix`) grows unboundedly if
+     unique keys (e.g. per-IP throttle keys under a DDoS/scan) are inserted and
+     never read again (since eviction is lazy on `.get()`).
+   - Add `max_entries` cap (default 10,000, configurable in `config/cache.matrix`)
+     to `MemoryCacheStore`. When `len(self.items) >= self.max_entries`, sweep
+     expired entries first; if still full, evict oldest entries (insertion-ordered
+     map in Spid3r makes FIFO/LRU eviction O(1) via `keys()[0]`).
+   - In `AuthManager` / `SessionManager`, run probabilistic garbage collection
+     (e.g., 1 in 100 requests using `random_int(1, 100) == 1`) to `DELETE FROM sessions WHERE last_activity < cutoff`
+     so expired sessions from abandoned browsers don't bloat the database table.
+
+4.5. Log File Append & Buffered I/O (`framework/Log/Log.matrix`)
+   Current Critical Bug & Performance Issue:
+   Look at `framework/Log/Log.matrix` line 91:
+   `let res = write_file(path, line);`
+   In Spid3r, `write_file(path, data)` OVERWRITES the entire file! Every call to
+   `Log.info()` or `Log.error()` currently wipes out all previous logs in that file
+   (which is why `storage/logs/app-2026-11-06.log` on disk is only 76 bytes — a
+   single line!).
+   Fix:
+   - Fix `Log.write` to append to the log file (or use a mutex-guarded append
+     helper / `Storage` append pattern, or maintain an in-memory `ring_buffer` of
+     recent log lines and flush cleanly).
+
+================================================================================
+SECTION 5: SCALABILITY & CONCURRENCY (MULTI-THREADED SAFETY)
+================================================================================
+Critical Concurrency Audit of Current Codebase:
+Spid3r's `serve_listener` spawns concurrent tasks on an M:N OS-thread pool (up to
+256 threads, no GIL). While `Application.handle_request` commendably isolates
+`req.auth = new AuthManager()`, several core singletons in Spid3rWeb are currently
+NOT thread-safe under concurrent HTTP traffic:
+
+5.1. Fix Shared Database Connection Race Conditions (`DatabaseManager.matrix`)
+   Current Flaw:
+   `public let DB = new DatabaseManager();` holds a SINGLE `self.db_handle` and a
+   SINGLE `self.tx_depth: int` across the entire process!
+   - If Request A calls `DB.transaction(...)`, `self.tx_depth` becomes `1`. While
+     Request A is mid-transaction, Request B arrives on another worker thread:
+     Request B's queries accidentally execute inside Request A's uncommitted
+     transaction, or if Request B starts a transaction, it sees `self.tx_depth > 0`
+     and skips `BEGIN`, then when Request A commits or rolls back, Request B's
+     work is committed or rolled back prematurely!
+   - Furthermore, sharing a single `PgConnection` or `MySqlConnection` socket
+     across two simultaneous threads without a mutex or connection pool will
+     interleave wire frames if two queries fire simultaneously.
+
+   Scalability Solution — Thread-Safe Connection Pool & Mutex Synchronization:
+   - Introduce a **Connection Pool** inside `DatabaseManager` using Spid3r's native
+     `mutex()` and `queue()`:
+     - For `postgres` / `mysql` / `mariadb`: Maintain a pool of N connections
+       (configurable via `DB_POOL_SIZE`, default 8). `acquire()` pops an idle
+       connection from the mutex-guarded pool (or opens a new one up to max pool
+       size); `release()` returns it to the pool in a `finally` block!
+     - For `sqlite`: Since SQLite WAL mode supports concurrent reads and serializes
+       writes via `busy_timeout`, guard shared handle operations with a `mutex` OR
+       maintain a small pool of SQLite handles with WAL enabled.
+     - **Transaction Isolation:** `DB.transaction(fn(tx_db) { ... })` acquires a
+       dedicated connection from the pool for the duration of the transaction,
+       passes a transaction-bound `DatabaseManager` / `Connection` (`tx`) to the
+       callback, and guarantees `COMMIT`/`ROLLBACK` + pool release in `finally`!
+
+5.2. Fix Thread-Safety in `MemoryCacheStore` and `EventDispatcher`
+   Current Flaw:
+   `MemoryCacheStore.items` is a plain `map()` mutated concurrently by
+   `ThrottleMiddleware` (`Cache.increment(key)`) across worker threads!
+   `Cache.increment` does a non-atomic `get` -> `+ by` -> `put`.
+   Scalability Solution:
+   - Wrap `MemoryCacheStore`'s internal map in `mutex(map())` so `get`, `put`,
+     `add`, `increment`, `forget`, and `flush` are 100% atomic and race-free across
+     all 256 worker threads!
+   - Make `increment(key, by)` atomic inside `MemoryCacheStore` (within a single
+     `lock()` / `unlock()` critical section) and atomic in `DatabaseCacheStore`
+     (`UPDATE cache SET cache_value = CAST(cache_value AS INTEGER) + ? WHERE cache_key = ?`).
+
+5.3. Modular Sub-Apps & Route Mounting (`app.mount("/prefix", sub_app)`)
+   For large-scale enterprise applications:
+   - Allow instantiating independent `Router` or modular `Application` instances
+     (e.g., `routes/admin.matrix`, `routes/billing.matrix`, `routes/api_v2.matrix`)
+     and mounting them cleanly:
+     `app.mount("/admin", admin_router);`
+     `app.mount("/api/v2", api_v2_router);`
+   - Eliminate reliance on the single global `Route` variable by having `app` own
+     its `Router` instance while keeping `Route` aliased to the default app router
+     for backward compatibility.
+
+5.4. Background Task & Queue Worker Concurrency
+   - Allow `Queue.push_async(job, data)` which uses Spid3r's `spawn fn() { ... }`
+     for lightweight in-process background work without needing an external cron
+     process in single-node deployments.
+   - Add continuous polling mode to `spid3r magic queue:work` (with `--daemon` /
+     bounded wait) alongside `--once`.
+
+================================================================================
+SECTION 6: ESSENTIAL FEATURES FOR A PRODUCTION-READY FRAMEWORK
+================================================================================
+
+6.1. Built-in Middleware Suite Upgrades (`framework/Middleware.matrix`)
+   - **Configurable CORS Middleware (`CorsMiddleware`):**
+     Currently `CorsMiddleware` only handles `OPTIONS` requests and `Application.normalize_response`
+     hardcodes `access-control-allow-origin: *` on all JSON responses!
+     Fix: Read `config/cors.matrix` (allowed origins, methods, headers, credentials,
+     max-age) and apply CORS headers in `CorsMiddleware` (using the new Onion
+     pipeline `let res = next(req);`) for BOTH `OPTIONS` preflight and actual
+     requests.
+   - **Gzip Compression Middleware (`CompressionMiddleware`, alias `"gzip"`):**
+     Using Spid3r's native `gzip_compress(bytes(res.body))`, automatically compress
+     text/HTML/JSON/CSS/JS responses larger than 1024 bytes when the client sends
+     `Accept-Encoding: gzip`.
+   - **ETag & Conditional GET Middleware (`EtagMiddleware`, alias `"etag"`):**
+     Compute fast `sha256(res.body).slice(0, 16)` ETag on `GET`/`HEAD` 200 responses;
+     if `req.header("if-none-match")` matches, return `304 Not Modified` with an
+     empty body, saving bandwidth!
+   - **Request ID & Structured Access Logger (`RequestIdMiddleware`):**
+     Attach `X-Request-Id` (via `uuid.uuid_v4()` or fast random hex) to `req.id`
+     and the response header, and log method, path, status, and duration in ms.
+
+6.2. Static File Serving Enhancements (`Application.try_serve_static`)
+   - **Arbitrary Public Root Files:** Currently `is_static_prefix` only checks a
+     hardcoded list of 6 prefixes (`/css/`, `/js/`, `/assets/`, `/images/`,
+     `/fonts/`, `/vendor/`). Files at `/robots.txt`, `/sitemap.xml`, `/manifest.json`,
+     `/uploads/...` (used by `Storage.disk("public")`), or `/favicon.png` are NOT
+     served!
+     Fix: Add `/uploads/` to static prefixes AND check top-level safe static files
+     (or any `GET`/`HEAD` request with a safe file extension when no route matches)
+     in `public/`.
+   - **ETag / `Last-Modified` / `304 Not Modified` for Static Assets:**
+     Use `file_mtime(p)` and `file_size(p)` (native Spid3r builtins!) to generate a
+     weak ETag `W/"{size}-{mtime}"`. If `If-None-Match` matches, return `304`
+     without even calling `read_file(p)`!
+
+6.3. Signed & Encrypted Cookies (`Request` / `Response`)
+   - Leverage `Config.get("app.key")` (from `SPID3R_APP_KEY`) and `hmac_sha256` +
+     `secure_compare` to support `res.signed_cookie(name, val, opts)` and
+     `req.signed_cookie(name, default)`. Tampered cookies are automatically
+     rejected in constant time.
+
+6.4. Reverse Routing / URL Generator (`url_for` / `route()`)
+   - `Router` already supports `.name("posts.show")`, but there is NO method to
+     generate a URL from a named route!
+   - Add `router.url(name, params = {})` and global helper `route(name, params = {})`
+     (plus `@route('posts.show', {'id': post.id})` in SpiderBD views) so templates
+     and redirects never hardcode URLs:
+     `route("posts.show", {"id": 42})` -> `"/posts/42"`.
+
+6.5. Health Check, Readiness & Metrics Endpoint
+   - Built-in optional `app.enable_health_check("/health")` that verifies DB
+     connectivity (`SELECT 1`), cache status, and memory/GC stats (`gc_live_cells()`),
+     returning `200 OK` JSON for Docker/Kubernetes/load-balancer probes.
+
+6.6. CLI & Developer Tooling (`magic` CLI)
+   - `spid3r magic key:generate` -> Generates a cryptographically secure 256-bit
+     `SPID3R_APP_KEY` using `hex_encode(random_bytes(32).unwrap())` and writes it
+     into `.env`.
+   - `spid3r magic make:middleware <Name>` -> Scaffolds an Onion middleware class in
+     `app/Middleware/<Name>.matrix`.
+   - `spid3r magic make:provider <Name>` -> Scaffolds a `ServiceProvider` in
+     `app/Providers/<Name>.matrix`.
+   - `spid3r magic make:test <Name>` -> Scaffolds a test file in `tests/` and
+     auto-registers it in the test runner!
+   - `spid3r magic cache:clear` / `view:clear` -> Flushes file cache and compiled
+     views.
+   - Unify the duplicate test suite list between `tests/run_all.matrix` and
+     `framework/Console/TestRunner.matrix` into a single auto-discovered scan of
+     `tests/test_*.matrix` so developers never have to maintain two hardcoded lists!
+
+6.7. First-Party HTTP Test Client (`framework/Testing/TestClient.matrix`)
+   - Currently tests construct raw maps by hand:
+     `app.handle_request(map("method", "POST", "path", "/api/tasks", "headers", ..., "body", ...))`
+   - Create a fluent, Supertest/Laravel-inspired `TestClient` (`let client = app.test_client();`):
+     ```spid3r
+     let res = client.post_json("/api/tasks", {"title": "Write tests", "priority": 5});
+     res.assert_status(201)
+        .assert_json_path("data.title", "Write tests");
+
+     client.acting_as(user)
+           .get("/dashboard")
+           .assert_ok()
+           .assert_see("Welcome");
+     ```
+     This transforms testing DX into a joy and carries cookies/CSRF tokens across
+     requests automatically!
+
+================================================================================
+SECTION 7: PHASED IMPLEMENTATION ROADMAP (ACTIONABLE AGENT INSTRUCTIONS)
+================================================================================
+All phases are strictly ordered by dependency, risk, and impact. Every phase
+must keep all existing 16 test suites passing (`SPID3R_DB_DRIVER=sqlite spid3r magic test`)
+while adding new regression tests for every new capability.
+
+--------------------------------------------------------------------------------
+PHASE 1: CRITICAL BUG FIXES, THREAD-SAFETY & COREPERFORMANCE (FOUNDATION)
+--------------------------------------------------------------------------------
+Goal: Fix the log overwrite bug, make cache/DB concurrency-safe, and upgrade the
+Router from O(N) linear scan to O(1) static + pre-split radix matching.
+
+Files to Modify:
+1. `framework/Log/Log.matrix`
+   - Fix `write()` (line 91): Instead of `write_file(path, line)` which overwrites
+     the log file on every call, read existing content if `file_exists(path)` and
+     write `existing + line`, guarded by a module-level `mutex(true)` so concurrent
+     requests never interleave or drop log lines.
+2. `framework/Cache/CacheStore.matrix` & `framework/Cache/Cache.matrix`
+   - Wrap `MemoryCacheStore.items` access in a `mutex` (`self.lock = mutex(map())`).
+   - Add `max_entries` cap (default 10000) to `MemoryCacheStore.put` to prevent
+     unbounded memory growth (evict expired first, then oldest key).
+   - Move `increment(key, by)` into the store contract (`MemoryCacheStore`,
+     `FileCacheStore`, `DatabaseCacheStore`) so `MemoryCacheStore.increment`
+     executes atomically under its mutex lock.
+3. `framework/Router.matrix`
+   - Pre-split route segments (`self.segments = path.split("/")`) in `RouteEntry.new`.
+   - Maintain `self.static_routes` (`method -> map(path -> RouteEntry)`) for routes
+     without `:` or `{` or `*`.
+   - Maintain `self.dynamic_routes` (`method -> map(seg_len -> list(RouteEntry))`)
+     plus wildcard support (`*` at end of route path capturing remaining path).
+   - Add `router.url(name, params = {})` for named reverse routing (`route("name", params)`).
+   - Support route group `name` prefix (`{"prefix": "/admin", "as": "admin."}`).
+4. `framework/Database/DatabaseManager.matrix`
+   - Add mutex-guarded connection pooling (`self.pool = mutex(list())`) and safe
+     per-transaction connection isolation so concurrent transactions do not share
+     a mutable `self.tx_depth` counter on the global singleton.
+
+Verification:
+- Run `spid3r run tests/test_router.matrix` and `benchmarks/bench.matrix`.
+- Verify route matching throughput increases by >5x in `benchmarks/bench.matrix`.
+- Verify multiple `Log.info()` calls append multiple lines to `storage/logs/app-*.log`.
+
+--------------------------------------------------------------------------------
+PHASE 2: TRUE ONION MIDDLEWARE PIPELINE & EXPRESS/FASTIFY ROUTING DX
+--------------------------------------------------------------------------------
+Goal: Upgrade middleware to a full Onion pipeline (`(req, next) => ...`), support
+`(req)`, `(req, res)`, and auto-serialized return values in route handlers, and
+expose routing directly on `Application`.
+
+Files to Modify / Create:
+1. `framework/Middleware.matrix`
+   - Upgrade `Pipeline.then(destination)` to build a true Onion chain where each
+     middleware can execute logic BEFORE and AFTER `next(req)` and inspect/modify
+     the returned `Response`.
+   - Support both middleware class instances (`.handle(req, next)`) and plain
+     closure middleware `fn(req, next) { ... }`.
+   - Preserve 100% backward compatibility with existing 1-arg `.handle(req)`
+     middleware: if a middleware returns a `Response`, short-circuit; if it returns
+     `null` without calling `next`, automatically invoke `next(req)`.
+   - Upgrade `CorsMiddleware` to attach CORS headers to the downstream response
+     as well as answering `OPTIONS` preflight requests.
+   - Add `CompressionMiddleware` (`"gzip"`), `EtagMiddleware` (`"etag"`), and
+     `RequestIdMiddleware` (`"request_id"`).
+2. `framework/Application.matrix`
+   - Add routing proxy methods directly on `Application`:
+     `app.get(path, handler)`, `app.post(path, handler)`, `app.put(path, handler)`,
+     `app.patch(path, handler)`, `app.delete(path, handler)`, `app.any(path, handler)`,
+     `app.group(opts, cb)`, `app.fallback(handler)`, `app.mount(prefix, router)`.
+   - Give each `Application` its own router or shared `Route` with clean mounting.
+   - Enhance `Router.dispatch(handler, req)` and `Application.normalize_response(res)`:
+     - Allow handlers to return a `Response`, a `map` (auto-converted to `200 JSON`),
+       a `list` (auto-converted to `200 JSON`), a `string` (auto-converted to `200 HTML`),
+       or `null` (`204 No Content`).
+     - Support 2-argument handlers `fn(req, res)` by passing a fresh `Response`
+       builder as the second argument (attempted via arity or `req.res` helper).
+   - Fix `is_static_prefix` / `try_serve_static` to serve `/uploads/`, `/robots.txt`,
+     `/sitemap.xml`, and support `ETag` (`file_mtime` + `file_size`) -> `304 Not Modified`.
+
+Verification:
+- Run `tests/test_router.matrix`, `tests/test_throttle.matrix`, `tests/test_http_head.matrix`.
+- Add tests for Onion middleware post-processing (modifying response headers/body),
+  closure middleware `app.use((req, next) => ...)`, and handler map auto-JSON return.
+
+--------------------------------------------------------------------------------
+PHASE 3: REQUEST, RESPONSE, VALIDATION & SESSION/AUTH ERGONOMICS
+--------------------------------------------------------------------------------
+Goal: Deliver Node.js-level convenience on `req` and `res`, HTML method spoofing,
+file uploads, general-purpose sessions + flash, JWT auth, and `validate_or_fail`.
+
+Files to Modify / Create:
+1. `framework/Request.matrix`
+   - Add `_method` and `X-HTTP-Method-Override` spoofing for `POST` -> `PUT`/`PATCH`/`DELETE`.
+   - Parse cookies into `self.cookies` map; add `req.cookie(name, default)` and
+     `req.signed_cookie(name, default)`.
+   - Parse multipart file uploads into `self.files` map (`name`, `type`, `size`,
+     `content`, `ext`); add `req.file(name)`, `req.has_file(name)`, `req.store_file(name, folder, disk)`.
+   - Add ergonomic helpers: `req.ip` property, `req.user` property, `req.bearer()`,
+     `req.is_json()`, `req.wants_json()`, `req.only(keys)`, `req.except(keys)`,
+     `req.bool(key, default)`, `req.float(key, default)`, `req.page()`, `req.per_page(default, max)`.
+   - Add `req.validate_or_fail(rules)` which runs `Validator`, throws
+     `validation_failed(v.error_messages())` on failure, and returns the coerced
+     map of validated fields on success!
+2. `framework/Response.matrix`
+   - Cache env/config flags (`SPID3R_HSTS`, `session.httponly`, `session.same_site`,
+     `session.secure`) so `new Response()` and `.cookie()` don't re-read env/config
+     on every call.
+   - Add fluent builders on `Response`: `.json(data)`, `.html(str)`, `.text(str)`,
+     `.send(val)`, `.redirect(url, status)`, `.clear_cookie(name, path)`,
+     `.signed_cookie(name, value, path, max_age, secure)`, `.download(path, name)`.
+3. `framework/Validator.matrix`
+   - Add rules: `url`, `uuid`, `regex:pat`, `between:min,max`, `list`/`array`,
+     `map`, `unique:table,col`, `exists:table,col`.
+   - Build `validated_data()` map on `Validator` with type-coerced values (`int`,
+     `float`, `bool`, `string`).
+4. `framework/Session/Session.matrix` (NEW) & `framework/Auth/Jwt.matrix` (NEW)
+   - Implement `req.session` (`get`, `put`, `forget`, `flash`, `get_flash`, `all`)
+     backed by signed cookies or the `sessions` table.
+   - Implement stateless `Jwt.sign(payload, ttl)` and `Jwt.verify(token)` using
+     `hmac_sha256` and `Config.get("app.key")`.
+   - Update `AuthManager.authenticate_token` to support both stateful `"sess_*"`
+     DB tokens and stateless JWT Bearer tokens!
+
+Verification:
+- Run `tests/test_validator.matrix` and add tests for new rules, `validate_or_fail`,
+  method spoofing, signed cookies, JWT verification, session flash, and file uploads.
+
+--------------------------------------------------------------------------------
+PHASE 4: ZERO-BOILERPLATE MVC (MODELS, REPOSITORIES, VIEWS & CONTROLLERS)
+--------------------------------------------------------------------------------
+Goal: Eliminate Model subclass boilerplate via `model("table", schema)`, add dirty
+tracking + attribute casting + hidden fields to `Model`, clean `Controller.matrix`,
+and upgrade `BD.matrix` to SpiderBD v2 with AST caching and rich expressions.
+
+Files to Modify / Create:
+1. `framework/Database/Model.matrix` & `framework/Database/QueryBuilder.matrix`
+   - Add `hidden`, `casts`, and `original` (dirty tracking) to `Model`.
+   - In `Model.to_map()`, filter out any attribute present in `self.hidden` and
+     apply read casts (`int`, `float`, `bool`, `json`).
+   - In `Model.save()`, compare `self.attributes` with `self.original` on updates
+     to only `UPDATE` dirty columns; refresh `self.original` after save.
+   - Create `ModelSchema` / `ModelRepository` class and `public fn model(table, opts = {})`
+     factory in `Model.matrix`:
+     Provides `.find(id)`, `.find_or_fail(id)` (throws `not_found`), `.all()`,
+     `.create(attrs)`, `.update_or_create(search, attrs)`, `.where(col, op, val)`,
+     `.whereIn(col, list)`, `.orderBy(col, dir)`, `.latest(col = "id")`,
+     `.paginate(page, per_page)`, `.with(relations)`, `.count()`, `.exists()`.
+   - Add `.find_or_fail(id)`, `.first_or_fail()`, `.latest(col = "id")`, and
+     `. oldest(col = "id")` directly to `QueryBuilder`!
+2. `framework/Controller.matrix`
+   - Remove all storefront-specific `demo_mode()`, `demo_accounts()`, and
+     `SPID3R_DEMO_*` methods.
+   - Add clean `self.ok(data)`, `self.created(data)`, `self.no_content()`,
+     `self.back(req, fallback = "/")`, and automatic flash/error injection in
+     `self.shared(data, req)`.
+3. `framework/View/BD.matrix` (SpiderBD v2)
+   - Compile templates into a cached node tree (`self.compiled_cache`) with automatic
+     `file_mtime` invalidation in development.
+   - Upgrade `evaluate_truthiness` to a full safe expression evaluator supporting
+     `==`, `!=`, `>=`, `<=`, `>`, `<`, `and`, `or`, `not`, string/number/bool
+     literals, and dot-paths!
+   - Add `@elif(...)` / `@elseif(...)`, `@csrf`, `@method(...)`, `@json(...)`,
+     `@empty` inside `@foreach`, and `loop` metadata (`loop.index`, `loop.first`,
+     `loop.last`, `loop.count`).
+   - Add `BD.share(key, val)` for global view variables.
+
+Verification:
+- Run `tests/test_model.matrix`, `tests/test_query_builder.matrix`, `tests/test_resource.matrix`.
+- Add unit tests for `model("posts", ...)` repository methods, dirty tracking,
+  `hidden` field stripping, `casts`, and SpiderBD v2 `@if(a == b)` / `@elif` / `@csrf` / `loop`.
+
+--------------------------------------------------------------------------------
+PHASE 5: BARREL EXPORTS, TEST CLIENT, CLI UPGRADES & DOCUMENTATION
+--------------------------------------------------------------------------------
+Goal: Unify the developer experience with a single barrel import `framework/Web`,
+a fluent `TestClient`, auto-discovered test suites, and updated CLI generators.
+
+Files to Modify / Create:
+1. `framework/Web.matrix` (NEW — Single-Import Barrel Module)
+   - Import and re-export:
+     - `web(base_path = ".")` -> returns `new Application(base_path)`
+     - `model(table, opts = {})` -> returns `new ModelRepository(table, opts)`
+     - `db(table = "")` -> returns `DB` or `DB.table(table)`
+     - `schema()`, `cache()`, `auth()`, `log()`, `queue()`, `mail()`, `storage()`, `event()`, `config()`
+     - Response & Exception helpers: `json`, `html`, `text`, `view`, `redirect`,
+       `abort(status, msg)`, `not_found`, `bad_request`, `unauthorized`,
+       `forbidden`, `validation_failed`.
+2. `framework/Testing/TestClient.matrix` (NEW)
+   - Fluent HTTP test client wrapping `Application.handle_request`:
+     - `.get(path, headers = {})`, `.post(path, data = {}, headers = {})`,
+       `.post_json(path, data = {})`, `.put_json(path, data = {})`,
+       `. patch_json(path, data = {})`, `.delete(path, headers = {})`
+     - `.with_headers(map)`, `.with_cookie(k, v)`, `.with_token(token)`, `.acting_as(user)`
+     - Returns `TestResponse` with `.status()`, `.body()`, `.json()`, `.header(k)`,
+       `.assert_ok()`, `.assert_created()`, `.assert_status(code)`,
+       `.assert_json_has(path, expected)`, `.assert_see(text)`.
+3. `framework/Console/ConsoleKernel.matrix` & `framework/Console/TestRunner.matrix`
+   - Update `make:model` and `make:controller` templates to use the clean new syntax
+     (`{}` / `[]` literals, `model()`, concise actions).
+   - Add `key:generate`, `make:middleware`, `make:provider`, `make:test`, and `cache:clear`.
+   - Update `TestRunner.matrix` and `tests/run_all.matrix` to auto-discover
+     `tests/test_*.matrix` via `list_dir("tests")` (running deterministic unit
+     suites first, then `live` suites), eliminating the dual hardcoded suite lists!
+4. `examples/task-api/main.matrix` & `README.md` & `docs/ARCHITECTURE.md`
+   - Showcase the new concise syntax in `examples/task-api/main.matrix` while
+     keeping all existing tests 100% passing.
+   - Re-run `benchmarks/bench.matrix` under both tree-walk and `--engine vm` and
+     update `benchmarks/RESULTS.md` with the new performance numbers.
+
+Verification:
+- Run `spid3r check server.matrix`, `spid3r check magic`.
+- Run `SPID3R_DB_DRIVER=sqlite spid3r magic test` (all suites must pass on both
+  tree-walk and `--engine vm`).
+- Run `SPID3R_DB_DRIVER=sqlite spid3r run --engine vm examples/task-api/main.matrix`.
+- Run `SPID3R_DB_DRIVER=sqlite spid3r run --engine vm benchmarks/bench.matrix`.
+================================================================================

@@ -1,0 +1,41 @@
+flowchart TD
+    classDef path fill:#f8fafc,stroke:#64748b,stroke-width:1.5px,color:#0f172a;
+    classDef stage1 fill:#eff6ff,stroke:#2563eb,stroke-width:2px,color:#1e40af;
+    classDef stage2 fill:#f0fdf4,stroke:#16a34a,stroke-width:2px,color:#14532d;
+    classDef stage3 fill:#fffbeb,stroke:#d97706,stroke-width:2px,color:#78350f;
+    classDef match fill:#10b981,stroke:#047857,stroke-width:2px,color:#ffffff;
+    classDef err fill:#fef2f2,stroke:#dc2626,stroke-width:1.5px,color:#991b1b;
+
+    ReqPath["Incoming Request: [METHOD] /path/to/resource<br/>Pre-split segments: ['path', 'to', 'resource']"]:::path
+    S1{"Stage 1: Static Route?<br/><code>static_routes[method][path]</code>"}:::stage1
+    DisStatic["Dispatch Static Route (O(1))"]:::match
+
+    S2{"Stage 2: Segment Count Buckets?<br/><code>dynamic_by_len[method][seg_count]</code>"}:::stage2
+    Prefix2{"Two-Level Prefix Match?<br/><code>bucket[s1/s2]</code> or <code>bucket[s1]</code>"}:::stage2
+    Extract["Extract Route Params<br/><code>:id</code> or <code>{id}</code> into <code>req.params</code>"]:::match
+    DisDynamic["Dispatch Dynamic Route Handler"]:::match
+
+    S3{"Stage 3: Wildcard Route?<br/><code>wildcard_routes[method]</code> (*path)"}:::stage3
+    DisWildcard["Dispatch Wildcard Handler"]:::match
+
+    S4{"Stage 4: Root Static File?<br/>(robots.txt, favicon.ico, sitemap.xml)"}:::stage3
+    ServeRoot["Serve Static File (ETag 304)"]:::match
+
+    S5{"Stage 5: Path matches other method?"}:::err
+    Err405["405 Method Not Allowed<br/>(Header: Allow: GET, POST)"]:::err
+    Err404["404 Not Found<br/>(Or router.fallback_handler)"]:::err
+
+    ReqPath --> S1
+    S1 -- Hit (O(1)) --> DisStatic
+    S1 -- Miss --> S2
+    S2 -- Found Seg Bucket --> Prefix2
+    Prefix2 -- Prefix Hit --> Extract --> DisDynamic
+    Prefix2 -- Miss --> S3
+    S2 -- No Seg Match --> S3
+    S3 -- Wildcard Hit --> DisWildcard
+    S3 -- Miss --> S4
+    S4 -- Found File --> ServeRoot
+    S4 -- Miss --> S5
+    S5 -- Yes --> Err405
+    S5 -- No --> Err404
+

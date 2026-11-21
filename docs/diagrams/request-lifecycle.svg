@@ -1,0 +1,186 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 680" width="100%" height="100%" style="background:#ffffff;border-radius:12px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+  <defs>
+    <filter id="cardShadow" x="-2%" y="-2%" width="104%" height="106%" filterUnits="userSpaceOnUse">
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#0f172a" flood-opacity="0.06"/>
+    </filter>
+    <linearGradient id="reqHeaderGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#1e1b4b"/>
+      <stop offset="100%" stop-color="#312e81"/>
+    </linearGradient>
+    <marker id="flowArrow" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 1 L 8 5 L 0 9 z" fill="#2563eb"/>
+    </marker>
+    <marker id="greenArrow" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 1 L 8 5 L 0 9 z" fill="#16a34a"/>
+    </marker>
+  </defs>
+
+  <!-- Title Banner -->
+  <rect x="20" y="18" width="960" height="60" rx="10" fill="url(#reqHeaderGrad)"/>
+  <text x="45" y="54" fill="#a5b4fc" font-size="22" font-weight="800">⚡ Spid3rWeb Request Lifecycle</text>
+  <text x="411" y="54" fill="#e0e7ff" font-size="14" font-weight="500">From TCP Socket to HTTP Response (Application.handle_request)</text>
+  <rect x="850" y="34" width="110" height="26" rx="13" fill="#4f46e5"/>
+  <text x="905" y="51" fill="#ffffff" font-size="11" font-weight="700" text-anchor="middle">9 Steps Core</text>
+
+  <!-- Column 1: Inbound Processing (Steps 1 to 4) -->
+  <!-- Step 1 -->
+  <g filter="url(#cardShadow)">
+    <rect x="30" y="100" width="280" height="105" rx="8" fill="#ffffff" stroke="#e2e8f0" stroke-width="1.5"/>
+    <rect x="30" y="100" width="8" height="105" rx="4" fill="#6366f1"/>
+    <circle cx="58" cy="126" r="14" fill="#e0e7ff"/>
+    <text x="58" y="131" fill="#4338ca" font-size="12" font-weight="800" text-anchor="middle">1</text>
+    <text x="82" y="130" fill="#0f172a" font-size="14" font-weight="700">Idempotent Provider Boot</text>
+    <text x="50" y="156" fill="#475569" font-size="11.5">• <tspan font-family="Cascadia Code, Consolas, monospace" font-size="10.5" font-weight="600">app.boot()</tspan> runs register() &amp; boot()</text>
+    <text x="50" y="174" fill="#475569" font-size="11.5">• Runs once before 1st request</text>
+    <text x="50" y="192" fill="#64748b" font-size="10.5">• Dispatches <tspan font-family="Cascadia Code, Consolas, monospace" font-size="10.5" font-weight="600">app.booted</tspan> event</text>
+  </g>
+
+  <!-- Flow 1 -> 2 -->
+  <line x1="170" y1="205" x2="170" y2="225" stroke="#2563eb" stroke-width="2" marker-end="url(#flowArrow)"/>
+
+  <!-- Step 2 -->
+  <g filter="url(#cardShadow)">
+    <rect x="30" y="225" width="280" height="110" rx="8" fill="#ffffff" stroke="#e2e8f0" stroke-width="1.5"/>
+    <rect x="30" y="225" width="8" height="110" rx="4" fill="#2563eb"/>
+    <circle cx="58" cy="251" r="14" fill="#dbeafe"/>
+    <text x="58" y="256" fill="#1d4ed8" font-size="12" font-weight="800" text-anchor="middle">2</text>
+    <text x="82" y="255" fill="#0f172a" font-size="14" font-weight="700">Request &amp; Spoofing</text>
+    <text x="50" y="280" fill="#475569" font-size="11.5">• <tspan font-family="Cascadia Code, Consolas, monospace" font-size="10.5" font-weight="600">new Request(raw_req)</tspan></text>
+    <text x="50" y="297" fill="#475569" font-size="11.5">• Headers, cookies, query, JSON/form/files</text>
+    <text x="50" y="315" fill="#475569" font-size="11.5">• <tspan font-family="Cascadia Code, Consolas, monospace" font-size="10.5" font-weight="600">_method</tspan> &amp; <tspan font-family="Cascadia Code, Consolas, monospace" font-size="10.5" font-weight="600">X-HTTP-Method-Override</tspan></text>
+  </g>
+
+  <!-- Flow 2 -> 3 -->
+  <line x1="170" y1="335" x2="170" y2="355" stroke="#2563eb" stroke-width="2" marker-end="url(#flowArrow)"/>
+
+  <!-- Step 3 -->
+  <g filter="url(#cardShadow)">
+    <rect x="30" y="355" width="280" height="120" rx="8" fill="#ffffff" stroke="#e2e8f0" stroke-width="1.5"/>
+    <rect x="30" y="355" width="8" height="120" rx="4" fill="#0284c7"/>
+    <circle cx="58" cy="381" r="14" fill="#e0f2fe"/>
+    <text x="58" y="386" fill="#0369a1" font-size="12" font-weight="800" text-anchor="middle">3</text>
+    <text x="82" y="385" fill="#0f172a" font-size="14" font-weight="700">Request-Scoped Auth</text>
+    <text x="50" y="410" fill="#475569" font-size="11.5">• Isolated <tspan font-family="Cascadia Code, Consolas, monospace" font-size="10.5" font-weight="600">req.auth = new AuthManager()</tspan></text>
+    <text x="50" y="428" fill="#0369a1" font-size="11.5" font-weight="600">• Stateless Bearer JWT (0 DB queries!)</text>
+    <text x="50" y="446" fill="#475569" font-size="11.5">• Stateful session fallback via DB</text>
+    <text x="50" y="464" fill="#64748b" font-size="10.5">• Attaches <tspan font-family="Cascadia Code, Consolas, monospace" font-size="10.5" font-weight="600">req.user_data</tspan></text>
+  </g>
+
+  <!-- Flow 3 -> 4 -->
+  <line x1="170" y1="475" x2="170" y2="495" stroke="#2563eb" stroke-width="2" marker-end="url(#flowArrow)"/>
+
+  <!-- Step 4 -->
+  <g filter="url(#cardShadow)">
+    <rect x="30" y="495" width="280" height="110" rx="8" fill="#ffffff" stroke="#e2e8f0" stroke-width="1.5"/>
+    <rect x="30" y="495" width="8" height="110" rx="4" fill="#059669"/>
+    <circle cx="58" cy="521" r="14" fill="#d1fae5"/>
+    <text x="58" y="526" fill="#047857" font-size="12" font-weight="800" text-anchor="middle">4</text>
+    <text x="82" y="525" fill="#0f172a" font-size="14" font-weight="700">CSRF Defense-in-Depth</text>
+    <text x="50" y="550" fill="#475569" font-size="11.5">• Triggers on POST/PUT/PATCH/DELETE</text>
+    <text x="50" y="568" fill="#475569" font-size="11.5">• Layer 1: Origin vs Host validation</text>
+    <text x="50" y="586" fill="#475569" font-size="11.5">• Layer 2: Per-session <tspan font-family="Cascadia Code, Consolas, monospace" font-size="10.5" font-weight="600">_csrf</tspan> token</text>
+  </g>
+
+  <!-- Flow 4 to Column 2 (Step 5) -->
+  <path d="M 310 550 L 335 550 L 335 152 L 354 152" fill="none" stroke="#2563eb" stroke-width="2" marker-end="url(#flowArrow)"/>
+
+  <!-- Column 2: Pipeline & Routing (Steps 5 to 7) -->
+  <!-- Step 5 -->
+  <g filter="url(#cardShadow)">
+    <rect x="360" y="100" width="280" height="110" rx="8" fill="#ffffff" stroke="#e2e8f0" stroke-width="1.5"/>
+    <rect x="360" y="100" width="8" height="110" rx="4" fill="#d97706"/>
+    <circle cx="388" cy="126" r="14" fill="#fef3c7"/>
+    <text x="388" y="131" fill="#b45309" font-size="12" font-weight="800" text-anchor="middle">5</text>
+    <text x="412" y="130" fill="#0f172a" font-size="14" font-weight="700">Static Assets &amp; ETag</text>
+    <text x="380" y="156" fill="#475569" font-size="11.5">• Serves /css, /js, /images, /uploads</text>
+    <text x="380" y="174" fill="#475569" font-size="11.5">• Strict path traversal guard (..)</text>
+    <text x="380" y="192" fill="#b45309" font-size="11.5" font-weight="600">• If-None-Match → 304 Not Modified</text>
+  </g>
+
+  <!-- Flow 5 -> 6 -->
+  <line x1="500" y1="210" x2="500" y2="235" stroke="#2563eb" stroke-width="2" marker-end="url(#flowArrow)"/>
+
+  <!-- Step 6 -->
+  <g filter="url(#cardShadow)">
+    <rect x="360" y="235" width="280" height="120" rx="8" fill="#ffffff" stroke="#e2e8f0" stroke-width="1.5"/>
+    <rect x="360" y="235" width="8" height="120" rx="4" fill="#7c3aed"/>
+    <circle cx="388" cy="261" r="14" fill="#ede9fe"/>
+    <text x="388" y="266" fill="#6d28d9" font-size="12" font-weight="800" text-anchor="middle">6</text>
+    <text x="412" y="265" fill="#0f172a" font-size="14" font-weight="700">Global Onion Pipeline</text>
+    <text x="380" y="291" fill="#475569" font-size="11.5">• Executes <tspan font-family="Cascadia Code, Consolas, monospace" font-size="10.5" font-weight="600">app.global_middleware</tspan></text>
+    <text x="380" y="309" fill="#475569" font-size="11.5">• Short-circuits OPTIONS (CORS preflight)</text>
+    <text x="380" y="327" fill="#475569" font-size="11.5">• Wraps downstream execution</text>
+    <text x="380" y="345" fill="#6d28d9" font-size="10.5"><tspan font-family="Cascadia Code, Consolas, monospace" font-size="10.5" font-weight="600">let res = next(req); return res;</tspan></text>
+  </g>
+
+  <!-- Flow 6 -> 7 -->
+  <line x1="500" y1="355" x2="500" y2="380" stroke="#2563eb" stroke-width="2" marker-end="url(#flowArrow)"/>
+
+  <!-- Step 7 -->
+  <g filter="url(#cardShadow)">
+    <rect x="360" y="380" width="280" height="150" rx="8" fill="#ffffff" stroke="#e2e8f0" stroke-width="1.5"/>
+    <rect x="360" y="380" width="8" height="150" rx="4" fill="#2563eb"/>
+    <circle cx="388" cy="406" r="14" fill="#dbeafe"/>
+    <text x="388" y="411" fill="#1d4ed8" font-size="12" font-weight="800" text-anchor="middle">7</text>
+    <text x="412" y="410" fill="#0f172a" font-size="14" font-weight="700">O(1) &amp; Bucketed Routing</text>
+    <text x="380" y="435" fill="#1d4ed8" font-size="11.5" font-weight="600">• 1. Static O(1) hash lookup</text>
+    <text x="380" y="453" fill="#475569" font-size="11.5">• 2. Dynamic 2-level prefix buckets</text>
+    <text x="395" y="471" fill="#64748b" font-size="11">(segment count + s1/s2 keys)</text>
+    <text x="380" y="489" fill="#475569" font-size="11.5">• 3. Wildcard catch-all (*path)</text>
+    <text x="380" y="507" fill="#dc2626" font-size="11.5">• 4. 405 Method Not Allowed / 404</text>
+  </g>
+
+  <!-- Flow 7 to Column 3 (Step 8) -->
+  <path d="M 640 455 L 665 455 L 665 170 L 684 170" fill="none" stroke="#2563eb" stroke-width="2" marker-end="url(#flowArrow)"/>
+
+  <!-- Column 3: Execution & Outbound (Steps 8 to 9 + Response) -->
+  <!-- Step 8 -->
+  <g filter="url(#cardShadow)">
+    <rect x="690" y="110" width="280" height="140" rx="8" fill="#ffffff" stroke="#e2e8f0" stroke-width="1.5"/>
+    <rect x="690" y="110" width="8" height="140" rx="4" fill="#0891b2"/>
+    <circle cx="718" cy="136" r="14" fill="#cffafe"/>
+    <text x="718" y="141" fill="#0e7490" font-size="12" font-weight="800" text-anchor="middle">8</text>
+    <text x="742" y="140" fill="#0f172a" font-size="14" font-weight="700">Route Pipeline &amp; Handler</text>
+    <text x="710" y="165" fill="#475569" font-size="11.5">• Route middleware pipeline:</text>
+    <text x="725" y="183" fill="#0e7490" font-size="11"><tspan font-family="Cascadia Code, Consolas, monospace" font-size="10.5" font-weight="600">auth, guest, throttle:60,60, etag</tspan></text>
+    <text x="710" y="201" fill="#475569" font-size="11.5">• Controller or Closure Dispatch:</text>
+    <text x="725" y="219" fill="#15803d" font-size="11"><tspan font-family="Cascadia Code, Consolas, monospace" font-size="10.5" font-weight="600">req =&gt; ...</tspan> or <tspan font-family="Cascadia Code, Consolas, monospace" font-size="10.5" font-weight="600">(req, res) =&gt; ...</tspan></text>
+    <text x="710" y="237" fill="#64748b" font-size="10.5">• Validation: <tspan font-family="Cascadia Code, Consolas, monospace" font-size="10.5" font-weight="600">req.validate_or_fail()</tspan></text>
+  </g>
+
+  <!-- Flow 8 -> 9 -->
+  <line x1="830" y1="250" x2="830" y2="280" stroke="#2563eb" stroke-width="2" marker-end="url(#flowArrow)"/>
+
+  <!-- Step 9 -->
+  <g filter="url(#cardShadow)">
+    <rect x="690" y="280" width="280" height="150" rx="8" fill="#ffffff" stroke="#e2e8f0" stroke-width="1.5"/>
+    <rect x="690" y="280" width="8" height="150" rx="4" fill="#16a34a"/>
+    <circle cx="718" cy="306" r="14" fill="#dcfce7"/>
+    <text x="718" y="311" fill="#15803d" font-size="12" font-weight="800" text-anchor="middle">9</text>
+    <text x="742" y="310" fill="#0f172a" font-size="14" font-weight="700">Coercion &amp; Session</text>
+    <text x="710" y="335" fill="#15803d" font-size="11.5" font-weight="600">• Return auto-coercion:</text>
+    <text x="725" y="353" fill="#475569" font-size="11">Map / List → <tspan font-family="Cascadia Code, Consolas, monospace" font-size="10.5" font-weight="600">200 application/json</tspan></text>
+    <text x="725" y="371" fill="#475569" font-size="11">String → <tspan font-family="Cascadia Code, Consolas, monospace" font-size="10.5" font-weight="600">200 text/html</tspan></text>
+    <text x="710" y="389" fill="#475569" font-size="11.5">• Dirty <tspan font-family="Cascadia Code, Consolas, monospace" font-size="10.5" font-weight="600">req.session()</tspan> committed to the session store</text>
+    <text x="710" y="407" fill="#475569" font-size="11.5">• <tspan font-family="Cascadia Code, Consolas, monospace" font-size="10.5" font-weight="600">Set-Cookie: spid3r_sid=...</tspan> emitted</text>
+  </g>
+
+  <!-- Flow 9 -> Outbound Response -->
+  <line x1="830" y1="430" x2="830" y2="470" stroke="#16a34a" stroke-width="3" marker-end="url(#greenArrow)"/>
+
+  <!-- Output Response Box -->
+  <g filter="url(#cardShadow)">
+    <rect x="690" y="470" width="280" height="90" rx="10" fill="#f0fdf4" stroke="#86efac" stroke-width="2"/>
+    <text x="830" y="502" fill="#15803d" font-size="15" font-weight="800" text-anchor="middle">HTTP Client Response</text>
+    <text x="830" y="525" fill="#334155" font-size="12" text-anchor="middle">Status · Headers · Body Stream</text>
+    <text x="830" y="543" fill="#64748b" font-size="11" text-anchor="middle">Keep-Alive socket returned to pool</text>
+  </g>
+
+  <!-- Bottom Legend / Badges -->
+  <rect x="30" y="625" width="940" height="38" rx="8" fill="#f8fafc" stroke="#e2e8f0"/>
+  <text x="50" y="649" fill="#64748b" font-size="12" font-weight="600">Performance Characteristics:</text>
+  <text x="230" y="649" fill="#2563eb" font-size="12" font-weight="700">⚡ Router: 153,846 ops/sec</text>
+  <text x="420" y="649" fill="#16a34a" font-size="12" font-weight="700">⚡ JSON roundtrip: 666,666 ops/sec</text>
+  <text x="660" y="649" fill="#7c3aed" font-size="12" font-weight="700">⚡ SpiderBD v2: 9,661 ops/sec</text>
+</svg>
+

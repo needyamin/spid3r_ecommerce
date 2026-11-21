@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Spid3rWeb — Audit &amp; Improvement Plan</title>
+<style>
+:root{--bg:#0f1218;--card:#171c26;--line:#2a3243;--tx:#dde3ee;--mut:#8b96ab;--ac:#6cb6ff;--p0:#ff5c6c;--p1:#ffb454;--p2:#6cb6ff;--p3:#7bd88f}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--tx);font:15px/1.6 system-ui,Segoe UI,Roboto,sans-serif}
+header{padding:32px 6vw;border-bottom:1px solid var(--line);background:linear-gradient(135deg,#141a26,#0f1218)}
+h1{margin:0 0 6px;font-size:28px}h2{margin:44px 0 12px;font-size:22px;border-bottom:1px solid var(--line);padding-bottom:6px}h3{margin:22px 0 6px;font-size:16px}
+main{padding:0 6vw 80px;max-width:1280px;margin:auto}nav{position:sticky;top:0;background:#0f1218ee;backdrop-filter:blur(6px);padding:10px 6vw;border-bottom:1px solid var(--line);z-index:5;display:flex;flex-wrap:wrap;gap:6px 16px;font-size:13px}
+nav a{color:var(--ac);text-decoration:none}nav a:hover{text-decoration:underline}
+.mut{color:var(--mut)}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px 16px}.card b.n{font-size:26px;display:block}
+table{width:100%;border-collapse:collapse;margin:10px 0;font-size:14px;background:var(--card);border-radius:8px;overflow:hidden}
+th,td{padding:8px 10px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}th{background:#1d2431;color:var(--mut);font-weight:600}
+code,pre{font-family:Consolas,Menlo,monospace;font-size:13px}code{background:#0b0e14;padding:1px 5px;border-radius:4px;color:#ffd38a}
+pre{background:#0b0e14;border:1px solid var(--line);border-radius:8px;padding:12px;overflow:auto;margin:6px 0}pre code{background:none;padding:0;color:#cfe3ff}
+.tag{display:inline-block;font-size:11px;font-weight:700;padding:1px 8px;border-radius:99px;color:#0f1218;white-space:nowrap}
+.P0{background:var(--p0)}.P1{background:var(--p1)}.P2{background:var(--p2)}.P3{background:var(--p3)}
+.ok{color:var(--p3)}.bad{color:var(--p0)}.warn{color:var(--p1)}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:12px}@media(max-width:800px){.two{grid-template-columns:1fr}}
+.note{border-left:3px solid var(--ac);background:#122033;padding:8px 12px;border-radius:0 8px 8px 0;margin:10px 0}
+.note.w{border-color:var(--p1);background:#2a2113}
+details{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:8px 12px;margin:8px 0}summary{cursor:pointer;font-weight:600}
+li{margin:3px 0}
+</style>
+</head>
+<body>
+<header>
+  <h1>Spid3rWeb — Audit &amp; Improvement Plan</h1>
+  <div class="mut">Audited 2026-11-20 · framework <code>spid3r_web</code> (79 <code>.matrix</code> files, ≈15.9k lines) · toolchain <code>spid3r 1.1.1</code> · reference docs <code>../docs</code> (GRAMMAR, KEYWORDS, SECURITY, ENVIRONMENT, AGENT, STANDARD_LIBRARY, ROADMAP)</div>
+</header>
+<nav>
+  <a href="#summary">Summary</a><a href="#syntax">Syntax / latest-code coverage</a><a href="#bugs">Real bugs</a><a href="#security">Security</a>
+  <a href="#structure">Structure &amp; folders</a><a href="#perm">File permissions</a><a href="#storage">Storage</a><a href="#network">Network</a>
+  <a href="#drivers">Drivers / DB</a><a href="#registry">Migration registry</a><a href="#easy">Easier code</a><a href="#deploy">Deploy / CI</a><a href="#roadmap">Roadmap</a><a href="#verify">How to verify</a>
+</nav>
+<main>
+
+<h2 id="summary">1. Summary</h2>
+<div class="grid">
+  <div class="card"><b class="n ok">18/18</b>test suites pass (<code>spid3r magic test</code>, incl. Phase 0 safety suite).</div>
+  <div class="card"><b class="n ok">0</b> code uses of <code>map(...)</code> / <code>list(...)</code> / <code>+ string(</code>; <code>??</code> ×7, <code>?.</code> ×3, <code>for (k, v)</code> ×52, <code>private</code> ×48.</div>
+  <div class="card"><b class="n ok">0</b> unknown keys in <code>spid3r.ini.example</code> (6 fixed in Phase 0; <code>config validate</code> ok).</div>
+  <div class="card"><b class="n ok">0</b> of 80 files fail <code>spid3r fmt --check</code> (formatted &amp; CI-gated in Phase 1).</div>
+</div>
+<p>The framework is functionally broad (router, ORM, SpiderBD views, queue, cache, auth/JWT, mail, WebSocket, 3 DB drivers) and has good security fundamentals (CRLF-safe headers, signed cookies, constant-time compares, path-traversal guards, SQL identifier checks). What makes it feel "not a perfect framework" is: <b>(a)</b> code still written in the pre-1.1 verbose style, <b>(b)</b> a few real correctness bugs, <b>(c)</b> config that fights the runtime (ini keys, hard-coded debug), <b>(d)</b> repo/folder hygiene, and <b>(e)</b> missing production tooling (no lint/format gate, no <code>storage:link</code>, unpinned installs).</p>
+
+<table>
+<tr><th>Priority</th><th>Meaning</th><th>Count in this plan</th></tr>
+<tr><td><span class="tag P0">P0</span></td><td>Bug or security issue — fix first</td><td>5</td></tr>
+<tr><td><span class="tag P1">P1</span></td><td>Correctness / production readiness</td><td>19</td></tr>
+<tr><td colspan="3" class="mut">Counts are the tagged findings in sections 3-11.</td></tr>
+<tr><td><span class="tag P2">P2</span></td><td>Structure, DX, "easier code"</td><td>19</td></tr>
+<tr><td><span class="tag P3">P3</span></td><td>Nice to have</td><td>3</td></tr>
+</table>
+
+<h2 id="syntax">2. Spid3r syntax changes — is everything covered and latest?</h2>
+<div class="note">Source of truth: <code>docs/GRAMMAR.md</code>, <code>docs/KEYWORDS.md</code>, <code>docs/STANDARD_LIBRARY.md</code>, <code>spid3r --help</code> (v1.1.1). Counts are grep counts over <code>framework/ routes/ config/ database/ tests/ tools/ examples/ benchmarks/ server.matrix magic</code>.</div>
+<p><b>Verdict:</b> <span class="ok">compiles and runs on 1.1.1</span> (<code>spid3r check</code> is clean with <code>SPID3R_PATH=.</code>; only lint warnings), but <span class="warn">only partially modernised</span>. The old <code>plan.txt</code> itself lists the modern features as "strengths to leverage", yet the code does not use them.</p>
+
+<table>
+<tr><th>Language feature (docs)</th><th>Status in code</th><th>Action</th></tr>
+<tr data-done="1"><td>Map / list literals <code>{"k": v}</code>, <code>[a, b]</code> (GRAMMAR §listLit)</td><td class="warn">Mixed. Session uses <code>{}</code>; config + most of framework still <code>map("k", v, ...)</code> (255) and <code>list(...)</code> (84)</td><td>Convert all; biggest readability win. Config files first.</td></tr>
+<tr data-done="1"><td>String interpolation <code>"hi {name}"</code> (no spaces in braces)</td><td class="bad">Not used; 91× <code>"..." + string(x)</code></td><td>Replace where operand is a simple identifier / <code>obj.field</code>. Keep concatenation for method calls (holes only accept identifier or <code>a.b</code>).</td></tr>
+<tr data-done="1"><td>Null-coalescing <code>??</code> and optional chaining <code>?.</code></td><td class="bad">0 uses; manual <code>if x == null</code> / <code>env().is_some()</code> ladders (e.g. <code>Response.cookie</code> secure flag, 4 nested ifs)</td><td>Rewrite config/env lookups as <code>a ?? b</code>. Remember: <code>??</code> is <em>null</em>-only; <code>none ?? x</code> stays <code>none</code> — use <code>.unwrap_or(x)</code> for options.</td></tr>
+<tr data-done="1"><td>Destructuring <code>let (a, b) = ...</code>, <code>for (k, v) in map</code></td><td class="bad">0 uses; <code>for k in m.keys() { m[k] }</code> pattern</td><td>Use <code>for (k, v) in m</code>.</td></tr>
+<tr data-done="1"><td><code>else if</code> synonym, value-position <code>if</code></td><td class="warn">Not used</td><td>Optional — use <code>let x = if c { a } else { b };</code> for short ternaries.</td></tr>
+<tr data-done="1"><td><code>match (v) { ... }</code> + <code>enum</code></td><td class="warn">3 <code>match</code> uses; long <code>if/elif</code> chains remain (<code>content_type_for</code> = 24 ifs, <code>ConsoleKernel</code> command dispatch)</td><td>Replace extension→MIME with a constant map; command dispatch with <code>match</code> or command-registry map.</td></tr>
+<tr data-done="1"><td>Radix / underscore literals (<code>1_000</code>, <code>0o755</code>)</td><td class="warn">Not used (e.g. <code>86400</code>, <code>10485760</code>)</td><td>Cosmetic: <code>86_400</code>, named constants.</td></tr>
+<tr data-done="1"><td>Typed signatures <code>fn f(a: int) -&gt; string</code></td><td class="warn">Partial; many <code>public fn</code> have no param/return types</td><td>Add types to all public API; semantic checker then catches misuse.</td></tr>
+<tr data-done="1"><td><code>private</code> visibility</td><td class="warn">Only 18 <code>private</code> vs 172 <code>public let</code>; internals like <code>Response.is_header_safe</code>, <code>Router</code> tables are reachable</td><td>Make state fields <code>private</code>, expose accessors.</td></tr>
+<tr data-done="1"><td>Lints: <code>unused-variable/-parameter/-import</code> (<code>check --deny-warnings</code>)</td><td class="warn">Warnings: <code>Schema</code> 6 unused imports + 3 <code>self</code>, <code>Migration</code> 6, <code>Router</code> 3, <code>Hash</code> 3, <code>Connection</code> 3, <code>Event</code> 1, <code>server.matrix</code> unused <code>import "framework/Application"</code>, <code>magic</code> 1</td><td>Fix; then gate CI with <code>--deny-warnings</code>. For <code>self</code>-unused static-style methods use <code>public static fn</code> (already used in <code>ErrorRenderer</code>).</td></tr>
+<tr data-done="1"><td><code>spid3r fmt</code> (canonical formatter; 100-col wrapping)</td><td class="bad">12 files would be reformatted; 156 lines &gt;100 cols in <code>framework/</code></td><td>Run <code>spid3r fmt</code> once, add <code>fmt --check</code> to CI.</td></tr>
+<tr data-done="1"><td>Doc comments + <code>spid3r doc</code></td><td class="warn">Comments are free-form <code>//</code> blocks</td><td>Adopt doc-comment style so <code>spid3r doc</code> generates API docs (replaces hand-written <code>developer-docs.html</code>).</td></tr>
+<tr data-done="1"><td>Native <code>assert</code>/<code>assert_eq</code>, <code>spid3r test</code> (3-engine differential), <code>--coverage</code></td><td class="warn">Custom <code>TestRunner</code>; <code>spid3r test</code> + coverage not used; CI only runs <code>magic test</code> on one engine</td><td>Make <code>tests/*.matrix</code> compatible with <code>spid3r test</code> (tree == vm == exec) and add <code>--coverage</code>.</td></tr>
+<tr data-done="1"><td>Stdlib <code>session</code>, <code>middleware</code>, <code>multipart</code>, <code>uuid</code>, <code>http</code> modules (docs §10–13, 26, 29)</td><td class="warn">Framework re-implements session, middleware, multipart, cors, throttle in its own files. Overlap not documented.</td><td>Decide per module: wrap stdlib (less code to own) or document why custom. See §6.</td></tr>
+<tr data-done="1"><td>Hard constraint from grammar: <code>super</code> unsupported on AOT backend; <code>await</code> only in <code>async fn</code></td><td class="ok">Not violated by current code (not verified for every subclass — add AOT smoke test)</td><td>CI: build <code>server.matrix</code> with <code>spid3r build</code> and boot it.</td></tr>
+<tr data-done="1"><td>Runtime flags: <code>--sandbox</code>, <code>--budget</code>, <code>--max-call-depth</code>, <code>security.basedir</code>, <code>modules.disable</code>, <code>[env.&lt;name&gt;]</code> ini sections, <code>spid3r config validate</code>, <code>--bundle-runtime</code></td><td class="bad">None used or documented for deployment; <code>spid3r.ini.example</code> uses wrong keys (below)</td><td>Rewrite ini example + deploy docs.</td></tr>
+</table>
+
+<h3>Stale references to fix</h3>
+<ul>
+<li data-done="1"><code>plan.txt</code> header: "Target Repository: ...\Desktop\spid3r_web" and "Spid3r v1.0.0" — wrong path and outdated runtime. Archive it (superseded by this file) — see §5.</li>
+<li data-done="1"><code>README.md</code> / Dockerfile / ini example say v1.1.1+, but <code>spider.toml</code> has no minimum-runtime field and <code>version = "1.0.0"</code>. Add a runtime check at boot (<code>version()</code>) and bump the package version.</li>
+<li data-done="1"><code>docs/SECURITY.md</code> "Known gaps" says <em>"No CSRF middleware … Sessions are client-side"</em> — that refers to the stdlib <code>web</code> module. Spid3rWeb <em>does</em> implement CSRF (Application.matrix ≈ L309-325) and server-side sessions (<code>sessions</code> table). Document this difference in <code>docs/ARCHITECTURE.md</code> so users do not think the framework is unprotected.</li>
+</ul>
+
+<h2 id="bugs">3. Real bugs found (verified in source)</h2>
+
+<h3 data-done="1"><span class="tag P0">P0</span> B1 — Multiple cookies are comma-joined into one <code>Set-Cookie</code></h3>
+<p><code>framework/Response.matrix</code> L115-121 and <code>framework/Session/Session.matrix</code> L134-135 merge cookies with <code>", "</code>. RFC 6265 forbids this; browsers parse it as <em>one</em> cookie, so the 2nd cookie (e.g. session + CSRF/flash) is lost or corrupted. The comment "safe here — never Expires" is not true for <code>SameSite=…, Secure</code> parsing by every client/proxy.</p>
+<p><b>Fix:</b> stdlib <code>http</code> already emits "each entry in a <code>cookies</code> map as its own <code>Set-Cookie</code> header" (STANDARD_LIBRARY §WebApp extras). Store <code>self.cookies = []</code> on <code>Response</code> and pass them through that mechanism at <code>finalize_http_response</code>. Add a test asserting two cookies → two headers.</p>
+
+<h3 data-done="1"><span class="tag P0">P0</span> B2 — Queue never reclaims a stale reserved job</h3>
+<p><code>Queue.pop()</code> selects <code>reserved_at = 0 OR reserved_at &lt; cutoff</code> (retry_after), but then claims it with <code>.where("reserved_at", 0).update(...)</code> (Queue.matrix ≈ L176-188). For an expired reservation <code>reserved_at != 0</code>, so the update affects 0 rows and the method returns <code>null</code> — the crashed job is stuck forever while <code>retry_after</code> in config is dead.</p>
+<p><b>Fix:</b> make the claim conditional on the value just read: <code>.where("reserved_at", job["reserved_at"])</code> (compare-and-swap). Add a test: reserve, advance time/set <code>reserved_at</code> old, pop again → job returned with <code>attempts == 2</code>.</p>
+
+<h3 data-done="1"><span class="tag P1">P1</span> B3 — Hard-coded <code>examples/spid3r_web/</code> paths in the shipped app</h3>
+<p><code>Application.try_serve_static</code> looks in <code>examples/spid3r_web/public/</code>; <code>tests/run_all.matrix</code> sets <code>SPID3R_PATH</code> to <code>examples/spid3r_web</code>. This is a leftover from when the framework lived inside the language repo. It makes the lookup order surprising and adds a second place static files can be served from.</p>
+<p><b>Fix:</b> a single configurable <code>paths.public</code> (default <code>public</code>); delete the fallbacks.</p>
+
+<h3 data-done="1"><span class="tag P1">P1</span> B4 — <code>tests/run_all.matrix</code> fails when run directly</h3>
+<p><code>spid3r run tests/run_all.matrix</code> → <em>module 'framework/Console/TestRunner' not found</em>. It only works via <code>spid3r magic test</code> because <code>SPID3R_PATH</code> is set externally. Any of the 17 test files has the same problem when run alone (<code>spid3r check</code> without <code>SPID3R_PATH</code> reports an error for every framework file).</p>
+<p><b>Fix:</b> declare the module path once (<code>spider.toml</code> / <code>spid3r.ini</code> <code>modules.path = .</code>, doc'd as <code>SPID3R_PATH</code> alias) and commit a project-level <code>spid3r.ini</code>; or make imports relative.</p>
+
+<h3 data-done="1"><span class="tag P1">P1</span> B5 — <code>is_unsafe_path</code> over-blocks; static files are fully read into memory</h3>
+<p>Any URL containing <code>..</code> or <code>:</code> is rejected, so legitimate names like <code>app..min.js</code> or <code>v1:2.css</code> 404. Every static response uses <code>read_file</code> (whole file in RAM, no <code>Range</code>, no gzip). <b>Fix:</b> split path into segments and reject only a segment equal to <code>..</code>; stream large files (the runtime has <code>tcp_send_file</code> / <code>stream_source</code> already used by SSE); add <code>.mp4/.webm/.mp3/.wasm/.zip</code> MIME types via a constant map.</p>
+
+<h3 data-done="1"><span class="tag P2">P2</span> B6 — Cache file store is not atomic</h3>
+<p><code>CacheStore</code> uses plain <code>write_file</code> (L255). A crash or concurrent worker can leave a half-written JSON. The runtime exposes <code>write_file_atomic</code> (SECURITY.md covered natives). <b>Fix:</b> switch to it for cache, <code>.env</code> writes (<code>key:generate</code>), and the migrations registry.</p>
+
+<h2 id="security">4. Security</h2>
+<table>
+<tr><th>#</th><th>Pri</th><th>Finding</th><th>Fix</th></tr>
+<tr data-done="1"><td>S1</td><td><span class="tag P0">P0</span></td><td><code>config/app.matrix</code> hard-codes <code>"env", "development", "debug", true</code>. <code>.env.example</code> advertises <code>APP_ENV</code>, but config does not read it, so debug pages/stack traces can ship to production.</td><td><code>"env": env("APP_ENV") ?? "production"</code>, <code>"debug": env == "development"</code>. Default <b>production</b>, never development.</td></tr>
+<tr data-done="1"><td>S2</td><td><span class="tag P0">P0</span></td><td><b>Verified:</b> <code>resolve_cookie_secret()</code> (Request.matrix) and <code>resolve_response_cookie_secret()</code> (Response.matrix) fall back to the literal public string <code>"spid3rweb-default-cookie-secret-key"</code>, so anyone can forge signed cookies on an unconfigured deploy. Also an <b>env-name mismatch</b>: the code reads <code>app.key</code> then <code>APP_KEY</code>, while <code>config/app.matrix</code> declares <code>SPID3R_APP_KEY</code> (<code>key</code> is <code>""</code>) and the docs mention both. The duplicated function exists twice.</td><td>Refuse to boot when <code>APP_ENV=production</code> and key is empty/default. <code>magic key:generate</code> already exists — call it from install/Docker entry.</td></tr>
+<tr data-done="1"><td>S3</td><td><span class="tag P0">P0</span></td><td>Docker: <code>RUN cp .env.example .env</code> bakes a template into the image, container runs as <b>root</b>, no <code>HEALTHCHECK</code>, <code>curl … raw.githubusercontent…/main/install.sh | sh</code> from an unpinned branch with no checksum; compose uses <code>spid3r/spid3r</code>, <code>rootpass</code>, <code>postgres/postgres</code> and publishes DB ports.</td><td>Pin installer to a tag + verify SHA-256; add <code>USER spid3r</code>; <code>HEALTHCHECK</code> on <code>/health</code>; secrets via env/<code>.env</code> file reference (<code>${MYSQL_PASSWORD:?}</code>), don't publish DB ports; don't copy <code>tests/</code> into runtime image.</td></tr>
+<tr data-done="1"><td>S4</td><td><span class="tag P1">P1</span></td><td>No <code>security.basedir</code>, <code>disable_natives</code> or <code>modules.disable</code> policy shipped (SECURITY.md). A single path bug in a controller can read <code>.env</code> or <code>database.sqlite</code>.</td><td>Ship <code>spid3r.ini</code> (production profile) with <code>security.basedir = ./public;./storage;./database;./resources;./config</code> and <code>modules.disable</code> for unused ones (<code>ssh</code>, <code>ftp</code>…). Note SECURITY.md warns basedir alone is not a jail — pair with <code>disable_natives</code> for process natives or run in a container.</td></tr>
+<tr data-done="1"><td>S5</td><td><span class="tag P1">P1</span></td><td>Hard limits are not enforced in the app: body size, headers, timeouts are only in an ini file whose keys are wrong (see Network). Multipart upload size/type/count have no framework-level limit; <code>Storage</code> keeps client file names.</td><td>Correct ini keys; add <code>upload.max_bytes</code>, allow-list of MIME/extensions, generate random server-side file names (<code>random_bytes</code> + hex).</td></tr>
+<tr data-done="1"><td>S6</td><td><span class="tag P1">P1</span></td><td>Default CSP <code>style-src 'unsafe-inline'</code>; HSTS only when <code>SPID3R_HSTS=1</code>; CSP is one hard-coded string in <code>Response.matrix</code>.</td><td>Move security headers to <code>config/security.matrix</code>; per-route override; HSTS auto-on in production behind TLS.</td></tr>
+<tr data-done="1"><td>S7</td><td><span class="tag P2">P2</span></td><td><code>Hash.matrix</code> calls <code>bcrypt_hash(plain)</code> with default cost; <code>argon2</code> is available in the runtime (plan.txt §0). No rehash-on-login.</td><td>Configurable algorithm/cost in <code>config/auth.matrix</code>; <code>Hash.needs_rehash()</code>.</td></tr>
+<tr data-done="1"><td>S8</td><td><span class="tag P2">P2</span></td><td>WebSocket server: docs recommend first-message auth (WsServer.matrix L42-57) but no Origin check / max frame size / max clients helper.</td><td>Add <code>allowed_origins</code>, <code>max_message_bytes</code>, <code>max_clients</code> options.</td></tr>
+<tr data-done="1"><td>S9</td><td><span class="tag P2">P2</span></td><td><code>Response.cookie</code> secure-flag logic is a 4-level ladder over 4 sources; <code>Path</code>/<code>name</code> are not validated (CRLF only).</td><td>One <code>CookieJar</code> class: validates name/value/path against RFC 6265 token rules; single secure-flag resolution.</td></tr>
+</table>
+<div class="note"><b>Already good (keep):</b> CRLF/NUL rejection in headers · HMAC-signed cookies + <code>secure_compare</code> · JWT constant-time verify · SQL placeholder use + <code>sql_check_identifier</code> for table/column names · storage <code>guard()</code> blocks <code>..</code>, absolute and drive paths · CSRF origin + token layers · queue claim race handling (after fix B2).</div>
+
+<h2 id="structure">5. Structure &amp; folders</h2>
+<h3>Current problems</h3>
+<ul>
+<li data-done="1"><span class="tag P1">P1</span> <b>Repo root is cluttered with non-source artifacts:</b> <code>.workbuddy-ai/</code> (≈115 KB of AI memory notes), <code>plan.txt</code> (54 KB), <code>changes.txt</code> (19 KB), <code>dist/</code>, <code>magic</code> (extension-less script), <code>spid3r.ini.example</code>, <code>spider.toml</code>, <code>install.sh</code>. Only <code>.workbuddy-ai</code> and <code>dist</code> are git-ignored.</li>
+<li data-done="1"><span class="tag P1">P1</span> <b><code>docs/</code> mixes generated and hand-written</b> (<code>developer-docs.html</code> 70 KB beside <code>ARCHITECTURE.md</code> and 7 <code>.mmd</code>/<code>.svg</code> pairs). Generated SVGs duplicate the <code>.mmd</code> sources.</li>
+<li data-done="1"><span class="tag P2">P2</span> <b><code>app/</code> is an empty skeleton</b> (<code>Controllers/ Middleware/ Models/ Providers/</code>, 0 files) while <code>routes/</code> use inline closures — no example of the intended MVC layout besides <code>examples/task-api</code>.</li>
+<li data-done="1"><span class="tag P2">P2</span> <b><code>framework/</code> top level holds 11 unrelated files</b> (Application, Controller, Env, ErrorRenderer, HttpException, Middleware, Request, Resource, Response, Router, Validator, Web) while others have sub-folders (<code>Auth/</code>, <code>Cache/</code>…). Largest files: ConsoleKernel 32 KB, BD 30 KB, Application 27 KB (≈650 lines, does routing + static + CSRF + TLS + providers).</li>
+<li data-done="1"><span class="tag P2">P2</span> <b>Config is plain <code>public let config_x = map(...)</code> globals</b> in 10 files; no env override pattern in the files themselves, no validation.</li>
+<li data-done="1"><span class="tag P3">P3</span> <code>storage/</code> is wholly git-ignored, so a fresh clone has no <code>storage/{app,logs,framework}</code>; code creates them lazily with chained <code>dir_create</code> calls.</li>
+</ul>
+
+<h3>Proposed layout</h3>
+<div class="two">
+<pre><code>spid3r_web/
+├─ app/                    # user code (Controllers, Models, Middleware, Providers, Requests)
+├─ bootstrap/              # app.matrix (wire providers), paths.matrix
+├─ config/                 # + security.matrix, upload.matrix, http.matrix
+├─ database/{migrations,seeders,factories}
+├─ framework/              # core, grouped (below)
+│  ├─ Http/    Request Response Router Middleware Controller Resource Validator HttpException ErrorRenderer
+│  ├─ Foundation/ Application Container Providers Env Config
+│  ├─ Console/ Database/ Auth/ Cache/ Queue/ Session/ Mail/ Log/ View/ WebSocket/ Filesystem/ Testing/
+├─ public/                 # only web-servable files
+├─ resources/views
+├─ routes/
+├─ storage/{app,framework/cache,logs}  (each with .gitignore + .gitkeep)
+├─ tests/{Unit,Feature}
+├─ tools/                  # dev scripts (resync, lint)
+├─ deploy/                 # Dockerfile, compose, systemd unit, nginx.conf
+├─ docs/                   # hand-written .md only; generated -> docs/build (ignored)
+├─ spid3r.ini.example      # corrected keys
+├─ spider.toml
+└─ magic                   # CLI entry (keep)</code></pre>
+<pre><code>REMOVE from repo root (move or ignore):
+  .workbuddy-ai/        -> already ignored; make sure not tracked
+  plan.txt, changes.txt -> docs/history/ (or delete; this
+                           plan.html supersedes plan.txt)
+  dist/                 -> build output; keep ignored
+  storage/build/*.tar.gz, *.zip backups (11 MB + 115 KB)
+  storage/app/backups/  (23 store-*.json snapshots)
+  storage/qa/, framework/cache_test/ (test leftovers)</code></pre>
+</div>
+<p><b>Splitting rules:</b> no file &gt; 500 lines · <code>Application</code> → <code>Kernel</code> (lifecycle) + <code>StaticFiles</code> + <code>Csrf</code> middleware + <code>Server</code> (listen/tls) · <code>ConsoleKernel</code> → one file per command under <code>framework/Console/Commands/</code> (registry map, <code>match</code> not 30 <code>elif</code>) · <code>BD.matrix</code> → <code>Lexer</code>/<code>Compiler</code>/<code>Cache</code> files.</p>
+
+<h2 id="perm">6. File permissions</h2>
+<p>Findings (current state on Windows; Linux/Docker behaviour is what matters in production):</p>
+<table>
+<tr><th>Pri</th><th>Finding</th><th>Fix</th></tr>
+<tr data-done="1"><td><span class="tag P1">P1</span></td><td>No code or docs set permissions: <code>0 </code> matches for <code>chmod</code>/<code>0o7xx</code> in framework. <code>write_file</code> creates files with process umask (typically <code>0644</code>), so <code>.env</code> (DB passwords, app key) and <code>storage/</code> are world-readable on shared Linux hosts. <code>key:generate</code> writes <code>.env</code> with <code>write_file</code>.</td><td>Document and enforce: <code>.env</code> <code>0600</code>, <code>storage/</code> + <code>database/</code> <code>0700</code> (dirs) / <code>0600</code> (sqlite, logs), <code>public/</code> read-only for the app user, source tree read-only. Add <code>magic doctor</code> command to check/repair and print a report (see roadmap).</td></tr>
+<tr data-done="1"><td><span class="tag P1">P1</span></td><td><code>Dockerfile</code>: <code>chmod -R u+rw storage</code> as root; app runs as root; <code>.dockerignore</code> excludes <code>.env</code> yet image does <code>cp .env.example .env</code>.</td><td><code>useradd -r spid3r</code>; <code>chown -R spid3r:spid3r storage database</code>; <code>USER spid3r</code>; read-only root FS + volume for <code>storage</code> and <code>database</code>.</td></tr>
+<tr data-done="1"><td><span class="tag P2">P2</span></td><td><code>public/uploads</code> (the <code>public</code> disk) is web-servable and writable by the app → an uploaded <code>.html/.svg</code> is served same-origin (XSS) with MIME from extension.</td><td>Serve uploads with <code>content-disposition: attachment</code> or <code>x-content-type-options: nosniff</code> (already) + sandbox CSP; block <code>.html .htm .svg .js</code> by default in Storage <code>public</code> disk.</td></tr>
+<tr data-done="1"><td><span class="tag P2">P2</span></td><td>Windows dev: project sits in a <b>OneDrive-synced</b> folder (<code>Desktop\…</code>). SQLite WAL/SHM files, <code>storage/logs</code> and cache churn inside OneDrive cause lock/sync conflicts and leak <code>.env</code> to cloud.</td><td>Document: keep dev copy outside OneDrive, or exclude <code>storage/</code>, <code>database/</code>, <code>.env</code> from sync; allow <code>SPID3R_DB_PATH</code>/<code>paths.state_dir</code> to point to <code>%LOCALAPPDATA%</code>.</td></tr>
+<tr data-done="1"><td><span class="tag P3">P3</span></td><td><code>install.sh</code> may call <code>sudo apt-get install curl</code> automatically.</td><td>Prompt or print the command instead; never auto-sudo.</td></tr>
+</table>
+
+<h2 id="storage">7. Storage</h2>
+<table>
+<tr><th>Pri</th><th>Finding</th><th>Fix</th></tr>
+<tr data-done="1"><td><span class="tag P1">P1</span></td><td>Only a <code>local</code> disk driver exists (<code>Storage.matrix</code> header). No <code>storage:link</code>, no temp-file API, no streaming reads/writes, no size quota, <code>put</code> not atomic.</td><td>Add <code>put_stream</code>/<code>get_stream</code> over runtime <code>tcp_send_file</code>/<code>write_file_atomic</code>; <code>atomic</code> default; per-disk <code>max_bytes</code>; optional S3-compatible driver through the stdlib <code>http</code> client later.</td></tr>
+<tr data-done="1"><td><span class="tag P1">P1</span></td><td><b>Housekeeping missing:</b> 23 JSON snapshots in <code>storage/app/backups</code> (from tests), log files rotate only by date and are never pruned, session rows purged randomly (1 in 100) but cache files expire only on read.</td><td><code>logging.retention_days</code> + <code>magic storage:prune</code>; <code>cache:gc</code> command; tests must write to a temp dir that is deleted in teardown (<code>storage/framework/cache_test</code>, <code>storage/qa</code> are leftovers).</td></tr>
+<tr data-done="1"><td><span class="tag P2">P2</span></td><td>SQLite database lives in <code>database/database.sqlite</code> (552 KB), next to migrations and seeders; backups are zips in <code>storage/backups</code>.</td><td>Move runtime DB to <code>storage/database/</code> (or <code>paths.state_dir</code>) so "code" and "state" are separate; one backup command (<code>magic db:backup</code> using SQLite online backup).</td></tr>
+<tr data-done="1"><td><span class="tag P2">P2</span></td><td>Sessions (DB), cache (memory/file/database) and queue (database) work, but defaults are <code>memory</code> cache and no Redis-like shared store. Cache memory + multi-process server = inconsistent.</td><td>Document the matrix (single process vs. multiple); default to <code>file</code> or <code>database</code> in production profile.</td></tr>
+</table>
+
+<h2 id="network">8. Network</h2>
+<div class="note"><b>Fixed in Phase 0.</b> All 6 unknown keys in <code>spid3r.ini.example</code> have been updated to match v1.1.1 runtime keys; <code>spid3r config validate</code> now passes (<code>ok</code>).</div>
+<table>
+<tr><th>In <code>spid3r.ini.example</code> (wrong)</th><th>Real key (docs/AGENT.md §1, ENVIRONMENT.md)</th></tr>
+<tr data-done="1"><td><code>net.max_request_bytes = 10485760</code></td><td><code>net.max_body</code> (default 8388608, 413 above) · env <code>SPID3R_NET_MAX_BODY</code></td></tr>
+<tr data-done="1"><td><code>net.max_header_bytes = 65536</code></td><td><code>net.max_headers</code> = max header <em>count</em> (default 64, 431 above)</td></tr>
+<tr data-done="1"><td><code>net.max_connections = 1024</code></td><td>no ini key; use <code>spid3r.max_workers</code> / <code>SPID3R_QUEUE_CAP</code> or cap at the reverse proxy</td></tr>
+<tr data-done="1"><td><code>db.timeout_ms</code>, <code>db.max_rows</code></td><td>no such keys; set timeouts in the driver: SQLite <code>busy_timeout</code> (already 5000 in Connection.matrix L379), Postgres <code>statement_timeout</code>(30 s, L196). Row cap → <code>QueryBuilder.limit()</code> default in framework.</td></tr>
+<tr data-done="1"><td><code>limits.max_memory_mb</code></td><td><code>runtime.memory_limit_mb</code> (soft cap, catchable) and <code>runtime.wall_clock_limit_ms</code></td></tr>
+<tr data-done="1"><td><code>modules.allow_wasm / allow_host</code></td><td>use <code>modules.disable</code> (list) and <code>security.*</code> — verify with <code>spid3r config validate</code></td></tr>
+</table>
+<h3>Other network items</h3>
+<ul>
+<li data-done="1"><span class="tag P1">P1</span> <b>No trusted-proxy handling.</b> Behind nginx/Docker, <code>req.ip</code>, scheme (for <code>Secure</code> cookies, redirects, HSTS) and host come from the socket. Add <code>config/http.matrix</code>: <code>trusted_proxies</code>, honour <code>X-Forwarded-For/Proto/Host</code> only from those.</li>
+<li data-done="1"><span class="tag P1">P1</span> <b>Default bind.</b> <code>listen()</code> defaults to loopback (good); Docker sets <code>SPID3R_HOST=0.0.0.0</code> (right for containers) but compose publishes without a proxy or TLS. Provide an <code>nginx.conf</code>/Caddyfile example in <code>deploy/</code> and a <code>/health</code> route.</li>
+<li data-done="1"><span class="tag P2">P2</span> <b>Throttle store</b> (<code>ThrottleMiddleware</code>) is in-process; with several workers limits multiply. Back it with <code>Cache</code> database driver or document.</li>
+<li data-done="1"><span class="tag P2">P2</span> <b>Graceful shutdown / draining</b>: <code>server.matrix</code> has no signal handling; Dockerfile uses <code>exec</code> (good) but the app should finish in-flight requests (<code>SPID3R_TASK_DRAIN_MS</code>, default 2000 ms).</li>
+<li data-done="1"><span class="tag P2">P2</span> <b>Outbound HTTP/mail</b>: <code>Mail</code> has a hard-coded 10 s timeout (L148); expose in <code>config/mail.matrix</code>; add retry with backoff through the queue.</li>
+<li data-done="1"><span class="tag P3">P3</span> Compression (<code>gzip_compress</code> exists) and <code>Range</code> requests for static files; HTTP/2 via proxy only (document).</li>
+</ul>
+
+<h2 id="registry">9b. Migration <code>registry.matrix</code> — why it exists and how to make it Laravel-like</h2>
+<div class="note"><b>You are right:</b> Laravel has no such file. <code>php artisan migrate</code> scans <code>database/migrations/*.php</code> at runtime and <code>require</code>s each file. Spid3r <code>import</code> statements are resolved <b>before</b> the program runs (compile-time), and I found no runtime import / eval in <code>docs/</code>. So the framework generates <code>database/migrations/registry.matrix</code> (imports + <code>kernel.register_migration(new X())</code> lines) via <code>ConsoleKernel.sync_migration_registry</code> (ConsoleKernel.matrix ≈ L522-596), auto-run by <code>migrate</code> and <code>make:migration</code>. It works, but it is a generated file living inside the user's folder.</div>
+<table>
+<tr><th>Problem today</th><th>Impact</th></tr>
+<tr><td>Generated code is committed next to hand-written migrations ("do not edit by hand")</td><td>Merge conflicts when two branches add migrations; noisy diffs; people edit it by mistake</td></tr>
+<tr><td>Class name is guessed from the file name (<code>001_create_users_table</code> → <code>CreateUsersTable</code>) and the name is repeated in the constructor default <code>fn new(name = "001_...")</code></td><td>Rename a file and the recorded migration name silently diverges</td></tr>
+<tr><td>Numeric prefixes (<code>001</code>, <code>003</code>, <code>008</code>) instead of timestamps; gaps are manual</td><td>Parallel branches collide on the same number; Laravel uses <code>2026_11_20_051500_create_x_table</code></td></tr>
+<tr><td>Registry is regenerated only when the CLI runs; a custom script importing it directly can be stale</td><td>"Migration not found" confusion</td></tr>
+</table>
+<h3>Options (pick one, in order of preference)</h3>
+<table>
+<tr><th>Option</th><th>How</th><th>Laravel parity</th><th>Cost</th></tr>
+<tr><td><b>A. Keep generation, hide it (recommended now)</b></td><td>Move output to <code>storage/framework/migrations.matrix</code> (or <code>bootstrap/cache/</code>), git-ignore it, regenerate on every <code>magic</code> invocation (cheap: one <code>list_dir</code>). <code>database/migrations/</code> then contains only real migrations, exactly like Laravel. Same idea as Laravel's <code>bootstrap/cache/*.php</code>.</td><td>High (folder looks identical)</td><td>Low: change path in <code>sync_migration_registry</code> and the <code>import</code> in <code>magic</code></td></tr>
+<tr><td><b>B. Timestamped, self-describing migrations</b></td><td><code>make:migration create_posts_table</code> → <code>2026_11_20_051500_create_posts_table.matrix</code>; the file registers itself by deriving the name from its own filename, so no <code>new(name = "...")</code> boilerplate; order = sort by filename.</td><td>High</td><td>Low-medium: new generator + one-time rename of the 3 existing files (update <code>migrations</code> table rows if any DB already ran them)</td></tr>
+<tr><td><b>C. Anonymous-style migrations</b></td><td>Laravel 9+ style: file returns an object with <code>up</code>/<code>down</code>; no class name to guess. In Spid3r: each file exports <code>public fn up()</code> / <code>public fn down()</code> (module functions) and the registry imports them with <code>import {up as up_001, down as down_001}</code>. Removes the class-name guessing.</td><td>High</td><td>Medium: runner supports function pairs; keep class form for compatibility</td></tr>
+<tr><td><b>D. True runtime discovery</b></td><td>Needs a runtime feature (<code>load_module(path)</code> / dynamic import) in the language, subject to <code>security.basedir</code> and <code>modules.disable</code>. Then no registry at all.</td><td>Exact</td><td>Language-level work — file a feature request upstream; do not build in the framework</td></tr>
+<tr><td><b>E. Build step instead of runtime</b></td><td>For production AOT builds the registry is baked in by <code>spid3r build</code> anyway; add <code>magic build</code> step that runs <code>migrate:sync</code> first so a stale registry can never ship.</td><td>n/a</td><td>Low</td></tr>
+</table>
+<h3>Checklist for this item</h3>
+<ul>
+<li data-done="1"><span class="tag P2">P2</span> Add <code>storage/framework/migrations.matrix</code> as generated target (option A); remove <code>registry.matrix</code> from <code>database/migrations/</code> and add it to <code>.gitignore</code>.</li>
+<li data-done="1"><span class="tag P2">P2</span> Regenerate the registry automatically on every <code>magic</code> command and on <code>magic build</code> (option E); fail fast with a clear message if generation fails.</li>
+<li data-done="1"><span class="tag P2">P2</span> Switch <code>make:migration</code> to timestamp names <code>YYYY_MM_DD_HHMMSS_name</code> and derive the migration name from the filename (option B); provide a one-shot <code>migrate:rename-legacy</code> that renames <code>001/003/008…</code> and updates the <code>migrations</code> table.</li>
+<li data-done="1"><span class="tag P2">P2</span> Add tests: registry generated for N files in sorted order; file added between runs is picked up; legacy numeric names still run.</li>
+<li><span class="tag P3">P3</span> Optional: function-based migrations (option C) and an upstream request for runtime module loading (option D); when D lands, delete the registry generator.</li>
+<li data-done="1"><span class="tag P3">P3</span> Also missing vs Laravel migrations: <code>migrate:fresh</code>, <code>migrate:reset</code>, <code>migrate --pretend</code>, <code>migrate --step</code>, per-migration transaction (see §9).</li>
+</ul>
+
+<h2 id="drivers">9. Drivers &amp; database</h2>
+<table>
+<tr><th>Pri</th><th>Finding</th><th>Fix</th></tr>
+<tr data-done="1"><td><span class="tag P1">P1</span></td><td><b>Driver capability gaps documented only in <code>.env.example</code>:</b> Postgres supports md5/trust only (no SCRAM — the default since PG14); MySQL 8 requires <code>mysql_native_password</code>, and "empty passwords are mishandled" (root). Real deployments (RDS, Cloud SQL, managed MySQL 8) use SCRAM / <code>caching_sha2_password</code>.</td><td>Track in <code>docs/</code>: add a "Driver support matrix" (auth methods, TLS to DB, pooling). Raise upstream (language runtime) as a blocker for managed DBs. Until then, fail at <code>magic migrate</code> with a clear message that names the auth method.</td></tr>
+<tr data-done="1"><td><span class="tag P1">P1</span></td><td>No connection pooling / reconnect: one handle per <code>Connection</code>; a dropped MySQL/PG connection kills the worker.</td><td>Ping-and-reconnect on error once; simple pool guarded by <code>mutex</code> (runtime has <code>mutex</code>, <code>channel</code>).</td></tr>
+<tr data-done="1"><td><span class="tag P1">P1</span></td><td>SQLite: <code>PRAGMA journal_mode=WAL; foreign_keys=ON; busy_timeout=5000</code> set (good) but no <code>synchronous=NORMAL</code>, no backup/vacuum command; WAL over OneDrive/NFS is unsafe.</td><td>Add pragmas to config; <code>db:backup</code>, <code>db:vacuum</code> commands.</td></tr>
+<tr data-done="1"><td><span class="tag P2">P2</span></td><td>Migrations: ordered by numeric file prefix, registry generated into <code>registry.matrix</code> (committed generated file). No <code>migrate:fresh</code>, <code>migrate:reset</code>, <code>db:wipe</code>, <code>--pretend</code>, no transactions around DDL on Postgres.</td><td>Add commands; wrap each migration in a transaction where the engine supports transactional DDL; add checksum column to detect edited-after-run migrations.</td></tr>
+<tr data-done="1"><td><span class="tag P2">P2</span></td><td><code>Schema.matrix</code> has 6 unused imports (all three drivers imported but dispatch is by name) — signals the driver abstraction is leaky.</td><td>Introduce a <code>Driver</code> interface (<code>interface</code> keyword is supported): <code>quote_identifier, placeholder, limit_sql, last_insert_id, begin/commit/rollback</code>; each driver implements it; Schema/QueryBuilder depend only on the interface.</td></tr>
+<tr data-done="1"><td><span class="tag P2">P2</span></td><td><code>tests/test_multi_db_live</code> and <code>test_systems_live</code> are skipped locally ("0 run / 0 skipped") unless a server driver is configured; only CI covers MySQL/PG.</td><td>Add <code>docker compose -f deploy/docker-compose.yml up -d db</code> helper and a <code>magic test --db=all</code> flag.</td></tr>
+</table>
+
+<h2 id="easy">10. "Easier code" — concrete rewrites</h2>
+<p>These keep behaviour identical but use the 1.1.1 grammar. Apply with <code>spid3r fmt</code> + the existing test suite as the safety net.</p>
+
+<details open><summary data-done="1">10.1 Config: literals + env override (config/app.matrix)</summary>
+<div class="two">
+<pre><code>// before
+public let config_app = map(
+    "name", "Spid3rWeb Developer Platform",
+    "env", "development",
+    "debug", true,
+    "url", "http://localhost:8000",
+    "key_env", "SPID3R_APP_KEY",
+    "key", ""
+);</code></pre>
+<pre><code>// after
+public const APP_ENV = env("APP_ENV").unwrap_or("production");
+
+public let config_app = {
+    "name": env("APP_NAME").unwrap_or("Spid3rWeb"),
+    "env": APP_ENV,
+    "debug": APP_ENV == "development",
+    "url": env("APP_URL").unwrap_or("http://localhost:8000"),
+    "key": env("SPID3R_APP_KEY").unwrap_or("")
+};</code></pre></div></details>
+
+<details><summary data-done="1">10.2 Cookie secure flag: 4-level ladder → one expression</summary>
+<div class="two">
+<pre><code>// before (Response.matrix L83-103)
+let secure_flag = false;
+if secure != null { ... }
+else {
+  let env_secure = env("SPID3R_COOKIE_SECURE");
+  if env_secure.is_some() and ... { ... }
+  else { let cfg_secure = Config.get(...);
+    if cfg_secure == true { ... } else { ... } }
+}</code></pre>
+<pre><code>// after: one resolver, tested once
+fn secure_default() -> bool {
+    return Config.get("session.secure", false)
+        or env("SPID3R_COOKIE_SECURE").unwrap_or("0") == "1"
+        or APP_ENV == "production";
+}
+let secure_flag = secure ?? secure_default();</code></pre></div></details>
+
+<details><summary data-done="1">10.3 String building with interpolation</summary>
+<pre><code>// before
+println("[Queue] daemon mode active (poll " + string(sleep_ms_val) + " ms, Ctrl+C to stop)");
+// after  (identifier hole, no spaces inside braces)
+println("[Queue] daemon mode active (poll {sleep_ms_val} ms, Ctrl+C to stop)");</code></pre></details>
+
+<details><summary data-done="1">10.4 MIME table instead of 24 <code>if</code>s (Application.content_type_for)</summary>
+<pre><code>const MIME = {
+    "css": "text/css; charset=utf-8", "js": "application/javascript; charset=utf-8",
+    "html": "text/html; charset=utf-8", "json": "application/json; charset=utf-8",
+    "png": "image/png", "svg": "image/svg+xml", "woff2": "font/woff2",
+    "mp4": "video/mp4", "wasm": "application/wasm"   // ...
+};
+fn content_type_for(path: string) -> string {
+    let ext = path.split(".").pop();
+    return MIME.get(ext) ?? "application/octet-stream";
+}</code></pre></details>
+
+<details><summary data-done="1">10.5 Iteration / destructuring</summary>
+<pre><code>// before
+for k in new_headers.keys() { self.header(k, string(new_headers[k])); }
+// after
+for (k, v) in new_headers { self.header(k, string(v)); }
+
+// before  (server.matrix server_dirname: 15 lines of manual split/join loop)
+// after   use the runtime/stdlib path helpers, or:
+fn dirname(p: string) -> string {
+    let parts = p.replace("\\", "/").split("/");
+    parts.pop();
+    return parts.join("/");
+}</code></pre></details>
+
+<details><summary data-done="1">10.6 Routes: groups + controllers (routes/web.matrix, routes/api.matrix)</summary>
+<pre><code>Route.group({"prefix": "/api/v1", "middleware": ["throttle:60,1"]}, fn() {
+    Route.get("/status", StatusController.show);
+    Route.resource("/tasks", TaskController);   // index/show/store/update/destroy
+});</code></pre>
+<p class="mut">Add <code>Route.resource</code>, route-model binding (<code>/users/:user</code>), and named-route <code>url()</code> already exists. Provide <code>make:request</code> (validation class) and <code>make:resource</code>.</p></details>
+
+<details><summary data-done="1">10.7 Command dispatch with <code>match</code> / registry (ConsoleKernel)</summary>
+<pre><code>let commands = {
+    "serve": ServeCommand, "migrate": MigrateCommand, "queue:work": QueueWorkCommand,
+    // one class per command, each with  name, description, handle(args)
+};
+let cmd = commands.get(name) ?? null;
+if cmd == null { return self.unknown(name); }
+return new cmd().handle(rest);   // help text is generated from the registry</code></pre></details>
+
+<h3>New CLI conveniences (magic)</h3>
+<table>
+<tr><th>Command</th><th>Why</th></tr>
+<tr data-done="1"><td><code>magic doctor</code></td><td>Check <code>.env</code> perms, key set, debug off, storage writable, ini keys valid (<code>config validate</code>), driver auth method, runtime version ≥ required.</td></tr>
+<tr data-done="1"><td><code>magic lint</code> / <code>magic fmt</code></td><td>Wrap <code>spid3r check --deny-warnings</code> and <code>spid3r fmt [--check]</code> for the whole project.</td></tr>
+<tr data-done="1"><td><code>storage:link</code>, <code>storage:prune</code>, <code>cache:gc</code>, <code>db:backup</code>, <code>migrate:fresh</code>, <code>config:check</code></td><td>Close the gaps listed above.</td></tr>
+<tr data-done="1"><td><code>make:request</code>, <code>make:resource</code>, <code>make:command</code>, <code>make:seeder</code></td><td>Complete the generator set (today: controller, model, middleware, provider, test, migration).</td></tr>
+<tr data-done="1"><td><code>serve --host --watch</code></td><td>Host flag exists on <code>server.matrix</code> but not in <code>magic serve</code> usage; add dev auto-reload.</td></tr>
+</table>
+
+<h3>Stdlib overlap decision</h3>
+<table>
+<tr><th>Framework file</th><th>Stdlib module (v1.1.1)</th><th>Recommendation</th></tr>
+<tr data-done="1"><td>Session/Session.matrix (+ DB sessions in Auth)</td><td><code>session.matrix</code> (server-side sessions)</td><td>Keep DB store, but reuse stdlib ID generation/cookie parsing; document differences.</td></tr>
+<tr data-done="1"><td>Middleware.matrix (cors, throttle, etag, request_id)</td><td><code>middleware.matrix</code></td><td>Compare features; delegate duplicates, keep the Onion <code>(req, next)</code> adaptor.</td></tr>
+<tr data-done="1"><td>Request multipart parsing</td><td><code>multipart.matrix</code></td><td>Delegate parsing; keep framework limits/validation.</td></tr>
+<tr data-done="1"><td>uuid / semver / toml / yaml</td><td><code>uuid</code>, <code>semver</code>, <code>toml</code>, <code>yaml</code></td><td>Use for config-file support (<code>config/*.toml</code> optional), migrations IDs, etc. Note real export names (<code>uuid.uuid_v4</code>, <code>toml.toml_parse</code>) per AUDIT_STATUS #9.</td></tr>
+</table>
+
+<h2 id="deploy">11. Deploy, CI, tests</h2>
+<ul>
+<li data-done="1"><span class="tag P1">P1</span> <b>CI:</b> currently shellcheck, actionlint, <code>magic test</code> per DB, route list, boot smoke, <code>spid3r check server.matrix</code> (one file only). Add: <code>spid3r check --deny-warnings</code> on all files, <code>spid3r fmt --check</code>, <code>spid3r test</code> (3-engine differential), <code>spid3r build</code> AOT smoke boot, <code>spid3r config validate</code>, Docker image build + <code>HEALTHCHECK</code> test. Comment in <code>ci.yml</code> says "pinned major (@v4)" but uses <code>checkout@v5</code> — fix comment or pin to SHAs.</li>
+<li data-done="1"><span class="tag P1">P1</span> <b>Release artifact:</b> <code>spid3r build --bundle-runtime --bytecode</code> yields a self-contained binary; the generated launcher uses <code>run_payload_strict()</code> (SECURITY.md). Document this as the preferred production path instead of copying the source tree into Docker.</li>
+<li data-done="1"><span class="tag P2">P2</span> <b>Tests:</b> 17 suites are good unit/feature coverage; add <code>--coverage</code>, negative tests (B1, B2, path traversal list from OWASP, header injection), perf gate through <code>spid3r bench --gate</code> against <code>benchmarks/RESULTS.md</code>.</li>
+<li data-done="1"><span class="tag P2">P2</span> <b>.gitignore</b> ignores <code>*.exe *.dll *.so</code> globally (hides vendored plugins) and the whole <code>storage/</code> (no <code>.gitkeep</code>). Use targeted ignores and ship <code>.gitkeep</code>.</li>
+</ul>
+
+<h2 id="roadmap">12. Roadmap</h2>
+<table>
+<tr><th>Phase</th><th>Scope</th><th>Items</th><th>Done when</th></tr>
+<tr data-done="1"><td><b>0 — Safety (1-2 days)</b></td><td>P0 bugs + secure defaults</td><td>B1 cookies, B2 queue CAS, S1 env-driven debug/default production, S2 key required, S3 Dockerfile/compose hardening, fix <code>spid3r.ini.example</code> keys</td><td><code>magic test</code> green + new regression tests; <code>spid3r config validate</code> prints no unknown keys</td></tr>
+<tr data-done="1"><td><b>1 — Hygiene (1 day)</b></td><td>Repo + tooling</td><td>Run <code>spid3r fmt</code>; fix 6 unused imports/params; remove <code>examples/spid3r_web</code> paths (B3); module path via ini (B4); move <code>plan.txt/changes.txt</code>; purge leftovers in <code>storage/</code>; <code>.gitkeep</code></td><td><code>spid3r fmt --check</code> and <code>check --deny-warnings</code> pass in CI</td></tr>
+<tr data-done="1"><td><b>2 — Modern syntax (2-3 days)</b></td><td>Easier code</td><td>Literals, interpolation, <code>??</code>/<code>?.</code>, destructuring, typed public API, <code>private</code> fields, MIME table, <code>match</code> dispatch (§10). One directory per PR; tests must pass unchanged.</td><td>grep counts: <code>map(</code> &lt; 20, <code>+ string(</code> &lt; 20; AOT smoke boot passes</td></tr>
+<tr data-done="1"><td><b>3 — Structure (3-4 days)</b></td><td>Folders + file size</td><td>Regroup <code>framework/</code> (Http/Foundation); split Application, ConsoleKernel, BD; <code>bootstrap/</code>; sample <code>app/</code> controllers; command classes</td><td>no file &gt; 500 lines; <code>route:list</code> unchanged</td></tr>
+<tr data-done="1"><td><b>4 — Runtime hardening (3 days)</b></td><td>Permissions, storage, network</td><td>S4-S9, permission doctor, atomic writes (B6), streaming static (B5), trusted proxies, upload limits, retention/prune, DB reconnect/pool, <code>Driver</code> interface</td><td><code>magic doctor</code> all-green in container; load test with <code>max_body</code> 413 verified</td></tr>
+<tr data-done="1"><td><b>5 — Release (2 days)</b></td><td>CI/CD + docs</td><td>Full CI matrix (§11), bundle-runtime release, generated API docs via <code>spid3r doc</code>, driver support matrix, update SECURITY/ARCHITECTURE notes</td><td>tagged release builds image + binary from CI</td></tr>
+</table>
+
+<h2 id="verify">13. How these findings were verified</h2>
+<pre><code># toolchain
+spid3r --version                    # 1.1.1
+spid3r magic test                   # 17/17 pass (6.3 s)
+$env:SPID3R_PATH="."; spid3r check &lt;each .matrix&gt;   # all ok; lint warnings listed in §2
+spid3r fmt --check framework        # 12 files would reformat
+$env:SPID3R_INI="spid3r.ini.example"; spid3r config validate   # 6 unknown keys
+spid3r run tests/run_all.matrix     # fails: module not found (B4)
+
+# static greps (framework/ config/ routes/ ...)
+map(  255 | list(  84 | "+ string(" 91 | ?? 0 | ?. 0 | let ( 0 | match ( 3 | chmod 0
+</code></pre>
+<div class="note w"><b>Not yet verified (do before changing):</b> Linux file modes &amp; Docker build in a real container; whether the Windows ACL on <code>.env</code> is inherited from OneDrive; the dynamic behaviour of the AOT build for every class using <code>super</code>. (B1 multi-cookie wire behaviour was verified via loopback TCP in <code>tests/test_phase0_safety.matrix</code>.) Each remaining item marked P0/P1 should get a failing test first, then the fix.</div>
+
+<p class="mut" style="margin-top:40px">Generated by audit on 2026-11-20 · supersedes <code>plan.txt</code> for planning purposes · reference docs: <code>../docs/GRAMMAR.md</code>, <code>KEYWORDS.md</code>, <code>SECURITY.md</code>, <code>ENVIRONMENT.md</code>, <code>AGENT.md</code>, <code>STANDARD_LIBRARY.md</code>, <code>ROADMAP.md</code>, <code>AUDIT_STATUS.md</code>.</p>
+</main>
+<div id="pbar"><span id="ptxt">0 / 0 done</span><div class="bar"><i id="pfill"></i></div>
+<button id="pshow" title="Hide completed items">Hide done</button><button id="preset">Reset</button></div>
+<style>
+#pbar{position:fixed;right:16px;bottom:16px;background:#171c26;border:1px solid var(--line);border-radius:10px;padding:8px 12px;display:flex;gap:10px;align-items:center;z-index:9;font-size:13px;box-shadow:0 4px 18px #0008}
+#pbar .bar{width:140px;height:8px;background:#0b0e14;border-radius:9px;overflow:hidden}#pfill{display:block;height:100%;width:0;background:var(--p3);transition:width .2s}
+#pbar button{background:#0b0e14;color:var(--tx);border:1px solid var(--line);border-radius:6px;padding:3px 8px;cursor:pointer}
+.cb{width:17px;height:17px;margin:0 8px 0 0;vertical-align:-3px;accent-color:#7bd88f;cursor:pointer}
+.done{opacity:.5}.done>td:not(:first-child),li.done,summary.done,h3.done{text-decoration:line-through}
+.hide-done .done{display:none}
+</style>
+<script>
+(function(){
+  var KEY='spid3rweb-plan-v1', st={};
+  try{st=JSON.parse(localStorage.getItem(KEY)||'{}')}catch(e){}
+  var items=[], skip=['summary','verify'];
+  function sec(el){var s=el;while(s&&s.tagName!=='H2'){s=s.previousElementSibling||s.parentElement&&s.parentElement.previousElementSibling;if(!s)break;}return s;}
+  function inSkipped(el){var h=el.closest('main')&&el.closest('details')?null:null;
+    var n=el, id='';
+    // find nearest preceding h2
+    var p=el; while(p&&p!==document.body){var q=p; while(q){ if(q.tagName==='H2'){id=q.id;p=null;break;} q=q.previousElementSibling;} if(p) p=p.parentElement;}
+    return skip.indexOf(id)>=0 ? null : id;}
+  function add(el,host,label){
+    var id=inSkipped(el); if(id===null) return;
+    var key=id+':'+items.length+':'+(label||el.textContent).replace(/\s+/g,' ').trim().slice(0,40);
+    var defDone=el.getAttribute('data-done')==='1';
+    var checked=(key in st)?!!st[key]:defDone;
+    var cb=document.createElement('input');cb.type='checkbox';cb.className='cb';
+    cb.dataset.defaultDone=defDone?'1':'0';
+    cb._row=el;
+    cb.checked=checked;
+    if(checked)cb.setAttribute('checked','checked');
+    el.classList.toggle('done',checked);
+    cb.addEventListener('change',function(){st[key]=cb.checked;
+      el.classList.toggle('done',cb.checked);localStorage.setItem(KEY,JSON.stringify(st));upd();});
+    host.insertBefore(cb,host.firstChild); items.push(cb);
+  }
+  document.querySelectorAll('main table').forEach(function(t){
+    if(t.closest('details')&&false) return;
+    var hdr=t.querySelector('th'); 
+    t.querySelectorAll('tr').forEach(function(tr,i){
+      var td=tr.querySelector('td'); if(!td||tr.querySelector('td[colspan]')) return;
+      // legend / reference tables: only checkbox where row is an action
+      add(tr,td);
+    });
+    var th=t.querySelector('tr'); if(th&&th.querySelector('th')){var f=th.querySelector('th');f.textContent='\u2713 '+f.textContent;}
+  });
+  document.querySelectorAll('main li').forEach(function(li){add(li,li);});
+  document.querySelectorAll('main h3').forEach(function(h){ if(/^(\s*)(<span|B\d)/.test(h.innerHTML)||/\bB\d\b/.test(h.textContent)) add(h,h);});
+  document.querySelectorAll('main details > summary').forEach(function(s){add(s,s);});
+  function upd(){var d=items.filter(function(c){return c.checked}).length,n=items.length;
+    document.getElementById('ptxt').textContent=d+' / '+n+' done ('+(n?Math.round(100*d/n):0)+'%)';
+    document.getElementById('pfill').style.width=(n?100*d/n:0)+'%';}
+  document.getElementById('pshow').onclick=function(){var h=document.body.classList.toggle('hide-done');this.textContent=h?'Show done':'Hide done';};
+  document.getElementById('preset').onclick=function(){if(confirm('Reset manual overrides to HTML baseline?')){st={};localStorage.removeItem(KEY);items.forEach(function(c){var d=c.dataset.defaultDone==='1';c.checked=d;if(d){c.setAttribute('checked','checked');}else{c.removeAttribute('checked');}c._row&&c._row.classList.toggle('done',d);});upd();}};
+  upd();
+})();
+</script>
+</body>
+</html>

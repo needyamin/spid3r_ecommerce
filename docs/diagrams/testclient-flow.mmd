@@ -1,0 +1,28 @@
+sequenceDiagram
+    autonumber
+    actor TestSuite as Test Suite (tests/*.matrix)
+    participant Client as TestClient
+    participant Kernel as Application.handle_request()
+    participant MW as Onion Pipeline & Router
+    participant App as Controller / Models / DB
+    participant Res as TestResponse
+
+    Note over TestSuite, Client: 1. Fluent Setup & Request Assembly
+    TestSuite->>Client: app.test_client()
+    TestSuite->>Client: .acting_as(user) [mints HS256 JWT]
+    TestSuite->>Client: .post_json("/api/posts", payload)
+
+    Note over Client, Kernel: 2. In-Memory Direct Kernel Dispatch (0 Sockets / 0 Ports)
+    Client->>Kernel: handle_request(raw_req_map)
+    Kernel->>MW: Run Global MW, Auth & Prefix Router
+    MW->>App: Invoke Controller & QueryBuilder
+    App-->>MW: Return Model / JSON Map
+    MW-->>Kernel: Return HTTP Response Map
+
+    Note over Kernel, Res: 3. Fluent Assertions & Dot-Path Inspection
+    Kernel-->>Client: raw_res {status, headers, body}
+    Client->>Res: new TestResponse(raw_res)
+    TestSuite->>Res: .assert_created() [checks 201]
+    TestSuite->>Res: .assert_json_path("data.title", expected)
+    TestSuite->>Res: .assert_header("content-type", "application/json")
+
