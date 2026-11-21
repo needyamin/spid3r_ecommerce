@@ -127,4 +127,8 @@ shellcheck.exe
 
 # Compiled AOT distribution binaries
 dist/
+
+# Python tooling cache (tools/*.py seeders)
+__pycache__/
+
 .mimosa/
