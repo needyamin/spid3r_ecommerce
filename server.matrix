@@ -130,6 +130,25 @@ fn main() {
         i = i + 1;
     }
 
+    // Bytecode fast path: `spid3r exec dist/server.matrixc` cannot pass CLI
+    // arguments through to the program, so the port may arrive via the
+    // SPID3R_PORT environment variable instead. An explicit CLI --port
+    // always wins over the env fallback.
+    if port == 8000 {
+        let port_env = env("SPID3R_PORT");
+        if port_env.is_some() {
+            let parsed_env = 0;
+            try {
+                parsed_env = int(string(port_env.unwrap()).trim());
+            } catch (_e) {
+                parsed_env = 0;
+            }
+            if parsed_env > 0 {
+                port = parsed_env;
+            }
+        }
+    }
+
     if use_tls and (cert_path == "" or key_path == "") {
         println("[Spid3rWeb] Error: --tls requires both --cert <path> and --key <path>");
         return 1;
