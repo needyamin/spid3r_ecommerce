@@ -12,7 +12,9 @@ import "framework/Http/Response";
 import "app/Support/Images" as Images;
 
 public class ImageController {
-    public fn new() {}
+    public fn new () {
+        let _ = self;
+    }
 
     // GET /images/initials.svg?n=<base64url product name>
     public fn initials(self, req) {
@@ -28,12 +30,29 @@ public class ImageController {
         // Deterministic palette from the name — same product always gets the
         // same colours (stable across nodes/redeploys).
         let palettes = [
-            { "bg": "#ecfdf5", "fg": "#047857" },
-            { "bg": "#fdf4ff", "fg": "#a21caf" },
-            { "bg": "#eef4ff", "fg": "#1d4ed8" },
-            { "bg": "#fffbeb", "fg": "#b45309" },
-            { "bg": "#fff1e8", "fg": "#c2410c" },
-            { "bg": "#f1f5f9", "fg": "#475569" }
+        {
+            "bg": "#ecfdf5", "fg": "#047857"
+        }
+        ,
+        {
+            "bg": "#fdf4ff", "fg": "#a21caf"
+        }
+        ,
+        {
+            "bg": "#eef4ff", "fg": "#1d4ed8"
+        }
+        ,
+        {
+            "bg": "#fffbeb", "fg": "#b45309"
+        }
+        ,
+        {
+            "bg": "#fff1e8", "fg": "#c2410c"
+        }
+        ,
+        {
+            "bg": "#f1f5f9", "fg": "#475569"
+        }
         ];
         let pal = palettes[self.palette_index(name, palettes.len())];
         let bg = string(pal["bg"]);
@@ -46,10 +65,10 @@ public class ImageController {
 
         let svg = "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 400'>\n"
         + "  <rect width='400' height='400' rx='24' fill='{bg}'/>\n"
-        + "  <circle cx='200' cy='168' r='86' fill='none' stroke='{fg}' stroke-width='10' opacity='0.25'/>\n"
-        + "  <text x='200' y='205' font-family='system-ui, -apple-system, Segoe UI, Arial, sans-serif' font-size='96' font-weight='700' fill='{fg}' text-anchor='middle' opacity='0.85'>{initials}</text>\n"
-        + "  <text x='200' y='330' font-family='system-ui, -apple-system, Segoe UI, Arial, sans-serif' font-size='22' font-weight='600' fill='{fg}' text-anchor='middle' opacity='0.75'>{label}</text>\n"
-        + "</svg>";
+        +"  <circle cx='200' cy='168' r='86' fill='none' stroke='{fg}' stroke-width='10' opacity='0.25'/>\n"
+        +"  <text x='200' y='205' font-family='system-ui, -apple-system, Segoe UI, Arial, sans-serif' font-size='96' font-weight='700' fill='{fg}' text-anchor='middle' opacity='0.85'>{initials}</text>\n"
+        +"  <text x='200' y='330' font-family='system-ui, -apple-system, Segoe UI, Arial, sans-serif' font-size='22' font-weight='600' fill='{fg}' text-anchor='middle' opacity='0.75'>{label}</text>\n"
+        +"</svg>";
 
         let res = response(svg, 200);
         res.header("content-type", "image/svg+xml");
@@ -59,6 +78,7 @@ public class ImageController {
 
     // Stable palette bucket from the SHA-256 of the name.
     fn palette_index(self, name: string, count: int) -> int {
+        let _ = self;
         let hex_chars = "0123456789abcdef";
         let first = string(sha256(name)).slice(0, 1).lower();
         let pos = 0;

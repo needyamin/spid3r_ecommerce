@@ -22,13 +22,14 @@ import "framework/Http/Response";
 
 public class MutationThrottle {
     public fn handle(self, req: any, next: any = null) -> any {
+        let _ = self;
         let m = req.method;
         if m != "POST" and m != "PUT" and m != "PATCH" and m != "DELETE" {
             return next(req);
         }
         let p = string(req.path);
         if p == "/login" or p == "/register" or p == "/logout"
-            or p == "/forgot-password" or p == "/reset-password" {
+        or p == "/forgot-password" or p == "/reset-password" {
             return next(req);
         }
 
@@ -36,7 +37,7 @@ public class MutationThrottle {
         if p.starts_with("/admin") {
             limit = 120;
         } elif p.starts_with("/checkout") or p.starts_with("/payment")
-            or p.starts_with("/account") or p.starts_with("/returns") {
+        or p.starts_with("/account") or p.starts_with("/returns") {
             limit = 20;
         }
 

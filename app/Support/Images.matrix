@@ -81,9 +81,9 @@ public fn initials_image_url(name: string) -> string {
 // names may contain "&" — e.g. "Craft&Co").
 public fn escape_xml_text(text: string) -> string {
     return string(text)
-        .replace("&", "&amp;")
-        .replace("<", "&lt;")
-        .replace(">", "&gt;");
+    .replace("&", "&amp;")
+    .replace("<", "&lt;")
+    .replace(">", "&gt;");
 }
 
 fn b64url(input: string) -> string {
