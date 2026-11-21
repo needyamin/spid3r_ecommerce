@@ -338,10 +338,8 @@ public class FileCacheStore {
         return not cache_is_expired(int(entry["expires_at"]));
     }
 
-    // Remaining TTL in seconds for an unexpired entry. Returns 0 when the
-    // entry is missing, expired, or was stored without an expiry (forever).
-    // Lets facade-level increment() preserve windows seeded by Cache.add
-    // instead of rewriting them as immortal entries.
+    // Remaining TTL (seconds); 0 when missing/expired/forever — lets facade
+    // increment() preserve windows seeded by Cache.add instead of freezing them.
     public fn seconds_left(self, key: string) -> int {
         let p = self.path_for(key);
         if not file_exists(p) {
@@ -480,8 +478,7 @@ public class DatabaseCacheStore {
         return int(res["changes"]);
     }
 
-    // Remaining TTL in seconds for an unexpired entry; 0 when missing,
-    // expired, or stored without an expiry. See FileCacheStore.seconds_left.
+    // Remaining TTL (seconds); 0 when missing/expired/forever. See FileCacheStore.seconds_left.
     public fn seconds_left(self, key: string) -> int {
         self.ensure_table();
         let rows = DB.table("cache").where("cache_key", "=", key).limit(1).get();
