@@ -4,19 +4,18 @@
 @section("content")
   <div class="row justify-content-center my-4">
     <div class="col-12 col-md-8 col-lg-6">
-      <div class="dz-card p-4 p-md-5">
+      <div class="dz-card">
         <div class="text-center mb-4">
-          <div class="display-6 mb-2">💳</div>
-          <h1 class="h4 fw-bold mb-1">Choose Payment Method</h1>
-          <p class="text-secondary small mb-0">Order <strong class="text-dark">#{{ order.order_number }}</strong> · Total Payable: <strong class="text-primary">{{ total_display }}</strong></p>
+          <h1 class="h4 fw-bold mb-1">Payment method</h1>
+          <p class="text-secondary small mb-0">Order <strong class="text-dark">#{{ order.order_number }}</strong> · <strong class="text-primary">{{ total_display }}</strong></p>
         </div>
 
 @if(has_error)
-        <div class="alert alert-warning border border-warning d-flex align-items-start gap-3 p-3 mb-4 rounded-3 shadow-sm" role="alert">
-          <div class="fs-4 text-warning">⚠️</div>
+        <div class="alert alert-warning d-flex align-items-start gap-2 p-3 mb-4" role="alert">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="flex-shrink-0 mt-1" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>
           <div class="flex-grow-1">
-            <h6 class="alert-heading fw-bold mb-1">Payment Notice</h6>
-            <p class="mb-0 text-dark">{{ error_message }} Please choose another payment method below or contact store support if you need assistance.</p>
+            <h6 class="alert-heading fw-bold mb-1">Payment notice</h6>
+            <p class="mb-0">{{ error_message }} Choose another method below or contact store support.</p>
           </div>
         </div>
 @endif
@@ -27,17 +26,15 @@
 
           <div class="d-flex flex-column gap-2 mb-4">
 @foreach(p in providers)
-            <label class="dz-pay-option d-flex align-items-center gap-3 p-3 border rounded-3 cursor-pointer @if(p.selected) dz-pay-selected @endif">
+            <label class="dz-pay-option align-items-center @if(p.selected) dz-pay-selected @endif">
 @if(p.selected)
               <input type="radio" name="provider" value="{{ p.id }}" class="form-check-input mt-0" checked>
 @else
               <input type="radio" name="provider" value="{{ p.id }}" class="form-check-input mt-0">
 @endif
-              <div class="fs-4">{{ p.icon }}</div>
+              <div class="fs-4 lh-1">{{ p.icon }}</div>
               <div class="flex-grow-1">
-                <div class="fw-semibold text-dark">
-                  {{ p.name }}
-                </div>
+                <div class="fw-semibold">{{ p.name }}</div>
                 <div class="small text-secondary">{{ p.description }}</div>
               </div>
             </label>
@@ -45,16 +42,14 @@
           </div>
 
           <div class="d-grid gap-2">
-            <button class="btn btn-primary py-2 fw-semibold" type="submit">
-              Proceed to Pay {{ total_display }}
+            <button class="btn btn-primary" type="submit">
+              Pay {{ total_display }}
             </button>
-            <a class="btn btn-light border py-2 text-secondary" href="/checkout/confirmation/{{ order.order_number }}">
-              Back to Order Confirmation
+            <a class="btn btn-light border" href="/checkout/confirmation/{{ order.order_number }}">
+              Back to order
             </a>
           </div>
         </form>
-
-        <p class="small text-secondary text-center mt-4 mb-0">🔒 Transactions are cryptographically secured with server-side validation.</p>
       </div>
     </div>
   </div>

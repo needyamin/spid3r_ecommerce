@@ -16,34 +16,43 @@
 @endif
 
 @if(has_items)
-  <div class="row g-4">
+  <div class="row g-4 align-items-start">
     <div class="col-12 col-lg-8">
       <div class="d-flex flex-column gap-3">
 @foreach(item in items)
-        <div class="dz-card p-3">
-          <div class="row g-3 align-items-center">
-            <div class="col-12 col-md-5">
-              <a href="{{ item.url }}" class="fw-bold text-dark d-block mb-1">{{ item.name }}</a>
-              <span class="small text-secondary">{{ item.price_display }} each</span>
-@if(item.available)
-              <span class="stock-badge stock-in ms-2">Available</span>
+        <div class="dz-card">
+          <div class="d-flex align-items-start gap-3">
+@if(item.has_image)
+            <img src="{{ item.image_url }}" alt="{{ item.name }}" class="dz-checkout-item-img" loading="lazy">
 @else
-              <span class="stock-badge stock-out ms-2">Unavailable</span>
-@endif
+            <div class="dz-checkout-item-img dz-checkout-item-placeholder" aria-hidden="true">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8l-9-5-9 5v8l9 5 9-5V8z"/><path d="M3 8l9 5 9-5"/><path d="M12 13v8"/></svg>
             </div>
-            <div class="col-12 col-md-4">
-              <form method="post" action="/cart/items/{{ item.id }}/quantity" class="d-flex align-items-end gap-2">
+@endif
+            <div class="dz-checkout-item-info flex-grow-1">
+              <a href="{{ item.url }}" class="dz-checkout-item-name">{{ item.name }}</a>
+@if(item.has_variant)
+              <div class="small text-secondary">{{ item.variant_name }}</div>
+@endif
+              <div class="small text-secondary">{{ item.price_display }} each</div>
+              <form method="post" action="/cart/items/{{ item.id }}/quantity" class="d-flex align-items-center gap-2 mt-2">
                 <input type="hidden" name="_csrf" value="{{ csrf }}">
-                <div>
-                  <label class="form-label small text-secondary mb-1" for="qty-{{ item.id }}">Qty</label>
-                  <input type="number" id="qty-{{ item.id }}" name="quantity" value="{{ item.quantity }}" min="1" max="99" class="form-control dz-qty">
+                <div class="dz-qty-stepper d-inline-flex align-items-center">
+                  <button class="btn btn-light border btn-sm" type="button" data-qty-step="-1" aria-label="Decrease quantity">&minus;</button>
+                  <input type="number" id="qty-{{ item.id }}" name="quantity" value="{{ item.quantity }}" min="1" max="99" class="form-control dz-qty text-center" aria-label="Quantity">
+                  <button class="btn btn-light border btn-sm" type="button" data-qty-step="1" aria-label="Increase quantity">+</button>
                 </div>
-                <button class="btn btn-light border btn-sm" type="submit">Update</button>
+                <button class="btn btn-light btn-sm" type="submit">Update</button>
               </form>
             </div>
-            <div class="col-12 col-md-3 text-md-end">
-              <div class="fw-bold fs-5 text-dark">{{ item.line_display }}</div>
-              <form method="post" action="/cart/items/{{ item.id }}/remove" class="d-inline">
+            <div class="text-end flex-shrink-0">
+              <div class="fw-bold">{{ item.line_display }}</div>
+@if(item.available)
+              <span class="stock-badge badge-soft-success">Available</span>
+@else
+              <span class="stock-badge badge-soft-danger">Unavailable</span>
+@endif
+              <form method="post" action="/cart/items/{{ item.id }}/remove" class="mt-2" data-confirm="Remove this item from your cart?">
                 <input type="hidden" name="_csrf" value="{{ csrf }}">
                 <button class="btn btn-link btn-sm text-danger p-0" type="submit">Remove</button>
               </form>
@@ -55,15 +64,18 @@
     </div>
 
     <div class="col-12 col-lg-4">
-      <div class="dz-card p-4">
+      <div class="dz-card dz-checkout-summary-card">
         <h2 class="h5 mb-3">{{ t.checkout.order_summary }}</h2>
         <div class="total-line"><span>{{ lbl_subtotal }}</span><span>{{ subtotal_display }}</span></div>
 @if(discount_minor)
-        <div class="total-line text-success"><span>{{ lbl_discount }}</span><span>− {{ discount_display }}</span></div>
+        <div class="total-line text-success"><span>{{ lbl_discount }}</span><span>&minus; {{ discount_display }}</span></div>
 @endif
         <div class="total-line"><span>{{ lbl_shipping }}</span><span>{{ shipping_display }}</span></div>
 @if(free_shipping)
-        <p class="free-shipping mb-1">🚚 {{ t.cart.free_shipping }}</p>
+        <p class="free-shipping d-flex align-items-center gap-1 mb-1">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 3h15v13H1z"/><path d="M16 8h4l3 3v5h-7"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
+          {{ t.cart.free_shipping }}
+        </p>
 @endif
         <div class="total-line total-grand"><strong>{{ lbl_total }}</strong><strong>{{ total_display }}</strong></div>
 @if(display_currency != base_currency)
@@ -77,6 +89,10 @@
     </div>
   </div>
 @else
-  <p class="empty-note">{{ t.cart.empty }}. <a href="/catalog">{{ t.actions.continue_shopping }}</a></p>
+  <div class="empty-note my-4">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.7 13.4a2 2 0 0 0 2 1.6h9.7a2 2 0 0 0 2-1.6L23 6H6"/></svg>
+    <p class="mb-3">{{ t.cart.empty }}</p>
+    <a class="btn btn-primary" href="/catalog">{{ t.actions.continue_shopping }}</a>
+  </div>
 @endif
 @endsection

@@ -12,33 +12,32 @@
     </ol>
   </nav>
 
-  <header class="dz-page-heading mb-4 d-flex flex-wrap justify-content-between align-items-center gap-2">
+  <div class="dz-admin-page-head">
     <div>
-      <span class="dz-eyebrow">Order details</span>
       <h1 class="page-title mb-1">Order {{ order.order_number }}</h1>
       <div class="d-flex flex-wrap align-items-center gap-2 small text-secondary">
         <span>Placed {{ order.placed_at }}</span>
         <span aria-hidden="true">·</span>
         <strong class="text-dark">{{ total_display }}</strong>
         <span aria-hidden="true">·</span>
-        <span class="badge text-bg-primary">{{ order.status }}</span>
+        <span class="badge badge-soft-info">{{ order.status }}</span>
       </div>
     </div>
     <a class="btn btn-light border" href="/admin/orders">&larr; Back to orders</a>
-  </header>
+  </div>
 
   <div class="row g-3">
-    <!-- Left column: Items and address -->
+    <!-- Items and address -->
     <div class="col-12 col-lg-8">
-      <div class="dz-card p-3 p-lg-4 mb-3">
+      <div class="dz-card p-4 mb-3">
         <h2 class="h6 mb-3">Items ({{ item_count }})</h2>
         <div class="table-responsive">
-          <table class="table dz-admin-table align-middle mb-0">
+          <table class="table admin-table align-middle mb-0">
             <thead>
               <tr>
                 <th>Item</th>
                 <th>SKU</th>
-                <th>Quantity</th>
+                <th>Qty</th>
                 <th>Unit price</th>
                 <th>Total</th>
               </tr>
@@ -58,11 +57,11 @@
         </div>
       </div>
 
-      <div class="dz-card p-3 p-lg-4">
-        <h2 class="h6 mb-3">Customer & Shipping</h2>
-        <div class="row g-2">
+      <div class="dz-card p-4">
+        <h2 class="h6 mb-3">Customer &amp; shipping</h2>
+        <div class="row g-3">
           <div class="col-12 col-md-6">
-            <h3 class="small text-secondary text-uppercase fw-bold mb-2">Customer</h3>
+            <h3 class="h6 small text-secondary text-uppercase mb-2">Customer</h3>
 @if(has_customer)
             <p class="mb-1"><strong>{{ customer.name }}</strong></p>
             <p class="mb-0 text-secondary small">{{ customer.email }}</p>
@@ -71,7 +70,7 @@
 @endif
           </div>
           <div class="col-12 col-md-6">
-            <h3 class="small text-secondary text-uppercase fw-bold mb-2">Shipping address</h3>
+            <h3 class="h6 small text-secondary text-uppercase mb-2">Shipping address</h3>
             <p class="mb-1 fw-semibold small">{{ address_name }}</p>
             <p class="mb-0 small text-secondary">{{ address_line }}</p>
             <p class="mb-0 small text-secondary">{{ address_city }}</p>
@@ -80,14 +79,14 @@
       </div>
     </div>
 
-    <!-- Right column: Status update and totals -->
+    <!-- Status update and totals -->
     <div class="col-12 col-lg-4">
-      <div class="dz-card p-3 p-lg-4 mb-3">
+      <div class="dz-card p-4 mb-3">
         <h2 class="h6 mb-3">Update status</h2>
         <form method="post" action="/admin/api/orders/{{ order.id }}/status" data-ajax="admin">
           <input type="hidden" name="_csrf" value="{{ csrf }}">
           <div class="mb-3">
-            <label class="form-label small text-secondary mb-1" for="order-status-select">Order status</label>
+            <label class="form-label small mb-1" for="order-status-select">Order status</label>
             <select id="order-status-select" name="status" class="form-select">
 @foreach(opt in status_options)
 @if(opt.selected)
@@ -102,7 +101,7 @@
         </form>
       </div>
 
-      <div class="dz-card p-3 p-lg-4">
+      <div class="dz-card p-4">
         <h2 class="h6 mb-3">Financial summary</h2>
         <div class="d-flex justify-content-between py-1 small">
           <span class="text-secondary">Subtotal:</span>
@@ -123,7 +122,7 @@
         <hr class="my-2">
         <div class="d-flex justify-content-between py-1">
           <span class="fw-bold">Total:</span>
-          <span class="fw-bold text-dark h5 mb-0">{{ total_display }}</span>
+          <span class="fw-bold h5 mb-0">{{ total_display }}</span>
         </div>
       </div>
     </div>

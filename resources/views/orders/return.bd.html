@@ -11,16 +11,15 @@
     </ol>
   </nav>
   <h1 class="page-title">Return or exchange</h1>
-  <p class="page-description">Tell us what went wrong. We answer every request.</p>
 
   <div class="row g-4">
     <div class="col-12 col-lg-7">
-      <div class="dz-card p-4">
+      <div class="dz-card">
         <h2 class="h6 mb-3">Order {{ order_number }}</h2>
         <form method="post" action="/orders/{{ order_number }}/return">
           <input type="hidden" name="_csrf" value="{{ csrf }}">
           <div class="mb-2">
-            <label class="form-label small text-secondary mb-1" for="order_item_id">Item</label>
+            <label class="form-label small mb-1" for="order_item_id">Item</label>
 @if(has_items)
             <select id="order_item_id" name="order_item_id" class="form-select">
 @foreach(item in items)
@@ -34,11 +33,11 @@
           </div>
           <div class="row g-2">
             <div class="col-6 col-md-4">
-              <label class="form-label small text-secondary mb-1" for="ret-qty">Quantity</label>
+              <label class="form-label small mb-1" for="ret-qty">Quantity</label>
               <input type="number" id="ret-qty" name="quantity" min="1" value="1" class="form-control">
             </div>
             <div class="col-6 col-md-8">
-              <label class="form-label small text-secondary mb-1" for="ret-kind">Type</label>
+              <label class="form-label small mb-1" for="ret-kind">Type</label>
               <select id="ret-kind" name="kind" class="form-select">
                 <option value="return">Return for refund</option>
                 <option value="exchange">Exchange</option>
@@ -46,17 +45,17 @@
             </div>
           </div>
           <div class="mt-2 mb-3">
-            <label class="form-label small text-secondary mb-1" for="ret-reason">What went wrong?</label>
+            <label class="form-label small mb-1" for="ret-reason">What went wrong?</label>
             <textarea id="ret-reason" name="reason" rows="4" maxlength="2000" class="form-control" required></textarea>
           </div>
-          <button class="btn btn-primary" type="submit">Send request</button>
+          <button class="btn btn-primary" type="submit">Send Request</button>
         </form>
       </div>
     </div>
   </div>
 
 @if(has_requests)
-  <div class="dz-card p-4 my-4">
+  <div class="dz-card my-4">
     <h2 class="h6 mb-3">Your requests for this order</h2>
     <div class="table-responsive">
       <table class="table table-sm table-hover align-middle mb-0">
@@ -66,9 +65,9 @@
           <tr>
             <td>{{ ret.kind }}</td>
             <td>{{ ret.quantity }}</td>
-            <td>{{ ret.status }}</td>
+            <td><span class="badge badge-soft-info text-capitalize">{{ ret.status }}</span></td>
             <td>{{ ret.refund_minor }}</td>
-            <td>{{ ret.created_at }}</td>
+            <td class="small text-secondary">{{ ret.created_at }}</td>
           </tr>
 @endforeach
         </tbody>

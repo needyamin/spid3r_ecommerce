@@ -3,41 +3,33 @@
 @section('meta_description', meta_description)
 @section("content")
 <div class="dz-admin-module dz-dashboard-view" data-module="dashboard">
-  <!-- Page Header -->
+
   <div class="dz-admin-page-head">
     <div>
-      <span class="dz-eyebrow">Store Intelligence</span>
-      <h1 class="page-title">Executive Dashboard</h1>
-      <p class="page-description">Real-time overview of revenue performance, catalog status, and order activity.</p>
+      <h1 class="page-title mb-0">Executive Dashboard</h1>
     </div>
     <div class="dz-admin-page-head-actions">
-      <a class="btn btn-primary d-inline-flex align-items-center gap-1" href="/admin/products#new-product-name">
-        <span aria-hidden="true">+</span> Add product
-      </a>
-      <a class="btn btn-light border d-inline-flex align-items-center gap-1" href="/admin/orders">
-        View orders
-      </a>
-      <a class="btn btn-light border d-inline-flex align-items-center gap-1" href="/admin/settings">
-        Store settings
-      </a>
+      <a class="btn btn-primary" href="/admin/products#new-product-name">Add product</a>
+      <a class="btn btn-light border" href="/admin/orders">View orders</a>
+      <a class="btn btn-light border" href="/admin/settings">Store settings</a>
     </div>
   </div>
 
-  <!-- KPI Metrics Grid -->
-  <div class="dz-stat-grid my-3">
-    <div class="dz-stat-card dz-stat-revenue text-bg-orange">
+  <!-- KPI stat cards -->
+  <div class="dz-stat-grid mb-4">
+    <div class="dz-stat-card text-bg-orange">
       <div class="dz-stat-top">
         <span class="dz-stat-title">Settled Revenue</span>
         <span class="dz-stat-badge">Settled</span>
       </div>
       <strong class="dz-stat-value">{{ revenue_display }}</strong>
-      <div class="dz-stat-hint">Excludes refunds &amp; pending checkouts</div>
+      <div class="dz-stat-hint">Excludes refunds and pending checkouts</div>
     </div>
 
     <div class="dz-stat-card">
       <div class="dz-stat-top">
         <span class="dz-stat-title">Total Orders</span>
-        <span class="badge bg-primary-subtle text-primary border border-primary-subtle">All time</span>
+        <span class="dz-stat-badge">All time</span>
       </div>
       <strong class="dz-stat-value">{{ orders }}</strong>
       <div class="dz-stat-hint">{{ pipeline_delivered }} delivered &middot; {{ pipeline_processing }} processing</div>
@@ -46,7 +38,7 @@
     <div class="dz-stat-card">
       <div class="dz-stat-top">
         <span class="dz-stat-title">Awaiting Payment</span>
-        <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle">Pending</span>
+        <span class="dz-stat-badge">Pending</span>
       </div>
       <strong class="dz-stat-value">{{ pending_orders }}</strong>
       <div class="dz-stat-hint">Requires customer payment</div>
@@ -55,7 +47,7 @@
     <div class="dz-stat-card">
       <div class="dz-stat-top">
         <span class="dz-stat-title">Customers</span>
-        <span class="badge bg-info-subtle text-info-emphasis border border-info-subtle">Shoppers</span>
+        <span class="dz-stat-badge">Shoppers</span>
       </div>
       <strong class="dz-stat-value">{{ customers }}</strong>
       <div class="dz-stat-hint">Registered store accounts</div>
@@ -64,7 +56,7 @@
     <div class="dz-stat-card">
       <div class="dz-stat-top">
         <span class="dz-stat-title">Published Products</span>
-        <span class="badge bg-success-subtle text-success border border-success-subtle">Live</span>
+        <span class="dz-stat-badge">Live</span>
       </div>
       <strong class="dz-stat-value">{{ published_products }} <small class="text-secondary fw-normal">/ {{ products }}</small></strong>
       <div class="dz-stat-hint">{{ categories }} categories &middot; {{ brands }} brands</div>
@@ -72,134 +64,72 @@
 
     <div class="dz-stat-card">
       <div class="dz-stat-top">
-        <span class="dz-stat-title">Low Stock Alert</span>
-        <span class="badge bg-danger-subtle text-danger border border-danger-subtle">Restock</span>
+        <span class="dz-stat-title">Low Stock</span>
+        <span class="dz-stat-badge">Restock</span>
       </div>
       <strong class="dz-stat-value">{{ low_stock }}</strong>
       <div class="dz-stat-hint">At or below reorder point</div>
     </div>
   </div>
 
-  <!-- Visual Analytics & Quick Actions Row -->
-  <div class="row g-3 my-1">
+  <!-- Pipeline + quick shortcuts -->
+  <div class="row g-3 mb-4">
     <div class="col-12 col-lg-7">
-      <div class="dz-card p-3 p-lg-4 h-100">
+      <div class="dz-card p-4 h-100">
         <div class="d-flex justify-content-between align-items-center mb-3">
-          <div>
-            <h2 class="h6 mb-0 fw-bold">Order Fulfilment Pipeline</h2>
-            <span class="small text-secondary">Current delivery lifecycle breakdown</span>
-          </div>
-          <span class="badge text-bg-light border">Live status</span>
+          <h2 class="h6 mb-0">Order fulfilment pipeline</h2>
+          <span class="badge badge-soft-info">Live status</span>
         </div>
-        <div class="dz-pipeline-progress mb-3">
-          <div class="progress" style="height: 12px;">
-            <div class="progress-bar bg-warning" role="progressbar" style="width: {{ pct_pending }}%" title="Pending ({{ pipeline_pending }})"></div>
-            <div class="progress-bar bg-primary" role="progressbar" style="width: {{ pct_processing }}%" title="Processing ({{ pipeline_processing }})"></div>
-            <div class="progress-bar bg-info" role="progressbar" style="width: {{ pct_shipped }}%" title="Shipped ({{ pipeline_shipped }})"></div>
-            <div class="progress-bar bg-success" role="progressbar" style="width: {{ pct_delivered }}%" title="Delivered ({{ pipeline_delivered }})"></div>
+        <div class="dz-pipeline-progress">
+          <div class="dz-pipeline-bar" role="progressbar" aria-label="Fulfilment pipeline breakdown">
+            <div class="dz-pipeline-seg is-pending" style="width: {{ pct_pending }}%;" title="Pending ({{ pipeline_pending }})"></div>
+            <div class="dz-pipeline-seg is-processing" style="width: {{ pct_processing }}%;" title="Processing ({{ pipeline_processing }})"></div>
+            <div class="dz-pipeline-seg is-shipped" style="width: {{ pct_shipped }}%;" title="Shipped ({{ pipeline_shipped }})"></div>
+            <div class="dz-pipeline-seg is-delivered" style="width: {{ pct_delivered }}%;" title="Delivered ({{ pipeline_delivered }})"></div>
           </div>
         </div>
-        <div class="row g-2 text-center small">
-          <div class="col-3">
-            <div class="p-2 rounded bg-light border">
-              <div class="fw-bold text-dark">{{ pipeline_pending }}</div>
-              <div class="text-secondary"><span class="d-inline-block rounded-circle bg-warning me-1" style="width:8px;height:8px;"></span>Pending</div>
-            </div>
-          </div>
-          <div class="col-3">
-            <div class="p-2 rounded bg-light border">
-              <div class="fw-bold text-dark">{{ pipeline_processing }}</div>
-              <div class="text-secondary"><span class="d-inline-block rounded-circle bg-primary me-1" style="width:8px;height:8px;"></span>Processing</div>
-            </div>
-          </div>
-          <div class="col-3">
-            <div class="p-2 rounded bg-light border">
-              <div class="fw-bold text-dark">{{ pipeline_shipped }}</div>
-              <div class="text-secondary"><span class="d-inline-block rounded-circle bg-info me-1" style="width:8px;height:8px;"></span>Shipped</div>
-            </div>
-          </div>
-          <div class="col-3">
-            <div class="p-2 rounded bg-light border">
-              <div class="fw-bold text-dark">{{ pipeline_delivered }}</div>
-              <div class="text-secondary"><span class="d-inline-block rounded-circle bg-success me-1" style="width:8px;height:8px;"></span>Delivered</div>
-            </div>
-          </div>
+        <div class="dz-pipeline-legend">
+          <div class="dz-pipeline-chip"><span class="dz-pipeline-dot is-pending"></span><span><strong>{{ pipeline_pending }}</strong> Pending</span></div>
+          <div class="dz-pipeline-chip"><span class="dz-pipeline-dot is-processing"></span><span><strong>{{ pipeline_processing }}</strong> Processing</span></div>
+          <div class="dz-pipeline-chip"><span class="dz-pipeline-dot is-shipped"></span><span><strong>{{ pipeline_shipped }}</strong> Shipped</span></div>
+          <div class="dz-pipeline-chip"><span class="dz-pipeline-dot is-delivered"></span><span><strong>{{ pipeline_delivered }}</strong> Delivered</span></div>
         </div>
       </div>
     </div>
 
     <div class="col-12 col-lg-5">
-      <div class="dz-card p-3 p-lg-4 h-100">
-        <h2 class="h6 mb-3 fw-bold">Quick Shortcuts</h2>
-        <div class="row g-2">
-          <div class="col-6">
-            <a href="/admin/products" class="dz-quick-link-card">
-              <span class="dz-quick-icon dz-icon-products"></span>
-              <strong>Products</strong>
-              <small class="text-secondary">Manage catalog</small>
-            </a>
-          </div>
-          <div class="col-6">
-            <a href="/admin/orders" class="dz-quick-link-card">
-              <span class="dz-quick-icon dz-icon-orders"></span>
-              <strong>Orders</strong>
-              <small class="text-secondary">Process shipping</small>
-            </a>
-          </div>
-          <div class="col-6">
-            <a href="/admin/inventory" class="dz-quick-link-card">
-              <span class="dz-quick-icon dz-icon-inventory"></span>
-              <strong>Inventory</strong>
-              <small class="text-secondary">Adjust stock</small>
-            </a>
-          </div>
-          <div class="col-6">
-            <a href="/admin/settings" class="dz-quick-link-card">
-              <span class="dz-quick-icon dz-icon-settings"></span>
-              <strong>Settings</strong>
-              <small class="text-secondary">Store config</small>
-            </a>
-          </div>
-          <div class="col-6">
-            <a href="/admin/shipping" class="dz-quick-link-card">
-              <span class="dz-quick-icon dz-icon-orders"></span>
-              <strong>Shipping Zones</strong>
-              <small class="text-secondary">Regional rates</small>
-            </a>
-          </div>
-          <div class="col-6">
-            <a href="/admin/coupons" class="dz-quick-link-card">
-              <span class="dz-quick-icon dz-icon-coupons"></span>
-              <strong>Coupons ({{ coupons }})</strong>
-              <small class="text-secondary">Promo codes</small>
-            </a>
-          </div>
+      <div class="dz-card p-4 h-100">
+        <h2 class="h6 mb-3">Quick shortcuts</h2>
+        <div class="d-flex flex-column gap-2">
+          <a class="btn btn-light border text-start" href="/admin/products">Products</a>
+          <a class="btn btn-light border text-start" href="/admin/orders">Orders</a>
+          <a class="btn btn-light border text-start" href="/admin/inventory">Inventory</a>
+          <a class="btn btn-light border text-start" href="/admin/shipping">Shipping zones</a>
+          <a class="btn btn-light border text-start" href="/admin/coupons">Coupons ({{ coupons }})</a>
+          <a class="btn btn-light border text-start" href="/admin/settings">Settings</a>
         </div>
       </div>
     </div>
   </div>
 
-  <!-- Recent Orders & Low Stock Watchlist -->
-  <div class="row g-3 my-2">
+  <!-- Recent orders + low stock -->
+  <div class="row g-3">
     <div class="col-12 col-lg-8">
-      <div class="dz-card p-3 p-lg-4 h-100">
-        <div class="dz-section-heading mb-3 d-flex justify-content-between align-items-center">
-          <div>
-            <h2 class="h6 mb-0 fw-bold">Recent Orders</h2>
-            <p class="small text-secondary mb-0">Latest customer orders requiring fulfilment</p>
-          </div>
-          <a class="btn btn-light border btn-sm" href="/admin/orders">View all orders &rarr;</a>
+      <div class="dz-card p-4 h-100">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <h2 class="h6 mb-0">Recent orders</h2>
+          <a class="btn btn-light border btn-sm" href="/admin/orders">View all</a>
         </div>
 @if(has_recent)
         <div class="table-responsive">
-          <table class="table dz-admin-table table-hover align-middle mb-0">
+          <table class="table admin-table table-hover align-middle mb-0">
             <thead>
               <tr>
                 <th>Order #</th>
                 <th>Customer</th>
                 <th>Status</th>
                 <th>Total</th>
-                <th>Action</th>
+                <th></th>
               </tr>
             </thead>
             <tbody>
@@ -210,15 +140,11 @@
                     <code>{{ order.order_number }}</code>
                   </a>
                 </td>
-                <td class="small">{{ order.customer_name }} <span class="text-secondary">({{ order.item_count }} items)</span></td>
+                <td>{{ order.customer_name }} <span class="text-secondary">({{ order.item_count }} items)</span></td>
+                <td><span class="badge badge-soft-info">{{ order.status }}</span></td>
+                <td><strong>{{ order.total_display }}</strong></td>
                 <td>
-                  <span class="badge text-bg-primary rounded-pill px-2 py-1">{{ order.status }}</span>
-                </td>
-                <td>
-                  <strong class="text-dark">{{ order.total_display }}</strong>
-                </td>
-                <td>
-                  <a class="btn btn-sm btn-outline-primary" href="/admin/orders/{{ order.id }}">View</a>
+                  <a class="btn btn-light border btn-sm" href="/admin/orders/{{ order.id }}">View</a>
                 </td>
               </tr>
 @endforeach
@@ -226,21 +152,16 @@
           </table>
         </div>
 @else
-        <div class="empty-note py-4">
-          <p class="mb-0 text-secondary">No orders recorded yet. They will appear here automatically when shoppers check out.</p>
-        </div>
+        <p class="empty-note mb-0">No orders yet. New checkouts will appear here.</p>
 @endif
       </div>
     </div>
 
     <div class="col-12 col-lg-4">
-      <div class="dz-card p-3 p-lg-4 h-100">
+      <div class="dz-card p-4 h-100">
         <div class="d-flex justify-content-between align-items-center mb-3">
-          <div>
-            <h2 class="h6 mb-0 fw-bold">Low Stock Watchlist</h2>
-            <p class="small text-secondary mb-0">Products at or below threshold</p>
-          </div>
-          <a class="btn btn-light border btn-sm" href="/admin/inventory">Inventory &rarr;</a>
+          <h2 class="h6 mb-0">Low stock watchlist</h2>
+          <a class="btn btn-light border btn-sm" href="/admin/inventory">Inventory</a>
         </div>
 @if(has_low_stock_items)
         <div class="list-group list-group-flush small">
@@ -248,16 +169,14 @@
           <div class="list-group-item px-0 d-flex justify-content-between align-items-center">
             <div>
               <a href="/admin/products/{{ item.product_id }}" class="fw-semibold text-decoration-none">{{ item.name }}</a>
-              <div class="text-secondary">SKU: <code>{{ item.sku }}</code> &middot; Min: {{ item.low_stock_threshold }}</div>
+              <div class="text-secondary">SKU <code>{{ item.sku }}</code> &middot; Min {{ item.low_stock_threshold }}</div>
             </div>
-            <span class="badge bg-danger-subtle text-danger border border-danger-subtle">{{ item.quantity }} left</span>
+            <span class="badge badge-soft-danger">{{ item.quantity }} left</span>
           </div>
 @endforeach
         </div>
 @else
-        <div class="empty-note py-4">
-          <p class="mb-0 text-secondary small">&#10003; All products are stocked above their low-stock threshold.</p>
-        </div>
+        <p class="empty-note mb-0">All products are stocked above their threshold.</p>
 @endif
       </div>
     </div>

@@ -2,16 +2,14 @@
 @section('title', title)
 @section('meta_description', meta_description)
 @section("content")
-  <h1 class="page-title">Returns &amp; exchanges</h1>
-  <p class="page-description">
-    A request moves requested → approved → received → refunded. Refunding
-    restocks the items and records the refund in the payment ledger.
-  </p>
+<div class="dz-admin-page-head">
+  <div><h1 class="page-title mb-0">Returns &amp; exchanges</h1></div>
+</div>
 
 @if(has_returns)
-  <div class="dz-card p-3 my-3">
+  <div class="dz-card dz-table-card my-3">
     <div class="table-responsive">
-      <table class="table table-sm table-striped table-hover align-middle mb-0">
+      <table class="table admin-table table-hover align-middle mb-0">
         <thead><tr><th>ID</th><th>Order</th><th>Kind</th><th>Qty</th><th>Reason</th><th>Status</th><th>Decision</th></tr></thead>
         <tbody>
 @foreach(ret in returns)
@@ -21,7 +19,7 @@
             <td>{{ ret.kind }}</td>
             <td>{{ ret.quantity }}</td>
             <td>{{ ret.reason }}</td>
-            <td><span class="stock-badge stock-in">{{ ret.status }}</span></td>
+            <td><span class="badge badge-soft-info">{{ ret.status }}</span></td>
             <td>
 @if(ret.status == "requested")
               <form method="post" action="/admin/api/returns/{{ ret.id }}" class="d-inline">

@@ -3,27 +3,21 @@
 @section('meta_description', meta_description)
 @section("content")
 <div class="dz-admin-page dz-admin-module" data-module="{{ page }}">
-  <header class="dz-page-heading mb-4">
-    <div>
-      <span class="dz-eyebrow">Admin / {{ title }}</span>
-      <h1 class="page-title mb-1">{{ title }}</h1>
+
+  <div class="dz-admin-page-head">
+    <div><h1 class="page-title mb-0">{{ title }}</h1></div>
 @if(is_products)
-      <p class="page-description mb-0">Create products, update visibility and manage catalog details.</p>
-@endif
-@if(is_inventory)
-      <p class="page-description mb-0">Track on-hand stock, reserved units and restock levels.</p>
-@endif
+    <div class="dz-admin-page-head-actions">
+      <a class="btn btn-primary" href="#new-product-name">Add product</a>
     </div>
-@if(is_products)
-    <a class="btn btn-outline-primary" href="#new-product-name">Add product</a>
 @endif
-  </header>
+  </div>
 
 @if(show_generic_table)
 @if(has_rows)
-  <div class="dz-card p-3 my-3">
+  <div class="dz-card dz-table-card mb-4">
     <div class="table-responsive">
-      <table class="table table-sm table-striped table-hover align-middle mb-0">
+      <table class="table admin-table align-middle mb-0">
         <thead><tr>
 @foreach(header in headers)
           <th>{{ header }}</th>
@@ -48,99 +42,95 @@
 
 @if(is_settings)
   <div class="dz-card p-4 my-4 dz-form-narrow">
-    <div class="d-flex justify-content-between align-items-center mb-3">
-      <div>
-        <span class="dz-eyebrow">Store Configuration</span>
-        <h2 class="h5 mb-0 fw-bold">Update a Setting</h2>
-      </div>
-      <span class="badge bg-primary-subtle text-primary border border-primary-subtle">Key-Value</span>
-    </div>
+    <h2 class="h6 mb-3">Update a setting</h2>
     <form method="post" action="/admin/api/settings" data-ajax="admin">
       <input type="hidden" name="_csrf" value="{{ csrf }}">
-      <div class="mb-3">
-        <label class="form-label small text-secondary mb-1" for="setting_key">Configuration Key</label>
-        <input id="setting_key" name="setting_key" class="form-control" required placeholder="e.g. store.name, shipping.flat_minor">
+      <div class="row g-3">
+        <div class="col-md-6">
+          <label class="form-label small mb-1" for="setting_key">Configuration key</label>
+          <input id="setting_key" name="setting_key" class="form-control" required placeholder="e.g. store.name">
+        </div>
+        <div class="col-md-6">
+          <label class="form-label small mb-1" for="setting-group">Setting group</label>
+          <input id="setting-group" name="group" value="general" class="form-control" placeholder="general, shipping, payments, tax">
+        </div>
+        <div class="col-12">
+          <label class="form-label small mb-1" for="setting-value">Value</label>
+          <input id="setting-value" name="value" class="form-control" required placeholder="Setting value">
+        </div>
       </div>
-      <div class="mb-3">
-        <label class="form-label small text-secondary mb-1" for="setting-value">Value</label>
-        <input id="setting-value" name="value" class="form-control" required placeholder="Setting value">
-      </div>
-      <div class="mb-3">
-        <label class="form-label small text-secondary mb-1" for="setting-group">Setting Group</label>
-        <input id="setting-group" name="group" value="general" class="form-control" placeholder="general, shipping, payments, tax, etc.">
-      </div>
-      <button class="btn btn-primary px-4" type="submit">Save setting</button>
+      <button class="btn btn-primary mt-3" type="submit">Save setting</button>
     </form>
   </div>
 @endif
+
 @if(is_coupons)
   <div class="dz-card p-4 my-4 dz-form-narrow">
-      <h2 class="h6 mb-3">Create coupon</h2>
+    <h2 class="h6 mb-3">Create coupon</h2>
     <form method="post" action="/admin/api/coupons" data-ajax="admin">
       <input type="hidden" name="_csrf" value="{{ csrf }}">
-      <div class="mb-2">
-        <label class="form-label small text-secondary mb-1" for="coupon-code">Code</label>
-        <input id="coupon-code" name="code" class="form-control" required>
-      </div>
-      <div class="row g-2 mb-2">
-        <div class="col-6">
-          <label class="form-label small text-secondary mb-1" for="coupon-type">Type</label>
+      <div class="row g-3">
+        <div class="col-md-6">
+          <label class="form-label small mb-1" for="coupon-code">Code</label>
+          <input id="coupon-code" name="code" class="form-control" required>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label small mb-1" for="coupon-type">Type</label>
           <select id="coupon-type" name="type" class="form-select"><option value="fixed">Fixed</option><option value="percent">Percent (bps)</option></select>
         </div>
-        <div class="col-6">
-          <label class="form-label small text-secondary mb-1" for="coupon-value">Value</label>
+        <div class="col-md-6">
+          <label class="form-label small mb-1" for="coupon-value">Value</label>
           <input id="coupon-value" name="value_minor" type="number" value="0" min="0" class="form-control">
         </div>
-        <div class="col-6">
-          <label class="form-label small text-secondary mb-1" for="coupon-min">Minimum order</label>
+        <div class="col-md-6">
+          <label class="form-label small mb-1" for="coupon-min">Minimum order</label>
           <input id="coupon-min" name="min_order_minor" type="number" value="0" min="0" class="form-control">
         </div>
-        <div class="col-6">
-          <label class="form-label small text-secondary mb-1" for="coupon-max">Max uses</label>
+        <div class="col-md-6">
+          <label class="form-label small mb-1" for="coupon-max">Max uses</label>
           <input id="coupon-max" name="max_uses" type="number" value="0" min="0" class="form-control">
         </div>
       </div>
-      <button class="btn btn-primary" type="submit">Create coupon</button>
+      <button class="btn btn-primary mt-3" type="submit">Create coupon</button>
     </form>
   </div>
 @endif
 
 @if(is_products)
-  <section class="dz-card dz-create-card p-3 p-lg-4 my-3" aria-labelledby="new-product-heading">
-    <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
-      <div><span class="dz-eyebrow">Catalog setup</span><h2 id="new-product-heading" class="h5 mb-0">Add a product</h2></div>
-      <span class="badge text-bg-light border">Price in BDT</span>
-    </div>
+  <section class="dz-card dz-create-card p-4 my-4" aria-labelledby="new-product-heading">
+    <h2 id="new-product-heading" class="h6 mb-3">Add a product</h2>
     <form method="post" action="/admin/api/products/create" data-ajax="admin">
       <input type="hidden" name="_csrf" value="{{ csrf }}">
-      <div class="row g-2">
-        <div class="col-12 col-lg-4">
-          <label class="form-label small text-secondary mb-1" for="new-product-name">Name</label>
+      <div class="row g-3">
+        <div class="col-md-6">
+          <label class="form-label small mb-1" for="new-product-name">Name</label>
           <input id="new-product-name" name="name" class="form-control" required>
         </div>
-        <div class="col-6 col-lg-2">
-          <label class="form-label small text-secondary mb-1" for="new-product-sku">SKU</label>
+        <div class="col-md-6">
+          <label class="form-label small mb-1" for="new-product-sku">SKU</label>
           <input id="new-product-sku" name="sku" class="form-control" required>
         </div>
-        <div class="col-6 col-lg-2">
-          <label class="form-label small text-secondary mb-1" for="new-product-price">Price (BDT)</label>
+        <div class="col-md-6">
+          <label class="form-label small mb-1" for="new-product-price">Price (BDT)</label>
           <input id="new-product-price" name="price" type="number" step="0.01" min="0.01" class="form-control" required>
         </div>
-        <div class="col-6 col-lg-2">
-          <label class="form-label small text-secondary mb-1" for="new-product-stock">Stock</label>
+        <div class="col-md-6">
+          <label class="form-label small mb-1" for="new-product-compare">Compare-at price (BDT)</label>
+          <input id="new-product-compare" name="compare_at" type="number" step="0.01" min="0" class="form-control">
+        </div>
+        <div class="col-md-6">
+          <label class="form-label small mb-1" for="new-product-stock">Stock</label>
           <input id="new-product-stock" name="stock" type="number" min="0" value="0" class="form-control">
         </div>
-        <div class="col-6 col-lg-2">
-          <label class="form-label small text-secondary mb-1" for="new-product-status">Status</label>
+        <div class="col-md-6">
+          <label class="form-label small mb-1" for="new-product-status">Status</label>
           <select id="new-product-status" name="status" class="form-select">
             <option value="draft">Draft</option>
             <option value="published">Published</option>
           </select>
         </div>
-      </div>
-      <div class="row g-2 mt-1">
-        <div class="col-12 col-lg-4">
-          <label class="form-label small text-secondary mb-1" for="new-product-category">Category</label>
+        <div class="col-md-6">
+          <label class="form-label small mb-1" for="new-product-category">Category</label>
           <select id="new-product-category" name="category_id" class="form-select" required>
             <option value="" selected disabled>Choose a category</option>
 @foreach(cat in category_options)
@@ -148,8 +138,8 @@
 @endforeach
           </select>
         </div>
-        <div class="col-12 col-lg-4">
-          <label class="form-label small text-secondary mb-1" for="new-product-brand">Brand</label>
+        <div class="col-md-6">
+          <label class="form-label small mb-1" for="new-product-brand">Brand</label>
           <select id="new-product-brand" name="brand_id" class="form-select">
             <option value="">No brand</option>
 @foreach(b in brand_options)
@@ -157,49 +147,43 @@
 @endforeach
           </select>
         </div>
-        <div class="col-12 col-lg-4">
-          <label class="form-label small text-secondary mb-1" for="new-product-compare">Compare-at price (BDT)</label>
-          <input id="new-product-compare" name="compare_at" type="number" step="0.01" min="0" class="form-control">
-        </div>
-        <div class="col-6 col-lg-2">
-          <label class="form-label small text-secondary mb-1" for="new-product-cost">Cost price (BDT)</label>
+        <div class="col-md-6">
+          <label class="form-label small mb-1" for="new-product-cost">Cost price (BDT)</label>
           <input id="new-product-cost" name="cost" type="number" step="0.01" min="0" class="form-control">
         </div>
-        <div class="col-6 col-lg-2">
-          <label class="form-label small text-secondary mb-1" for="new-product-tax">Tax rate (%)</label>
+        <div class="col-md-3">
+          <label class="form-label small mb-1" for="new-product-tax">Tax rate (%)</label>
           <input id="new-product-tax" name="tax_percent" type="number" step="0.01" min="0" max="100" value="0" class="form-control">
         </div>
-        <div class="col-6 col-lg-2">
-          <label class="form-label small text-secondary mb-1" for="new-product-weight">Weight (kg)</label>
+        <div class="col-md-3">
+          <label class="form-label small mb-1" for="new-product-weight">Weight (kg)</label>
           <input id="new-product-weight" name="weight_kg" type="number" step="0.001" min="0" value="0" class="form-control">
         </div>
-      </div>
-      <div class="mt-2">
-        <label class="form-label small text-secondary mb-1" for="new-product-short">Short description</label>
-        <input id="new-product-short" name="short_description" class="form-control">
-      </div>
-      <div class="mt-2">
-        <label class="form-label small text-secondary mb-1" for="new-product-description">Description</label>
-        <textarea id="new-product-description" name="description" rows="3" class="form-control"></textarea>
-      </div>
-      <div class="row g-2 mt-1">
-        <div class="col-12 col-lg-4">
-          <label class="form-label small text-secondary mb-1" for="new-product-meta-title">Meta title</label>
+        <div class="col-12">
+          <label class="form-label small mb-1" for="new-product-short">Short description</label>
+          <input id="new-product-short" name="short_description" class="form-control">
+        </div>
+        <div class="col-12">
+          <label class="form-label small mb-1" for="new-product-description">Description</label>
+          <textarea id="new-product-description" name="description" rows="3" class="form-control"></textarea>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label small mb-1" for="new-product-meta-title">Meta title</label>
           <input id="new-product-meta-title" name="meta_title" class="form-control">
         </div>
-        <div class="col-12 col-lg-8">
-          <label class="form-label small text-secondary mb-1" for="new-product-meta-desc">Meta description</label>
+        <div class="col-md-6">
+          <label class="form-label small mb-1" for="new-product-meta-desc">Meta description</label>
           <input id="new-product-meta-desc" name="meta_description" class="form-control">
         </div>
       </div>
       <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mt-3">
         <span class="form-text">Products with an order or active cart cannot be deleted; archive them instead.</span>
-        <button class="btn btn-primary px-4" type="submit">Create product</button>
+        <button class="btn btn-primary" type="submit">Create product</button>
       </div>
     </form>
   </section>
 
-  <div class="dz-stat-grid mb-3">
+  <div class="dz-stat-grid mb-4">
     <div class="dz-stat-card-modern">
       <div class="dz-stat-card-header">
         <div class="dz-stat-icon-wrap dz-stat-icon-all">
@@ -209,7 +193,7 @@
       </div>
       <div class="dz-stat-card-body">
         <div class="dz-stat-num">{{ all_products_count }}</div>
-        <div class="dz-stat-sub">Total Products</div>
+        <div class="dz-stat-sub">Total products</div>
       </div>
     </div>
     <div class="dz-stat-card-modern">
@@ -217,10 +201,10 @@
         <div class="dz-stat-icon-wrap dz-stat-icon-published">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
         </div>
-        <span class="badge bg-success-subtle text-success border border-success-subtle">Live</span>
+        <span class="dz-stat-badge-tag">Live</span>
       </div>
       <div class="dz-stat-card-body">
-        <div class="dz-stat-num text-success">{{ published_products }}</div>
+        <div class="dz-stat-num">{{ published_products }}</div>
         <div class="dz-stat-sub">Published</div>
       </div>
     </div>
@@ -229,18 +213,17 @@
         <div class="dz-stat-icon-wrap dz-stat-icon-draft">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path></svg>
         </div>
-        <span class="badge bg-light text-secondary border">Draft</span>
+        <span class="dz-stat-badge-tag">Draft</span>
       </div>
       <div class="dz-stat-card-body">
-        <div class="dz-stat-num text-secondary">{{ draft_products }}</div>
+        <div class="dz-stat-num">{{ draft_products }}</div>
         <div class="dz-stat-sub">Drafts</div>
       </div>
     </div>
   </div>
 
-  <section class="dz-card dz-table-card p-0 shadow-sm my-3" aria-labelledby="products-table-heading">
-    <div class="dz-table-header-bar p-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
-      <div><span class="dz-eyebrow mb-0">Catalog</span><h2 id="products-table-heading" class="h5 mb-0 fw-bold">Products</h2><p class="small text-secondary mb-0">{{ total_products }} matching product(s)</p></div>
+  <div class="dz-admin-toolbar-card mb-4">
+    <div class="dz-toolbar-row">
       <form class="dz-table-search m-0" method="get" action="/admin/products">
         <label class="visually-hidden" for="product-table-filter">Search products</label>
         <div class="input-group">
@@ -252,9 +235,15 @@
         </div>
       </form>
     </div>
+  </div>
+
+  <section class="dz-card dz-table-card mb-4" aria-labelledby="products-table-heading">
+    <div class="p-3 d-flex justify-content-between align-items-center flex-wrap gap-2 border-bottom">
+      <h2 id="products-table-heading" class="h6 mb-0">Products <span class="small text-secondary fw-normal">({{ total_products }})</span></h2>
+    </div>
 @if(has_product_rows)
     <div class="table-responsive">
-      <table id="product-table" class="table dz-admin-table dz-products-table align-middle mb-0">
+      <table id="product-table" class="table admin-table dz-products-table align-middle mb-0">
         <thead><tr><th scope="col">Image</th><th scope="col">Product</th><th scope="col">SKU</th><th scope="col">Price</th><th scope="col">On hand</th><th scope="col">Status</th><th scope="col">Actions</th></tr></thead>
         <tbody>
 @foreach(p in product_rows)
@@ -274,7 +263,7 @@
                 <span class="fw-semibold">{{ p.name }}</span>
               </span>
 @if(p.is_featured)
-              <span class="badge text-bg-warning">Featured</span>
+              <span class="badge badge-soft-accent">Featured</span>
 @endif
             </td>
             <td data-label="SKU"><code>{{ p.sku }}</code></td>
@@ -282,9 +271,9 @@
             <td data-label="On hand"><strong>{{ p.stock }}</strong><span class="d-block small text-secondary">{{ p.available }} available</span></td>
             <td data-label="Status">
 @if(p.is_published)
-              <span class="badge text-bg-success">Published</span>
+              <span class="badge badge-soft-success">Published</span>
 @else
-              <span class="badge text-bg-secondary">{{ p.status }}</span>
+              <span class="badge badge-soft-warning">{{ p.status }}</span>
 @endif
             </td>
             <td data-label="Actions">
@@ -343,7 +332,7 @@
         </tbody>
       </table>
     </div>
-    <nav class="dz-table-pagination" aria-label="Product pages">
+    <nav class="dz-table-pagination p-3 border-top" aria-label="Product pages">
 @if(product_has_prev)
       <a class="btn btn-light border" href="{{ product_prev_url }}" rel="prev">Previous</a>
 @endif
@@ -353,29 +342,23 @@
 @endif
     </nav>
 @else
-    <p class="empty-note">No products match this search. <a href="/admin/products">Clear search</a></p>
+    <p class="empty-note m-3">No products match this search. <a href="/admin/products">Clear search</a></p>
 @endif
   </section>
 @endif
 
 @if(is_categories)
-  <div class="dz-card p-4 my-3">
-    <div class="d-flex justify-content-between align-items-center mb-3">
-      <div>
-        <span class="dz-eyebrow">Catalog Setup</span>
-        <h2 class="h5 mb-0 fw-bold">Add a category</h2>
-      </div>
-      <span class="badge text-bg-light border">Hierarchy</span>
-    </div>
+  <div class="dz-card p-4 my-4">
+    <h2 class="h6 mb-3">Add a category</h2>
     <form method="post" action="/admin/api/categories/create" data-ajax="admin">
       <input type="hidden" name="_csrf" value="{{ csrf }}">
-      <div class="row g-2">
-        <div class="col-12 col-lg-4">
-          <label class="form-label small text-secondary mb-1" for="new-category-name">Name</label>
+      <div class="row g-3">
+        <div class="col-md-6">
+          <label class="form-label small mb-1" for="new-category-name">Name</label>
           <input id="new-category-name" name="name" class="form-control" required placeholder="Category name">
         </div>
-        <div class="col-12 col-lg-4">
-          <label class="form-label small text-secondary mb-1" for="new-category-parent">Parent category</label>
+        <div class="col-md-6">
+          <label class="form-label small mb-1" for="new-category-parent">Parent category</label>
           <select id="new-category-parent" name="parent_id" class="form-select">
             <option value="">Top level (no parent)</option>
 @foreach(cat in category_options)
@@ -383,36 +366,31 @@
 @endforeach
           </select>
         </div>
-        <div class="col-12 col-lg-4">
-          <label class="form-label small text-secondary mb-1" for="new-category-sort">Sort order</label>
+        <div class="col-md-6">
+          <label class="form-label small mb-1" for="new-category-sort">Sort order</label>
           <input id="new-category-sort" name="sort_order" type="number" value="0" class="form-control">
         </div>
-      </div>
-      <div class="mt-2">
-        <label class="form-label small text-secondary mb-1" for="new-category-description">Description</label>
-        <input id="new-category-description" name="description" class="form-control" placeholder="Optional category blurb">
+        <div class="col-md-6">
+          <label class="form-label small mb-1" for="new-category-description">Description</label>
+          <input id="new-category-description" name="description" class="form-control" placeholder="Optional category blurb">
+        </div>
       </div>
       <button class="btn btn-primary mt-3" type="submit">Create category</button>
     </form>
   </div>
 
-  <div class="dz-card p-3 p-lg-4 my-3">
-    <div class="d-flex justify-content-between align-items-center mb-3">
-      <div>
-        <span class="dz-eyebrow">Catalog</span>
-        <h2 class="h5 mb-0 fw-bold">Existing Categories</h2>
-      </div>
-    </div>
+  <div class="dz-card dz-table-card mb-4">
+    <div class="p-3 border-bottom"><h2 class="h6 mb-0">Existing categories</h2></div>
 @if(has_category_rows)
     <div class="table-responsive">
-      <table class="table dz-admin-table table-hover align-middle mb-0">
+      <table class="table admin-table table-hover align-middle mb-0">
         <thead><tr><th>ID</th><th>Name</th><th>Slug</th><th>Actions</th></tr></thead>
         <tbody>
 @foreach(c in category_rows)
           <tr>
             <td><code>#{{ c.id }}</code></td>
             <td><strong>{{ c.name }}</strong></td>
-            <td><span class="badge text-bg-light border font-monospace">{{ c.slug }}</span></td>
+            <td><code>{{ c.slug }}</code></td>
             <td>
               <div class="d-flex align-items-center gap-2">
                 <form method="post" action="/admin/api/categories/{{ c.id }}/update" data-ajax="admin" class="d-flex align-items-center gap-1">
@@ -432,29 +410,23 @@
       </table>
     </div>
 @else
-    <p class="empty-note">No categories yet — add the first one above.</p>
+    <p class="empty-note m-3">No categories yet — add the first one above.</p>
 @endif
   </div>
 @endif
 
 @if(is_brands)
-  <div class="dz-card p-4 my-3">
-    <div class="d-flex justify-content-between align-items-center mb-3">
-      <div>
-        <span class="dz-eyebrow">Brand Directory</span>
-        <h2 class="h5 mb-0 fw-bold">Add a brand</h2>
-      </div>
-      <span class="badge text-bg-light border">Brands</span>
-    </div>
+  <div class="dz-card p-4 my-4">
+    <h2 class="h6 mb-3">Add a brand</h2>
     <form method="post" action="/admin/api/brands/create" data-ajax="admin">
       <input type="hidden" name="_csrf" value="{{ csrf }}">
-      <div class="row g-2">
-        <div class="col-12 col-lg-4">
-          <label class="form-label small text-secondary mb-1" for="new-brand-name">Name</label>
+      <div class="row g-3">
+        <div class="col-md-6">
+          <label class="form-label small mb-1" for="new-brand-name">Name</label>
           <input id="new-brand-name" name="name" class="form-control" required placeholder="Brand name">
         </div>
-        <div class="col-12 col-lg-8">
-          <label class="form-label small text-secondary mb-1" for="new-brand-description">Description</label>
+        <div class="col-md-6">
+          <label class="form-label small mb-1" for="new-brand-description">Description</label>
           <input id="new-brand-description" name="description" class="form-control" placeholder="Brand story or manufacturer details">
         </div>
       </div>
@@ -462,23 +434,18 @@
     </form>
   </div>
 
-  <div class="dz-card p-3 p-lg-4 my-3">
-    <div class="d-flex justify-content-between align-items-center mb-3">
-      <div>
-        <span class="dz-eyebrow">Directory</span>
-        <h2 class="h5 mb-0 fw-bold">Brands</h2>
-      </div>
-    </div>
+  <div class="dz-card dz-table-card mb-4">
+    <div class="p-3 border-bottom"><h2 class="h6 mb-0">Brands</h2></div>
 @if(has_brand_rows)
     <div class="table-responsive">
-      <table class="table dz-admin-table table-hover align-middle mb-0">
+      <table class="table admin-table table-hover align-middle mb-0">
         <thead><tr><th>ID</th><th>Name</th><th>Slug</th><th>Actions</th></tr></thead>
         <tbody>
 @foreach(b in brand_rows)
           <tr>
             <td><code>#{{ b.id }}</code></td>
             <td><strong>{{ b.name }}</strong></td>
-            <td><span class="badge text-bg-light border font-monospace">{{ b.slug }}</span></td>
+            <td><code>{{ b.slug }}</code></td>
             <td>
               <div class="d-flex align-items-center gap-2">
                 <form method="post" action="/admin/api/brands/{{ b.id }}/update" data-ajax="admin" class="d-flex align-items-center gap-1">
@@ -498,14 +465,14 @@
       </table>
     </div>
 @else
-    <p class="empty-note">No brands yet — add the first one above.</p>
+    <p class="empty-note m-3">No brands yet — add the first one above.</p>
 @endif
   </div>
 @endif
 
 @if(is_inventory)
   <div class="dz-stat-grid mb-4">
-    <div class="dz-stat-card-modern is-active" title="Total tracked products">
+    <div class="dz-stat-card-modern">
       <div class="dz-stat-card-header">
         <div class="dz-stat-icon-wrap dz-stat-icon-all">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg>
@@ -514,10 +481,10 @@
       </div>
       <div class="dz-stat-card-body">
         <div class="dz-stat-num">{{ inventory_stats.total_products }}</div>
-        <div class="dz-stat-sub">Tracked Products</div>
+        <div class="dz-stat-sub">Tracked products</div>
       </div>
     </div>
-    <div class="dz-stat-card-modern" title="Total units on hand across catalog">
+    <div class="dz-stat-card-modern">
       <div class="dz-stat-card-header">
         <div class="dz-stat-icon-wrap dz-stat-icon-units">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"></rect><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path></svg>
@@ -525,92 +492,89 @@
         <span class="dz-stat-badge-tag">Physical</span>
       </div>
       <div class="dz-stat-card-body">
-        <div class="dz-stat-num text-dark">{{ inventory_stats.total_on_hand }}</div>
-        <div class="dz-stat-sub">Total Units On Hand</div>
+        <div class="dz-stat-num">{{ inventory_stats.total_on_hand }}</div>
+        <div class="dz-stat-sub">Units on hand</div>
       </div>
     </div>
-    <div class="dz-stat-card-modern" title="In-stock products">
+    <div class="dz-stat-card-modern">
       <div class="dz-stat-card-header">
         <div class="dz-stat-icon-wrap dz-stat-icon-in">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
         </div>
-        <span class="dz-stat-badge-tag text-success">Healthy</span>
+        <span class="dz-stat-badge-tag">Healthy</span>
       </div>
       <div class="dz-stat-card-body">
-        <div class="dz-stat-num text-success">{{ inventory_stats.in_stock }}</div>
-        <div class="dz-stat-sub">In Stock</div>
+        <div class="dz-stat-num">{{ inventory_stats.in_stock }}</div>
+        <div class="dz-stat-sub">In stock</div>
       </div>
     </div>
-    <div class="dz-stat-card-modern" title="Low-stock products requiring restock">
+    <div class="dz-stat-card-modern">
       <div class="dz-stat-card-header">
         <div class="dz-stat-icon-wrap dz-stat-icon-low">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
         </div>
-        <span class="dz-stat-badge-tag text-warning">Alert</span>
+        <span class="dz-stat-badge-tag">Alert</span>
       </div>
       <div class="dz-stat-card-body">
-        <div class="dz-stat-num text-warning">{{ inventory_stats.low_stock }}</div>
-        <div class="dz-stat-sub">Low Stock Alert</div>
+        <div class="dz-stat-num">{{ inventory_stats.low_stock }}</div>
+        <div class="dz-stat-sub">Low stock</div>
       </div>
     </div>
-    <div class="dz-stat-card-modern" title="Out-of-stock products">
+    <div class="dz-stat-card-modern">
       <div class="dz-stat-card-header">
         <div class="dz-stat-icon-wrap dz-stat-icon-out">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>
         </div>
-        <span class="dz-stat-badge-tag text-danger">Depleted</span>
+        <span class="dz-stat-badge-tag">Depleted</span>
       </div>
       <div class="dz-stat-card-body">
-        <div class="dz-stat-num text-danger">{{ inventory_stats.out_of_stock }}</div>
-        <div class="dz-stat-sub">Out of Stock</div>
+        <div class="dz-stat-num">{{ inventory_stats.out_of_stock }}</div>
+        <div class="dz-stat-sub">Out of stock</div>
       </div>
     </div>
   </div>
 
   <div class="dz-admin-toolbar-card mb-4" id="inventory-toolbar">
-    <div class="dz-toolbar-wrap">
-      <div class="dz-toolbar-row">
-        <div class="dz-search-box">
-          <span class="dz-search-icon" aria-hidden="true">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-          </span>
-          <label class="visually-hidden" for="inventory-table-filter">Search inventory</label>
-          <input id="inventory-table-filter" class="dz-search-input" type="search" placeholder="Search product name or SKU…" data-table-filter="inventory-table">
+    <div class="dz-toolbar-row">
+      <div class="dz-search-box">
+        <span class="dz-search-icon" aria-hidden="true">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+        </span>
+        <label class="visually-hidden" for="inventory-table-filter">Search inventory</label>
+        <input id="inventory-table-filter" class="dz-search-input" type="search" placeholder="Search product name or SKU" data-table-filter="inventory-table">
+      </div>
+      <div class="dz-toolbar-filters">
+        <div class="dz-filter-item">
+          <select class="dz-filter-select dz-admin-filter" id="inv-table-filter-stock">
+            <option value="">All stock levels</option>
+            <option value="in">In stock</option>
+            <option value="low">Low stock</option>
+            <option value="out">Out of stock</option>
+          </select>
         </div>
-        <div class="dz-toolbar-filters">
-          <div class="dz-filter-item">
-            <select class="dz-filter-select dz-admin-filter" id="inv-table-filter-stock">
-              <option value="">All Stock Levels</option>
-              <option value="in">In Stock</option>
-              <option value="low">Low Stock</option>
-              <option value="out">Out of Stock</option>
-            </select>
-          </div>
-          <div class="dz-filter-item">
-            <select class="dz-filter-select dz-admin-filter" id="inv-table-filter-sort">
-              <option value="default">Sort: Default</option>
-              <option value="stock_asc">Stock: Lowest First</option>
-              <option value="stock_desc">Stock: Highest First</option>
-            </select>
-          </div>
+        <div class="dz-filter-item">
+          <select class="dz-filter-select dz-admin-filter" id="inv-table-filter-sort">
+            <option value="default">Sort: default</option>
+            <option value="stock_asc">Stock: lowest first</option>
+            <option value="stock_desc">Stock: highest first</option>
+          </select>
         </div>
       </div>
     </div>
   </div>
 
 @if(has_inventory_rows)
-  <div class="dz-card p-0 dz-table-card mb-4">
+  <div class="dz-card dz-table-card mb-4">
     <div class="table-responsive">
-      <table id="inventory-table" class="table dz-admin-table align-middle mb-0">
+      <table id="inventory-table" class="table admin-table align-middle mb-0">
         <thead>
           <tr>
             <th scope="col">Product</th>
-            <th scope="col">Stock Status</th>
-            <th scope="col">On Hand</th>
+            <th scope="col">Stock status</th>
+            <th scope="col">On hand</th>
             <th scope="col">Available</th>
             <th scope="col">Reserved</th>
-            <th scope="col">Alert Level</th>
-            <th scope="col">Update Stock</th>
+            <th scope="col">Update stock</th>
           </tr>
         </thead>
         <tbody>
@@ -624,11 +588,11 @@
                 <div class="dz-product-thumb-placeholder"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg></div>
 @endif
                 <div class="dz-product-meta">
-                  <a class="dz-product-title fw-semibold text-dark text-decoration-none" href="{{ inv.product_url }}">{{ inv.product_name }}</a>
-                  <div class="dz-product-tags mt-1 d-flex align-items-center">
-                    <span class="badge text-bg-light border">{{ inv.product_status }}</span>
+                  <a class="dz-product-title fw-semibold text-decoration-none" href="{{ inv.product_url }}">{{ inv.product_name }}</a>
+                  <div class="dz-product-tags d-flex align-items-center">
+                    <span class="badge badge-soft-info">{{ inv.product_status }}</span>
 @if(inv.product_sku)
-                    <code class="dz-sku-pill ms-2">{{ inv.product_sku }}</code>
+                    <code class="dz-sku-pill ms-1">{{ inv.product_sku }}</code>
 @endif
                   </div>
                 </div>
@@ -637,12 +601,12 @@
             <td data-label="Stock Status">
               <div class="dz-stock-badge-wrap">
 @if(inv.is_out_of_stock)
-                <span class="dz-stock-pill-out"><span class="dz-status-dot"></span>Out of stock</span>
+                <span class="dz-stock-pill dz-stock-pill-out"><span class="dz-status-dot"></span>Out of stock</span>
 @else
 @if(inv.is_low_stock)
-                <span class="dz-stock-pill-low"><span class="dz-status-dot"></span>Low stock ({{ inv.quantity }} left)</span>
+                <span class="dz-stock-pill dz-stock-pill-low"><span class="dz-status-dot"></span>Low stock ({{ inv.quantity }} left)</span>
 @else
-                <span class="dz-stock-pill-in"><span class="dz-status-dot"></span>In stock</span>
+                <span class="dz-stock-pill dz-stock-pill-in"><span class="dz-status-dot"></span>In stock</span>
 @endif
 @endif
                 <small class="text-secondary d-block mt-1">Alert at &le; {{ inv.low_stock_threshold }} units</small>
@@ -650,31 +614,28 @@
             </td>
             <td data-label="On Hand">
               <div class="dz-inv-count-cell">
-                <strong class="fs-6 text-dark">{{ inv.quantity }}</strong>
+                <strong>{{ inv.quantity }}</strong>
                 <span>total units</span>
               </div>
             </td>
             <td data-label="Available">
               <div class="dz-inv-count-cell">
-                <strong class="fs-6 text-success">{{ inv.available }}</strong>
+                <strong class="text-success">{{ inv.available }}</strong>
                 <span>ready to ship</span>
               </div>
             </td>
             <td data-label="Reserved">
               <div class="dz-inv-count-cell">
-                <strong class="fs-6 text-secondary">{{ inv.reserved }}</strong>
+                <strong class="text-secondary">{{ inv.reserved }}</strong>
                 <span>held in carts</span>
               </div>
-            </td>
-            <td data-label="Alert Level">
-              <span class="badge text-bg-light border">&le; {{ inv.low_stock_threshold }} units</span>
             </td>
             <td data-label="Update Stock">
               <div class="d-flex flex-wrap gap-2 align-items-center">
                 <form method="post" action="/admin/api/products/{{ inv.product_id }}/inventory/restock-form" data-ajax="admin" class="d-flex align-items-center gap-1">
                   <input type="hidden" name="_csrf" value="{{ csrf }}">
-                  <input class="form-control form-control-sm" name="quantity" type="number" min="1" value="10" style="width: 60px;" required title="Units to add">
-                  <button class="btn btn-primary btn-sm px-2" type="submit" title="Add stock">Restock</button>
+                  <input class="form-control form-control-sm" name="quantity" type="number" min="1" value="10" required title="Units to add">
+                  <button class="btn btn-primary btn-sm" type="submit" title="Add stock">Restock</button>
                 </form>
                 <a class="btn btn-light border btn-sm" href="{{ inv.product_url }}" title="Manage inventory in product editor">Edit</a>
               </div>
@@ -684,39 +645,33 @@
         </tbody>
       </table>
     </div>
-    <p class="dz-filter-empty p-4 text-center text-secondary mb-0" data-filter-empty="inventory-table" hidden>No inventory rows match your search.</p>
+    <p class="dz-filter-empty p-3 text-center mb-0" data-filter-empty="inventory-table" hidden>No inventory rows match your search.</p>
   </div>
 @else
   <div class="dz-card p-5 text-center dz-empty-state-card mb-4">
     <div class="dz-empty-icon mb-3">
-      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="1.5"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
     </div>
-    <h3 class="h5 fw-bold mb-1">No inventory records yet</h3>
-    <p class="text-secondary small mb-3">Create a product in your catalog to start tracking physical stock and restock thresholds.</p>
-    <a class="btn btn-primary btn-sm" href="/admin/products">+ Go to products</a>
+    <h3 class="h5 mb-1">No inventory records yet</h3>
+    <p class="text-secondary small mb-3">Create a product in your catalog to start tracking stock.</p>
+    <a class="btn btn-primary btn-sm" href="/admin/products">Go to products</a>
   </div>
 @endif
 @endif
 
 @if(is_customers)
-  <div class="dz-card p-3 p-lg-4 my-3">
-    <div class="d-flex justify-content-between align-items-center mb-3">
-      <div>
-        <span class="dz-eyebrow">User Directory</span>
-        <h2 class="h5 mb-0 fw-bold">Customer Accounts</h2>
-      </div>
-      <span class="badge text-bg-light border">Access control</span>
-    </div>
+  <div class="dz-card dz-table-card mb-4">
+    <div class="p-3 border-bottom"><h2 class="h6 mb-0">Customer accounts</h2></div>
 @if(has_customer_rows)
     <div class="table-responsive">
-      <table class="table dz-admin-table table-hover align-middle mb-0">
+      <table class="table admin-table table-hover align-middle mb-0">
         <thead><tr><th>Customer</th><th>Email</th><th>Status</th><th>Actions</th></tr></thead>
         <tbody>
 @foreach(c in customer_rows)
           <tr>
             <td>
               <div class="d-flex align-items-center gap-2">
-                <span class="dz-admin-thumb dz-admin-thumb-empty fw-bold" style="width:36px;height:36px;font-size:14px;">#{{ c.id }}</span>
+                <span class="dz-admin-thumb dz-admin-thumb-empty fw-bold">#{{ c.id }}</span>
                 <div>
                   <strong>{{ c.name }}</strong>
                   <span class="d-block small text-secondary">User #{{ c.id }}</span>
@@ -724,9 +679,7 @@
               </div>
             </td>
             <td><code>{{ c.email }}</code></td>
-            <td>
-              <span class="badge bg-success-subtle text-success border border-success-subtle">{{ c.status }}</span>
-            </td>
+            <td><span class="badge badge-soft-success">{{ c.status }}</span></td>
             <td>
               <form method="post" action="/admin/api/customers/{{ c.id }}/status" data-ajax="admin" class="d-flex align-items-center gap-2">
                 <input type="hidden" name="_csrf" value="{{ csrf }}">
@@ -748,18 +701,18 @@
       </table>
     </div>
 @else
-    <p class="empty-note">No customers yet.</p>
+    <p class="empty-note m-3">No customers yet.</p>
 @endif
   </div>
 @endif
 
 @if(is_staff)
-  <div class="dz-card p-4 my-3">
+  <div class="dz-card p-4 mb-4">
     <h2 class="h6 mb-3">Assign a staff role</h2>
     <form method="post" action="/admin/api/staff/role" data-ajax="admin" class="d-flex flex-wrap align-items-end gap-2">
       <input type="hidden" name="_csrf" value="{{ csrf }}">
       <div>
-        <label class="form-label small text-secondary mb-1" for="staff-member">Staff member</label>
+        <label class="form-label small mb-1" for="staff-member">Staff member</label>
         <select id="staff-member" name="user_id" class="form-select" required>
 @foreach(s in staff_rows)
           <option value="{{ s.id }}">{{ s.name }} ({{ s.email }})</option>
@@ -767,7 +720,7 @@
         </select>
       </div>
       <div>
-        <label class="form-label small text-secondary mb-1" for="staff-role">Role</label>
+        <label class="form-label small mb-1" for="staff-role">Role</label>
         <select id="staff-role" name="role" class="form-select" required>
 @foreach(r in role_options)
           <option value="{{ r.value }}">{{ r.label }}</option>
@@ -778,11 +731,11 @@
     </form>
   </div>
 
-  <div class="dz-card p-3 my-3">
-    <h2 class="h6 mb-3">Staff</h2>
+  <div class="dz-card dz-table-card mb-4">
+    <div class="p-3 border-bottom"><h2 class="h6 mb-0">Staff</h2></div>
 @if(has_staff_rows)
     <div class="table-responsive">
-      <table class="table table-sm table-striped table-hover align-middle mb-0">
+      <table class="table admin-table align-middle mb-0">
         <thead><tr><th>ID</th><th>Name</th><th>Email</th></tr></thead>
         <tbody>
 @foreach(s in staff_rows)
@@ -796,26 +749,25 @@
       </table>
     </div>
 @else
-    <p class="empty-note">No staff members yet.</p>
+    <p class="empty-note m-3">No staff members yet.</p>
 @endif
   </div>
 @endif
 
 @if(is_roles)
-  <div class="dz-card p-4 my-3">
+  <div class="dz-card p-4 mb-4">
     <h2 class="h6 mb-3">Grant or revoke a permission</h2>
-    <p class="small text-secondary">Pick a role, choose a permission and save.</p>
 @foreach(r in role_rows)
     <form method="post" action="/admin/api/roles/{{ r.id }}/permissions" data-ajax="admin" class="d-flex flex-wrap align-items-end gap-2 mb-2">
       <input type="hidden" name="_csrf" value="{{ csrf }}">
       <div>
-        <label class="form-label small text-secondary mb-1" for="role-{{ r.id }}">Role</label>
+        <label class="form-label small mb-1" for="role-{{ r.id }}">Role</label>
         <select id="role-{{ r.id }}" name="role_placeholder" class="form-select" disabled>
           <option selected>{{ r.name }}</option>
         </select>
       </div>
       <div>
-        <label class="form-label small text-secondary mb-1" for="perm-{{ r.id }}">Permission</label>
+        <label class="form-label small mb-1" for="perm-{{ r.id }}">Permission</label>
         <select id="perm-{{ r.id }}" name="permission" class="form-select" required>
 @foreach(p in permission_options)
           <option value="{{ p.value }}">{{ p.label }}</option>
@@ -831,11 +783,11 @@
 @endforeach
   </div>
 
-  <div class="dz-card p-3 my-3">
-    <h2 class="h6 mb-3">Roles</h2>
+  <div class="dz-card dz-table-card mb-4">
+    <div class="p-3 border-bottom"><h2 class="h6 mb-0">Roles</h2></div>
 @if(has_role_rows)
     <div class="table-responsive">
-      <table class="table table-sm table-striped table-hover align-middle mb-0">
+      <table class="table admin-table align-middle mb-0">
         <thead><tr><th>ID</th><th>Name</th><th>Slug</th><th>Permissions</th></tr></thead>
         <tbody>
 @foreach(r in role_rows)
@@ -850,23 +802,17 @@
       </table>
     </div>
 @else
-    <p class="empty-note">No roles yet.</p>
+    <p class="empty-note m-3">No roles yet.</p>
 @endif
   </div>
 @endif
 
 @if(is_orders)
-  <div class="dz-card p-3 p-lg-4 my-3">
-    <div class="d-flex justify-content-between align-items-center mb-3">
-      <div>
-        <span class="dz-eyebrow">Fulfilment</span>
-        <h2 class="h5 mb-0 fw-bold">Customer Orders</h2>
-      </div>
-      <span class="badge text-bg-light border">Live status</span>
-    </div>
+  <div class="dz-card dz-table-card mb-4">
+    <div class="p-3 border-bottom"><h2 class="h6 mb-0">Customer orders</h2></div>
 @if(has_order_rows)
     <div class="table-responsive">
-      <table class="table dz-admin-table table-hover align-middle mb-0">
+      <table class="table admin-table table-hover align-middle mb-0">
         <thead><tr><th>Order #</th><th>Total</th><th>Placed</th><th>Status</th><th>Actions</th></tr></thead>
         <tbody>
 @foreach(o in order_rows)
@@ -878,10 +824,10 @@
             </td>
             <td class="text-nowrap"><strong>{{ o.total_display }}</strong></td>
             <td class="text-secondary small">{{ o.placed_at }}</td>
-            <td><span class="badge text-bg-primary rounded-pill px-2 py-1">{{ o.status }}</span></td>
+            <td><span class="badge badge-soft-info">{{ o.status }}</span></td>
             <td>
               <div class="d-flex align-items-center gap-2">
-                <a class="btn btn-outline-primary btn-sm text-nowrap" href="/admin/orders/{{ o.id }}">View</a>
+                <a class="btn btn-light border btn-sm text-nowrap" href="/admin/orders/{{ o.id }}">View</a>
                 <form method="post" action="/admin/api/orders/{{ o.id }}/status" data-ajax="admin" class="d-flex align-items-center gap-1">
                   <input type="hidden" name="_csrf" value="{{ csrf }}">
                   <select class="form-select form-select-sm dz-admin-select" name="status" aria-label="Order status">
@@ -903,7 +849,7 @@
       </table>
     </div>
 @else
-    <p class="empty-note">No orders yet.</p>
+    <p class="empty-note m-3">No orders yet.</p>
 @endif
   </div>
 @endif

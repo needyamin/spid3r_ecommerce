@@ -1,13 +1,31 @@
-/* welcome.css — fresh-installation welcome page (mobile-first) */
+/* welcome.css — fresh-installation welcome page (mobile-first).
+   Token vocabulary mirrors the canonical :root in /css/store.css. */
 
 :root {
-    --bg: #0f172a;
-    --panel: #1e293b;
-    --text: #e2e8f0;
-    --muted: #94a3b8;
-    --accent: #38bdf8;
-    --accent-strong: #0ea5e9;
-    --border: #334155;
+    --ink: #18181b;
+    --muted: #71717a;
+    --faint: #a1a1aa;
+    --surface: #ffffff;
+    --bg: #f7f7f8;
+    --border: #e7e7ea;
+    --border-strong: #d4d4d8;
+    --accent: #f85606;
+    --accent-dark: #d94e04;
+    --accent-text: #c2410c;
+    --accent-soft: #fff1e8;
+    --radius-card: 10px;
+    --radius-ctl: 8px;
+    --radius-pill: 999px;
+    --shadow-1: 0 1px 3px rgba(24, 24, 27, .07);
+    --dur: 180ms;
+    --ease: cubic-bezier(.2, 0, 0, 1);
+    --sp-2: 8px;
+    --sp-3: 12px;
+    --sp-4: 16px;
+    --sp-5: 20px;
+    --sp-6: 24px;
+    --sp-8: 32px;
+    --sp-12: 48px;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -15,111 +33,146 @@
 html { -webkit-text-size-adjust: 100%; }
 
 body {
-    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+                 "Hind Siliguri", "Noto Sans Bengali", system-ui, sans-serif;
     background: var(--bg);
-    color: var(--text);
-    line-height: 1.6;
+    color: var(--ink);
+    line-height: 1.55;
+    font-size: 15px;
     min-height: 100vh;
 }
 
 .welcome {
-    max-width: 680px;
+    max-width: 640px;
     margin: 0 auto;
-    padding: 3rem 1.25rem 4rem;
+    padding: var(--sp-8) var(--sp-4) var(--sp-12);
 }
 
-.hero { text-align: center; margin-bottom: 2.5rem; }
+/* Flat hero — one accent chip, ink headline, single CTA */
+.hero {
+    text-align: center;
+    margin-bottom: var(--sp-8);
+}
 
 .badge {
     display: inline-block;
-    padding: 0.25rem 0.85rem;
-    border: 1px solid var(--accent-strong);
-    border-radius: 999px;
-    color: var(--accent);
-    font-size: 0.8rem;
-    letter-spacing: 0.08em;
+    padding: 2px 12px;
+    border-radius: var(--radius-pill);
+    background: var(--accent-soft);
+    color: var(--accent-text);
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: .04em;
     text-transform: uppercase;
-    margin-bottom: 1rem;
+    margin-bottom: var(--sp-3);
 }
 
 .hero h1 {
-    font-size: clamp(2rem, 6vw, 3rem);
-    letter-spacing: -0.02em;
-    color: var(--accent);
+    font-size: clamp(30px, 6vw, 38px);
+    font-weight: 650;
+    letter-spacing: -.02em;
+    line-height: 1.15;
+    color: var(--ink);
     overflow-wrap: anywhere;
 }
 
 .tagline {
     color: var(--muted);
-    margin-top: 0.5rem;
+    font-size: 15px;
+    margin: var(--sp-2) 0 var(--sp-5);
     overflow-wrap: break-word;
 }
 
-.next-steps,
-.links {
-    background: var(--panel);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    padding: 1.5rem;
-    margin-bottom: 1.5rem;
+.cta {
+    display: inline-block;
+    padding: 10px 20px;
+    border-radius: var(--radius-ctl);
+    background: var(--accent);
+    color: #fff;
+    font-size: 15px;
+    font-weight: 500;
+    text-decoration: none;
+    transition: background-color var(--dur) var(--ease);
 }
 
-.next-steps h2 { font-size: 1.15rem; margin-bottom: 1rem; }
+.cta:hover { background: var(--accent-dark); color: #fff; text-decoration: none; }
 
-.next-steps ol { list-style: none; }
+/* Cards: surface + 1px border + one soft shadow */
+.steps,
+.links {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-card);
+    box-shadow: var(--shadow-1);
+    padding: var(--sp-5);
+    margin-bottom: var(--sp-4);
+}
 
-.next-steps li {
+.steps h2 {
+    font-size: 18px;
+    font-weight: 650;
+    margin-bottom: var(--sp-3);
+}
+
+.steps ol { list-style: none; }
+
+.steps li {
     display: flex;
     align-items: flex-start;
-    gap: 0.75rem;
-    padding: 0.7rem 0;
+    gap: var(--sp-3);
+    padding: var(--sp-3) 0;
     border-bottom: 1px solid var(--border);
 }
 
-.next-steps li:last-child { border-bottom: none; }
+.steps li:last-child { border-bottom: none; padding-bottom: 0; }
 
 .step-num {
     flex: 0 0 auto;
-    width: 1.75rem;
-    height: 1.75rem;
-    border-radius: 50%;
-    background: var(--accent-strong);
-    color: #fff;
-    font-size: 0.85rem;
-    font-weight: 700;
-    line-height: 1.75rem;
+    width: 24px;
+    height: 24px;
+    border-radius: var(--radius-pill);
+    background: var(--accent-soft);
+    color: var(--accent-text);
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 24px;
     text-align: center;
-    margin-top: 0.15rem;
+    margin-top: 2px;
 }
 
 /* min-width: 0 lets long tokens shrink and wrap instead of overflowing */
 .step-body { flex: 1 1 auto; min-width: 0; }
 
-.next-steps strong { display: block; }
+.step-body strong { display: block; font-weight: 650; }
 
 .step-hint {
     display: block;
     color: var(--muted);
-    font-size: 0.9rem;
+    font-size: 13px;
     overflow-wrap: anywhere;
 }
 
 code {
-    background: rgba(56, 189, 248, 0.12);
-    color: var(--accent);
-    padding: 0.1rem 0.4rem;
-    border-radius: 6px;
-    font-size: 0.85em;
+    background: var(--accent-soft);
+    color: var(--accent-text);
+    padding: 1px 6px;
+    border-radius: var(--radius-ctl);
+    font-size: 13px;
+    font-family: ui-monospace, "SFMono-Regular", "Cascadia Mono", Consolas, monospace;
     overflow-wrap: anywhere;
 }
 
-.links p { color: var(--muted); margin-bottom: 0.5rem; }
+.links p { color: var(--muted); font-size: 13px; margin-bottom: var(--sp-2); }
 
 .links ul { list-style: none; }
 
-.links li { padding: 0.2rem 0; font-size: 0.92rem; overflow-wrap: anywhere; }
+.links li { padding: 2px 0; font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
 
 @media (min-width: 640px) {
-    .welcome { padding-top: 5rem; }
-    .next-steps, .links { padding: 2rem; }
+    .welcome { padding-top: var(--sp-12); }
+    .steps, .links { padding: var(--sp-6); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { transition-duration: .01ms !important; animation-duration: .01ms !important; }
 }

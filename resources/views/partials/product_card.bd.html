@@ -1,4 +1,4 @@
-<!-- Daraz-style product card. Expects a `product` map with
+<!-- Product card. Expects a `product` map with
      url, name, price_display, optionally compare_display,
      has_image and image_url. -->
 <a class="product-card h-100" href="{{ product.url }}">
@@ -9,21 +9,18 @@
     <div class="dz-p-img-placeholder" aria-hidden="true"><span>No image</span></div>
 @endif
 @if(product.compare_display)
-    <span class="dz-sale-badge dz-sale-badge-floating">Sale</span>
+    <span class="badge-soft-accent dz-sale-badge-floating">Sale</span>
 @endif
   </div>
   <div class="dz-p-body">
     <div class="dz-p-name">{{ product.name }}</div>
-@if(product.short_description)
-    <div class="dz-p-sub text-secondary small text-truncate mb-1">{{ product.short_description }}</div>
-@endif
     <div class="dz-p-price-row mt-auto">
 @if(product.compare_display)
       <div><span class="dz-p-price">{{ product.price_display }}</span> <span class="dz-p-old">{{ product.compare_display }}</span></div>
 @else
       <div class="dz-p-price">{{ product.price_display }}</div>
 @endif
-      <span class="dz-p-cta">{{ lbl_view_details }} →</span>
+      <span class="dz-p-cta">{{ lbl_view_details }}</span>
     </div>
   </div>
 </a>

@@ -6,100 +6,106 @@
   <nav aria-label="breadcrumb">
     <ol class="breadcrumb"><li class="breadcrumb-item"><a href="/">Home</a></li><li class="breadcrumb-item active" aria-current="page">{{ heading }}</li></ol>
   </nav>
-  <header class="dz-page-heading dz-catalog-heading mb-4">
-    <div><span class="dz-eyebrow">Discover something useful</span><h1 class="page-title mb-1">{{ heading }}</h1>
+  <header class="dz-catalog-heading mb-3">
+    <h1 class="page-title mb-0">{{ heading }}</h1>
 @if(description)
-      <p class="page-description mb-0">{{ description }}</p>
+    <p class="text-secondary small mt-1 mb-0">{{ description }}</p>
 @endif
-    </div>
-    <a class="btn btn-light border" href="/catalog">Browse all products</a>
   </header>
 
-  <div class="row g-3 g-xl-4 align-items-start">
-    <aside class="col-12 col-xl-3" aria-label="Product filters">
-      <form class="dz-card dz-filter-card" method="get" action="{{ form_action }}">
-        <div class="dz-filter-heading"><h2 class="h6 mb-0">Filter products</h2><a class="small" href="/catalog">Clear all</a></div>
-        <div class="mb-3">
-          <label class="form-label fw-semibold" for="filter-q">Search</label>
-          <input type="search" id="filter-q" name="q" value="{{ q }}" class="form-control" placeholder="Product name or keyword" aria-label="Search products">
-        </div>
-        <div class="mb-3">
-          <label class="form-label fw-semibold" for="filter-cat">Category</label>
-          <select id="filter-cat" name="category" class="form-select" aria-label="Category">
-            <option value="">All categories</option>
+  <form class="dz-card dz-filter-card mb-3" method="get" action="{{ form_action }}" aria-label="Filter products">
+    <div class="row g-2 g-md-3 align-items-end">
+      <div class="col-12 col-md">
+        <label class="visually-hidden" for="filter-q">Search</label>
+        <input type="search" id="filter-q" name="q" value="{{ q }}" class="form-control" placeholder="Search products" aria-label="Search products">
+      </div>
+      <div class="col-6 col-md-auto">
+        <label class="visually-hidden" for="filter-cat">Category</label>
+        <select id="filter-cat" name="category" class="form-select" aria-label="Category">
+          <option value="">All categories</option>
 @foreach(cat in category_options)
 @if(cat.selected)
-            <option value="{{ cat.slug }}" selected>{{ cat.name }}</option>
+          <option value="{{ cat.slug }}" selected>{{ cat.name }}</option>
 @else
-            <option value="{{ cat.slug }}">{{ cat.name }}</option>
+          <option value="{{ cat.slug }}">{{ cat.name }}</option>
 @endif
 @endforeach
-          </select>
-        </div>
+        </select>
+      </div>
 @if(has_brand_options)
-        <div class="mb-3">
-          <label class="form-label fw-semibold" for="filter-brand">Brand</label>
-          <select id="filter-brand" name="brand" class="form-select" aria-label="Brand">
-            <option value="">All brands</option>
+      <div class="col-6 col-md-auto">
+        <label class="visually-hidden" for="filter-brand">Brand</label>
+        <select id="filter-brand" name="brand" class="form-select" aria-label="Brand">
+          <option value="">All brands</option>
 @foreach(brand in brand_options)
 @if(brand.selected)
-            <option value="{{ brand.slug }}" selected>{{ brand.name }}</option>
+          <option value="{{ brand.slug }}" selected>{{ brand.name }}</option>
 @else
-            <option value="{{ brand.slug }}">{{ brand.name }}</option>
+          <option value="{{ brand.slug }}">{{ brand.name }}</option>
 @endif
 @endforeach
-          </select>
-        </div>
+        </select>
+      </div>
 @endif
-        <fieldset class="mb-3">
-          <legend class="form-label fw-semibold">Price range</legend>
-          <div class="row g-2">
-            <div class="col-6"><label class="visually-hidden" for="filter-min">Minimum price</label><input type="number" id="filter-min" name="min_price" value="{{ min_price }}" class="form-control" placeholder="Min" step="0.01" min="0" aria-label="Minimum price"></div>
-            <div class="col-6"><label class="visually-hidden" for="filter-max">Maximum price</label><input type="number" id="filter-max" name="max_price" value="{{ max_price }}" class="form-control" placeholder="Max" step="0.01" min="0" aria-label="Maximum price"></div>
-          </div>
-        </fieldset>
-        <div class="mb-3">
-          <label class="form-label fw-semibold" for="filter-sort">Sort by</label>
-          <select id="filter-sort" name="sort" class="form-select" aria-label="Sort products">
+      <fieldset class="col-6 col-md-auto">
+        <legend class="visually-hidden">Price range</legend>
+        <div class="d-flex gap-2">
+          <label class="visually-hidden" for="filter-min">Minimum price</label>
+          <input type="number" id="filter-min" name="min_price" value="{{ min_price }}" class="form-control" placeholder="Min ৳" step="0.01" min="0" aria-label="Minimum price">
+          <label class="visually-hidden" for="filter-max">Maximum price</label>
+          <input type="number" id="filter-max" name="max_price" value="{{ max_price }}" class="form-control" placeholder="Max ৳" step="0.01" min="0" aria-label="Maximum price">
+        </div>
+      </fieldset>
+      <div class="col-6 col-md-auto">
+        <label class="visually-hidden" for="filter-sort">Sort by</label>
+        <select id="filter-sort" name="sort" class="form-select" aria-label="Sort products">
 @foreach(option in sort_options)
 @if(option.selected)
-            <option value="{{ option.value }}" selected>{{ option.label }}</option>
+          <option value="{{ option.value }}" selected>{{ option.label }}</option>
 @else
-            <option value="{{ option.value }}">{{ option.label }}</option>
+          <option value="{{ option.value }}">{{ option.label }}</option>
 @endif
 @endforeach
-          </select>
-        </div>
-        <button class="btn btn-primary w-100" type="submit">Apply filters</button>
-      </form>
-    </aside>
+        </select>
+      </div>
+      <div class="col-12 col-md-auto d-flex gap-2">
+        <button class="btn btn-primary flex-grow-1" type="submit">Apply</button>
+        <a class="btn btn-light border" href="/catalog">Clear</a>
+      </div>
+    </div>
+  </form>
 
-    <section class="col-12 col-xl-9" aria-label="Catalog results">
 @if(has_category_links)
-      <nav class="dz-category-chips mb-3" aria-label="Browse categories">
-        <span class="small text-secondary fw-semibold">Categories</span>
+  <nav class="dz-category-chips mb-3" aria-label="Browse categories">
 @foreach(cat in category_options)
-        <a class="btn btn-light border btn-sm" href="/category/{{ cat.slug }}">{{ cat.name }}</a>
-@endforeach
-      </nav>
-@endif
-      <div class="dz-results-toolbar mb-3">
-        <p class="mb-0"><strong>{{ total }}</strong> product(s)</p>
-        <span class="small text-secondary">Page {{ page }} of {{ last_page }}</span>
-      </div>
-@if(has_products)
-      <div class="row g-3 row-cols-2 row-cols-md-3 row-cols-xxl-4">
-@foreach(product in products)
-        <div class="col">
-@include("partials.product_card")
-        </div>
-@endforeach
-      </div>
+@if(cat.selected)
+    <a class="dz-cat-pill dz-cat-pill-active" href="/category/{{ cat.slug }}">{{ cat.name }}</a>
 @else
-      <div class="dz-empty-catalog"><div class="dz-empty-mark" aria-hidden="true">SP</div><h2 class="h5">No products match these filters</h2><p class="text-secondary">Try a different category, brand or price range.</p><a class="btn btn-primary" href="/catalog">Clear filters</a></div>
+    <a class="dz-cat-pill" href="/category/{{ cat.slug }}">{{ cat.name }}</a>
+@endif
+@endforeach
+  </nav>
+@endif
+
+  <div class="dz-results-toolbar mb-3">
+    <p class="mb-0"><strong>{{ total }}</strong> products</p>
+    <span class="small text-secondary">Page {{ page }} of {{ last_page }}</span>
+  </div>
+@if(has_products)
+  <div class="row g-3 row-cols-2 row-cols-md-3 row-cols-xxl-4">
+@foreach(product in products)
+    <div class="col">
+@include("partials.product_card")
+    </div>
+@endforeach
+  </div>
+@else
+  <div class="dz-empty-catalog">
+    <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="text-secondary mb-2" aria-hidden="true"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"></path><line x1="3" y1="6" x2="21" y2="6"></line><path d="M16 10a4 4 0 0 1-8 0"></path></svg>
+    <h2 class="h5">No products match these filters</h2>
+    <a class="btn btn-primary mt-2" href="/catalog">Clear filters</a>
+  </div>
 @endif
 @include("partials.pagination")
-    </section>
-  </div>
 </div>
 @endsection

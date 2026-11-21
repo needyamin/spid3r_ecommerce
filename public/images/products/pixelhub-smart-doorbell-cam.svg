@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400">
+  <rect width="400" height="400" rx="24" fill="#eef4ff"/>
+  <circle cx="200" cy="168" r="86" fill="none" stroke="#1d4ed8" stroke-width="10" opacity="0.25"/>
+  <text x="200" y="205" font-family="system-ui, -apple-system, Segoe UI, Arial, sans-serif"
+        font-size="96" font-weight="700" fill="#1d4ed8" text-anchor="middle" opacity="0.85">PS</text>
+  <text x="200" y="330" font-family="system-ui, -apple-system, Segoe UI, Arial, sans-serif"
+        font-size="22" font-weight="600" fill="#1d4ed8" text-anchor="middle" opacity="0.75">PixelHub Smart Doorbell Cam</text>
+</svg>

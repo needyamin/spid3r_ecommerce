@@ -13,9 +13,10 @@
             <span class="badge">Fresh Installation</span>
             <h1>Spid3rWeb</h1>
             <p class="tagline">A lightweight MVC framework powered by the Spid3r language.</p>
+            <a class="cta" href="/docs/developer-docs.html">Read the docs</a>
         </header>
 
-        <section class="next-steps">
+        <section class="steps">
             <h2>Next steps</h2>
             <ol>
                 <li>
@@ -35,22 +36,8 @@
                 <li>
                     <span class="step-num" aria-hidden="true">3</span>
                     <div class="step-body">
-                        <strong>Create models &amp; controllers</strong>
-                        <span class="step-hint"><code>spid3r magic make:model Post</code><br><code>spid3r magic make:controller PostController</code></span>
-                    </div>
-                </li>
-                <li>
-                    <span class="step-num" aria-hidden="true">4</span>
-                    <div class="step-body">
-                        <strong>Run migrations</strong>
-                        <span class="step-hint"><code>spid3r magic migrate</code></span>
-                    </div>
-                </li>
-                <li>
-                    <span class="step-num" aria-hidden="true">5</span>
-                    <div class="step-body">
-                        <strong>Run the test suite</strong>
-                        <span class="step-hint"><code>spid3r magic test</code></span>
+                        <strong>Scaffold &amp; migrate</strong>
+                        <span class="step-hint"><code>spid3r magic make:model</code> · <code>make:controller</code> · <code>migrate</code> · <code>test</code></span>
                     </div>
                 </li>
             </ol>
@@ -62,8 +49,6 @@
                 <li><code>app/</code> — controllers, models, middleware</li>
                 <li><code>resources/views/</code> — SpiderBD templates</li>
                 <li><code>routes/</code> — web, api and queue job registrations</li>
-                <li><code>config/</code> — app, auth, session, mail, queue, logging, filesystems, services</li>
-                <li><code>database/migrations/</code> — schema migrations</li>
                 <li><code>docs/developer-docs.html</code> — full framework documentation</li>
             </ul>
         </footer>

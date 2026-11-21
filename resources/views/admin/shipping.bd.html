@@ -3,53 +3,35 @@
 @section('meta_description', meta_description)
 @section("content")
 <div class="dz-admin-page dz-admin-module" data-module="shipping">
-  <!-- Header -->
-  <div class="dz-admin-page-head mb-4">
-    <div class="d-flex align-items-center gap-3">
-      <div class="dz-head-icon-box">
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="3" width="15" height="13"></rect><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"></polygon><circle cx="5.5" cy="18.5" r="2.5"></circle><circle cx="18.5" cy="18.5" r="2.5"></circle></svg>
-      </div>
-      <div>
-        <span class="dz-eyebrow">Fulfillment &amp; Logistics</span>
-        <div class="d-flex align-items-center gap-2 mt-1">
-          <h1 class="page-title mb-0">Shipping &amp; Delivery</h1>
-          <span class="badge text-bg-light border ms-1" id="shipping-head-total">{{ total_zones }} zones</span>
-        </div>
-        <p class="page-description mb-0 mt-1">Configure regional delivery zones, order-tiered shipping fees, and global flat-rate fallbacks.</p>
-      </div>
+
+  <div class="dz-admin-page-head">
+    <div>
+      <h1 class="page-title mb-0">Shipping &amp; delivery</h1>
+      <span class="badge badge-soft-info" id="shipping-head-total">{{ total_zones }} zones</span>
     </div>
     <div class="dz-admin-page-head-actions">
-      <a class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center gap-1" href="/admin/settings">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
-        <span>Store Settings</span>
-      </a>
-      <button class="btn btn-light border btn-sm d-inline-flex align-items-center gap-1" data-act="edit-fallback" type="button">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
-        <span>Configure Fallback</span>
-      </button>
-      <button class="btn btn-primary btn-sm d-inline-flex align-items-center gap-1" data-act="new-zone" type="button">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-        <span>New Shipping Zone</span>
-      </button>
+      <a class="btn btn-outline-secondary btn-sm" href="/admin/settings">Store settings</a>
+      <button class="btn btn-light border btn-sm" data-act="edit-fallback" type="button">Configure fallback</button>
+      <button class="btn btn-primary btn-sm" data-act="new-zone" type="button">New shipping zone</button>
     </div>
   </div>
 
-  <!-- Metric Overview Cards -->
+  <!-- Metric overview -->
   <div class="dz-stat-grid mb-4">
-    <div class="dz-stat-card-modern is-active" title="Total configured delivery zones">
+    <div class="dz-stat-card-modern">
       <div class="dz-stat-card-header">
         <div class="dz-stat-icon-wrap dz-stat-icon-all">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>
         </div>
-        <span class="dz-stat-badge-tag text-primary">{{ active_zones }} Active</span>
+        <span class="dz-stat-badge-tag">{{ active_zones }} active</span>
       </div>
       <div class="dz-stat-card-body">
         <div class="dz-stat-num">{{ total_zones }}</div>
-        <div class="dz-stat-sub">Shipping Zones</div>
+        <div class="dz-stat-sub">Shipping zones</div>
       </div>
     </div>
 
-    <div class="dz-stat-card-modern" title="Standard fallback delivery fee">
+    <div class="dz-stat-card-modern">
       <div class="dz-stat-card-header">
         <div class="dz-stat-icon-wrap dz-stat-icon-units">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="3" width="15" height="13"></rect><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"></polygon><circle cx="5.5" cy="18.5" r="2.5"></circle><circle cx="18.5" cy="18.5" r="2.5"></circle></svg>
@@ -57,52 +39,52 @@
         <span class="dz-stat-badge-tag">Fallback</span>
       </div>
       <div class="dz-stat-card-body">
-        <div class="dz-stat-num text-dark">{{ flat_standard_display }}</div>
-        <div class="dz-stat-sub">Standard Delivery</div>
+        <div class="dz-stat-num">{{ flat_standard_display }}</div>
+        <div class="dz-stat-sub">Standard delivery</div>
       </div>
     </div>
 
-    <div class="dz-stat-card-modern" title="Express 24h fallback fee">
+    <div class="dz-stat-card-modern">
       <div class="dz-stat-card-header">
         <div class="dz-stat-icon-wrap dz-stat-icon-low">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
         </div>
-        <span class="dz-stat-badge-tag text-warning">Priority</span>
+        <span class="dz-stat-badge-tag">Priority</span>
       </div>
       <div class="dz-stat-card-body">
-        <div class="dz-stat-num text-warning">{{ flat_express_display }}</div>
-        <div class="dz-stat-sub">Express Delivery</div>
+        <div class="dz-stat-num">{{ flat_express_display }}</div>
+        <div class="dz-stat-sub">Express delivery</div>
       </div>
     </div>
 
-    <div class="dz-stat-card-modern" title="Subtotal threshold qualifying for free standard shipping">
+    <div class="dz-stat-card-modern">
       <div class="dz-stat-card-header">
         <div class="dz-stat-icon-wrap dz-stat-icon-in">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
         </div>
-        <span class="dz-stat-badge-tag text-success">Benefit</span>
+        <span class="dz-stat-badge-tag">Benefit</span>
       </div>
       <div class="dz-stat-card-body">
-        <div class="dz-stat-num text-success">{{ free_threshold_display }}</div>
-        <div class="dz-stat-sub">Free Shipping Threshold</div>
+        <div class="dz-stat-num">{{ free_threshold_display }}</div>
+        <div class="dz-stat-sub">Free shipping threshold</div>
       </div>
     </div>
 
-    <div class="dz-stat-card-modern" title="Total active rate tiers across all zones">
+    <div class="dz-stat-card-modern">
       <div class="dz-stat-card-header">
         <div class="dz-stat-icon-wrap dz-stat-icon-reserved">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
         </div>
-        <span class="dz-stat-badge-tag text-secondary">Tiers</span>
+        <span class="dz-stat-badge-tag">Tiers</span>
       </div>
       <div class="dz-stat-card-body">
-        <div class="dz-stat-num text-dark">{{ total_rates }}</div>
-        <div class="dz-stat-sub">Rate Tiers</div>
+        <div class="dz-stat-num">{{ total_rates }}</div>
+        <div class="dz-stat-sub">Rate tiers</div>
       </div>
     </div>
   </div>
 
-  <!-- Fallback Flat Rates Card -->
+  <!-- Fallback flat rates -->
   <div class="dz-fallback-banner" id="shipping-fallback-card"
        data-flat-standard="{{ flat_standard_major }}"
        data-flat-express="{{ flat_express_major }}"
@@ -111,69 +93,63 @@
        data-exp-lead="{{ express_lead_days }}">
     <div class="dz-fallback-banner-head">
       <div class="dz-fallback-banner-title">
-        <div class="dz-zone-icon" style="background:#fff7ed;color:#ea580c;width:34px;height:34px;">
+        <div class="dz-zone-icon">
           <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg>
         </div>
         <div>
-          <h2>Default Fallback Rates (Store-Wide)</h2>
-          <small class="text-secondary">Applies automatically whenever a customer's shipping address does not match any custom delivery zone below.</small>
+          <h2>Default fallback rates (store-wide)</h2>
+          <small class="text-secondary">Applies when an address matches no custom zone.</small>
         </div>
       </div>
-      <button class="btn btn-sm btn-light border d-inline-flex align-items-center gap-1" data-act="edit-fallback" type="button">
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
-        <span>Edit Fallback Settings</span>
-      </button>
+      <button class="btn btn-sm btn-light border" data-act="edit-fallback" type="button">Edit fallback</button>
     </div>
     <div class="dz-fallback-grid">
       <div class="dz-fallback-item">
-        <div class="dz-fallback-item-label">Standard Delivery</div>
+        <div class="dz-fallback-item-label">Standard delivery</div>
         <div class="dz-fallback-item-val">{{ flat_standard_display }} <span class="dz-fallback-item-sub">flat rate</span></div>
         <small class="text-secondary d-block mt-1">Lead time: {{ standard_lead_days }}</small>
       </div>
       <div class="dz-fallback-item">
-        <div class="dz-fallback-item-label">Express Delivery (Priority)</div>
+        <div class="dz-fallback-item-label">Express delivery</div>
         <div class="dz-fallback-item-val">{{ flat_express_display }} <span class="dz-fallback-item-sub">priority</span></div>
         <small class="text-secondary d-block mt-1">Lead time: {{ express_lead_days }}</small>
       </div>
       <div class="dz-fallback-item">
-        <div class="dz-fallback-item-label">Free Shipping Benefit</div>
+        <div class="dz-fallback-item-label">Free shipping</div>
         <div class="dz-fallback-item-val">{{ free_threshold_display }}</div>
         <small class="text-secondary d-block mt-1">Orders at or above subtotal ship free</small>
       </div>
     </div>
   </div>
 
-  <!-- Search & Filter Toolbar -->
+  <!-- Search & filter toolbar -->
   <div class="dz-admin-toolbar-card mb-4" id="shipping-toolbar">
-    <div class="dz-toolbar-wrap">
-      <div class="dz-toolbar-row">
-        <div class="dz-search-box">
-          <span class="dz-search-icon" aria-hidden="true">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-          </span>
-          <input type="search" class="dz-search-input" id="shipping-search" placeholder="Search shipping zone name, country, or covered district…">
-          <button type="button" class="dz-search-clear" id="shipping-search-clear" title="Clear search" aria-label="Clear search" style="display:none;">&times;</button>
-        </div>
+    <div class="dz-toolbar-row">
+      <div class="dz-search-box">
+        <span class="dz-search-icon" aria-hidden="true">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+        </span>
+        <input type="search" class="dz-search-input" id="shipping-search" placeholder="Search zone name, country, or district">
+        <button type="button" class="dz-search-clear" id="shipping-search-clear" title="Clear search" aria-label="Clear search" style="display:none;">&times;</button>
+      </div>
 
-        <div class="dz-toolbar-filters">
-          <div class="dz-filter-item">
-            <select class="dz-filter-select dz-admin-filter" id="shipping-status-filter">
-              <option value="">All Statuses</option>
-              <option value="active">Active Zones Only</option>
-              <option value="inactive">Inactive Zones Only</option>
-            </select>
-          </div>
-
-          <button class="btn btn-light border dz-toolbar-btn" id="shipping-reset-btn" type="button" title="Reset filters">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-            <span>Reset</span>
-          </button>
+      <div class="dz-toolbar-filters">
+        <div class="dz-filter-item">
+          <select class="dz-filter-select dz-admin-filter" id="shipping-status-filter">
+            <option value="">All statuses</option>
+            <option value="active">Active zones</option>
+            <option value="inactive">Inactive zones</option>
+          </select>
         </div>
+        <button class="btn btn-light border dz-toolbar-btn" id="shipping-reset-btn" type="button" title="Reset filters">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+          <span>Reset</span>
+        </button>
       </div>
     </div>
   </div>
 
-  <!-- Zones List -->
+  <!-- Zones list -->
   <div id="shipping-zones-list">
 @if(has_zones)
 @foreach(zone in zones)
@@ -183,8 +159,7 @@
          data-zone-country="{{ zone.country }}"
          data-zone-districts="{{ zone.districts }}"
          data-zone-active="{{ zone.is_active }}">
-      
-      <!-- Zone Card Header -->
+
       <div class="dz-zone-card-head">
         <div class="dz-zone-title-area">
           <div class="dz-zone-icon">
@@ -193,37 +168,32 @@
           <div>
             <div class="d-flex align-items-center gap-2">
               <h2 class="dz-zone-title">{{ zone.name }}</h2>
-              <span class="badge {{ zone.is_active ? 'text-bg-success' : 'text-bg-secondary' }}">
-                {{ zone.is_active ? 'Active' : 'Inactive' }}
-              </span>
-              <span class="badge text-bg-light border text-secondary">{{ zone.country }}</span>
+@if(zone.is_active)
+              <span class="badge badge-soft-success">Active</span>
+@else
+              <span class="badge badge-soft-warning">Inactive</span>
+@endif
+              <span class="badge badge-soft-info">{{ zone.country }}</span>
             </div>
-            <small class="text-secondary">Zone ID #{{ zone.id }} · {{ zone.rate_count }} configured rate tier(s)</small>
+            <small class="text-secondary">Zone #{{ zone.id }} · {{ zone.rate_count }} rate tier(s)</small>
           </div>
         </div>
 
         <div class="d-flex align-items-center gap-2">
-          <button class="btn btn-sm btn-primary d-inline-flex align-items-center gap-1" data-act="new-rate" data-zone-id="{{ zone.id }}" type="button">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-            <span>Add Rate</span>
-          </button>
-          <button class="btn btn-sm btn-light border d-inline-flex align-items-center gap-1" data-act="edit-zone" data-id="{{ zone.id }}" type="button">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
-            <span>Edit</span>
-          </button>
+          <button class="btn btn-sm btn-primary" data-act="new-rate" data-zone-id="{{ zone.id }}" type="button">Add rate</button>
+          <button class="btn btn-sm btn-light border" data-act="edit-zone" data-id="{{ zone.id }}" type="button">Edit</button>
           <button class="btn btn-sm {{ zone.is_active ? 'btn-outline-secondary' : 'btn-outline-success' }}" data-act="toggle-zone" data-id="{{ zone.id }}" type="button">
             {{ zone.is_active ? 'Deactivate' : 'Activate' }}
           </button>
         </div>
       </div>
 
-      <!-- Coverage summary -->
       <div class="dz-zone-coverage">
         <span class="dz-coverage-label">Coverage:</span>
 @if(zone.is_nationwide)
         <span class="dz-nationwide-tag">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
-          Nationwide Coverage (All Districts)
+          Nationwide (all districts)
         </span>
 @else
 @foreach(dist in zone.district_list)
@@ -232,16 +202,16 @@
 @endif
       </div>
 
-      <!-- Rates Table -->
+      <!-- Rates table -->
 @if(zone.has_rates)
       <div class="dz-rate-table-wrap">
         <table class="dz-rate-table">
           <thead>
             <tr>
               <th>Method</th>
-              <th>Order Subtotal Tier</th>
-              <th>Delivery Fee</th>
-              <th>Estimated Window</th>
+              <th>Order subtotal tier</th>
+              <th>Delivery fee</th>
+              <th>Estimated window</th>
               <th>Status</th>
               <th class="text-end">Actions</th>
             </tr>
@@ -250,10 +220,7 @@
 @foreach(rate in zone.rates)
             <tr data-rate-id="{{ rate.id }}">
               <td>
-                <span class="dz-method-badge is-{{ rate.method }}">
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
-                  {{ rate.method }}
-                </span>
+                <span class="dz-method-badge is-{{ rate.method }}">{{ rate.method }}</span>
               </td>
               <td>
                 <span class="dz-tier-pill">{{ rate.tier_label }}</span>
@@ -262,15 +229,14 @@
                 <span class="dz-fee-tag {{ rate.is_free ? 'is-free' : '' }}">{{ rate.fee_display }}</span>
               </td>
               <td>
-                <span class="dz-lead-pill">
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
-                  {{ rate.estimated_days_min }}–{{ rate.estimated_days_max }} business days
-                </span>
+                <span class="dz-lead-pill">{{ rate.estimated_days_min }}–{{ rate.estimated_days_max }} business days</span>
               </td>
               <td>
-                <span class="badge {{ rate.is_active ? 'text-bg-success' : 'text-bg-secondary' }}">
-                  {{ rate.is_active ? 'Active' : 'Inactive' }}
-                </span>
+@if(rate.is_active)
+                <span class="badge badge-soft-success">Active</span>
+@else
+                <span class="badge badge-soft-warning">Inactive</span>
+@endif
               </td>
               <td class="text-end">
                 <div class="d-inline-flex align-items-center gap-1">
@@ -289,8 +255,8 @@
       </div>
 @else
       <div class="dz-zone-no-rates">
-        <p class="mb-2 small">No custom rate tiers added yet for this zone — orders default to the store flat rate.</p>
-        <button class="btn btn-sm btn-outline-primary" data-act="new-rate" data-zone-id="{{ zone.id }}" type="button">+ Add First Rate Tier</button>
+        <p class="mb-2 small">No custom rate tiers yet — orders use the store flat rate.</p>
+        <button class="btn btn-sm btn-outline-primary" data-act="new-rate" data-zone-id="{{ zone.id }}" type="button">Add first rate tier</button>
       </div>
 @endif
 
@@ -298,17 +264,17 @@
 @endforeach
 @else
     <div class="dz-card p-5 text-center my-4">
-      <div class="dz-head-icon-box mx-auto mb-3" style="width:52px;height:52px;">
+      <div class="dz-empty-icon mx-auto mb-3">
         <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="3" width="15" height="13"></rect><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"></polygon><circle cx="5.5" cy="18.5" r="2.5"></circle><circle cx="18.5" cy="18.5" r="2.5"></circle></svg>
       </div>
-      <h2 class="h5 fw-bold mb-1">No custom shipping zones created yet</h2>
-      <p class="text-secondary small mb-3" style="max-width:440px;margin-left:auto;margin-right:auto;">Every customer address currently uses the store-wide fallback rates. Create regional zones (e.g. Dhaka Metro, Chittagong, Sylhet) to offer specific tiered delivery fees.</p>
-      <button class="btn btn-primary" data-act="new-zone" type="button">+ Create First Shipping Zone</button>
+      <h2 class="h5 mb-1">No shipping zones yet</h2>
+      <p class="text-secondary small mb-3">Every address uses the store-wide fallback rates. Create zones for tiered delivery fees.</p>
+      <button class="btn btn-primary" data-act="new-zone" type="button">Create first shipping zone</button>
     </div>
 @endif
 
     <div id="shipping-no-match" class="dz-card p-4 text-center" style="display:none;">
-      <p class="mb-0 text-secondary">No shipping zones match your search criteria.</p>
+      <p class="mb-0 text-secondary">No shipping zones match your search.</p>
     </div>
   </div>
 </div>

@@ -9,122 +9,49 @@
     </ol>
   </nav>
 
-  <div class="dz-page-heading mb-4">
-    <div>
-      <span class="dz-eyebrow">Real-Time Logistics</span>
-      <h1 class="page-title mb-1">Track Your Order</h1>
-      <p class="text-secondary small mb-0">Follow your parcel's live journey from warehouse fulfillment to final doorstep delivery.</p>
-    </div>
-  </div>
+  <h1 class="page-title">Track your order</h1>
+  <p class="text-secondary small mb-4">Enter your order number and the email or phone used at checkout.</p>
 
-  <div class="row g-4 align-items-start">
-    <div class="col-12 col-lg-7">
-      <div class="dz-card p-4 p-md-5">
-        <div class="d-flex align-items-center gap-3 mb-3">
-          <div class="dz-perk-icon-wrap bg-primary-subtle text-primary">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="3" width="15" height="13"></rect><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"></polygon><circle cx="5.5" cy="18.5" r="2.5"></circle><circle cx="18.5" cy="18.5" r="2.5"></circle></svg>
-          </div>
-          <div>
-            <h2 class="h5 mb-0 fw-bold">Order Lookup</h2>
-            <span class="small text-secondary">Instant tracking verification</span>
-          </div>
-        </div>
-
-        <p class="small text-secondary mb-4">Enter your order number along with the email or phone number you used during checkout to view the parcel status.</p>
-
-        <form method="post" action="/track" class="dz-track-form">
-          <input type="hidden" name="_csrf" value="{{ csrf }}">
-          <div class="mb-3">
-            <label class="form-label small fw-semibold text-secondary mb-1" for="track-number">Order number <span class="text-danger">*</span></label>
-            <div class="input-group">
-              <span class="input-group-text bg-light border-end-0 text-muted">#</span>
-              <input type="text" id="track-number" name="order_number" value="{{ order_number }}" placeholder="e.g. SP-4F9A-12" maxlength="32" class="form-control border-start-0" required autofocus>
-            </div>
-            <div class="form-text small">Found on your order confirmation email and SMS receipt.</div>
-          </div>
-
-          <div class="row g-3 mb-4">
-            <div class="col-12 col-md-6">
-              <label class="form-label small fw-semibold text-secondary mb-1" for="track-email">Email address</label>
-              <input type="email" id="track-email" name="email" placeholder="you@example.com" maxlength="255" class="form-control">
-            </div>
-            <div class="col-12 col-md-6">
-              <label class="form-label small fw-semibold text-secondary mb-1" for="track-phone">Phone number</label>
-              <input type="text" id="track-phone" name="phone" placeholder="e.g. 01711000000" maxlength="32" class="form-control">
-            </div>
-          </div>
-
-          <button class="btn btn-primary btn-lg w-100 d-inline-flex justify-content-center align-items-center gap-2" type="submit">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-            <span>Track Order Now</span>
-          </button>
-        </form>
-
-        <div class="border-top mt-4 pt-3 text-center">
-          <span class="small text-secondary">Have an account? <a href="/account" class="text-primary fw-semibold">Sign in to view your full order history →</a></span>
+  <div class="dz-card mb-4">
+    <form method="post" action="/track" class="dz-track-form">
+      <input type="hidden" name="_csrf" value="{{ csrf }}">
+      <div class="mb-3">
+        <label class="form-label small mb-1" for="track-number">Order number</label>
+        <div class="input-group">
+          <span class="input-group-text bg-light border-end-0 text-muted">#</span>
+          <input type="text" id="track-number" name="order_number" value="{{ order_number }}" placeholder="e.g. SP-4F9A-12" maxlength="32" class="form-control border-start-0" required autofocus>
         </div>
       </div>
-    </div>
-
-    <div class="col-12 col-lg-5">
-      <div class="dz-card p-4 p-md-4">
-        <h3 class="h6 fw-bold mb-3 d-flex align-items-center gap-2">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-primary"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 14 14"></polyline></svg>
-          Delivery Milestones
-        </h3>
-
-        <div class="dz-timeline-list d-flex flex-column gap-3">
-          <div class="d-flex align-items-start gap-3">
-            <span class="badge rounded-circle bg-primary-subtle text-primary p-2 mt-1">1</span>
-            <div>
-              <strong class="d-block small text-dark">Order Confirmation</strong>
-              <span class="small text-secondary">Inventory is reserved server-side and payment confirmed.</span>
-            </div>
-          </div>
-          <div class="d-flex align-items-start gap-3">
-            <span class="badge rounded-circle bg-warning-subtle text-warning-emphasis p-2 mt-1">2</span>
-            <div>
-              <strong class="d-block small text-dark">Hub Fulfillment</strong>
-              <span class="small text-secondary">Items undergo quality checks and are packed within 24 hours.</span>
-            </div>
-          </div>
-          <div class="d-flex align-items-start gap-3">
-            <span class="badge rounded-circle bg-info-subtle text-info-emphasis p-2 mt-1">3</span>
-            <div>
-              <strong class="d-block small text-dark">Handed to Courier</strong>
-              <span class="small text-secondary">Courier tracking number generated with live transit dispatch.</span>
-            </div>
-          </div>
-          <div class="d-flex align-items-start gap-3">
-            <span class="badge rounded-circle bg-success-subtle text-success p-2 mt-1">4</span>
-            <div>
-              <strong class="d-block small text-dark">Doorstep Delivery</strong>
-              <span class="small text-secondary">Final parcel handover and payment clearance (for COD).</span>
-            </div>
-          </div>
+      <div class="row g-3 mb-4">
+        <div class="col-12 col-md-6">
+          <label class="form-label small mb-1" for="track-email">Email address</label>
+          <input type="email" id="track-email" name="email" placeholder="you@example.com" maxlength="255" class="form-control">
         </div>
-
-        <div class="border-top mt-4 pt-3 bg-light rounded-3 p-3">
-          <div class="small fw-semibold text-dark mb-1">Need immediate assistance?</div>
-          <div class="small text-secondary mb-2">Our support team is available 7 days a week to help with your parcel inquiry.</div>
-          <a href="/support" class="btn btn-outline-secondary btn-sm w-100">Contact Customer Support</a>
+        <div class="col-12 col-md-6">
+          <label class="form-label small mb-1" for="track-phone">Phone number</label>
+          <input type="text" id="track-phone" name="phone" placeholder="e.g. 01711000000" maxlength="32" class="form-control">
         </div>
       </div>
+      <button class="btn btn-primary w-100 d-inline-flex justify-content-center align-items-center gap-2" type="submit">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+        <span>Track Order</span>
+      </button>
+    </form>
+    <div class="border-top mt-4 pt-3">
+      <span class="small text-secondary">Have an account? <a href="/account">Sign in to view your order history</a></span>
     </div>
   </div>
 
 @if(has_result)
-  <div class="dz-card p-4 p-md-5 my-5 border-primary-subtle">
-    <div class="d-flex justify-content-between align-items-start flex-wrap gap-3 pb-3 border-bottom mb-4">
+  <div class="dz-card mb-4">
+    <div class="d-flex justify-content-between align-items-start flex-wrap gap-3 pb-3 border-bottom mb-3">
       <div>
-        <span class="badge text-bg-primary rounded-pill px-3 py-1 mb-2">Verified Order</span>
-        <h2 class="h4 fw-bold mb-1">Order #{{ result.order_number }}</h2>
-        <span class="small text-secondary">Placed on: {{ result.placed_at }}</span>
+        <h2 class="h5 mb-1">Order #{{ result.order_number }}</h2>
+        <span class="small text-secondary">Placed on {{ result.placed_at }}</span>
       </div>
       <div class="text-md-end">
-        <div class="small text-secondary mb-1">Current Status:</div>
-        <span class="badge bg-success-subtle text-success border border-success-subtle fs-6 px-3 py-1 text-uppercase">{{ result.status_label }}</span>
-        <div class="mt-2 fw-bold fs-5 text-primary">
+        <span class="badge badge-soft-success fs-6 px-3 py-1 text-capitalize">{{ result.status_label }}</span>
+        <div class="mt-2 fw-bold fs-5">
 @if(result.total_display)
           {{ result.total_display }}
 @else
@@ -137,34 +64,32 @@
 @if(result.is_awaiting_payment)
     <div class="alert alert-warning d-flex justify-content-between align-items-center flex-wrap gap-2 my-3 p-3 rounded-3">
       <div>
-        <strong class="d-block">⏳ Payment Pending</strong>
-        <span class="small text-secondary">Please complete your payment so we can begin fulfillment and dispatch.</span>
+        <strong class="d-block">Payment pending</strong>
+        <span class="small">Complete payment so we can begin fulfillment.</span>
       </div>
-      <div>
-        <a href="/payment/{{ result.order_number }}" class="btn btn-primary btn-sm fw-semibold">Complete Payment →</a>
-      </div>
+      <a href="/payment/{{ result.order_number }}" class="btn btn-primary btn-sm">Pay Now</a>
     </div>
 @elif(result.is_pending_cod)
-    <div class="alert alert-info d-flex justify-content-between align-items-center flex-wrap gap-2 my-3 p-3 rounded-3">
+    <div class="alert alert-info d-flex align-items-center gap-3 my-3 p-3 rounded-3">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="6" width="20" height="12" rx="2"></rect><circle cx="12" cy="12" r="3"></circle><path d="M6 6V4h12v2"></path></svg>
       <div>
-        <strong class="d-block">💵 Cash on Delivery</strong>
-        <span class="small text-secondary">Your order is being processed. Payment will be collected upon parcel delivery.</span>
+        <strong class="d-block small">Cash on Delivery</strong>
+        <span class="small">Payment will be collected upon parcel delivery.</span>
       </div>
     </div>
 @endif
 
-    <!-- Stepper Visual -->
-    <div class="dz-stepper-wrap my-4 p-3 bg-light rounded-4">
+    <div class="dz-stepper-wrap my-4 p-3 bg-light rounded-3">
       <div class="row text-center g-2">
         <div class="col-3">
           <div class="dz-step is-done w-100 justify-content-center">
-            <span class="dz-step-num">✓</span>
+            <span class="dz-step-num">1</span>
             <span class="d-none d-sm-inline">Confirmed</span>
           </div>
         </div>
         <div class="col-3">
           <div class="dz-step is-done w-100 justify-content-center">
-            <span class="dz-step-num">✓</span>
+            <span class="dz-step-num">2</span>
             <span class="d-none d-sm-inline">Processing</span>
           </div>
         </div>
@@ -184,13 +109,13 @@
     </div>
 
 @if(result.shipments)
-    <h3 class="h6 fw-bold mt-4 mb-3 d-flex align-items-center gap-2">
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-primary"><rect x="1" y="3" width="15" height="13"></rect><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"></polygon><circle cx="5.5" cy="18.5" r="2.5"></circle><circle cx="18.5" cy="18.5" r="2.5"></circle></svg>
-      Shipment Consignments
+    <h3 class="h6 mb-2 d-flex align-items-center gap-2">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="3" width="15" height="13"></rect><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"></polygon><circle cx="5.5" cy="18.5" r="2.5"></circle><circle cx="18.5" cy="18.5" r="2.5"></circle></svg>
+      Shipments
     </h3>
-    <div class="table-responsive mb-4">
-      <table class="table table-hover align-middle border rounded-3 overflow-hidden">
-        <thead class="table-light">
+    <div class="table-responsive mb-3">
+      <table class="table table-hover align-middle mb-0">
+        <thead>
           <tr>
             <th>Carrier</th>
             <th>Tracking Number</th>
@@ -204,7 +129,7 @@
           <tr>
             <td class="fw-semibold">{{ parcel.carrier }}</td>
             <td><code class="px-2 py-1 bg-light border rounded">{{ parcel.tracking_number }}</code></td>
-            <td><span class="badge text-bg-info text-capitalize">{{ parcel.status }}</span></td>
+            <td><span class="badge badge-soft-info text-capitalize">{{ parcel.status }}</span></td>
             <td class="small text-secondary">{{ parcel.shipped_at }}</td>
             <td class="small text-secondary">{{ parcel.delivered_at }}</td>
           </tr>
@@ -214,24 +139,24 @@
     </div>
 @endif
 
-    <h3 class="h6 fw-bold mt-4 mb-3">Order Items Breakdown</h3>
+    <h3 class="h6 mb-2">Items</h3>
     <div class="table-responsive">
-      <table class="table table-hover align-middle border rounded-3 overflow-hidden">
-        <thead class="table-light">
+      <table class="table table-hover align-middle mb-0">
+        <thead>
           <tr>
-            <th>Item Details</th>
+            <th>Item</th>
             <th>SKU</th>
-            <th class="text-center">Quantity</th>
+            <th class="text-center">Qty</th>
             <th class="text-end">Line Total</th>
           </tr>
         </thead>
         <tbody>
 @foreach(line in result.items)
           <tr>
-            <td class="fw-semibold text-dark">{{ line.name }}</td>
-            <td><span class="badge bg-light text-secondary border font-monospace">{{ line.sku }}</span></td>
-            <td class="text-center"><span class="badge bg-secondary-subtle text-secondary px-2 py-1">{{ line.quantity }}</span></td>
-            <td class="text-end fw-bold text-dark">
+            <td>{{ line.name }}</td>
+            <td><code class="px-2 py-1 bg-light border rounded">{{ line.sku }}</code></td>
+            <td class="text-center">{{ line.quantity }}</td>
+            <td class="text-end fw-semibold">
 @if(line.line_total_display)
               {{ line.line_total_display }}
 @else
@@ -244,5 +169,12 @@
       </table>
     </div>
   </div>
+@else
+@if(order_number)
+  <p class="empty-note">
+    <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+    No order found. Check the order number and contact details.
+  </p>
+@endif
 @endif
 @endsection

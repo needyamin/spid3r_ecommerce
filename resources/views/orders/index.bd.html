@@ -9,29 +9,31 @@
 @if(has_orders)
   <div class="d-flex flex-column gap-3">
 @foreach(order in orders)
-    <div class="dz-card p-3 d-flex flex-wrap justify-content-between align-items-center gap-2">
+    <div class="dz-card d-flex flex-wrap justify-content-between align-items-center gap-3">
       <div class="d-flex align-items-center flex-wrap gap-2">
-        <a href="/orders/{{ order.order_number }}" class="fw-bold font-monospace">#{{ order.order_number }}</a>
+        <a href="/orders/{{ order.order_number }}" class="fw-semibold text-decoration-none font-monospace">#{{ order.order_number }}</a>
 @if(order.is_paid)
-        <span class="badge text-bg-success">Paid</span>
+        <span class="badge badge-soft-success">Paid</span>
 @elif(order.is_pending_cod)
-        <span class="badge text-bg-secondary">Pending (COD)</span>
+        <span class="badge badge-soft-info">Pending (COD)</span>
 @elif(order.is_awaiting_payment)
-        <span class="badge text-bg-warning text-dark">Awaiting Payment</span>
-        <a href="/payment/{{ order.order_number }}" class="btn btn-sm btn-primary py-0 px-2 fw-semibold">Pay Now</a>
+        <span class="badge badge-soft-warning">Awaiting Payment</span>
 @else
-        <span class="badge text-bg-light border text-capitalize">{{ order.status }}</span>
+        <span class="badge badge-soft-info text-capitalize">{{ order.status }}</span>
 @endif
       </div>
       <div class="d-flex align-items-center gap-3">
-        <span class="fw-bold text-dark">{{ order.total_display }}</span>
-        <a href="/orders/{{ order.order_number }}" class="btn btn-sm btn-outline-secondary py-0 px-2">Details →</a>
+        <span class="fw-semibold">{{ order.total_display }}</span>
+        <a href="/orders/{{ order.order_number }}" class="btn btn-sm btn-light">Details</a>
       </div>
     </div>
 @endforeach
   </div>
 @include("partials.pagination")
 @else
-  <p class="empty-note">No orders yet. <a href="/catalog">Start shopping</a></p>
+  <p class="empty-note">
+    <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 2l-2 5v13a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7l-2-5z"></path><line x1="4" y1="7" x2="20" y2="7"></line><path d="M16 11a4 4 0 0 1-8 0"></path></svg>
+    No orders yet. <a href="/catalog">Start shopping</a>
+  </p>
 @endif
 @endsection

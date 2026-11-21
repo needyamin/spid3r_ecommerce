@@ -4,30 +4,27 @@
 @section("content")
   <div class="row justify-content-center my-4">
     <div class="col-12 col-md-8 col-lg-6">
-      <div class="dz-card p-4 p-md-5 text-center">
+      <div class="dz-card text-center">
 @if(is_paid)
-        <div class="display-5 mb-2 text-success">✅</div>
-        <h1 class="h4 fw-bold mb-1">Payment Successful</h1>
-        <p class="text-secondary mb-4">Payment of <strong class="text-primary">{{ total_display }}</strong> for Order <strong class="text-dark">#{{ order.order_number }}</strong> has been verified.</p>
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-success mb-2" aria-hidden="true"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="M22 4L12 14.01l-3-3"/></svg>
+        <h1 class="h4 fw-bold mb-1">Payment successful</h1>
+        <p class="text-secondary mb-4">{{ total_display }} for order <strong class="text-dark">#{{ order.order_number }}</strong> has been verified.</p>
         <div class="d-grid gap-2">
-          <a class="btn btn-primary py-2 fw-semibold" href="/checkout/confirmation/{{ order.order_number }}">View Order Confirmation</a>
-          <a class="btn btn-light border py-2 text-secondary" href="/orders">View Order History</a>
+          <a class="btn btn-primary" href="/checkout/confirmation/{{ order.order_number }}">View order</a>
         </div>
 @elif(is_pending_cod)
-        <div class="display-5 mb-2">💵</div>
-        <h1 class="h4 fw-bold mb-1">Order Confirmed (Cash on Delivery)</h1>
-        <p class="text-secondary mb-4">Order <strong class="text-dark">#{{ order.order_number }}</strong> is placed. Please have <strong class="text-primary">{{ total_display }}</strong> in cash ready upon parcel delivery.</p>
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-secondary mb-2" aria-hidden="true"><rect x="1" y="4" width="22" height="16" rx="2"/><circle cx="12" cy="12" r="3"/><path d="M5 8h.01M19 16h.01"/></svg>
+        <h1 class="h4 fw-bold mb-1">Order confirmed — cash on delivery</h1>
+        <p class="text-secondary mb-4">Order <strong class="text-dark">#{{ order.order_number }}</strong> is placed. Have <strong class="text-primary">{{ total_display }}</strong> ready on delivery.</p>
         <div class="d-grid gap-2">
-          <a class="btn btn-primary py-2 fw-semibold" href="/checkout/confirmation/{{ order.order_number }}">View Order Confirmation</a>
-          <a class="btn btn-light border py-2 text-secondary" href="/catalog">Continue Shopping</a>
+          <a class="btn btn-primary" href="/checkout/confirmation/{{ order.order_number }}">View order</a>
         </div>
 @else
-        <div class="display-5 mb-2 text-warning">⏳</div>
-        <h1 class="h4 fw-bold mb-1">Payment Pending</h1>
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-warning mb-2" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+        <h1 class="h4 fw-bold mb-1">Payment pending</h1>
         <p class="text-secondary mb-4">Order <strong class="text-dark">#{{ order.order_number }}</strong> is awaiting payment completion.</p>
         <div class="d-grid gap-2">
-          <a class="btn btn-primary py-2 fw-semibold" href="/payment/{{ order.order_number }}">Complete Payment Now</a>
-          <a class="btn btn-light border py-2 text-secondary" href="/checkout/confirmation/{{ order.order_number }}">Back to Order Confirmation</a>
+          <a class="btn btn-primary" href="/payment/{{ order.order_number }}">Complete payment</a>
         </div>
 @endif
       </div>

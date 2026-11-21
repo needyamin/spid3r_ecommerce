@@ -12,9 +12,11 @@
 @foreach(item in items)
     <div class="col">
       <div class="product-card h-100">
-        <div class="dz-p-img-placeholder">📦</div>
+        <div class="dz-p-img-placeholder">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>
+        </div>
         <div class="dz-p-body">
-          <div class="dz-p-name"><a class="text-dark" href="{{ item.url }}">{{ item.name }}</a></div>
+          <div class="dz-p-name"><a href="{{ item.url }}">{{ item.name }}</a></div>
           <div class="dz-p-price mb-2">{{ item.price_display }}</div>
           <form method="post" action="/wishlist/remove">
             <input type="hidden" name="_csrf" value="{{ csrf }}">
@@ -27,6 +29,9 @@
 @endforeach
   </div>
 @else
-  <p class="empty-note">Your wishlist is empty. <a href="/catalog">Browse the catalog</a></p>
+  <p class="empty-note">
+    <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>
+    Your wishlist is empty. <a href="/catalog">Browse the catalog</a>
+  </p>
 @endif
 @endsection

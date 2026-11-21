@@ -46,18 +46,6 @@
 
       <section class="col-12 col-lg-5" aria-labelledby="product-title">
         <div class="dz-card dz-product-buybox">
-          <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-1">
-            <div class="dz-product-kicker">SKU {{ product.sku }}</div>
-            <div class="d-flex gap-1 flex-wrap">
-@if(has_category)
-              <a href="/category/{{ category.slug }}" class="badge text-bg-light border text-decoration-none">{{ category.name }}</a>
-@endif
-@if(has_brand)
-              <a href="/brand/{{ brand.slug }}" class="badge text-bg-light border text-decoration-none">Brand: {{ brand.name }}</a>
-@endif
-            </div>
-          </div>
-
           <h1 id="product-title" class="dz-product-title">{{ product.name }}</h1>
 
           <div class="dz-rating-summary" aria-label="{{ rating.average_display }} out of 5 from {{ rating.count }} reviews">
@@ -66,27 +54,27 @@
           </div>
 
 @if(product.compare_display)
-          <div class="dz-price-line"><span class="dz-product-price" id="dz-buybox-price">{{ product.price_display }}</span><span class="dz-p-old">{{ product.compare_display }}</span><span class="dz-sale-badge">Sale</span></div>
+          <div class="dz-price-line"><span class="dz-product-price" id="dz-buybox-price">{{ product.price_display }}</span><span class="dz-p-old">{{ product.compare_display }}</span><span class="badge rounded-pill badge-soft-accent">Sale</span></div>
 @else
           <div class="dz-price-line"><span class="dz-product-price" id="dz-buybox-price">{{ product.price_display }}</span></div>
 @endif
 
 @if(in_stock)
-          <div class="dz-stock-line"><span class="stock-badge stock-in">In stock</span><span class="small text-secondary">{{ available_quantity }} available for immediate dispatch</span></div>
+          <div class="dz-stock-line"><span class="stock-badge badge-soft-success">In stock</span><span class="small text-secondary">{{ available_quantity }} available</span></div>
 @else
-          <div class="dz-stock-line"><span class="stock-badge stock-out">Out of stock</span><span class="small text-secondary">Please check back later.</span></div>
+          <div class="dz-stock-line"><span class="stock-badge badge-soft-danger">Out of stock</span></div>
 @endif
 
 @if(product.short_description)
-          <p class="dz-product-short-description">{{ product.short_description }}</p>
+          <p class="dz-product-short-description text-secondary">{{ product.short_description }}</p>
 @endif
 
           <form method="post" action="/cart/items" data-ajax="cart" class="dz-add-to-cart-form">
             <input type="hidden" name="_csrf" value="{{ csrf }}">
             <input type="hidden" name="product_id" value="{{ product.id }}">
 @if(has_variants)
-            <div class="dz-variant-note mb-3">
-              <label class="form-label small fw-semibold mb-1" for="variant_id">Choose option / variant</label>
+            <div class="mb-3">
+              <label class="form-label mb-1" for="variant_id">Variant</label>
               <select id="variant_id" name="variant_id" class="form-select" data-variant-select>
                 <option value="" data-price-display="{{ product.price_display }}">Standard — {{ product.price_display }} ({{ product.sku }})</option>
 @foreach(variant in variants)
@@ -97,7 +85,7 @@
 @endif
             <div class="dz-buy-controls">
               <div>
-                <label class="form-label small fw-semibold mb-1" for="add-quantity">{{ t.product.quantity }}</label>
+                <label class="form-label mb-1" for="add-quantity">{{ t.product.quantity }}</label>
                 <div class="input-group dz-qty-stepper">
                   <button class="btn btn-outline-secondary px-2" type="button" data-qty-step="-1" aria-label="Decrease quantity">−</button>
                   <input type="number" class="form-control dz-qty text-center" id="add-quantity" name="quantity" value="1" min="1" max="{{ available_quantity }}" required>
@@ -119,30 +107,22 @@
               <input type="hidden" name="_csrf" value="{{ csrf }}">
               <input type="hidden" name="product_id" value="{{ product.id }}">
 @if(in_wishlist)
-              <button class="btn btn-outline-primary" type="submit">♥ Saved to wishlist</button>
+              <button class="btn btn-outline-primary" type="submit"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" class="me-1" aria-hidden="true"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>Saved</button>
 @else
-              <button class="btn btn-outline-primary" type="submit">♡ Add to wishlist</button>
+              <button class="btn btn-outline-primary" type="submit"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="me-1" aria-hidden="true"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>Wishlist</button>
 @endif
             </form>
           </div>
 
-          <div class="dz-product-delivery-box mt-3 pt-3 border-top small">
-            <div class="d-flex justify-content-between py-1">
-              <span class="text-secondary">🚚 Standard Delivery (3–7 days)</span>
-              <strong>৳60.00 <span class="text-success">(Free over ৳2,000)</span></strong>
+          <div class="dz-product-delivery-box">
+            <div class="d-flex justify-content-between align-items-center py-1">
+              <span class="d-inline-flex align-items-center gap-2"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="1" y="3" width="15" height="13"></rect><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"></polygon><circle cx="5.5" cy="18.5" r="2.5"></circle><circle cx="18.5" cy="18.5" r="2.5"></circle></svg>Delivery</span>
+              <span><strong>৳60</strong> · 2–4 days · Free over ৳2,000</span>
             </div>
-            <div class="d-flex justify-content-between py-1">
-              <span class="text-secondary">⚡ Express Delivery (1–2 days)</span>
-              <strong>৳120.00</strong>
+            <div class="d-flex justify-content-between align-items-center py-1">
+              <span class="d-inline-flex align-items-center gap-2"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polyline points="1 4 1 10 7 10"></polyline><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path></svg>Returns</span>
+              <span class="text-success fw-semibold">14-day returns · COD available</span>
             </div>
-            <div class="d-flex justify-content-between py-1">
-              <span class="text-secondary">💵 Cash on Delivery</span>
-              <span class="text-success fw-semibold">Available</span>
-            </div>
-          </div>
-
-          <div class="dz-product-assurances">
-            <span>🔒 Secure checkout</span><span>↩️ 14-day easy returns</span><span>⚡ Fast dispatch</span>
           </div>
         </div>
       </section>
@@ -151,17 +131,15 @@
     <div class="row g-4 my-1">
       <div class="col-12 col-lg-8">
 @if(product.description)
-        <section class="dz-card dz-description-card h-100" aria-labelledby="product-description-heading">
-          <span class="dz-eyebrow">Overview</span>
-          <h2 id="product-description-heading" class="h5 mb-3">Product description</h2>
+        <section class="dz-card h-100" aria-labelledby="product-description-heading">
+          <h2 id="product-description-heading" class="dz-section-title mb-3">Description</h2>
           <div class="dz-description-copy">{{ product.description }}</div>
         </section>
 @endif
       </div>
       <div class="col-12 col-lg-4">
-        <section class="dz-card dz-description-card h-100" aria-labelledby="product-specs-heading">
-          <span class="dz-eyebrow">Details</span>
-          <h2 id="product-specs-heading" class="h5 mb-3">Specifications</h2>
+        <section class="dz-card h-100" aria-labelledby="product-specs-heading">
+          <h2 id="product-specs-heading" class="dz-section-title mb-3">Specifications</h2>
           <dl class="dz-specs-list mb-0">
             <div class="dz-spec-row"><dt>SKU</dt><dd><code>{{ product.sku }}</code></dd></div>
 @if(has_category)
@@ -174,16 +152,15 @@
             <div class="dz-spec-row"><dt>Weight</dt><dd>{{ weight_grams }} g</dd></div>
 @endif
             <div class="dz-spec-row"><dt>Availability</dt><dd>@if(in_stock){{ available_quantity }} in stock@else Out of stock@endif</dd></div>
-            <div class="dz-spec-row"><dt>Return Window</dt><dd>14 Days Easy Return</dd></div>
           </dl>
         </section>
       </div>
     </div>
 
     <section id="customer-reviews" class="dz-card dz-reviews-card my-4" aria-labelledby="reviews-heading">
-      <div class="dz-section-heading">
-        <div><span class="dz-eyebrow">Customer feedback</span><h2 id="reviews-heading" class="h5 mb-0">Customer reviews</h2></div>
-        <p class="mb-0"><strong class="fs-5">★ {{ rating.average_display }}</strong> / 5 <span class="text-secondary">· {{ rating.count }} review(s)</span></p>
+      <div class="dz-section-heading mb-3">
+        <h2 id="reviews-heading" class="dz-section-title mb-0">Customer reviews</h2>
+        <p class="mb-0 small text-secondary"><strong class="dz-review-score">★ {{ rating.average_display }}</strong> / 5 · {{ rating.count }} review(s)</p>
       </div>
 @if(has_reviews)
 @foreach(review in reviews)
@@ -193,7 +170,7 @@
       </article>
 @endforeach
 @else
-      <p class="empty-note">No reviews yet. Be the first to share your experience after purchasing this item.</p>
+      <p class="empty-note">No reviews yet.</p>
 @endif
 @if(signed_in)
       <h3 class="h6 mt-4">Write a review</h3>
@@ -201,15 +178,15 @@
         <input type="hidden" name="_csrf" value="{{ csrf }}">
         <input type="hidden" name="product_id" value="{{ product.id }}">
         <div class="col-12 col-md-3">
-          <label class="form-label fw-semibold" for="review-rating">Rating</label>
+          <label class="form-label" for="review-rating">Rating</label>
           <select id="review-rating" name="rating" class="form-select"><option value="5">5 — Excellent</option><option value="4">4 — Good</option><option value="3">3 — Average</option><option value="2">2 — Poor</option><option value="1">1 — Terrible</option></select>
         </div>
         <div class="col-12 col-md-9">
-          <label class="form-label fw-semibold" for="review-title">Title</label>
+          <label class="form-label" for="review-title">Title</label>
           <input id="review-title" type="text" name="title" class="form-control" maxlength="120">
         </div>
         <div class="col-12">
-          <label class="form-label fw-semibold" for="review-body">Your review</label>
+          <label class="form-label" for="review-body">Your review</label>
           <textarea id="review-body" name="body" rows="4" class="form-control" maxlength="4000" required></textarea>
         </div>
         <div class="col-12"><button class="btn btn-primary" type="submit">Submit review</button></div>
@@ -219,52 +196,18 @@
 
 @if(has_recommendations)
     <section class="dz-product-suggestions my-4" aria-labelledby="recommendations-heading">
-      <div class="dz-section-heading"><div><span class="dz-eyebrow">Picked for you</span><h2 id="recommendations-heading" class="h5 mb-0">You might also like</h2></div></div>
+      <h2 id="recommendations-heading" class="dz-section-title mb-3">You may also like</h2>
       <div class="row g-3 row-cols-2 row-cols-md-3 row-cols-lg-4">
 @foreach(rec in recommendations)
         <div class="col"><a class="product-card h-100" href="{{ rec.url }}">
+          <div class="dz-p-media">
 @if(rec.has_image)
-          <img class="dz-p-img" src="{{ rec.image_url }}" alt="{{ rec.name }}" loading="lazy" decoding="async">
+            <img class="dz-p-img" src="{{ rec.image_url }}" alt="{{ rec.name }}" loading="lazy" decoding="async">
 @else
-          <div class="dz-p-img-placeholder" aria-hidden="true"><span>No image</span></div>
+            <div class="dz-p-img-placeholder" aria-hidden="true"><span>No image</span></div>
 @endif
+          </div>
           <div class="dz-p-body"><div class="dz-p-name">{{ rec.name }}</div><div class="dz-p-price">{{ rec.price_display }}</div></div>
-        </a></div>
-@endforeach
-      </div>
-    </section>
-@endif
-
-@if(has_recently_viewed)
-    <section class="dz-product-suggestions my-4" aria-labelledby="recently-viewed-heading">
-      <div class="dz-section-heading"><div><span class="dz-eyebrow">Your browsing</span><h2 id="recently-viewed-heading" class="h5 mb-0">Recently viewed</h2></div></div>
-      <div class="row g-3 row-cols-2 row-cols-md-3 row-cols-lg-4">
-@foreach(seen in recently_viewed)
-        <div class="col"><a class="product-card h-100" href="{{ seen.url }}">
-@if(seen.has_image)
-          <img class="dz-p-img" src="{{ seen.image_url }}" alt="{{ seen.name }}" loading="lazy" decoding="async">
-@else
-          <div class="dz-p-img-placeholder" aria-hidden="true"><span>No image</span></div>
-@endif
-          <div class="dz-p-body"><div class="dz-p-name">{{ seen.name }}</div><div class="dz-p-price">{{ seen.price_display }}</div></div>
-        </a></div>
-@endforeach
-      </div>
-    </section>
-@endif
-
-@if(has_related)
-    <section class="dz-product-suggestions my-4" aria-labelledby="related-products-heading">
-      <div class="dz-section-heading"><div><span class="dz-eyebrow">More to explore</span><h2 id="related-products-heading" class="h5 mb-0">Related products</h2></div></div>
-      <div class="row g-3 row-cols-2 row-cols-md-3 row-cols-lg-4">
-@foreach(rel in related)
-        <div class="col"><a class="product-card h-100" href="{{ rel.url }}">
-@if(rel.has_image)
-          <img class="dz-p-img" src="{{ rel.image_url }}" alt="{{ rel.name }}" loading="lazy" decoding="async">
-@else
-          <div class="dz-p-img-placeholder" aria-hidden="true"><span>No image</span></div>
-@endif
-          <div class="dz-p-body"><div class="dz-p-name">{{ rel.name }}</div><div class="dz-p-price">{{ rel.price_display }}</div></div>
         </a></div>
 @endforeach
       </div>
