@@ -141,7 +141,10 @@ public class CacheManager {
         }
         let current = s.get(key, 0);
         let next = int(current) + by;
-        s.put(key, next, 0);
+        // Preserve the entry's remaining TTL. put(..., 0) would freeze the
+        // entry forever — e.g. throttle windows seeded by Cache.add() never
+        // expired, permanently locking clients out after max_attempts.
+        s.put(key, next, s.seconds_left(key));
         return next;
     }
 
