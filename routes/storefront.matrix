@@ -5,9 +5,17 @@
 
 import "framework/Http/Router";
 import "app/Controllers/StorefrontController";
+import "app/Controllers/ImageController";
 
 public fn register_storefront_routes() {
     let ctl = new StorefrontController();
+    let images = new ImageController();
+
+    // Generated product artwork (initials fallback for products without an
+    // uploaded image). The /images/ prefix is checked by static file serving
+    // first; no such file exists on disk, so the request falls through to
+    // this route. Static path — precedes the :slug routes.
+    Route.get("/images/initials.svg", req => images.initials(req)).name("images.initials");
 
     Route.get("/catalog", req => ctl.catalog(req)).name("catalog");
     Route.get("/search", req => ctl.search(req)).name("search");

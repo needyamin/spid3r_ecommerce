@@ -84,10 +84,15 @@ public class StorefrontService {
             let j = 0;
             while j < images.len() {
                 if images[j]["product_id"] == row["id"] {
-                    found = Images.public_image_url(images[j]["path"]);
+                    found = Images.public_image_url(images[j]["path"], row["name"]);
                     break;
                 }
                 j += 1;
+            }
+            if found == "" {
+                // No image row: fall back to generated initials artwork so
+                // cards always render an <img> (never a bare "No image" box).
+                found = Images.initials_image_url(row["name"]);
             }
             row["image_url"] = found;
             i2 += 1;
@@ -375,11 +380,20 @@ public class StorefrontService {
                 alt_text = string(product["name"]) + " product photo " + string(i + 1);
             }
             gallery.push({
-                "url": Images.public_image_url(gallery_rows[i]["path"]),
+                "url": Images.public_image_url(gallery_rows[i]["path"], product["name"]),
                 "alt_text": alt_text,
                 "is_first": i == 0
             });
             i += 1;
+        }
+        if gallery.len() == 0 {
+            // Product without any photos: show the generated initials art
+            // instead of the "No product image" placeholder.
+            gallery.push({
+                "url": Images.initials_image_url(product["name"]),
+                "alt_text": string(product["name"]),
+                "is_first": true
+            });
         }
         let variants_raw = self.products.variants_for(product["id"]);
         let variants = [];

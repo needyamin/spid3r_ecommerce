@@ -171,7 +171,12 @@ public class CartService {
                 .orderBy("sort_order", "ASC")
                 .first();
                 if img != null {
-                    image_url = Images.public_image_url(img["path"]);
+                    image_url = Images.public_image_url(img["path"], name);
+                }
+                if image_url == "" {
+                    // No product photo: generated initials artwork keeps the
+                    // cart/checkout line items visually consistent.
+                    image_url = Images.initials_image_url(name);
                 }
                 ok = product["status"] == "published"
                 and self.inventory.available(

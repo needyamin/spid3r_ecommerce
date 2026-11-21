@@ -493,6 +493,9 @@ public class AdminController {
                 let thumb = "";
                 if thumbs.has(pid) {
                     thumb = string(thumbs[pid]);
+                } else {
+                    // No uploaded photo: generated initials artwork.
+                    thumb = Images.initials_image_url(string(rows[i]["name"]));
                 }
                 list.push({
                     "id": rows[i]["id"],
@@ -623,7 +626,10 @@ public class AdminController {
                 .orderBy("sort_order", "ASC")
                 .first();
                 if primary != null {
-                    thumb = Images.public_image_url(primary["path"]);
+                    thumb = Images.public_image_url(primary["path"], pname);
+                } else {
+                    // No uploaded photo: generated initials artwork.
+                    thumb = Images.initials_image_url(pname);
                 }
 
                 total_on_hand = total_on_hand + qty;
@@ -2308,7 +2314,10 @@ public class AdminController {
         let thumb = "";
         let primary = DB.table("product_images").where("product_id", "=", pid).orderBy("sort_order", "ASC").first();
         if primary != null {
-            thumb = Images.public_image_url(primary["path"]);
+            thumb = Images.public_image_url(primary["path"], row["name"]);
+        } else {
+            // No uploaded photo: generated initials artwork.
+            thumb = Images.initials_image_url(string(row["name"]));
         }
         let cat_name = "";
         let brand_name = "";
@@ -2707,7 +2716,10 @@ public class AdminController {
             let thumb = "";
             let primary = DB.table("product_images").where("product_id", "=", pid).orderBy("sort_order", "ASC").first();
             if primary != null {
-                thumb = Images.public_image_url(primary["path"]);
+                thumb = Images.public_image_url(primary["path"], pname);
+            } else {
+                // No uploaded photo: generated initials artwork.
+                thumb = Images.initials_image_url(pname);
             }
             all_rows.push({
                 "product_id": pid,
