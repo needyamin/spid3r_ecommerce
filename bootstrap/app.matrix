@@ -4,6 +4,7 @@
 import "framework/Foundation/Application";
 import "app/Providers/AppServiceProvider";
 import "app/Middleware/StoreMiddleware";
+import "app/Middleware/MutationThrottle";
 import "routes/web";
 import "routes/api";
 import "routes/queue";
@@ -16,5 +17,9 @@ public fn create_application(base_path: string = ".") {
     register_web_routes();
     register_api_routes();
     register_queue_jobs();
+    // App-wide global middleware: defense-in-depth rate limiting for every
+    // state-changing request (POST/PUT/PATCH/DELETE). Applies on ALL boot
+    // paths (server.matrix, `magic serve`, tests) because it lives here.
+    app.use(new MutationThrottle());
     return app;
 }

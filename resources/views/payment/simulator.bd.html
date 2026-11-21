@@ -72,7 +72,7 @@
           <div class="mb-3">
             <div class="d-flex justify-content-between align-items-center mb-1">
               <label class="form-label fw-semibold small mb-0" for="bkash-account">Your bKash Account Number</label>
-              <button type="button" class="btn btn-link p-0 text-decoration-none small text-danger" onclick="document.getElementById('bkash-account').value='01770618575'">Fill Demo: 01770618575</button>
+              <button type="button" class="btn btn-link p-0 text-decoration-none small text-danger" data-fill-id="bkash-account" data-fill-value="01770618575">Fill Demo: 01770618575</button>
             </div>
             <div class="input-group">
               <span class="input-group-text bg-white text-secondary">+88</span>
@@ -85,7 +85,7 @@
           <div class="mb-3">
             <div class="d-flex justify-content-between align-items-center mb-1">
               <label class="form-label fw-semibold small mb-0" for="bkash-otp">bKash Verification Code (OTP)</label>
-              <button type="button" class="btn btn-link p-0 text-decoration-none small text-danger" onclick="document.getElementById('bkash-otp').value='123456'">Fill Demo: 123456</button>
+              <button type="button" class="btn btn-link p-0 text-decoration-none small text-danger" data-fill-id="bkash-otp" data-fill-value="123456">Fill Demo: 123456</button>
             </div>
             <input type="text" class="form-control font-monospace" id="bkash-otp" name="otp" placeholder="6-digit OTP" value="123456" maxlength="6" required>
             <div class="form-text small">Test OTP: <code class="text-danger">123456</code></div>
@@ -95,7 +95,7 @@
           <div class="mb-4">
             <div class="d-flex justify-content-between align-items-center mb-1">
               <label class="form-label fw-semibold small mb-0" for="bkash-pin">Enter 5-digit bKash PIN</label>
-              <button type="button" class="btn btn-link p-0 text-decoration-none small text-danger" onclick="document.getElementById('bkash-pin').value='12121'">Fill Demo: 12121</button>
+              <button type="button" class="btn btn-link p-0 text-decoration-none small text-danger" data-fill-id="bkash-pin" data-fill-value="12121">Fill Demo: 12121</button>
             </div>
             <input type="password" class="form-control font-monospace" id="bkash-pin" name="pin" placeholder="5-digit PIN" value="12121" maxlength="5" required>
             <div class="form-text small">Test PIN: <code class="text-danger">12121</code></div>
@@ -156,7 +156,7 @@
           <div class="mb-3">
             <div class="d-flex justify-content-between align-items-center mb-1">
               <label class="form-label fw-semibold small mb-0" for="nagad-account">Nagad Account Number</label>
-              <button type="button" class="btn btn-link p-0 text-decoration-none small text-warning-emphasis" onclick="document.getElementById('nagad-account').value='01812345678'">Fill Demo: 01812345678</button>
+              <button type="button" class="btn btn-link p-0 text-decoration-none small text-warning-emphasis" data-fill-id="nagad-account" data-fill-value="01812345678">Fill Demo: 01812345678</button>
             </div>
             <div class="input-group">
               <span class="input-group-text bg-white text-secondary">+88</span>
@@ -169,7 +169,7 @@
           <div class="mb-3">
             <div class="d-flex justify-content-between align-items-center mb-1">
               <label class="form-label fw-semibold small mb-0" for="nagad-otp">Verification OTP Code</label>
-              <button type="button" class="btn btn-link p-0 text-decoration-none small text-warning-emphasis" onclick="document.getElementById('nagad-otp').value='123456'">Fill Demo: 123456</button>
+              <button type="button" class="btn btn-link p-0 text-decoration-none small text-warning-emphasis" data-fill-id="nagad-otp" data-fill-value="123456">Fill Demo: 123456</button>
             </div>
             <input type="text" class="form-control font-monospace" id="nagad-otp" name="otp" placeholder="6-digit OTP" value="123456" maxlength="6" required>
             <div class="form-text small">Test OTP: <code class="text-warning-emphasis">123456</code></div>
@@ -179,7 +179,7 @@
           <div class="mb-4">
             <div class="d-flex justify-content-between align-items-center mb-1">
               <label class="form-label fw-semibold small mb-0" for="nagad-pin">Enter 4-digit Nagad PIN</label>
-              <button type="button" class="btn btn-link p-0 text-decoration-none small text-warning-emphasis" onclick="document.getElementById('nagad-pin').value='1234'">Fill Demo: 1234</button>
+              <button type="button" class="btn btn-link p-0 text-decoration-none small text-warning-emphasis" data-fill-id="nagad-pin" data-fill-value="1234">Fill Demo: 1234</button>
             </div>
             <input type="password" class="form-control font-monospace" id="nagad-pin" name="pin" placeholder="4-digit PIN" value="1234" maxlength="4" required>
             <div class="form-text small">Test PIN: <code class="text-warning-emphasis">1234</code></div>
@@ -240,17 +240,17 @@
           <!-- SSLCommerz Payment Method Tabs -->
           <ul class="nav nav-pills nav-fill mb-3 bg-light p-1 rounded-3" id="ssl-tabs" role="tablist">
             <li class="nav-item" role="presentation">
-              <button class="nav-link active small py-2 fw-semibold" id="ssl-tab-cards" type="button" onclick="switchSslTab('cards')">
+              <button class="nav-link active small py-2 fw-semibold" id="ssl-tab-cards" type="button" data-ssl-tab="cards">
                 Cards
               </button>
             </li>
             <li class="nav-item" role="presentation">
-              <button class="nav-link small py-2 fw-semibold text-secondary" id="ssl-tab-mfs" type="button" onclick="switchSslTab('mfs')">
+              <button class="nav-link small py-2 fw-semibold text-secondary" id="ssl-tab-mfs" type="button" data-ssl-tab="mfs">
                 Mobile Banking
               </button>
             </li>
             <li class="nav-item" role="presentation">
-              <button class="nav-link small py-2 fw-semibold text-secondary" id="ssl-tab-netbank" type="button" onclick="switchSslTab('netbank')">
+              <button class="nav-link small py-2 fw-semibold text-secondary" id="ssl-tab-netbank" type="button" data-ssl-tab="netbank">
                 Net Banking
               </button>
             </li>
@@ -262,9 +262,9 @@
             <div class="mb-3">
               <label class="form-label small text-secondary fw-semibold mb-1">Click to Pre-fill Test Cards:</label>
               <div class="d-flex flex-wrap gap-1">
-                <button type="button" class="btn btn-outline-primary btn-sm py-0 px-2" onclick="prefillSslCard('4242 4242 4242 4242', '12/28', '123', 'Visa Test User')">Visa Test (4242...)</button>
-                <button type="button" class="btn btn-outline-primary btn-sm py-0 px-2" onclick="prefillSslCard('5105 1051 0510 5100', '11/27', '456', 'Mastercard Test')">MasterCard (5105...)</button>
-                <button type="button" class="btn btn-outline-primary btn-sm py-0 px-2" onclick="prefillSslCard('3782 8224 6310 005', '10/26', '789', 'Amex Test')">Amex (3782...)</button>
+                <button type="button" class="btn btn-outline-primary btn-sm py-0 px-2" data-prefill-card data-card-num="4242 4242 4242 4242" data-card-exp="12/28" data-card-cvv="123" data-card-name="Visa Test User">Visa Test (4242...)</button>
+                <button type="button" class="btn btn-outline-primary btn-sm py-0 px-2" data-prefill-card data-card-num="5105 1051 0510 5100" data-card-exp="11/27" data-card-cvv="456" data-card-name="Mastercard Test">MasterCard (5105...)</button>
+                <button type="button" class="btn btn-outline-primary btn-sm py-0 px-2" data-prefill-card data-card-num="3782 8224 6310 005" data-card-exp="10/26" data-card-cvv="789" data-card-name="Amex Test">Amex (3782...)</button>
               </div>
             </div>
 
@@ -300,15 +300,15 @@
             <div class="mb-3">
               <label class="form-label small text-secondary fw-semibold mb-2">Select Mobile Banking Service:</label>
               <div class="d-flex gap-2 mb-3">
-                <label class="btn btn-outline-danger btn-sm px-3 py-2 fw-semibold d-flex align-items-center gap-1 active" id="ssl-mfs-btn-bkash" onclick="selectSslMfs('bkash')">
+                <label class="btn btn-outline-danger btn-sm px-3 py-2 fw-semibold d-flex align-items-center gap-1 active" id="ssl-mfs-btn-bkash" data-ssl-mfs="bkash">
                   <input type="radio" name="ssl_mfs_provider" id="mfs-bkash" value="bkash" checked class="d-none">
                   <span>bKash</span>
                 </label>
-                <label class="btn btn-outline-warning text-dark btn-sm px-3 py-2 fw-semibold d-flex align-items-center gap-1" id="ssl-mfs-btn-nagad" onclick="selectSslMfs('nagad')">
+                <label class="btn btn-outline-warning text-dark btn-sm px-3 py-2 fw-semibold d-flex align-items-center gap-1" id="ssl-mfs-btn-nagad" data-ssl-mfs="nagad">
                   <input type="radio" name="ssl_mfs_provider" id="mfs-nagad" value="nagad" class="d-none">
                   <span>Nagad</span>
                 </label>
-                <label class="btn btn-outline-primary btn-sm px-3 py-2 fw-semibold d-flex align-items-center gap-1" id="ssl-mfs-btn-rocket" onclick="selectSslMfs('rocket')">
+                <label class="btn btn-outline-primary btn-sm px-3 py-2 fw-semibold d-flex align-items-center gap-1" id="ssl-mfs-btn-rocket" data-ssl-mfs="rocket">
                   <input type="radio" name="ssl_mfs_provider" id="mfs-rocket" value="rocket" class="d-none">
                   <span>Rocket</span>
                 </label>
@@ -317,7 +317,7 @@
             <div class="mb-3">
               <div class="d-flex justify-content-between align-items-center mb-1">
                 <label class="form-label small fw-semibold mb-0" for="ssl-mfs-acc">Mobile Account Number</label>
-                <button type="button" class="btn btn-link p-0 text-decoration-none small text-primary" onclick="document.getElementById('ssl-mfs-acc').value='01770618575'">Fill Demo: 01770618575</button>
+                <button type="button" class="btn btn-link p-0 text-decoration-none small text-primary" data-fill-id="ssl-mfs-acc" data-fill-value="01770618575">Fill Demo: 01770618575</button>
               </div>
               <input type="text" class="form-control font-monospace" id="ssl-mfs-acc" name="ssl_mfs_account" placeholder="017XXXXXXXX" value="01770618575">
               <div class="form-text small">Test wallet: <code>01770618575</code></div>
@@ -399,7 +399,7 @@
             <div class="mb-3">
               <div class="d-flex justify-content-between align-items-center mb-1">
                 <label class="form-label small fw-semibold mb-0" for="stripe-card-num">Card Number</label>
-                <button type="button" class="btn btn-link p-0 text-decoration-none small" onclick="document.getElementById('stripe-card-num').value='4242 4242 4242 4242'">Default 4242</button>
+                <button type="button" class="btn btn-link p-0 text-decoration-none small" data-fill-id="stripe-card-num" data-fill-value="4242 4242 4242 4242">Default 4242</button>
               </div>
               <div class="input-group">
                 <span class="input-group-text bg-white text-secondary">
@@ -509,70 +509,6 @@
   </div>
 </div>
 
-<script>
-function switchSslTab(tab) {
-  var cardsBtn = document.getElementById('ssl-tab-cards');
-  var mfsBtn = document.getElementById('ssl-tab-mfs');
-  var netbankBtn = document.getElementById('ssl-tab-netbank');
-
-  var cardsPanel = document.getElementById('ssl-panel-cards');
-  var mfsPanel = document.getElementById('ssl-panel-mfs');
-  var netbankPanel = document.getElementById('ssl-panel-netbank');
-  var activeInput = document.getElementById('ssl-active-tab');
-
-  if (!cardsBtn || !mfsBtn || !netbankBtn) return;
-
-  cardsBtn.className = 'nav-link small py-2 fw-semibold text-secondary';
-  mfsBtn.className = 'nav-link small py-2 fw-semibold text-secondary';
-  netbankBtn.className = 'nav-link small py-2 fw-semibold text-secondary';
-
-  cardsPanel.style.display = 'none';
-  mfsPanel.style.display = 'none';
-  netbankPanel.style.display = 'none';
-
-  if (activeInput) activeInput.value = tab;
-
-  if (tab === 'cards') {
-    cardsBtn.className = 'nav-link active small py-2 fw-semibold';
-    cardsPanel.style.display = 'block';
-  } else if (tab === 'mfs') {
-    mfsBtn.className = 'nav-link active small py-2 fw-semibold';
-    mfsPanel.style.display = 'block';
-  } else if (tab === 'netbank') {
-    netbankBtn.className = 'nav-link active small py-2 fw-semibold';
-    netbankPanel.style.display = 'block';
-  }
-}
-
-function selectSslMfs(provider) {
-  var providers = ['bkash', 'nagad', 'rocket'];
-  for (var i = 0; i < providers.length; i++) {
-    var p = providers[i];
-    var btn = document.getElementById('ssl-mfs-btn-' + p);
-    var radio = document.getElementById('mfs-' + p);
-    if (btn && radio) {
-      if (p === provider) {
-        radio.checked = true;
-        btn.classList.add('active');
-        if (p === 'bkash') btn.className = 'btn btn-outline-danger btn-sm px-3 py-2 fw-semibold d-flex align-items-center gap-1 active';
-        if (p === 'nagad') btn.className = 'btn btn-outline-warning text-dark btn-sm px-3 py-2 fw-semibold d-flex align-items-center gap-1 active';
-        if (p === 'rocket') btn.className = 'btn btn-outline-primary btn-sm px-3 py-2 fw-semibold d-flex align-items-center gap-1 active';
-      } else {
-        radio.checked = false;
-        btn.classList.remove('active');
-        if (p === 'bkash') btn.className = 'btn btn-outline-danger btn-sm px-3 py-2 fw-semibold d-flex align-items-center gap-1';
-        if (p === 'nagad') btn.className = 'btn btn-outline-warning text-dark btn-sm px-3 py-2 fw-semibold d-flex align-items-center gap-1';
-        if (p === 'rocket') btn.className = 'btn btn-outline-primary btn-sm px-3 py-2 fw-semibold d-flex align-items-center gap-1';
-      }
-    }
-  }
-}
-
-function prefillSslCard(num, exp, cvv, name) {
-  if (document.getElementById('ssl-card-number')) document.getElementById('ssl-card-number').value = num;
-  if (document.getElementById('ssl-card-expiry')) document.getElementById('ssl-card-expiry').value = exp;
-  if (document.getElementById('ssl-card-cvv')) document.getElementById('ssl-card-cvv').value = cvv;
-  if (document.getElementById('ssl-card-name')) document.getElementById('ssl-card-name').value = name;
-}
-</script>
+<!-- CSP: no inline scripts/handlers — behaviour lives in /js/payment_simulator.js -->
+<script src="/js/payment_simulator.js" defer></script>
 @endsection

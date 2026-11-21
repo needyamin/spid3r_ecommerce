@@ -1,0 +1,72 @@
+// app/Middleware/MutationThrottle.matrix
+// Global defense-in-depth rate limiter for every state-changing request
+// (POST/PUT/PATCH/DELETE), registered app-wide via AppServiceProvider —
+// individual routes only had `throttle:5,60` on the auth endpoints, leaving
+// cart / checkout / payment / admin-API mutations unlimited.
+//
+// Fixed-window counters live in the Cache (same mechanism as the framework's
+// route-level ThrottleMiddleware), keyed by session identity when present,
+// else client IP, per method+path.
+//
+// Limits per 60s window:
+//   /admin/**                                 → 120  (staff SPA does bursts)
+//   /checkout/**, /payment/**, /account/**    → 20   (money & account data)
+//   everything else                           → 60
+//
+// Auth endpoints (/login, /register, /forgot-password, /reset-password) are
+// skipped here — they carry their own stricter route-level throttle
+// (5/60s) plus the per-email lockout policy in AuthService.
+
+import "framework/Cache/Cache";
+import "framework/Http/Response";
+
+public class MutationThrottle {
+    public fn handle(self, req: any, next: any = null) -> any {
+        let m = req.method;
+        if m != "POST" and m != "PUT" and m != "PATCH" and m != "DELETE" {
+            return next(req);
+        }
+        let p = string(req.path);
+        if p == "/login" or p == "/register" or p == "/logout"
+            or p == "/forgot-password" or p == "/reset-password" {
+            return next(req);
+        }
+
+        let limit = 60;
+        if p.starts_with("/admin") {
+            limit = 120;
+        } elif p.starts_with("/checkout") or p.starts_with("/payment")
+            or p.starts_with("/account") or p.starts_with("/returns") {
+            limit = 20;
+        }
+
+        // Same identity rule as framework ThrottleMiddleware: session token
+        // when present (stable per client), else client IP.
+        let identity = req.client_ip();
+        if req.session_id != "" {
+            identity = req.session_id;
+        }
+        let key = "mutation_throttle:" + identity + ":" + m + ":" + p;
+        if Cache.missing(key) {
+            Cache.add(key, 0, 60);
+        }
+        let hits = Cache.increment(key);
+        if hits > limit {
+            let retry = 60;
+            if p.starts_with("/api/") {
+                return json({
+                    "error": "Too Many Requests",
+                    "message": "Rate limit exceeded. Try again in 60 seconds."
+                }, 429);
+            }
+            let res = response(
+                "<!DOCTYPE html><html lang='en'><head><meta charset='utf-8'><title>429 Too Many Requests</title></head><body><h1>429 — Too Many Requests</h1><p>Rate limit exceeded. Please try again in a few moments.</p></body></html>",
+                429
+            );
+            res.header("retry-after", string(retry));
+            res.header("content-type", "text/html; charset=utf-8");
+            return res;
+        }
+        return next(req);
+    }
+}
