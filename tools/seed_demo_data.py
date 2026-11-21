@@ -2,20 +2,31 @@
 """Spid3r demo data seeder (SQLite).
 
 Usage:
-    python tools/seed_demo_data.py            # seed demo catalog + orders
-    python tools/seed_demo_data.py --status   # show current row counts only
+    python -I tools/seed_demo_data.py            # seed demo catalog + orders
+    python -I tools/seed_demo_data.py --status   # show current row counts only
 
 Idempotent-ish: refuses to run if demo products already exist (use --force to reseed).
+
+Security notes (2026-11-21 scan hardening):
+- every con.execute() takes one fully literal SQL string with ? placeholders
+  only — no identifier/fragment interpolation (SQLite cannot bind identifiers,
+  so table names are written out per statement);
+- every data value — including timestamps — travels as a bound parameter
+  (the previous datetime('now') SQL-expression interpolation is replaced by
+  UTC timestamps computed in Python);
+- the seeder no longer writes image files: product_images rows point at
+  /images/products/<slug>.svg, which is served either from the committed
+  artwork or by the runtime initials-SVG fallback when a file is missing.
 """
 import sqlite3
 import os
 import sys
+from datetime import datetime, timedelta, timezone
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DB = os.path.join(ROOT, "database", "database.sqlite")
-IMG_DIR = os.path.join(ROOT, "public", "images", "products")
 
-NOW = "datetime('now')"
+NOW = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
 
 
 def slugify(name):
@@ -27,29 +38,8 @@ def slugify(name):
             .replace(".", ""))
 
 
-# --- palette for flat product cover SVGs (matches store.css tokens) ---------
-PALETTE = [
-    ("#fff1e8", "#c2410c"),  # accent
-    ("#eef4ff", "#1d4ed8"),
-    ("#ecfdf5", "#047857"),
-    ("#fdf4ff", "#a21caf"),
-    ("#fffbeb", "#b45309"),
-    ("#f1f5f9", "#475569"),
-]
-
-
-def cover_svg(name, idx):
-    bg, fg = PALETTE[idx % len(PALETTE)]
-    initials = "".join(w[0] for w in name.split()[:2]).upper()
-    return f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400">
-  <rect width="400" height="400" rx="24" fill="{bg}"/>
-  <circle cx="200" cy="168" r="86" fill="none" stroke="{fg}" stroke-width="10" opacity="0.25"/>
-  <text x="200" y="205" font-family="system-ui, -apple-system, Segoe UI, Arial, sans-serif"
-        font-size="96" font-weight="700" fill="{fg}" text-anchor="middle" opacity="0.85">{initials}</text>
-  <text x="200" y="330" font-family="system-ui, -apple-system, Segoe UI, Arial, sans-serif"
-        font-size="22" font-weight="600" fill="{fg}" text-anchor="middle" opacity="0.75">{name}</text>
-</svg>
-"""
+def days_ago(days):
+    return (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d %H:%M:%S")
 
 
 def main():
@@ -59,10 +49,16 @@ def main():
     con.row_factory = sqlite3.Row
 
     if status_only:
-        for t in ["categories", "brands", "products", "product_variants",
-                  "product_images", "inventory", "orders", "order_items", "payments"]:
-            n = con.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0]
-            print(f"{t}: {n}")
+        # Every statement is a fully literal string (no variables in SQL).
+        print("categories:", con.execute("SELECT COUNT(*) FROM categories").fetchone()[0])
+        print("brands:", con.execute("SELECT COUNT(*) FROM brands").fetchone()[0])
+        print("products:", con.execute("SELECT COUNT(*) FROM products").fetchone()[0])
+        print("product_variants:", con.execute("SELECT COUNT(*) from product_variants").fetchone()[0])
+        print("product_images:", con.execute("SELECT COUNT(*) FROM product_images").fetchone()[0])
+        print("inventory:", con.execute("SELECT COUNT(*) FROM inventory").fetchone()[0])
+        print("orders:", con.execute("SELECT COUNT(*) FROM orders").fetchone()[0])
+        print("order_items:", con.execute("SELECT COUNT(*) FROM order_items").fetchone()[0])
+        print("payments:", con.execute("SELECT COUNT(*) FROM payments").fetchone()[0])
         return
 
     existing = con.execute("SELECT COUNT(*) FROM products").fetchone()[0]
@@ -70,11 +66,18 @@ def main():
         print(f"products table already has {existing} rows. Use --force to reseed.")
         return
     if force:
-        # wipe demo catalog + demo orders (fresh reseed)
-        for t in ["order_items", "payments", "shipments", "orders",
-                  "inventory", "product_images", "product_variants", "products",
-                  "brands", "categories"]:
-            con.execute(f"DELETE FROM {t}")
+        # wipe demo catalog + demo orders (fresh reseed) — literal statements,
+        # children before parents (FK-safe order)
+        con.execute("DELETE FROM order_items")
+        con.execute("DELETE FROM payments")
+        con.execute("DELETE FROM shipments")
+        con.execute("DELETE FROM orders")
+        con.execute("DELETE FROM inventory")
+        con.execute("DELETE FROM product_images")
+        con.execute("DELETE FROM product_variants")
+        con.execute("DELETE FROM products")
+        con.execute("DELETE FROM brands")
+        con.execute("DELETE FROM categories")
         print("cleared existing catalog/order rows (--force)")
 
     # --- 1. remove legacy test-junk categories ------------------------------
@@ -83,8 +86,6 @@ def main():
     if junk:
         con.execute("DELETE FROM categories WHERE name LIKE 'Panel Redirect%'")
         print(f"removed {len(junk)} legacy test categories")
-
-    ts = f"{NOW}, {NOW}"
 
     # --- 2. categories -------------------------------------------------------
     cats = [
@@ -97,11 +98,11 @@ def main():
         ("Fitness", "training and recovery essentials"),
         ("Gaming", "play-ready gear"),
     ]
-    for i, (name, desc) in enumerate(cats):
+    for name, desc in cats:
         con.execute(
             "INSERT INTO categories (parent_id,name,slug,description,sort_order,is_active,"
-            "created_at,updated_at) VALUES (NULL,?,?,?,0,1," + ts + ")",
-            (name, slugify(name), desc))
+            "created_at,updated_at) VALUES (NULL,?,?,?,0,1,?,?)",
+            (name, slugify(name), desc, NOW, NOW))
     cat_ids = {r["name"]: r["id"] for r in
                con.execute("SELECT id,name FROM categories").fetchall()}
 
@@ -119,8 +120,8 @@ def main():
     for name, desc in brands:
         con.execute(
             "INSERT INTO brands (name,slug,description,is_active,created_at,updated_at) "
-            "VALUES (?,?,?,1," + ts + ")",
-            (name, slugify(name), desc))
+            "VALUES (?,?,?,?,?,?)",
+            (name, slugify(name), desc, 1, NOW, NOW))
     brand_ids = {r["name"]: r["id"] for r in
                  con.execute("SELECT id,name FROM brands").fetchall()}
 
@@ -202,39 +203,39 @@ def main():
             "INSERT INTO products (category_id,brand_id,name,slug,sku,short_description,description,"
             "price_minor,compare_at_minor,cost_minor,currency,tax_rate_bps,status,is_featured,"
             "weight_grams,meta_title,meta_description,created_at,updated_at) "
-            f"VALUES (?,?,?,?,?,?,?,{price},{cmp_at or 'NULL'},?,'BDT',0,?,?,?,?,?," + ts + ")",
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (cat_ids[cat], brand_ids[brand], name, slug, sku, short,
              short + " Part of the Spid3r demo catalog — quality checked, warranty included.",
-             round(price * 0.72), status, featured, 250 + idx * 35,
-             name, short))
+             price, cmp_at, round(price * 0.72), "BDT", 0, status, featured,
+             250 + idx * 35, name, short, NOW, NOW))
         pid = cur.lastrowid
 
-        # cover image (flat SVG, written to public/images/products/)
-        os.makedirs(IMG_DIR, exist_ok=True)
-        svg_path = f"/images/products/{slug}.svg"
-        with open(os.path.join(IMG_DIR, slug + ".svg"), "w", encoding="utf-8") as f:
-            f.write(cover_svg(name, idx))
+        # image row — artwork comes from the committed
+        # public/images/products/<slug>.svg file, or from the runtime
+        # initials-SVG fallback (ImageController) when a file is missing.
+        svg_path = "/images/products/" + slug + ".svg"
         con.execute(
             "INSERT INTO product_images (product_id,path,alt_text,sort_order,is_primary,"
-            "created_at,updated_at) VALUES (?,?,?,0,1," + ts + ")", (pid, svg_path, name))
+            "created_at,updated_at) VALUES (?,?,?,?,?,?,?)",
+            (pid, svg_path, name, 0, 1, NOW, NOW))
 
-        # variants
+        # variants + inventory
         if name in VARIED:
             for vname, attrs, delta in VARIED[name]:
                 con.execute(
                     "INSERT INTO product_variants (product_id,sku,name,attributes_json,price_minor,"
-                    "compare_at_minor,is_active,created_at,updated_at) VALUES (?,?,?,?,?,NULL,1," + ts + ")",
+                    "compare_at_minor,is_active,created_at,updated_at) VALUES (?,?,?,?,?,NULL,1,?,?)",
                     (pid, f"{sku}-{slugify(vname)[:8].upper()}", vname,
-                     __import__("json").dumps(attrs), price + delta))
+                     __import__("json").dumps(attrs), price + delta, NOW, NOW))
             qty = stock_pool[idx]
             con.execute(
                 "INSERT INTO inventory (product_id,variant_id,quantity,reserved,low_stock_threshold,"
-                "created_at,updated_at) VALUES (?,NULL,?,0,10," + ts + ")", (pid, qty))
+                "created_at,updated_at) VALUES (?,NULL,?,0,10,?,?)", (pid, qty, NOW, NOW))
         else:
             qty = stock_pool[idx]
             con.execute(
                 "INSERT INTO inventory (product_id,variant_id,quantity,reserved,low_stock_threshold,"
-                "created_at,updated_at) VALUES (?,NULL,?,0,10," + ts + ")", (pid, qty))
+                "created_at,updated_at) VALUES (?,NULL,?,0,10,?,?)", (pid, qty, NOW, NOW))
 
     products = {r["name"]: r for r in con.execute(
         "SELECT id,name,sku,price_minor FROM products").fetchall()}
@@ -263,44 +264,53 @@ def main():
     for n, (days, status, items, provider, ship) in enumerate(ORDERS, 1):
         subtotal = sum(products[p]["price_minor"] * q for p, q in items)
         total = subtotal + ship
-        when = f"datetime('now', '-{days} days')"
+        when = days_ago(days)
         cur = con.execute(
             "INSERT INTO orders (order_number,user_id,status,subtotal_minor,discount_minor,"
-            f"shipping_minor,tax_minor,total_minor,currency,shipping_address_json,billing_address_json,"
-            f"shipping_method,coupon_id,placed_at,created_at,updated_at) "
-            f"VALUES (?,?,?,?,?,{ship},0,?, 'BDT',?,?,?,NULL,{when},{when},{when})",
-            (f"SPD-2026-{1000+n}", uid, status, subtotal, 0, total, addr, addr,
-             "standard"))
+            "shipping_minor,tax_minor,total_minor,currency,shipping_address_json,billing_address_json,"
+            "shipping_method,coupon_id,placed_at,created_at,updated_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (f"SPD-2026-{1000+n}", uid, status, subtotal, 0, ship, 0, total, "BDT", addr, addr,
+             "standard", None, when, when, when))
         oid = cur.lastrowid
         for p, q in items:
             row = products[p]
             con.execute(
                 "INSERT INTO order_items (order_id,product_id,variant_id,name_snapshot,sku_snapshot,"
-                f"unit_price_minor,quantity,discount_minor,tax_minor,line_total_minor,created_at,updated_at) "
-                f"VALUES (?,?,NULL,?,?,{row['price_minor']},?,0,0,{row['price_minor']*q},{when},{when})",
-                (oid, row["id"], row["name"], row["sku"], q))
+                "unit_price_minor,quantity,discount_minor,tax_minor,line_total_minor,created_at,updated_at) "
+                "VALUES (?,?,NULL,?,?,?,?,0,0,?,?,?)",
+                (oid, row["id"], row["name"], row["sku"], row["price_minor"], q,
+                 row["price_minor"] * q, NOW, NOW))
         pay_status = "paid" if status in ("paid", "processing", "shipped", "delivered") else "pending"
         con.execute(
             "INSERT INTO payments (order_id,provider,method,amount_minor,currency,status,"
-            f"gateway_transaction_id,idempotency_key,verified_at,created_at,updated_at) "
-            f"VALUES (?,?,?,?,'BDT',?,?,?,{when if pay_status=='paid' else 'NULL'},{when},{when})",
-            (oid, provider, provider, total, pay_status,
-             f"DEMO-TX-{1000+n}", f"demo-idem-{1000+n}"))
+            "gateway_transaction_id,idempotency_key,verified_at,created_at,updated_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            (oid, provider, provider, total, "BDT", pay_status,
+             f"DEMO-TX-{1000+n}", f"demo-idem-{1000+n}",
+             (None if pay_status == "pending" else when), NOW, NOW))
         if status in ("shipped", "delivered"):
+            delivered = None if status == "shipped" else when
             con.execute(
                 "INSERT INTO shipments (order_id,carrier,tracking_number,status,shipped_at,"
-                f"delivered_at,created_at,updated_at,method) "
-                f"VALUES (?,?,?,?,{when},{'NULL' if status=='shipped' else when},{when},{when},'standard')",
-                (oid, "SpiderExpress", f"SE{200000+n}", status))
+                "delivered_at,created_at,updated_at,method) "
+                "VALUES (?,?,?,?,?,?,?,?,?)",
+                (oid, "SpiderExpress", f"SE{200000+n}", status, when, delivered, NOW, NOW, "standard"))
 
     con.commit()
 
     # --- summary -------------------------------------------------------------
     print("seeded:")
-    for t in ["categories", "brands", "products", "product_variants",
-              "product_images", "inventory", "orders", "order_items", "payments", "shipments"]:
-        n = con.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0]
-        print(f"  {t}: {n}")
+    print("  categories:", con.execute("SELECT COUNT(*) FROM categories").fetchone()[0])
+    print("  brands:", con.execute("SELECT COUNT(*) FROM brands").fetchone()[0])
+    print("  products:", con.execute("SELECT COUNT(*) FROM products").fetchone()[0])
+    print("  product_variants:", con.execute("SELECT COUNT(*) FROM product_variants").fetchone()[0])
+    print("  product_images:", con.execute("SELECT COUNT(*) FROM product_images").fetchone()[0])
+    print("  inventory:", con.execute("SELECT COUNT(*) FROM inventory").fetchone()[0])
+    print("  orders:", con.execute("SELECT COUNT(*) FROM orders").fetchone()[0])
+    print("  order_items:", con.execute("SELECT COUNT(*) FROM order_items").fetchone()[0])
+    print("  payments:", con.execute("SELECT COUNT(*) FROM payments").fetchone()[0])
+    print("  shipments:", con.execute("SELECT COUNT(*) FROM shipments").fetchone()[0])
     feat = con.execute(
         "SELECT name FROM products WHERE is_featured=1 AND status='published' LIMIT 6").fetchall()
     print("featured:", ", ".join(r["name"] for r in feat))
