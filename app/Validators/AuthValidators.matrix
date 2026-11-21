@@ -1,12 +1,17 @@
 // app/Validators/AuthValidators.matrix
 // Phase 3 — rule maps for every account form. Controllers pass these to
 // req.validate_or_fail(rules).
+//
+// Password policy: minimum 8 chars AND at least one letter AND at least one
+// digit (patterns written full-match-safe: they validate the same under
+// search or whole-string regex semantics). Login deliberately stays
+// length-only so legacy accounts are never locked out of sign-in.
 
 public fn registration_rules() {
     return {
         "name": "required|min:2|max:128",
         "email": "required|email|max:255",
-        "password": "required|min:8|confirmed"
+        "password": "required|min:8|confirmed|regex:.*[A-Za-z].*|regex:.*[0-9].*"
     };
 }
 
@@ -26,6 +31,6 @@ public fn forgot_rules() {
 public fn reset_rules() {
     return {
         "token": "required|min:16",
-        "password": "required|min:8|confirmed"
+        "password": "required|min:8|confirmed|regex:.*[A-Za-z].*|regex:.*[0-9].*"
     };
 }

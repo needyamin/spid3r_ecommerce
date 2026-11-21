@@ -13,6 +13,7 @@
 import "framework/Database/DB";
 import "framework/Auth/Auth";
 import "framework/Auth/Hash";
+import "framework/Cache/Cache";
 import "framework/Queue/Queue";
 import "app/Repositories/UserRepository";
 
@@ -40,20 +41,44 @@ public class AuthService {
 
     // Returns the session token on success, null on bad credentials or
     // disabled accounts.
+    //
+    // Brute-force policy: the per-IP route throttle (`throttle:5,60` on
+    // POST /login) alone does not stop distributed attacks or single-IP
+    // attackers rotating IPs, so failures are also counted PER EMAIL —
+    // 10 failed attempts in a 15-minute window lock that account's sign-in
+    // until the window decays. A successful login clears the counter.
     public fn login(self, email: string, password: string) {
         let _ = self;
         let clean = string(email).trim().lower();
+        let fail_key = "login_fails:" + clean;
+        if int(Cache.get(fail_key, 0)) >= 10 {
+            return null;  // account temporarily locked by failed-attempt policy
+        }
         let row = DB.table("users").where("email", "=", clean).first();
         if row == null {
+            self.record_login_failure(fail_key);
             return null;
         }
         if row.has("status") and row["status"] != null and string(row["status"]) != "active" {
             return null;  // suspended/banned accounts cannot authenticate
         }
         if not Auth.attempt(clean, password) {
+            self.record_login_failure(fail_key);
             return null;
         }
+        Cache.forget(fail_key);
         return Auth.token();
+    }
+
+    // Seed the failure counter with a 15-minute window, then bump it. The
+    // seed-then-increment pattern matters: Cache.increment preserves an
+    // existing TTL but cannot mint one for a missing key.
+    fn record_login_failure(self, key: string) {
+        let _ = self;
+        if Cache.missing(key) {
+            Cache.add(key, 0, 900);
+        }
+        Cache.increment(key);
     }
 
     // Revoke the session identified by the request's cookie/bearer token.
