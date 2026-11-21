@@ -74,3 +74,22 @@ uncommitted unless asked.
   simulator (inline onclick + inline script replaced with data-attributes +
   `public/js/payment_simulator.js` — inline handlers were silently dead
   under `script-src 'self'`).
+
+## CI / deployment notes (2026-11-21)
+
+- **Framework CI enforces a 500-line limit per .matrix file** (and fmt +
+  `--deny-warnings` lint). Any framework edit must stay under 500 lines
+  per file and use `let _ = self;` for unused self — the store's vendored
+  copy is subject to the same rules via its own CI.
+- **A UI-only commit (31be11f) reworded page copy without updating the
+  test suites** and was never CI-verified; the full suite then failed on
+  every leg (stale assertions: Featured products, Apply filters, SKU
+  label/value, Related products, Delivery address). Lesson: UI rewordings
+  must go together with test-expectation updates; run `spid3r magic test`
+  on a fresh migrated+seeded DB before pushing.
+- Both repos green: spid3r_web@9297b7b, spid3r_ecommerce@5a243ea+.
+- Mimosa deep scan clean (0 findings) after the seeder parameterization.
+- Docker deploy audited: pinned+checksummed runtime, unprivileged user,
+  migrate-on-boot, .dockerignore keeps secrets/DB out; container cold boot
+  compiles for ~16-21s → Dockerfile HEALTHCHECK start-period raised to
+  60s to avoid restart loops.
