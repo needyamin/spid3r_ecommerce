@@ -206,7 +206,7 @@ fn test_home(app, tag: string) {
     let res = get(app, "/");
     assert(res["status"] == 200, "home renders 200");
     let body = text(res);
-    assert(body.contains("Featured Products"), "home has featured section");
+    assert(body.contains("Featured products"), "home has featured section");
     assert(body.contains("Store Widget " + tag), "home shows real products");
     assert(body.contains("meta name=\"description\""), "home has a meta description");
     assert(body.contains("/product/store-widget-" + tag), "home links use SEO URLs");
@@ -218,7 +218,7 @@ fn test_catalog_filters(app, tag: string) {
     assert(res["status"] == 200, "catalog renders 200");
     let body = text(res);
     assert(body.contains("Store Widget " + tag), "catalog lists products");
-    assert(body.contains("Apply filters"), "catalog has filter form");
+    assert(body.contains("Filter products"), "catalog has filter form");
     let priced = get(app, "/catalog?sort=price_asc");
     assert(
         text(priced).contains("/uploads/products/test/" + tag + ".png"),
@@ -286,11 +286,12 @@ fn test_product_detail(app, tag: string) {
     let body = text(res);
     assert(body.contains("Store Widget " + tag + " 0"), "product name");
     assert(body.contains("Buy widget 0 at the store"), "product meta description");
-    assert(body.contains("SKU SW-" + tag + "-0"), "SKU displayed with label");
+    assert(body.contains(">SKU<"), "SKU label shown");
+    assert(body.contains("SW-" + tag + "-0"), "SKU value shown");
     assert(body.contains("In stock"), "availability shown");
     assert(body.contains("max=\"10\""), "cart quantity is capped at available stock");
     assert(body.contains("A full description for widget 0"), "description rendered");
-    assert(body.contains("Related products"), "related products section");
+    assert(body.contains("You may also like"), "related products section");
     assert(body.contains("/uploads/products/test/" + tag + ".png"), "gallery image rendered");
     assert(
         body.contains("dz-gallery-viewer"),

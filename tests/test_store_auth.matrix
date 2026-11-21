@@ -85,9 +85,9 @@ fn test_registration_and_login(app, tag: string) {
             "email",
             email,
             "password",
-            "correct-horse",
+            "correct-horse-42",
             "password_confirmation",
-            "correct-horse"
+            "correct-horse-42"
         )
     );
     assert(ok["status"] == 302, "registration redirects to login");
@@ -105,9 +105,9 @@ fn test_registration_and_login(app, tag: string) {
             "email",
             email,
             "password",
-            "correct-horse",
+            "correct-horse-42",
             "password_confirmation",
-            "correct-horse"
+            "correct-horse-42"
         )
     );
     assert(dup["status"] == 422, "duplicate email rejected");
@@ -115,7 +115,7 @@ fn test_registration_and_login(app, tag: string) {
     let bad = post(app, "/login", map("email", email, "password", "wrong-password"));
     assert(bad["status"] == 401, "bad credentials return 401");
 
-    let logged = post(app, "/login", map("email", email, "password", "correct-horse"));
+    let logged = post(app, "/login", map("email", email, "password", "correct-horse-42"));
     assert(logged["status"] == 302, "valid credentials redirect to account");
     let token = cookie_value(logged);
     assert(token.starts_with("sess_"), "session cookie carries a CSPRNG token");

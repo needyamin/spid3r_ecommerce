@@ -195,7 +195,7 @@ fn test_quote(app, ids, tag: string) {
     let page = call(app, "GET", "/checkout?shipping_method=express", null, cookie);
     assert(page["status"] == 200, "checkout page renders");
     assert(
-        string(page["body"]).contains("Delivery address"),
+        string(page["body"]).contains("name=\"line1\""),
         "checkout page has address form"
     );
 
