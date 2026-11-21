@@ -83,7 +83,10 @@ USER spid3r
 
 EXPOSE 8000
 
-HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+# start-period must exceed the boot compile (~16-21s: the runtime compiles
+# the whole .matrix graph before listening; measured 2026-11-21). 10s would
+# mark healthy containers unhealthy mid-boot and cause restart loops.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
     CMD curl -fsS "http://127.0.0.1:${SPID3R_PORT}/health" >/dev/null || exit 1
 
 # Migrate on boot (idempotent), then serve. `exec` hands PID 1 to the server
